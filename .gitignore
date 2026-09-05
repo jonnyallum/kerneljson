@@ -1,0 +1,17 @@
+﻿node_modules/
+dist/
+build/
+.next/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+supabase/.temp/
+restate-data/
+otel-data/
+artifacts/local/

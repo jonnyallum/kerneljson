@@ -1,0 +1,13 @@
+{
+  "project": "kerneljson",
+  "github": {
+    "repository": "jonnyallum/kerneljson",
+    "url": "https://github.com/jonnyallum/kerneljson"
+  },
+  "supabase": {
+    "project_ref": "banqdzddfganzfhckdps"
+  },
+  "jvault": {
+    "project": "kerneljson"
+  }
+}

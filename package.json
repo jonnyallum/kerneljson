@@ -1,0 +1,15 @@
+﻿{
+  "name": "kerneljson",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Durable cognitive execution kernel",
+  "scripts": {
+    "build": "echo \"Build pipeline not implemented yet\"",
+    "test": "echo \"Eval/test pipeline not implemented yet\"",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo \"Lint pipeline not implemented yet\""
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,2 @@
+﻿-- KernelJSON development seed.
+-- Keep production data OUT of this file.

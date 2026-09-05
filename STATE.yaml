@@ -1,0 +1,25 @@
+project: kerneljson
+state: bootstrap
+version: 0.0.1
+
+github:
+  repository: jonnyallum/kerneljson
+  branch: main
+
+supabase:
+  project_ref: banqdzddfganzfhckdps
+
+vault:
+  project: kerneljson
+
+runtime:
+  durable_execution: restate
+  model_provider: deepseek
+  sandbox: gvisor
+
+implemented: []
+
+next:
+  - contracts
+  - initial_supabase_migrations
+  - restate_task_workflow
