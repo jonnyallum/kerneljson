@@ -1,5 +1,5 @@
 project: kerneljson
-state: bootstrap
+state: foundation_committed
 version: 0.0.1
 
 github:
@@ -8,6 +8,7 @@ github:
 
 supabase:
   project_ref: banqdzddfganzfhckdps
+  linked: true
 
 vault:
   project: kerneljson
@@ -17,9 +18,21 @@ runtime:
   model_provider: deepseek
   sandbox: gvisor
 
-implemented: []
+implemented:
+  - repository_bootstrap
+  - architecture_constitution
+  - adr_seed
+  - supabase_cli_link
+
+current_phase: 1
 
 next:
-  - contracts
+  - typed_contracts
   - initial_supabase_migrations
   - restate_task_workflow
+
+blocked: []
+
+handoff:
+  target: codex
+  file: CODEX_HANDOFF.md
