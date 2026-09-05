@@ -1,5 +1,24 @@
 # KernelJSON Codex Handoff
 
+## Saved checkpoint — 2026-09-05
+
+Current branch: `codex/phase-15`. Phases 1–14 are implemented with the
+executed evidence recorded in `STATE.yaml` and the phase runbooks. Phase 15
+is in progress: typecheck, build, four unit tests and four targeted recovery
+tests passed. It is not complete. See `docs/runbooks/phase-15.md` for remaining
+verification work. The last full combined suite was Phase 9; later phases
+have focused validation only. The user requested saving and pushing this
+checkpoint before further implementation. No remote migrations were pushed.
+
+The original bootstrap status below is historical, not the current state.
+
+This is the historical Phase 1–3 handoff. The user subsequently authorized
+Phases 4 onward; see `STATE.yaml`, the accepted ADRs and the phase runbooks
+for those bounded follow-on implementations. The exclusions below describe
+the historical Phase 1–3 scope, not a ban on the subsequently authorized Phase 5
+ModelPort and DeepSeek adapter. Local tests and live provider validation passed;
+see STATE.yaml for evidence. Production model-backed recipes remain later work.
+
 ## Mission
 
 Build KernelJSON as a durable cognitive execution platform, not an agent roster.

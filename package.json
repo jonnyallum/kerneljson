@@ -1,15 +1,35 @@
-﻿{
+{
   "name": "kerneljson",
   "version": "0.0.1",
   "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.4.0",
   "description": "Durable cognitive execution kernel",
   "scripts": {
-    "build": "echo \"Build pipeline not implemented yet\"",
-    "test": "echo \"Eval/test pipeline not implemented yet\"",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "echo \"Lint pipeline not implemented yet\""
+    "start:worker": "tsx services/kernel/src/index.ts",
+    "test:unit": "vitest run tests/contracts.test.ts tests/kernel.test.ts tests/models.test.ts tests/capabilities.test.ts tests/policy.test.ts tests/verification.test.ts tests/evaluation.test.ts",
+    "test:db": "vitest run tests/database.test.ts",
+    "test:model:live": "tsx services/kernel/src/model-smoke.ts",
+    "test:recovery": "vitest run tests/recovery.test.ts",
+    "eval:golden": "tsx services/evaluator/src/cli.ts"
   },
   "engines": {
     "node": ">=22"
+  },
+  "dependencies": {
+    "@restatedev/restate-sdk": "1.17.0",
+    "pg": "8.23.0",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.1",
+    "@types/pg": "8.23.1",
+    "prettier": "3.9.6",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2",
+    "vitest": "5.0.0"
   }
 }

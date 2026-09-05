@@ -1,0 +1,33 @@
+name: kerneljson-validation
+services:
+  db:
+    image: postgres:17.6
+    environment:
+      POSTGRES_DB: kerneljson
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports: ["127.0.0.1:55432:5432"]
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kerneljson"]
+      interval: 1s
+      timeout: 3s
+      retries: 40
+  restate:
+    image: docker.restate.dev/restatedev/restate:1.7.9
+    ports: ["127.0.0.1:18080:8080", "127.0.0.1:19070:9070"]
+    volumes: [restate-test-data:/restate-data]
+    environment:
+      RESTATE_BASE_DIR: /restate-data
+  worker:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/worker.Dockerfile
+    environment:
+      DATABASE_URL: postgresql://postgres@db:5432/kerneljson
+      PORT: 9080
+    ports: ["127.0.0.1:19080:9080"]
+    depends_on:
+      db: {condition: service_healthy}
+    command: ["node", "--import", "tsx", "tests/support/worker.ts"]
+volumes:
+  restate-test-data:
