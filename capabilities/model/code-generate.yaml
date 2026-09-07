@@ -1,0 +1,33 @@
+id: code.generate
+implementation: model.invoke (deepseek-v4-pro) with a code-generation recipe + schema-validated output
+runtime: deepseek-runtime
+inputs:
+  spec:
+    type: string
+    description: Structured specification / acceptance criteria for the code to produce
+    required: true
+  language:
+    type: string
+    required: false
+  context_refs:
+    type: array
+    items: string
+    description: Repository / file refs for grounding
+    required: false
+outputs:
+  files:
+    type: object
+    description: Map of proposed relative path to content (proposal only, no filesystem write)
+  rationale:
+    type: string
+side_effects: []
+permissions:
+  - deepseek-api-key
+evidence_produced:
+  format: model_receipt
+  fields:
+    - model
+    - total_tokens
+    - output_digest
+stateful: false
+status: staged

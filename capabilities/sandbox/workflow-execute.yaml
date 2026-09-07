@@ -1,0 +1,58 @@
+id: workflow.execute
+implementation: spawner/engine.py (SpawnerEngine.execute_task)
+runtime: spawner-runtime
+inputs:
+  mission:
+    type: string
+    description: Canonical mission slug
+    required: true
+  brief:
+    type: string
+    description: Operational instruction text
+    required: true
+  skills:
+    type: array
+    items: string
+    description: Array of skill names mounted from registry-v2
+    required: false
+  model_tier:
+    type: string
+    enum: [flash, pro, local]
+    default: "flash"
+  timeout_seconds:
+    type: integer
+    default: 300
+  atomic_claim:
+    type: boolean
+    description: Enforce single-worker claim locking
+    default: false
+outputs:
+  task_id:
+    type: string
+  worker_id:
+    type: string
+  status:
+    type: string
+    enum: [completed, failed, denied, conflict]
+  exit_code:
+    type: integer
+  evidence:
+    type: string
+  output:
+    type: string
+  duration_ms:
+    type: integer
+side_effects:
+  - ephemeral-worker-lifecycle
+permissions:
+  - guardian-pre-gate
+  - atomic-claim
+evidence_produced:
+  format: lifecycle_events_receipt
+  fields:
+    - task_id
+    - worker_id
+    - exit_code
+    - evidence
+stateful: false
+status: enabled

@@ -1,0 +1,41 @@
+id: memory.search
+implementation: spawner/engine.py (retrieve_dispatch_learnings) + conductor (brain_query_projects)
+runtime: spawner-runtime
+inputs:
+  query:
+    type: string
+    description: Semantic search or category query
+    required: false
+  category:
+    type: string
+    description: Category filter (e.g. audit, architecture, general)
+    required: false
+  verified_only:
+    type: boolean
+    description: Restrict retrieval strictly to audited primary learnings
+    required: false
+    default: true
+  limit:
+    type: integer
+    default: 5
+outputs:
+  learnings:
+    type: array
+    items:
+      type: object
+      properties:
+        category: string
+        learning: string
+        source_agent: string
+  count:
+    type: integer
+side_effects: []
+permissions:
+  - brain-read
+evidence_produced:
+  format: structured_json
+  fields:
+    - count
+    - learnings
+stateful: false
+status: enabled

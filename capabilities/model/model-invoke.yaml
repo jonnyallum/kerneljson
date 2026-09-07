@@ -1,0 +1,44 @@
+id: model.invoke
+implementation: DeepSeek Anthropic/OpenAI-compatible endpoint (api.deepseek.com) via jai-os / spawner model port
+runtime: deepseek-runtime
+inputs:
+  prompt:
+    type: string
+    description: Task-scoped prompt / brief
+    required: true
+  model_tier:
+    type: string
+    enum: [flash, pro]
+    description: deepseek-v4-flash (cheap/fast) or deepseek-v4-pro (reasoning/audits)
+    default: flash
+  system:
+    type: string
+    description: Optional system prompt
+    required: false
+  max_tokens:
+    type: integer
+    required: false
+    default: 4096
+outputs:
+  text:
+    type: string
+  model:
+    type: string
+    description: Actual provider model that served the request
+  total_tokens:
+    type: integer
+  finish_reason:
+    type: string
+side_effects:
+  - outbound-http
+permissions:
+  - deepseek-api-key
+evidence_produced:
+  format: model_receipt
+  fields:
+    - model
+    - total_tokens
+    - finish_reason
+    - sanitized_prompt_digest
+stateful: false
+status: enabled
