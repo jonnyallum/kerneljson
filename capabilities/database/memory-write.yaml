@@ -33,7 +33,7 @@ outputs:
   created_at:
     type: string
 side_effects:
-  - write-db (Supabase learnings table)
+  - write-db   # Supabase learnings table
 permissions:
   - brain-write
 evidence_produced:

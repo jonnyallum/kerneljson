@@ -26,7 +26,7 @@ outputs:
     type: integer
   tree_summary:
     type: object
-side_effects: none
+side_effects: []
 permissions:
   - github-token-read
 evidence_produced:

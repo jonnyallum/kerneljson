@@ -29,7 +29,7 @@ outputs:
         source_agent: string
   count:
     type: integer
-side_effects: none
+side_effects: []
 permissions:
   - brain-read
 evidence_produced:

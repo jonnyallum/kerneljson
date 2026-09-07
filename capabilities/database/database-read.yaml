@@ -28,7 +28,7 @@ outputs:
     type: integer
   duration_ms:
     type: integer
-side_effects: none
+side_effects: []
 permissions:
   - supabase-anon-key
   - supabase-service-key (for service tables)

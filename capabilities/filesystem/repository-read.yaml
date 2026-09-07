@@ -48,7 +48,7 @@ outputs:
   summary:
     type: string
     description: Single-line human and machine readable outcome summary
-side_effects: none
+side_effects: []
 permissions:
   - read-only-filesystem
 evidence_produced:

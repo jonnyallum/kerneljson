@@ -18,7 +18,7 @@ outputs:
   verdict:
     type: string
     enum: [pass, changes_requested]
-side_effects: none
+side_effects: []
 permissions:
   - deepseek-api-key
 evidence_produced:

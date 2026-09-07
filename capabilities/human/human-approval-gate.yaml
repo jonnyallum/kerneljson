@@ -33,10 +33,15 @@ side_effects:
 permissions:
   - human-principal-authority
 evidence_produced:
-  format: signed_dsp_receipt
+  format: approval_dsp_receipt
+  assurance: advisory   # DSP-based approval; no cryptographic signature/attestation yet -
+                        # 'signed' overstates trust while central human-gate enforcement is weak
   fields:
     - decision
     - approved_by
-    - signed_at
+    - issued_at
 stateful: true
+# When KernelJSON owns approvals, replace with a proper attested evidence object:
+# approval_id, principal_id, mission_id, action_digest, decision, issued_at, expires_at,
+# nonce, policy_version - cryptographically signed. Until then this is advisory only.
 status: enabled

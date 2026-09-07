@@ -1,121 +1,123 @@
-version: 1.1.0
-updated: "2026-09-07T18:10:00Z"
+version: 1.2.0
+updated: "2026-09-07T19:05:00Z"
 authority: "KernelJSON Capability Registry (Transition Charter §5)"
 count: 23   # 14 seeded + 9 expansion (model x4, browser, email, social, media, workflow) - kerneljson-prep track C
+# side_effects are YAML arrays everywhere (review 2026-09-07); [] means none.
+# Validated by scripts/validate_capabilities.py (CI: .github/workflows/capabilities-validate.yml).
 capabilities:
   - id: repository.read
     path: capabilities/filesystem/repository-read.yaml
     runtime: spawner-runtime
     status: enabled
-    side_effects: none
+    side_effects: []
   - id: repository.write
     path: capabilities/filesystem/repository-write.yaml
     runtime: gvisor-sandbox
     status: staged
-    side_effects: write-filesystem, git-commit
+    side_effects: [write-filesystem, git-commit]
   - id: github.read
     path: capabilities/github/github-read.yaml
     runtime: conductor-mcp
     status: enabled
-    side_effects: none
+    side_effects: []
   - id: github.write
     path: capabilities/github/github-write.yaml
     runtime: conductor-mcp
     status: staged
-    side_effects: github-pr-create, github-branch-push
+    side_effects: [github-pr-create, github-branch-push]
   - id: database.read
     path: capabilities/database/database-read.yaml
     runtime: supabase-mcp
     status: enabled
-    side_effects: none
+    side_effects: []
   - id: database.write
     path: capabilities/database/database-write.yaml
     runtime: supabase-mcp
-    status: enabled
-    side_effects: write-db, schema-migration
+    status: staged
+    side_effects: [write-db, schema-migration]
   - id: memory.search
     path: capabilities/database/memory-search.yaml
     runtime: spawner-runtime
     status: enabled
-    side_effects: none
+    side_effects: []
   - id: memory.write
     path: capabilities/database/memory-write.yaml
     runtime: conductor-mcp
     status: enabled
-    side_effects: write-db
+    side_effects: [write-db]
   - id: research.web
     path: capabilities/web/research-web.yaml
     runtime: mcp-web
     status: enabled
-    side_effects: outbound-http
+    side_effects: [outbound-http]
   - id: shell.execute
     path: capabilities/sandbox/shell-execute.yaml
     runtime: gvisor-sandbox
     status: enabled
-    side_effects: isolated-compute
+    side_effects: [isolated-compute]
   - id: workflow.execute
     path: capabilities/sandbox/workflow-execute.yaml
     runtime: spawner-runtime
     status: enabled
-    side_effects: ephemeral-worker-lifecycle
+    side_effects: [ephemeral-worker-lifecycle]
   - id: message.telegram
     path: capabilities/messaging/message-telegram.yaml
     runtime: openclaw-gateway
     status: enabled
-    side_effects: outbound-notification
+    side_effects: [outbound-notification]
   - id: message.whatsapp
     path: capabilities/messaging/message-whatsapp.yaml
     runtime: whatsapp-cloud-api
     status: staged
-    side_effects: outbound-notification
+    side_effects: [outbound-notification]
   - id: human.approval_gate
     path: capabilities/human/human-approval-gate.yaml
     runtime: boardroom-dsp
     status: enabled
-    side_effects: graph-interrupt
+    side_effects: [graph-interrupt]
   # --- expansion (kerneljson-prep track C, 2026-09-07) ---
   - id: model.invoke
     path: capabilities/model/model-invoke.yaml
     runtime: deepseek-runtime
     status: enabled
-    side_effects: outbound-http
+    side_effects: [outbound-http]
   - id: code.generate
     path: capabilities/model/code-generate.yaml
     runtime: deepseek-runtime
     status: staged
-    side_effects: none
+    side_effects: []
   - id: code.review
     path: capabilities/model/code-review.yaml
     runtime: deepseek-runtime
     status: staged
-    side_effects: none
+    side_effects: []
   - id: cloud.escalate
     path: capabilities/model/cloud-escalate.yaml
     runtime: conductor-mcp
     status: legacy
-    side_effects: external-spend, outbound-http
+    side_effects: [external-spend, outbound-http]
   - id: browser.use
     path: capabilities/browser/browser-use.yaml
     runtime: mcp-browser
     status: candidate
-    side_effects: outbound-http, browser-automation
+    side_effects: [outbound-http, browser-automation]
   - id: message.email
     path: capabilities/messaging/message-email.yaml
     runtime: resend-mcp
     status: staged
-    side_effects: outbound-notification, outbound-email
+    side_effects: [outbound-notification, outbound-email]
   - id: social.publish
     path: capabilities/social/social-publish.yaml
     runtime: social-scheduler
     status: staged
-    side_effects: public-content-publish
+    side_effects: [public-content-publish]
   - id: voice.synthesize
     path: capabilities/media/voice-synthesize.yaml
     runtime: elevenlabs-mcp
     status: candidate
-    side_effects: outbound-http, audio-artefact
+    side_effects: [outbound-http, audio-artefact]
   - id: workflow.n8n
     path: capabilities/workflow/workflow-n8n.yaml
     runtime: n8n
-    status: enabled
-    side_effects: workflow-execution
+    status: staged
+    side_effects: [workflow-execution, declared-per-workflow]

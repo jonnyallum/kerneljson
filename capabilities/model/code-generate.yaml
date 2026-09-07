@@ -20,7 +20,7 @@ outputs:
     description: Map of proposed relative path to content (proposal only, no filesystem write)
   rationale:
     type: string
-side_effects: none
+side_effects: []
 permissions:
   - deepseek-api-key
 evidence_produced:

@@ -30,11 +30,17 @@ side_effects:
   - schema-migration
 permissions:
   - supabase-service-key
-  - jonny-signoff (for production schema DDL)
+  - human-approval-gate   # required for delete and all DDL until the split below lands
 evidence_produced:
   format: postgres_tx_id
   fields:
     - affected_rows
     - status
+    - transaction_id
 stateful: true
-status: enabled
+# STAGED, not enabled: the supabase MCP is STAGED (unverified) and there is no central
+# default-deny approval enforcement yet (see AUTHORITY_MAP conflict #7). A capability that
+# can DROP TABLE must not read as enabled before the runtime/policy is ready.
+# TARGET: split into database.insert / database.update / database.delete / database.migrate
+# so a routine insert and a DROP TABLE never share one authority envelope.
+status: staged
