@@ -1,0 +1,31 @@
+id: code.review
+implementation: model.invoke (deepseek-v4-pro) with a review recipe; findings independently re-verified
+runtime: deepseek-runtime
+inputs:
+  diff:
+    type: string
+    description: Unified diff or file set to review
+    required: true
+  ruleset:
+    type: string
+    description: Review dimensions (correctness, security, simplification, efficiency)
+    required: false
+outputs:
+  findings:
+    type: array
+    items: object
+    description: Structured findings (file, line, severity, summary)
+  verdict:
+    type: string
+    enum: [pass, changes_requested]
+side_effects: none
+permissions:
+  - deepseek-api-key
+evidence_produced:
+  format: structured_findings
+  fields:
+    - findings_count
+    - verdict
+    - model
+stateful: false
+status: staged

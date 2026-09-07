@@ -1,0 +1,44 @@
+id: shell.execute
+implementation: spawner/sandbox.py (execute_in_sandbox)
+runtime: gvisor-sandbox
+inputs:
+  command:
+    type: string
+    description: Shell command to execute inside Tier-1 gVisor isolation
+    required: true
+  stdin_data:
+    type: string
+    description: Structured JSON or string passed via stdin
+    required: false
+  timeout_seconds:
+    type: integer
+    description: Sandbox execution timeout
+    default: 60
+outputs:
+  stdout:
+    type: string
+  stderr:
+    type: string
+  exit_code:
+    type: integer
+  status:
+    type: string
+    enum: [completed, failed, timeout, denied]
+  runtime:
+    type: string
+    enum: [gvisor-runsc, local-fallback, none]
+  duration_ms:
+    type: integer
+side_effects:
+  - isolated-compute
+permissions:
+  - guardian-pre-gate
+evidence_produced:
+  format: structured_execution_receipt
+  fields:
+    - exit_code
+    - duration_ms
+    - runtime
+    - sha256_output_hash
+stateful: false
+status: enabled

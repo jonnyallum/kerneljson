@@ -1,0 +1,34 @@
+id: message.telegram
+implementation: conductor/mcp/server.py (telegram_send) / OpenClaw Gateway
+runtime: openclaw-gateway
+inputs:
+  channel_id:
+    type: string
+    description: Target Telegram chat or channel ID (e.g. 7955527114)
+    required: true
+  text:
+    type: string
+    description: Message content text
+    required: true
+  media_url:
+    type: string
+    description: Optional attachment URL
+    required: false
+outputs:
+  message_id:
+    type: string
+  sent_at:
+    type: string
+  status:
+    type: string
+side_effects:
+  - outbound-notification
+permissions:
+  - telegram-bot-token
+evidence_produced:
+  format: telegram_delivery_receipt
+  fields:
+    - message_id
+    - sent_at
+stateful: false
+status: enabled

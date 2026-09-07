@@ -1,0 +1,45 @@
+id: memory.write
+implementation: conductor/mcp/server.py (brain_log_learning) + spawner/telemetry.py (log_worker_learning)
+runtime: conductor-mcp
+inputs:
+  learning:
+    type: string
+    description: Distilled takeaway text
+    required: true
+  category:
+    type: string
+    description: Topic domain (e.g. audit, tooling, protocol)
+    required: false
+    default: "general"
+  source_agent:
+    type: string
+    description: Handle or worker ID that produced the learning
+    required: true
+  task_id:
+    type: string
+    description: Provenance task ID
+    required: false
+  verified:
+    type: boolean
+    description: Primary verification flag (unverified by default until audited)
+    required: false
+    default: false
+outputs:
+  learning_id:
+    type: string
+    description: UUID of created record
+  status:
+    type: string
+  created_at:
+    type: string
+side_effects:
+  - write-db (Supabase learnings table)
+permissions:
+  - brain-write
+evidence_produced:
+  format: supabase_row_uuid
+  fields:
+    - learning_id
+    - created_at
+stateful: true
+status: enabled

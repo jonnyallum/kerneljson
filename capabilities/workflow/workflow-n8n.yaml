@@ -1,0 +1,29 @@
+id: workflow.n8n
+implementation: n8n (Docker :5678, https://n8n.jonnyai.co.uk) workflow trigger via webhook / REST API
+runtime: n8n
+inputs:
+  workflow_id:
+    type: string
+    required: true
+  payload:
+    type: object
+    required: false
+outputs:
+  execution_id:
+    type: string
+  status:
+    type: string
+    enum: [success, error, running]
+side_effects:
+  - workflow-execution
+permissions:
+  - n8n-api-key
+evidence_produced:
+  format: n8n_execution_receipt
+  fields:
+    - execution_id
+    - status
+stateful: true
+# 17 workflows restored/live on the VM. Downstream side effects vary per workflow (email, http, db)
+# and are governed by the workflow definition, not this capability wrapper.
+status: enabled

@@ -1,0 +1,39 @@
+id: message.email
+implementation: Resend MCP (resend-mcp-jaios) / Hostinger Email API (hostinger-email MCP)
+runtime: resend-mcp
+inputs:
+  to:
+    type: array
+    items: string
+    required: true
+  subject:
+    type: string
+    required: true
+  body:
+    type: string
+    required: true
+  from:
+    type: string
+    required: false
+outputs:
+  message_id:
+    type: string
+  sent_at:
+    type: string
+  status:
+    type: string
+side_effects:
+  - outbound-notification
+  - outbound-email
+permissions:
+  - resend-api-key
+  - human-approval-gate
+evidence_produced:
+  format: email_delivery_receipt
+  fields:
+    - message_id
+    - sent_at
+stateful: false
+# Client/third-party sends are a Jonny gate (GROUND_RULES). Hostinger-email endpoint moved to OAuth
+# and the static token path is contested; Resend shared key path is the live route.
+status: staged

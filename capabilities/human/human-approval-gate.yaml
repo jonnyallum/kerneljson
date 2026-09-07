@@ -1,0 +1,42 @@
+id: human.approval_gate
+implementation: conductor/mcp/server.py (cloud_escalate) + Boardroom DSP TYPE=GATE
+runtime: boardroom-dsp
+inputs:
+  action_type:
+    type: string
+    enum: [financial_spend, production_deploy, client_message, contract_signoff]
+    required: true
+  description:
+    type: string
+    description: Full summary of proposed action and rationale
+    required: true
+  cost_estimate_gbp:
+    type: number
+    required: false
+    default: 0.00
+  target_signoff:
+    type: string
+    enum: [jonny, keith]
+    default: "jonny"
+outputs:
+  decision:
+    type: string
+    enum: [approved, rejected, amended]
+  approved_by:
+    type: string
+  signed_at:
+    type: string
+  reasons:
+    type: string
+side_effects:
+  - graph-interrupt
+permissions:
+  - human-principal-authority
+evidence_produced:
+  format: signed_dsp_receipt
+  fields:
+    - decision
+    - approved_by
+    - signed_at
+stateful: true
+status: enabled

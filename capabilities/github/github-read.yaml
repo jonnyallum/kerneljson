@@ -1,0 +1,39 @@
+id: github.read
+implementation: conductor/mcp/server.py (github_repo_summary)
+runtime: conductor-mcp
+inputs:
+  repo:
+    type: string
+    description: GitHub repository slug (e.g. owner/repo)
+    required: true
+  branch:
+    type: string
+    description: Branch or reference name
+    required: false
+    default: "main"
+  pr_number:
+    type: integer
+    description: Optional Pull Request number
+    required: false
+outputs:
+  repo_name:
+    type: string
+  default_branch:
+    type: string
+  commit_sha:
+    type: string
+  open_prs:
+    type: integer
+  tree_summary:
+    type: object
+side_effects: none
+permissions:
+  - github-token-read
+evidence_produced:
+  format: structured_json
+  fields:
+    - commit_sha
+    - open_prs
+    - repo_name
+stateful: false
+status: enabled
