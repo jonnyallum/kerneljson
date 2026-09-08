@@ -1,10 +1,46 @@
 # KernelJSON Codex Handoff
 
+## FINAL CANONICAL INSTRUCTION
+
+KernelJSON now has a final agreed architecture and roadmap.
+
+Before implementation, read and obey in this order:
+
+1. `ARCHITECTURE.md`
+2. `FINAL_PLAN.md`
+3. `STATE.yaml`
+4. `BUILD_PLAN.md`
+5. this `CODEX_HANDOFF.md`
+6. accepted ADRs under `docs/adr/`
+7. `docs/cognition/COGNITIVE_ARCHITECTURE.md`
+8. `docs/cognition/IMPLEMENTATION_PLAN.md`
+9. the cognitive hardening specs listed below
+
+Cognitive hardening specs are binding for the phases in which they become relevant:
+
+- `docs/cognition/COGNITIVE_SECURITY.md`
+- `docs/cognition/IDENTITY_GOVERNANCE.md`
+- `docs/cognition/CONTEXT_ASSEMBLY.md`
+- `docs/cognition/COGNITIVE_CONFLICT_PROTOCOL.md`
+- `docs/cognition/IDENTITY_BACKUP_AND_RECOVERY.md`
+
+Accepted cognitive ADRs include:
+
+- `docs/adr/0005-persistent-identities-ephemeral-workers.md`
+- `docs/adr/0006-core-team-and-dynamic-specialists.md`
+- `docs/adr/0007-canonical-context-and-memory-boundaries.md`
+
+The architecture is considered frozen as of 2026-09-09. Do not continue speculative redesign while implementing. If a material conflict or missing architectural prerequisite is discovered, document it and stop that architectural branch. A material change requires an explicit human decision and an ADR where accepted boundaries would change.
+
+`STATE.yaml` remains the source of truth for verified implementation. Design documents do not mean a feature exists.
+
+The current implementation scope remains **Phases 1-3 only**. The final cognitive plan does not authorise premature implementation of Primary Identity, Core Team, specialists, memory retrieval, Mission Control or autonomous workflows.
+
 ## Mission
 
 Build KernelJSON as a durable cognitive execution platform, not an agent roster.
 
-The architectural constitution in `ARCHITECTURE.md` is binding unless a new ADR explicitly supersedes it.
+The architectural constitution in `ARCHITECTURE.md` is binding unless a new accepted ADR explicitly supersedes it.
 
 The six primitives are:
 
@@ -15,7 +51,12 @@ The six primitives are:
 5. POLICY
 6. EVIDENCE
 
-The core rule is: **a Task is the primitive; an agent is only one possible execution strategy.**
+The core rule is: **a Task is the primitive; an agent/worker is only one possible execution strategy.**
+
+The accepted cognitive rules are:
+
+- **Identities may persist. Cognitive executions do not.**
+- **Models may reason over canonical state. They do not become canonical state.**
 
 ## Current verified state
 
@@ -25,20 +66,9 @@ The core rule is: **a Task is the primitive; an agent is only one possible execu
 - Supabase CLI has been linked locally by Jonny.
 - jVault project: `kerneljson`
 - Phase 0 bootstrap is complete.
-- No production business logic exists yet.
-- Typed contract files exist as placeholders.
-- No migrations have been applied by this project yet.
-- No Restate workflow has been implemented yet.
-
-Read these first:
-
-1. `ARCHITECTURE.md`
-2. `STATE.yaml`
-3. `BUILD_PLAN.md`
-4. `docs/adr/0001-tasks-not-agents.md`
-5. `docs/adr/0002-durable-execution.md`
-6. `docs/adr/0003-evidence-bound-completion.md`
-7. `docs/adr/0004-jvault.md`
+- No production business logic exists yet unless `STATE.yaml` has subsequently been truthfully updated by verified implementation.
+- Typed contract files began as placeholders.
+- No migration or Restate workflow should be assumed complete unless verified in repository state/tests.
 
 ## Non-negotiable constraints
 
@@ -46,26 +76,34 @@ Do NOT introduce:
 
 - persistent cognitive agent rosters
 - personas as infrastructure
-- LangGraph, CrewAI or AutoGen
-- Redis, RabbitMQ or Kafka without proven need
+- LangGraph, CrewAI or AutoGen as the runtime architecture
+- Redis, RabbitMQ or Kafka without proven need and an ADR where architecture changes
 - Supabase as a job queue
-- secrets in Git or committed `.env` files
-- direct DeepSeek imports throughout the codebase
+- secrets in Git, committed `.env` files, prompts or durable memory
+- direct DeepSeek/provider imports throughout the codebase
 - LLM-controlled permissions
 - side-effect success without evidence
-- self-modification without evaluation
-- large speculative frameworks or abstractions not required by the current phase
+- provider conversation state as canonical identity/memory
+- durable memory without provenance
+- self-modification without evaluation/governance
+- automatic authority growth from reflection or good performance
+- swarms without a simpler baseline/evaluation case
+- silent broadening of the current phase
+- large speculative frameworks or abstractions not required by the current acceptance tests
+
+Prefer deterministic mechanisms where they solve the problem reliably.
 
 Prefer the smallest typed implementation that satisfies the acceptance tests.
 
 ## Canonical ownership
 
 - Restate: durable execution, retries, waits, recovery, workflow scheduling
-- Supabase/PostgreSQL: persisted state, provenance, task projections, evidence, outcomes, memory and world model
-- Git: source, schemas, migrations, policies, evals and ADRs
+- Supabase/PostgreSQL: persisted state, provenance, task projections, evidence, outcomes, memory, identity state and world model when their phases arrive
+- Git: source, schemas, migrations, policies, evals, constitutional docs and ADRs
 - jVault `kerneljson`: credentials and runtime secrets
 - Object storage: large artefacts
 - Mission Control: later human visibility/control surface
+- Model providers: replaceable cognitive engines, never canonical state owners
 
 ## Immediate implementation slice
 
@@ -86,6 +124,8 @@ Required contracts:
 - `PrincipalRef`
 - `TenantRef`
 - `TraceRef`
+
+These are execution identity references, not the later Primary Identity cognitive model.
 
 ## IntentEnvelope
 
@@ -161,6 +201,8 @@ Step kind must support at least:
 - WAIT_FOR_EVENT
 - SCHEDULE
 - SUBWORKFLOW
+
+`AGENT_LOOP` is an execution kind. It does not authorise a separate persistent agent scheduler/roster.
 
 ## TaskEvent
 
@@ -305,6 +347,8 @@ Tables:
 - tenant_memberships
 - channels
 
+Do not prematurely add the later cognitive Primary Identity schema during this slice.
+
 ## 002 task ledger
 
 Tables:
@@ -342,6 +386,8 @@ Tables:
 
 Memory must support provenance fields from day one. Add vector support only if the extension is available and the migration remains clean/reversible.
 
+Do not implement the full cognitive memory promotion/context-assembly system yet.
+
 ## 004 world model
 
 Tables:
@@ -364,12 +410,13 @@ Requirements:
 - no embedded secrets
 - add SQL tests/checks where practical
 - produce exact dry-run commands for Jonny before remote push
+- preserve tenant/principal scoping needed by later cognitive boundaries
 
 ---
 
 # PHASE 3 - Restate durable TaskWorkflow
 
-Implement the smallest possible durable workflow that proves the runtime semantics before any LLM integration.
+Implement the smallest possible durable workflow that proves runtime semantics before any LLM integration.
 
 Desired conceptual API:
 
@@ -403,6 +450,8 @@ Use idempotency keys wherever a retried step could otherwise duplicate a write.
 
 Do not integrate DeepSeek in Phase 3.
 
+Do not implement cognitive workers, Primary Identity or Core Team in Phase 3.
+
 ---
 
 # Test strategy
@@ -435,27 +484,31 @@ Do not declare completion until all of the following are true:
 - restart/resume behaviour demonstrated by an automated or reproducible test
 - evidence is required for completion
 - no DeepSeek integration yet
+- no cognitive-worker implementation yet
+- no Primary Identity/Core Team implementation yet
 - no channel integrations yet
 - no Mission Control UI yet
-- no memory retrieval yet
+- no memory retrieval/context assembly yet
 - no autonomous workflows yet
-- `STATE.yaml` updated truthfully
+- `STATE.yaml` updated truthfully for verified implementation only
 - README/build docs updated only to reflect what actually exists
 
 # Working discipline
 
-Before changing architecture, add an ADR.
+Before changing accepted architecture, add an ADR and obtain the required human decision.
 
 Do not silently broaden scope.
 
 When discovering a missing prerequisite:
 
 1. record the gap
-2. implement the minimum safe prerequisite if it is in scope
+2. implement the minimum safe prerequisite if it is genuinely in scope and does not change accepted architecture
 3. otherwise leave a clear blocker
 
 Never report a feature as built because a file or placeholder exists. Report only verified behaviour.
 
+Do not modify `FINAL_PLAN.md` simply to make implementation easier.
+
 # First action
 
-Inspect the repository and toolchain, then provide a concise implementation plan based on the actual files before editing. After that, implement the Phase 1-3 slice end-to-end, testing as you go.
+Inspect the repository, `FINAL_PLAN.md`, `STATE.yaml` and toolchain, then provide a concise implementation plan based on the actual files before editing. After that, implement the Phase 1-3 slice end-to-end, testing as you go.
