@@ -1,5 +1,7 @@
 # KernelJSON Codex Handoff
 
+**Superseded current-state handoff:** [PHASE_15_HANDOFF.md](PHASE_15_HANDOFF.md), audited 2026-09-09. The checkpoint and original instructions below are historical. Phase 15 now has saved full-suite evidence: 224 passed, zero failed/skipped.
+
 ## Saved checkpoint — 2026-09-05
 
 Current branch: `codex/phase-15`. Phases 1–14 are implemented with the

@@ -10,7 +10,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "start:worker": "tsx services/kernel/src/index.ts",
-    "test:unit": "vitest run tests/contracts.test.ts tests/kernel.test.ts tests/models.test.ts tests/capabilities.test.ts tests/policy.test.ts tests/verification.test.ts tests/evaluation.test.ts",
+    "test:unit": "vitest run tests/contracts.test.ts tests/kernel.test.ts tests/models.test.ts tests/capabilities.test.ts tests/policy.test.ts tests/verification.test.ts tests/evaluation.test.ts tests/routing.test.ts tests/schedule.test.ts",
     "test:db": "vitest run tests/database.test.ts",
     "test:model:live": "tsx services/kernel/src/model-smoke.ts",
     "test:recovery": "vitest run tests/recovery.test.ts",

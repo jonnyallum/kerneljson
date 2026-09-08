@@ -1,4 +1,6 @@
-# Phase 15 checkpoint
+# Phase 15 checkpoint (historical)
+
+Superseded by [the final preservation handoff](../../PHASE_15_HANDOFF.md). The three items listed below were completed before the preservation freeze; the saved full suite passed 224 tests. Production-readiness and lint gaps remain documented in the final handoff.
 
 Saved on 2026-09-05 at the user's request. This phase remains in progress.
 

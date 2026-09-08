@@ -15,3 +15,4 @@ supabase/.temp/
 restate-data/
 otel-data/
 artifacts/local/
+kernel json env.txt

@@ -97,3 +97,7 @@ Mission Control provides task status, outcomes, evidence and event history, with
 ## Phase 14 implementation
 
 Adaptive routing ranks evaluated, policy-allowed capability versions using evidenced task measurements and explicit limits. See [the Phase 14 runbook](docs/runbooks/phase-14.md). Six routing tests and two targeted recovery checks passed. Production routes remain explicitly configured.
+
+## Phase 15 implementation
+
+Opt-in bounded schedules execute fixed uppercase child tasks with durable waits, current authorization checks and cooperative cancellation. Parent completion independently verifies child capability/policy evidence and acceptance criteria. Two database rejection tests and four real recovery tests passed in the saved 224-test full suite. No production scheduler is enabled. The fresh preservation run also passed all 224 tests; typecheck/build passed and catalogue validation passed. See [the final handoff](PHASE_15_HANDOFF.md) for current checks, exact source/test inventory and deployment gaps.

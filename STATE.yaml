@@ -1,10 +1,10 @@
 project: kerneljson
-state: phase_15_in_progress
+state: phase_15_implemented_locally_verified
 version: 0.0.1
 
 github:
   repository: jonnyallum/kerneljson
-  branch: codex/phase-15
+  branch: docs/kerneljson-prep-track-c
 
 supabase:
   project_ref: banqdzddfganzfhckdps
@@ -61,12 +61,12 @@ implemented:
   - executable_golden_evaluations_and_promotion_gate
   - authenticated_task_mission_control_and_human_controls
   - bounded_evaluated_adaptive_capability_routing
-  - bounded_scheduled_task_checkpoint
+  - bounded_scheduled_tasks_with_independent_child_evidence_verification
 
 current_phase: 15
 
 next:
-  - phase_15_bounded_autonomous_workflows_then_full_validation
+  - production_readiness_review_separately_scoped
   - remote_migration_review_still_pending
 
 blocked: []
@@ -170,26 +170,25 @@ phase14_validation:
 
 phase15_validation:
   unit_tests: 4_passed
-  recovery_tests: 4_passed_23_unrelated_tests_not_selected
+  database_negative_tests: 2_passed
+  recovery_tests: 4_passed_in_full_27_test_recovery_suite
   typecheck: passed
   build: passed
-  recovery_report: artifacts/local/phase15-recovery-tests.json
-  phase_complete: false
-  checkpoint_reason: user_requested_save_and_push
-  remaining:
-    - strengthen_child_evidence_verification
-    - negative_database_test_for_missing_child_evidence
-    - full_combined_regression_suite_and_final_review
+  report: artifacts/local/phase15-full-tests.json
+  combined_suite: 224_passed_0_failed_0_skipped
+  phase_complete: true
+  production_ready: false
+  remaining_implementation_in_documented_scope: []
 
 validation:
-  scope: last_full_suite_before_phases_10_to_15
-  unit_tests: 138_passed
+  scope: preservation_full_suite_phases_1_to_15
+  unit_tests: 155_passed
   typecheck: passed
   sql: 17_tests_passed_on_local_postgres_17_6
-  recovery: 20_tests_passed_with_restate_1_7_9
-  combined_suite: 175_passed_0_failed_0_skipped
-  verified_at: 2026-09-05
-  report: artifacts/local/phase9-tests.json
+  recovery: 27_tests_passed_with_restate_1_7_9
+  combined_suite: 224_passed_0_failed_0_skipped
+  verified_at: 2026-09-09
+  report: artifacts/local/handoff-tests.json
   build: passed
   remote_migrations_pushed: false
   remote_dry_run_executed: false
@@ -198,4 +197,21 @@ validation:
 
 handoff:
   target: codex
-  file: CODEX_HANDOFF.md
+  file: PHASE_15_HANDOFF.md
+
+preservation_audit:
+  date: 2026-09-09
+  typecheck: passed
+  build: passed
+  lint: failed_command_not_configured
+  catalogue_validation: 23_manifests_passed
+  fresh_full_suite: 224_passed_0_failed_0_skipped
+  fresh_report: artifacts/local/handoff-tests.json
+  report_sha256: 3edf1715d45d1074f51b0d10ec68a3b39c21c82f9f033a4512d612c9e8eeac63
+  duration_seconds: 242.43
+  runtime_after_checks: stopped
+  worker_exit_code_after_checks: 255
+  hosted_migration_history: not_queried
+  remote_changes_performed_by_this_session: false
+  implementation_frozen: true
+  staged_diff_check: whitespace_warnings_in_preserved_reference_files

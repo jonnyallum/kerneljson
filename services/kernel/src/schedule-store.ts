@@ -12,6 +12,8 @@ import {
 import { capabilityDigest } from "../../../packages/capabilities/src/index.js";
 import { compileIntent, stableId } from "./compiler/index.js";
 import { scheduleCriterion } from "./schedule.js";
+import { readVerificationBundle } from "./verification-store.js";
+import { verifyTaskEvidence } from "./verification.js";
 export async function finishSchedule(
   pool: pg.Pool,
   taskId: string,
@@ -87,19 +89,26 @@ export async function finishSchedule(
         }) !== capabilityDigest(child)
       )
         throw new Error("Child task definition mismatch");
-      const refs = await db.query<{ id: string }>(
-        "select id from evidence where task_id=$1 and id=any($2::uuid[])",
-        [child.id, outcome.evidenceRefs],
-      );
+      // Recheck immutable completed child evidence without changing its state.
+      const bundle = await readVerificationBundle(db, child);
+      const report = verifyTaskEvidence({
+        ...bundle,
+        task: { ...child, status: "VERIFYING" },
+      });
       if (
         outcome.status !== "COMPLETED" ||
         outcome.taskId !== child.id ||
-        refs.rowCount !== outcome.evidenceRefs.length ||
-        !outcome.acceptanceResults.every(
-          (r) => r.passed && child.acceptanceCriteria.includes(r.criterion),
-        )
+        report.status !== "PASSED" ||
+        capabilityDigest([...outcome.evidenceRefs].sort()) !==
+          capabilityDigest([...report.evidenceRefs].sort()) ||
+        outcome.summary !== child.objective.trim().toUpperCase()
       )
         throw new Error("Child has no verified evidence");
+      assertCompletion(
+        { ...child, status: "VERIFYING" },
+        outcome,
+        bundle.evidence.map((e) => Evidence.parse(e)),
+      );
       children.push({
         taskId: child.id,
         outcomeDigest: capabilityDigest(outcome),

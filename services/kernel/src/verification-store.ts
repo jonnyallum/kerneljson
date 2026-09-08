@@ -44,34 +44,7 @@ export class VerificationStore {
       const task = Task.parse(tasks.rows[0]?.contract);
       if (task.status !== "VERIFYING")
         throw new Error("Task must be VERIFYING before final verification");
-      const steps = await db.query<{ contract: unknown }>(
-        "select contract from task_steps where task_id=$1 order by id for share",
-        [taskId],
-      );
-      const runs = await db.query<VerificationBundle["runs"][number]>(
-        `select r.id,r.task_id as "taskId",r.step_id as "stepId",r.result,r.evidence_id as "evidenceId",v.contract as descriptor from capability_runs r join capability_versions v on v.id=r.capability_version_id where r.task_id=$1`,
-        [taskId],
-      );
-      const evidence = await db.query<{ record: unknown }>(
-        `select jsonb_strip_nulls(jsonb_build_object('id',id,'taskId',task_id,'stepId',step_id,'type',type,'source',source,'ref',ref,'uri',uri,'digest',digest,'capturedAt',to_char(captured_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),'metadata',metadata)) as record from evidence where task_id=$1`,
-        [taskId],
-      );
-      const policies = await db.query<VerificationBundle["policies"][number]>(
-        `select id,task_id as "taskId",actor_id as "actorId",trace_id as "traceId",payload from task_events where task_id=$1 and type='POLICY_CHECKED' and event_key like 'policy-approval:%'`,
-        [taskId],
-      );
-      const approvals = await db.query<VerificationBundle["approvals"][number]>(
-        `select id,status,evidence_id as "evidenceId" from approvals where task_id=$1 for share`,
-        [taskId],
-      );
-      const report = verifyTaskEvidence({
-        task,
-        steps: steps.rows.map((s) => s.contract),
-        runs: runs.rows,
-        evidence: evidence.rows.map((e) => e.record),
-        policies: policies.rows,
-        approvals: approvals.rows,
-      });
+      const report = verifyTaskEvidence(await readVerificationBundle(db, task));
       const passed = report.status === "PASSED";
       const outcome = Outcome.parse({
         taskId,
@@ -142,4 +115,40 @@ export class VerificationStore {
       db.release();
     }
   }
+}
+
+/** Read persisted evidence within the caller's transaction and task lock. */
+export async function readVerificationBundle(
+  db: pg.PoolClient,
+  task: Task,
+): Promise<VerificationBundle> {
+  const taskId = task.id;
+  const steps = await db.query<{ contract: unknown }>(
+    "select contract from task_steps where task_id=$1 order by id for share",
+    [taskId],
+  );
+  const runs = await db.query<VerificationBundle["runs"][number]>(
+    `select r.id,r.task_id as "taskId",r.step_id as "stepId",r.result,r.evidence_id as "evidenceId",v.contract as descriptor from capability_runs r join capability_versions v on v.id=r.capability_version_id where r.task_id=$1`,
+    [taskId],
+  );
+  const evidence = await db.query<{ record: unknown }>(
+    `select jsonb_strip_nulls(jsonb_build_object('id',id,'taskId',task_id,'stepId',step_id,'type',type,'source',source,'ref',ref,'uri',uri,'digest',digest,'capturedAt',to_char(captured_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),'metadata',metadata)) as record from evidence where task_id=$1`,
+    [taskId],
+  );
+  const policies = await db.query<VerificationBundle["policies"][number]>(
+    `select id,task_id as "taskId",actor_id as "actorId",trace_id as "traceId",payload from task_events where task_id=$1 and type='POLICY_CHECKED' and event_key like 'policy-approval:%'`,
+    [taskId],
+  );
+  const approvals = await db.query<VerificationBundle["approvals"][number]>(
+    `select id,status,evidence_id as "evidenceId" from approvals where task_id=$1 for share`,
+    [taskId],
+  );
+  return {
+    task,
+    steps: steps.rows.map((s) => s.contract),
+    runs: runs.rows,
+    evidence: evidence.rows.map((e) => e.record),
+    policies: policies.rows,
+    approvals: approvals.rows,
+  };
 }
