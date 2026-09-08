@@ -28,4 +28,19 @@ An agent is only one possible execution strategy.
 - Object storage: large artefacts
 - Mission Control: human visibility and control
 
-See ARCHITECTURE.md.
+## Cognitive architecture
+
+KernelJSON supports a continuing Primary Identity, a small stable Core Team, and dynamic ephemeral specialists without turning agents into infrastructure primitives.
+
+Canonical cognition documents:
+
+- `docs/cognition/COGNITIVE_ARCHITECTURE.md`
+- `docs/cognition/IMPLEMENTATION_PLAN.md`
+- `docs/adr/0005-persistent-identities-ephemeral-workers.md`
+- `docs/adr/0006-core-team-and-dynamic-specialists.md`
+
+The governing distinction is:
+
+> Identities may persist. Cognitive executions do not.
+
+See `ARCHITECTURE.md` for the kernel constitution.
