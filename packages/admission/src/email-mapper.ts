@@ -3,6 +3,7 @@ import {
   type AttachmentManifestItem,
 } from "./estate-admission-request.js";
 import {
+  DEFAULT_MAILBOX_NAMESPACE,
   ESTATE_EMAIL_PRINCIPAL,
   ESTATE_TENANT_ID,
   estateDiscoveryKey,
@@ -18,6 +19,8 @@ export interface EmailEnvelopeInput {
   messageId?: string | null;
   id?: string | null;
   uid?: string | number | null;
+  /** Non-secret mailbox namespace for hostinger-uid fallback (default Hostinger resource id). */
+  mailbox_namespace?: string | null;
   from?: string | null;
   from_addr?: string | null;
   subject?: string | null;
@@ -34,7 +37,6 @@ export interface EmailEnvelopeInput {
     mime_type?: string;
     contentType?: string;
   }> | null;
-  /** Optional triage overlay (from triage_email_message shape). */
   triage?: {
     needs_action?: boolean;
     urgency?: string;
@@ -46,7 +48,6 @@ export interface EmailEnvelopeInput {
     }>;
     subject?: string;
   } | null;
-  /** Optional legacy public.actions snapshot for compare. */
   legacy_action?: {
     id?: string;
     source?: string;
@@ -91,19 +92,24 @@ function threadRefs(input: EmailEnvelopeInput): string[] | undefined {
 /**
  * Map an email envelope (+ optional triage overlay) → EstateAdmissionRequest.
  * Never invents credentials; never accepts estate-supplied taskId.
+ * Option C: message_id = normalised; raw_message_id retained as provenance.
  */
 export function mapEmailToEstateAdmissionRequest(
   input: EmailEnvelopeInput,
 ): EstateAdmissionRequest {
+  const rawMessageId = pickMessageId(input);
+  const mailboxNamespace =
+    (input.mailbox_namespace && String(input.mailbox_namespace).trim()) ||
+    DEFAULT_MAILBOX_NAMESPACE;
   const emailSourceEventId = normalizeEmailSourceEventId(
-    pickMessageId(input),
+    rawMessageId,
     input.uid,
+    mailboxNamespace,
   );
   const discoveryKey = estateDiscoveryKey(emailSourceEventId);
   const triage = input.triage ?? undefined;
   const subjectRaw = triage?.subject ?? input.subject ?? "";
   const objective = scrubObjectiveSubject(subjectRaw);
-  // Never retain raw secret-looking subject text in OPTIONAL subject field.
   const subject = objective.replace(/^Email triage:\s*/i, "");
   const sender = (input.from_addr ?? input.from ?? "").trim() || undefined;
   const triple = triage?.action_triples?.[0];
@@ -127,10 +133,9 @@ export function mapEmailToEstateAdmissionRequest(
     principal_ref: ESTATE_EMAIL_PRINCIPAL,
     ...(input.correlation_id ? { correlation_id: input.correlation_id } : {}),
     ...(sender ? { sender } : {}),
-    ...(subject
-      ? { subject: String(subject).slice(0, 998) }
-      : {}),
+    ...(subject ? { subject: String(subject).slice(0, 998) } : {}),
     message_id: emailSourceEventId,
+    ...(rawMessageId ? { raw_message_id: String(rawMessageId).slice(0, 512) } : {}),
     ...(threads ? { thread_refs: threads } : {}),
     ...(attachments ? { attachments_manifest: attachments } : {}),
     compatibility: {

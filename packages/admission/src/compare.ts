@@ -24,6 +24,10 @@ export interface CompareResult {
 
 /**
  * Classify shadow admission vs optional legacy action + prior shadow replay state.
+ *
+ * Phase 4.1 Option C: when normalised live source_ref equals estate_discovery_key,
+ * raw bracket/case/whitespace provenance variance is NOT ACCEPTABLE_DIFFERENCE —
+ * it is MATCH (intentional collapse).
  */
 export function classifyShadowAdmission(input: {
   request: EstateAdmissionRequest;
@@ -114,11 +118,15 @@ export function classifyShadowAdmission(input: {
       };
     }
     if (legacy.source_ref !== simulated.estate_discovery_key) {
+      // Option C qualified: brackets/case/whitespace are provenance-only.
       reasons.push(
-        "Live source_ref used raw Message-ID brackets; Track B normalises (ACCEPTABLE_DIFFERENCE)",
+        "Option C: raw live source_ref provenance collapsed to normalised discovery key (MATCH)",
       );
-      diff.live_source_ref = legacy.source_ref;
+      diff.live_source_ref_raw = legacy.source_ref;
       diff.normalised_discovery_key = simulated.estate_discovery_key;
+      if (request.raw_message_id) {
+        diff.raw_message_id = request.raw_message_id;
+      }
     }
   }
 
@@ -126,7 +134,6 @@ export function classifyShadowAdmission(input: {
     const legacyNorm = legacy.title.trim();
     const objNorm = simulated.objective.trim();
     if (legacyNorm !== objNorm) {
-      // Scrubbing may redacted secrets — treat as material if base subject diverges wildly
       const legacyCore = legacyNorm.replace(/^Email triage:\s*/i, "");
       const objCore = objNorm.replace(/^Email triage:\s*/i, "");
       if (legacyCore !== objCore && !objCore.includes("[REDACTED_SECRET]")) {
@@ -139,6 +146,7 @@ export function classifyShadowAdmission(input: {
       reasons.push("Objective scrubbing differs from legacy title (secret redaction)");
       diff.legacy_title = legacy.title;
       diff.objective = simulated.objective;
+      return { verdict: "ACCEPTABLE_DIFFERENCE", reasons, diff };
     }
   }
 
@@ -152,12 +160,6 @@ export function classifyShadowAdmission(input: {
     };
   }
 
-  if (
-    reasons.some((r) => r.includes("ACCEPTABLE_DIFFERENCE") || r.includes("normalises"))
-  ) {
-    return { verdict: "ACCEPTABLE_DIFFERENCE", reasons, diff };
-  }
-
   return {
     verdict: "MATCH",
     reasons: reasons.length
@@ -167,6 +169,13 @@ export function classifyShadowAdmission(input: {
       estate_discovery_key: simulated.estate_discovery_key,
       would_be_task_id: simulated.wouldBeTaskId,
       ...(legacy.id ? { legacy_action_id: legacy.id } : {}),
+      ...(diff.live_source_ref_raw
+        ? {
+            live_source_ref_raw: diff.live_source_ref_raw,
+            normalised_discovery_key: diff.normalised_discovery_key,
+            ...(diff.raw_message_id ? { raw_message_id: diff.raw_message_id } : {}),
+          }
+        : {}),
     },
   };
 }

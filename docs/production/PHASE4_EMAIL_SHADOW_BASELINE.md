@@ -125,3 +125,9 @@ Live shadow soak: read-only observe live email envelopes → adapter → `spawne
 - Evidence: `artifacts/local/email-shadow-soak/`
 - Verdict: **READY WITH CONDITIONS** — no authority transfer
 - DB `spawner_shadow_*` persist deferred (local JSONL used)
+
+---
+
+## Phase 4.1 update
+
+See docs/production/PHASE41_EMAIL_SHADOW_QUALIFICATION.md — Option C identity, canonical spawner_shadow_* persistence, live 18/18 MATCH, **EMAIL SHADOW FULLY QUALIFIED** (authority not transferred).

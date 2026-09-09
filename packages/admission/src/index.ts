@@ -8,6 +8,7 @@ export {
   SHADOW_EMAIL_RECIPE,
   SHADOW_CONSUMER,
   LIVE_INGEST_SUFFIX,
+  DEFAULT_MAILBOX_NAMESPACE,
   ESTATE_TENANT_ID,
   ESTATE_EMAIL_PRINCIPAL,
   normalizeEmailSourceEventId,
@@ -36,10 +37,13 @@ export {
 export {
   InMemoryShadowStore,
   StubSqlShadowStore,
+  PostgrestShadowStore,
+  createPostgrestShadowStoreFromEnv,
   type ShadowStoreWriter,
   type ShadowPersistInput,
   type ShadowRunRecord,
   type ShadowCompareRecord,
+  type PostgrestShadowStoreOptions,
 } from "./shadow-store.js";
 export {
   CompatibilityAdmissionAdapter,

@@ -29,6 +29,9 @@ export type CompatibilityHints = z.infer<typeof CompatibilityHints>;
  * Estate → KJ Compatibility Admission Adapter input.
  * Field classes per Phase 2.6 / 2.7 — REQUIRED / OPTIONAL / COMPATIBILITY-ONLY.
  * FORBIDDEN: credentials, tokens, raw secret bodies, estate-supplied taskId.
+ *
+ * message_id = Option C normalised email_source_event_id
+ * raw_message_id = provenance as received (brackets/case preserved when present)
  */
 export const EstateAdmissionRequest = z
   .strictObject({
@@ -50,6 +53,7 @@ export const EstateAdmissionRequest = z
     sender: z.string().trim().min(1).max(512).optional(),
     subject: z.string().trim().max(998).optional(),
     message_id: z.string().trim().min(1).max(512).optional(),
+    raw_message_id: z.string().trim().min(1).max(512).optional(),
     thread_refs: z.array(z.string().trim().min(1).max(512)).max(32).optional(),
     attachments_manifest: z.array(AttachmentManifestItem).max(64).optional(),
     compatibility: CompatibilityHints.optional(),
@@ -57,8 +61,8 @@ export const EstateAdmissionRequest = z
   .superRefine((req, ctx) => {
     const forbidden = JSON.stringify(req);
     if (
-      /sk-[A-Za-z0-9_\-]{20,}/.test(forbidden) ||
-      /Bearer\s+[A-Za-z0-9._\-]{20,}/i.test(forbidden) ||
+      /sk-[A-Za-z0-9_-]{20,}/.test(forbidden) ||
+      /Bearer\s+[A-Za-z0-9._-]{20,}/i.test(forbidden) ||
       /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(forbidden)
     ) {
       ctx.addIssue({

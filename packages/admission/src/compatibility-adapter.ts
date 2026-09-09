@@ -45,6 +45,10 @@ function inputHash(value: unknown): string {
  * simulates would-be taskId via KJ stableId/digest helpers, classifies vs legacy,
  * persists to shadow store. NEVER calls Spawner / NewSystemRuntimeAdapter /
  * public.actions / mark-seen / task_admissions writers.
+ *
+ * Failure isolation: mapping/sim/store errors surface as ERROR results or
+ * rejected promises. Callers MUST catch. Production email-ingest-live.py does
+ * NOT import this adapter (isolation by non-coupling).
  */
 export class CompatibilityAdmissionAdapter {
   private readonly priorByKey = new Map<string, PriorShadowAdmission>();
@@ -99,6 +103,8 @@ export class CompatibilityAdmissionAdapter {
         recipe: simulated.recipe,
         objective: simulated.objective,
         needs_action: request.compatibility?.needs_action ?? null,
+        raw_message_id: request.raw_message_id ?? null,
+        message_id: request.message_id ?? null,
         verdict: compared.verdict,
         spawner_invoked: false,
         new_system_runtime_invoked: false,
@@ -135,29 +141,63 @@ export class CompatibilityAdmissionAdapter {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const persisted = await this.store.persist({
-        input_hash: inputHash({ error: message }),
-        status: "error",
-        latency_ms: Math.max(1, Date.now() - started),
-        output: {
+      try {
+        const persisted = await this.store.persist({
+          input_hash: inputHash({ error: message }),
+          status: "error",
+          latency_ms: Math.max(1, Date.now() - started),
+          output: {
+            mode: "shadow",
+            error: message,
+            spawner_invoked: false,
+            new_system_runtime_invoked: false,
+            public_actions_written: false,
+            task_admissions_written: false,
+          },
+          verdict: "ERROR",
+          diff: { error: message, consumer: SHADOW_CONSUMER },
+        });
+        return {
           mode: "shadow",
+          consumer: SHADOW_CONSUMER,
+          verdict: "ERROR",
+          reasons: [message],
+          diff: { error: message },
+          run_id: persisted.run.id,
+          compare_id: persisted.compare.id,
           error: message,
-          spawner_invoked: false,
-          new_system_runtime_invoked: false,
-          public_actions_written: false,
-          task_admissions_written: false,
-        },
-        verdict: "ERROR",
-        diff: { error: message, consumer: SHADOW_CONSUMER },
-      });
+        };
+      } catch (storeError) {
+        // Store unavailable during error path — surface to caller (must catch).
+        const storeMsg =
+          storeError instanceof Error ? storeError.message : String(storeError);
+        throw new Error(
+          `shadow admission failed (${message}); store also unavailable (${storeMsg})`,
+          { cause: storeError },
+        );
+      }
+    }
+  }
+
+  /**
+   * Never-throw wrapper for optional side-path callers.
+   * Production cron MUST NOT import this adapter; if a future side-path does,
+   * use this so shadow failure cannot break email ingest.
+   */
+  async admitEmailShadowSafe(
+    envelope: EmailEnvelopeInput,
+    legacy?: LegacyActionSnapshot | null,
+  ): Promise<ShadowAdmissionResult> {
+    try {
+      return await this.admitEmailShadow(envelope, legacy);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         mode: "shadow",
         consumer: SHADOW_CONSUMER,
         verdict: "ERROR",
         reasons: [message],
-        diff: { error: message },
-        run_id: persisted.run.id,
-        compare_id: persisted.compare.id,
+        diff: { error: message, isolated: true },
         error: message,
       };
     }
