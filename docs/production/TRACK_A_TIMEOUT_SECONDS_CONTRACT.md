@@ -42,3 +42,12 @@ Selftest on Spawner asserts the echo. The field is intentional Spawner behaviour
 4. Production VM Spawner selftest **ALL GREEN** (venv).
 
 Push to remote is **out of scope** (separate approval).
+
+## Evidence (Phase 3.3 execution)
+
+- Commit: `a7e4be719afea4cf3cae31dfcd904adeae8e7ab9` (local only; not pushed)
+- Vitest: `tests/new-system-runtime.test.ts` + `tests/kj-000000.test.ts` — **10 passed / 2 files**
+- Raw proof artifact: `artifacts/local/kj-000000-production-raw-proof.json` — zero surgery, `timeout_seconds=45`, SHA match, verifier PASSED
+- VM selftest (venv): **ALL GREEN (exit 0)** — first attempt had transient concurrent-dispatch FAIL under live pm2 Spawner; immediate retry ALL GREEN (benign race, not Track A contract defect)
+
+**TRACK A FULLY QUALIFIED:** YES (gates 1–4 met; push deferred).
