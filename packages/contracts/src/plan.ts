@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { Id } from "./common.js";
 import { IntentEnvelope } from "./intent.js";
-export const RecipeId = z.enum(["uppercase-reverse/v1", "uppercase/v1"]);
+export const RecipeId = z.enum(["uppercase-reverse/v1", "uppercase/v1", "repository-read/v1"]);
 export type RecipeId = z.infer<typeof RecipeId>;
 export const KernelSubmission = z.strictObject({
   intent: IntentEnvelope,
@@ -11,7 +11,7 @@ export type KernelSubmission = z.infer<typeof KernelSubmission>;
 export const PlanStep = z.strictObject({
   id: Id,
   taskId: Id,
-  operation: z.enum(["UPPERCASE", "REVERSE", "WAIT_FOR_EVENT"]),
+  operation: z.enum(["UPPERCASE", "REVERSE", "WAIT_FOR_EVENT", "REPOSITORY_READ"]),
   dependencies: z.array(Id),
   input: z.discriminatedUnion("source", [
     z.strictObject({ source: z.literal("TASK_OBJECTIVE") }),

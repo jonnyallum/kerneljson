@@ -21,7 +21,9 @@ export function planTask(raw: Task, recipe: RecipeId): ExecutionPlan {
   const operations: PlanStep["operation"][] =
     recipe === "uppercase-reverse/v1"
       ? ["UPPERCASE", "WAIT_FOR_EVENT", "REVERSE"]
-      : ["UPPERCASE"];
+      : recipe === "repository-read/v1"
+        ? ["REPOSITORY_READ"]
+        : ["UPPERCASE"];
   const steps: PlanStep[] = operations.map((operation, index) => ({
     id: stableId([task.id, recipe, index]),
     taskId: task.id,
@@ -65,10 +67,15 @@ export function projectStep(step: PlanStep): TaskStep {
     kind:
       step.operation === "WAIT_FOR_EVENT"
         ? "WAIT_FOR_EVENT"
-        : "DETERMINISTIC_FUNCTION",
+        : step.operation === "REPOSITORY_READ"
+          ? "SANDBOX_EXEC"
+          : "DETERMINISTIC_FUNCTION",
     status: "READY",
     dependencies: step.dependencies,
-    requiredCapabilities: [],
+    requiredCapabilities:
+      step.operation === "REPOSITORY_READ"
+        ? [{ id: "60000000-0000-4000-8000-000000000003", version: "1.0.0" }]
+        : [],
     riskClass: "LOW",
     retryPolicy: { maxAttempts: 1, backoffMs: 0 },
     input: step.input,
