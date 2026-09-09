@@ -30,7 +30,7 @@ it("KJ-000000 binary proof via mocked Spawner HTTP (repository.read)", async () 
   });
 
   const plan = planRepositoryRead(repositoryReadInvocation.taskId);
-  let status: "PASSED" | "FAILED" = "FAILED";
+  let status: "PASSED" | "FAILED";
   let packed: Awaited<ReturnType<typeof adapter.invoke>> | undefined;
   let verification: ReturnType<typeof verifyRepositoryRead> | undefined;
   let error: string | undefined;
