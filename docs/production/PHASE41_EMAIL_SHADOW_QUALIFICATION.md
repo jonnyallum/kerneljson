@@ -7,6 +7,8 @@
 **Mode:** SHADOW ONLY — zero authority transfer  
 **Consumer:** kj-admission-shadow-email  
 **Identity:** Option C (RFC-style Message-ID normalisation)  
+**Merge SHA:** 753fe27b23c6692103ea79f8cf35af57916aaa2e (into docs/kerneljson-prep-track-c)
+**Branch HEAD commit:** 88a21c6
 **Desktop report:** C:\\Users\\jonny\\Desktop\\PHASE41_EMAIL_SHADOW_QUALIFICATION.md  
 **Repo copy:** docs/production/PHASE41_EMAIL_SHADOW_QUALIFICATION.md
 
@@ -17,6 +19,8 @@
 # EMAIL SHADOW FULLY QUALIFIED
 
 Authority **not** transferred.
+
+Merged via PR #4 @ 753fe27b23c6692103ea79f8cf35af57916aaa2e.
 
 ---
 
