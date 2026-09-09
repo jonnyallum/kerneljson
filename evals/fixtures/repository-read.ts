@@ -1,8 +1,12 @@
+import { createHash } from "node:crypto";
 import { CapabilityInvocation } from "../../packages/contracts/src/index.js";
 import { REPOSITORY_READ } from "../../packages/capabilities/src/index.js";
 
-export const CONTENT_SHA256 =
-  "a".repeat(64);
+export const FIXTURE_BYTES = Buffer.from("KJ-000000 fixture notes\n", "utf8");
+
+export const CONTENT_SHA256 = createHash("sha256")
+  .update(FIXTURE_BYTES)
+  .digest("hex");
 
 export const repositoryReadInvocation = CapabilityInvocation.parse({
   runId: "60000000-0000-4000-8000-000000000020",
@@ -26,8 +30,8 @@ export function mockSpawnerStructuredOutput(overrides: Record<string, unknown> =
     capability: "repository.read",
     project_name: "kerneljson",
     target_path: "C:/Users/jonny/Desktop/kerneljson/NOTES.md",
-    bytes_read: 128,
-    lines_read: 8,
+    bytes_read: FIXTURE_BYTES.length,
+    lines_read: 1,
     content_sha256: CONTENT_SHA256,
     output_hash: CONTENT_SHA256.slice(0, 12),
     skills_mounted: ["repository.read"],
