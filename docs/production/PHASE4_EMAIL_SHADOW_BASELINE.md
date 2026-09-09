@@ -113,3 +113,15 @@ Same key + different request digest → `CONFLICT`.
 ## Next (not this pass)
 
 Live shadow soak: read-only observe live email envelopes → adapter → `spawner_shadow_*` compare; still zero `public.actions` / mark-seen / Spawner authority.
+
+---
+
+## Live soak status (09 September 2026)
+
+**Completed:** live read-only shadow soak against all available `public.actions` `source=email-triage` rows (**N=18**).
+
+- Results: `docs/production/PHASE4_EMAIL_SHADOW_SOAK_2026-09-09.md`
+- Desktop report: `C:\Users\jonny\Desktop\PHASE4_EMAIL_SHADOW_REPORT_2026-09-09.md`
+- Evidence: `artifacts/local/email-shadow-soak/`
+- Verdict: **READY WITH CONDITIONS** — no authority transfer
+- DB `spawner_shadow_*` persist deferred (local JSONL used)
