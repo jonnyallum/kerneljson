@@ -7,6 +7,8 @@ import { digest, CRITERION } from "../deterministic.js";
 export const criteria: Record<RecipeId, string> = {
   "uppercase-reverse/v1": CRITERION,
   "uppercase/v1": "Output equals uppercase(trim(objective))",
+  "repository-read/v1":
+    "repository.read returns content_sha256 (64 hex) with mutations_detected=0",
 };
 // A content-derived UUID in a kernel-specific namespace. Pure across processes.
 export function stableId(value: unknown): string {

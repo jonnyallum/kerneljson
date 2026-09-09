@@ -65,18 +65,47 @@ interface Entry {
 }
 
 /** Trusted code registry, not a plugin loader or an execution sandbox. */
+export type CapabilityRegistryMode = "builtin" | "runtime";
+
 export class CapabilityRegistry {
   readonly #entries = new Map<string, Entry>();
-  constructor(definitions: readonly CapabilityDefinition[]) {
+  readonly mode: CapabilityRegistryMode;
+  constructor(
+    definitions: readonly CapabilityDefinition[],
+    mode: CapabilityRegistryMode = "builtin",
+  ) {
+    this.mode = mode;
     for (const definition of definitions) {
       const metadata = Capability.parse(definition.metadata);
-      if (
-        metadata.implementationType !== "DETERMINISTIC" ||
-        metadata.riskClass !== "LOW" ||
-        metadata.permissions.length ||
-        !/^\d+\.\d+\.\d+$/.test(metadata.version)
-      )
+      if (!/^\d+\.\d+\.\d+$/.test(metadata.version))
         throw new CapabilityError("UNSUPPORTED_CAPABILITY");
+      if (mode === "builtin") {
+        if (
+          metadata.implementationType !== "DETERMINISTIC" ||
+          metadata.riskClass !== "LOW" ||
+          metadata.permissions.length
+        )
+          throw new CapabilityError("UNSUPPORTED_CAPABILITY");
+      } else {
+        // Runtime registry may include Spawner-backed caps with declared permissions.
+        // Builtins remain strict when registered through createBuiltinRegistry().
+        const allowed = new Set([
+          "DETERMINISTIC",
+          "API",
+          "SANDBOX",
+          "SKILL",
+        ]);
+        if (
+          !allowed.has(metadata.implementationType) ||
+          (metadata.riskClass !== "LOW" && metadata.riskClass !== "MEDIUM")
+        )
+          throw new CapabilityError("UNSUPPORTED_CAPABILITY");
+        if (
+          metadata.implementationType === "DETERMINISTIC" &&
+          metadata.permissions.length
+        )
+          throw new CapabilityError("UNSUPPORTED_CAPABILITY");
+      }
       const key = `${metadata.id}@${metadata.version}`;
       if (this.#entries.has(key))
         throw new CapabilityError("DUPLICATE_VERSION");
@@ -219,23 +248,101 @@ function definition(
       verify(TextInput.parse(input).text, TextOutput.parse(output).text),
   };
 }
+export const RepositoryReadInput = z.strictObject({
+  repo_path: z.string().min(1).max(4096).optional(),
+  target_file: z.string().min(1).max(1024).optional(),
+  timeout_seconds: z.number().int().positive().max(3600).optional(),
+});
+export const RepositoryReadOutput = z.strictObject({
+  capability: z.literal("repository.read"),
+  project_name: z.string().min(1).max(512),
+  target_path: z.string().min(1).max(4096),
+  bytes_read: z.number().int().nonnegative(),
+  lines_read: z.number().int().nonnegative(),
+  content_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  output_hash: z.string().min(1).max(64),
+  skills_mounted: z.array(z.string().min(1)).max(64),
+  mutations_detected: z.literal(0),
+  summary: z.string().min(1).max(2048),
+});
+/** Stable UUID for catalogue id repository.read (Track A / KJ-000000). */
+export const REPOSITORY_READ = Object.freeze({
+  id: "60000000-0000-4000-8000-000000000003",
+  version: "1.0.0",
+});
+function repositoryReadDefinition(): CapabilityDefinition {
+  return {
+    metadata: Capability.parse({
+      ...REPOSITORY_READ,
+      description: "Read-only repository/file analysis via new-system Spawner",
+      inputSchemaRef: "kerneljson:repository-read-input/v1",
+      outputSchemaRef: "kerneljson:repository-read-output/v1",
+      riskClass: "LOW",
+      permissions: ["read-only-filesystem"],
+      implementationType: "SANDBOX",
+      verificationRequirements: ["content-sha256/v1", "mutations-zero/v1"],
+    }),
+    inputSchema: RepositoryReadInput as z.ZodType<JsonValue>,
+    outputSchema: RepositoryReadOutput as z.ZodType<JsonValue>,
+    execute: () => {
+      throw new CapabilityError("IMPLEMENTATION_FAILED");
+    },
+    verify: (_input, output) => {
+      const parsed = RepositoryReadOutput.safeParse(output);
+      return (
+        parsed.success &&
+        parsed.data.mutations_detected === 0 &&
+        /^[a-f0-9]{64}$/.test(parsed.data.content_sha256)
+      );
+    },
+  };
+}
+/** Builtins only — still refuses permissioned/external registration. */
 export function createBuiltinRegistry(): CapabilityRegistry {
-  return new CapabilityRegistry([
-    definition(
-      UPPERCASE,
-      "Trim and uppercase text",
-      (text) => text.trim().toUpperCase(),
-      (input, output) => output === input.trim().toUpperCase(),
-    ),
-    definition(
-      REVERSE,
-      "Reverse Unicode code points",
-      (text) => Array.from(text).reverse().join(""),
-      (input, output) => {
-        let expected = "";
-        for (const point of input) expected = point + expected;
-        return output === expected;
-      },
-    ),
-  ]);
+  return new CapabilityRegistry(
+    [
+      definition(
+        UPPERCASE,
+        "Trim and uppercase text",
+        (text) => text.trim().toUpperCase(),
+        (input, output) => output === input.trim().toUpperCase(),
+      ),
+      definition(
+        REVERSE,
+        "Reverse Unicode code points",
+        (text) => Array.from(text).reverse().join(""),
+        (input, output) => {
+          let expected = "";
+          for (const point of input) expected = point + expected;
+          return output === expected;
+        },
+      ),
+    ],
+    "builtin",
+  );
+}
+/** Runtime registry: builtins + Spawner-backed repository.read. */
+export function createRuntimeRegistry(): CapabilityRegistry {
+  return new CapabilityRegistry(
+    [
+      definition(
+        UPPERCASE,
+        "Trim and uppercase text",
+        (text) => text.trim().toUpperCase(),
+        (input, output) => output === input.trim().toUpperCase(),
+      ),
+      definition(
+        REVERSE,
+        "Reverse Unicode code points",
+        (text) => Array.from(text).reverse().join(""),
+        (input, output) => {
+          let expected = "";
+          for (const point of input) expected = point + expected;
+          return output === expected;
+        },
+      ),
+      repositoryReadDefinition(),
+    ],
+    "runtime",
+  );
 }
