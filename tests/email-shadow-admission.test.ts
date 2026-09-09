@@ -7,6 +7,7 @@ import {
   EstateAdmissionRequest,
   InMemoryShadowStore,
   PostgrestShadowStore,
+  CANARY_CONSUMER,
   SHADOW_CONSUMER,
   StubSqlShadowStore,
   deriveIdempotencyKey,
@@ -511,7 +512,8 @@ describe("Phase 4.1 — shadow persistence (canonical tables)", () => {
           JSON.stringify([
             {
               id: runId,
-              consumer: SHADOW_CONSUMER,
+              consumer: CANARY_CONSUMER,
+  SHADOW_CONSUMER,
               input_hash: "abc",
               spawner_output: {},
               latency_ms: 1,
@@ -528,7 +530,8 @@ describe("Phase 4.1 — shadow persistence (canonical tables)", () => {
           JSON.stringify([
             {
               id: runId,
-              consumer: SHADOW_CONSUMER,
+              consumer: CANARY_CONSUMER,
+  SHADOW_CONSUMER,
               input_hash: "abc",
               spawner_output: {},
               latency_ms: 2,
@@ -551,7 +554,8 @@ describe("Phase 4.1 — shadow persistence (canonical tables)", () => {
             {
               id: "33333333-3333-4333-8333-333333333333",
               run_id: runId,
-              consumer: SHADOW_CONSUMER,
+              consumer: CANARY_CONSUMER,
+  SHADOW_CONSUMER,
               verdict: body.verdict,
               diff_jsonb: body.diff_jsonb,
               created_at: RECEIVED,
@@ -627,5 +631,41 @@ describe("Phase 4.1 — failure isolation", () => {
     expect(r.mode).toBe("shadow");
     expect(r.consumer).toBe(SHADOW_CONSUMER);
     expect(store.runs[0]?.spawner_output?.public_actions_written).toBe(false);
+  });
+});
+
+
+describe("Phase 5 canary admitEmailCanary (admission only)", () => {
+  it("ADMITTED then REPLAY with same taskId; never marks public_actions", async () => {
+    const store = new InMemoryShadowStore();
+    const adapter = new CompatibilityAdmissionAdapter(store);
+    const envelope = actionableClientEmail({
+      message_id: "<kerneljson-email-authority-canary@phase5.jonnyai.test>",
+      subject: "KERNELJSON EMAIL AUTHORITY CANARY",
+      triage: {
+        needs_action: true,
+        urgency: "normal",
+        label: "ops_canary",
+        client: null,
+        action_triples: [
+          {
+            source_ref:
+              "email:kerneljson-email-authority-canary@phase5.jonnyai.test",
+            assignee: "@keith",
+          },
+        ],
+        subject: "KERNELJSON EMAIL AUTHORITY CANARY",
+      },
+    });
+    const first = await adapter.admitEmailCanary(envelope);
+    expect(first.status).toBe("ADMITTED");
+    expect(first.taskId).toBe("3c509de0-fbd3-8b54-ade7-797094f828b7");
+    const second = await adapter.admitEmailCanary(envelope);
+    expect(second.status).toBe("REPLAY");
+    expect(second.taskId).toBe(first.taskId);
+    expect(store.runs.length).toBeGreaterThanOrEqual(1);
+    expect(store.runs[0]?.spawner_output?.public_actions_written).toBe(false);
+    expect(store.runs[0]?.spawner_output?.spawner_invoked).toBe(false);
+    expect(store.runs[0]?.spawner_output?.consumer).toBe(CANARY_CONSUMER);
   });
 });
