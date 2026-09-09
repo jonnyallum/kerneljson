@@ -51,3 +51,14 @@ Push to remote is **out of scope** (separate approval).
 - VM selftest (venv): **ALL GREEN (exit 0)** — first attempt had transient concurrent-dispatch FAIL under live pm2 Spawner; immediate retry ALL GREEN (benign race, not Track A contract defect)
 
 **TRACK A FULLY QUALIFIED:** YES (gates 1–4 met; push deferred).
+
+## Canonical merge (sealed)
+
+- **PR:** https://github.com/jonnyallum/kerneljson/pull/3
+- **Merge commit:** 426e234835aa57bfd37430daad22df33455b485c
+- **Branch:** docs/kerneljson-prep-track-c
+- **Implementation commits:** 7e4be7, dda4174
+- **Status:** TRACK A FULLY QUALIFIED + MERGED + CANONICAL
+- **Recorded (UTC):** 2026-09-09T21:47:09Z
+- KJ-000000 raw production proof (zero surgery) corresponds to this implementation (	imeout_seconds required in schemas).
+- Track B not started.
