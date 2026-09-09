@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { MissionControlStore } from "../apps/mission-control/src/store.js";
 import { createMissionControl } from "../apps/mission-control/src/server.js";
 import { createRestateControls } from "../apps/gateway/src/index.js";
+import { createGateway, createRestateDispatch, bearerAuthenticator } from "../apps/gateway/src/server.js";
 import { readRouteObservations } from "../services/kernel/src/routing.js";
 import { compileSchedule } from "../services/kernel/src/schedule.js";
 import {
@@ -334,7 +335,7 @@ it.each(["approve", "cancel"] as const)(
       },
       controls: createRestateControls(INGRESS, async (context) => ({
         authorization: `Bearer ${context.principal.id === reviewer ? "test-reviewer" : "test-owner"}`,
-      })),
+      }), { pool }),
     });
     try {
       const view = await store.task(
@@ -1184,3 +1185,55 @@ it.each([200, 429] as const)(
     ).toBe("RECEIVED");
   },
 );
+
+it("Gate 1 gateway retries a lost dispatch acknowledgement and resumes its bound workflow after restart", async()=>{
+ const context={tenantId:fixture.tenant.id,principal:fixture.principal};
+ const controls=createRestateControls(INGRESS,async()=>({'authorization':'Bearer test-owner'}),{pool});
+ const dispatch=createRestateDispatch(INGRESS,async()=>({'authorization':'Bearer test-owner'}));
+ let loseAck=true;
+ const server=createServer(createGateway({pool,releaseId:process.env['KERNELJSON_RELEASE_ID']??'unreleased-development',authenticate:bearerAuthenticator(async token=>token==='test-owner'?context:null),admit:async()=>true,controls,dispatch:async(...args)=>{const result=await dispatch(...args);if(loseAck){loseAck=false;throw new Error('Lost acknowledgement');}return result;}}));
+ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const address=server.address();if(!address||typeof address==='string')throw new Error('Missing server');
+ const base=`http://127.0.0.1:${address.port}`;
+ const headers={'authorization':'Bearer test-owner','content-type':'application/json','idempotency-key':randomUUID()};
+ const send=()=>fetch(`${base}/v1/tasks`,{method:'POST',headers,body:JSON.stringify({recipe:'uppercase-reverse/v1',objective:'gateway recovery'})});
+ try{
+  const first=await send();expect(first.status).toBe(202);
+  const receipt=await first.json() as {taskId:string;dispatch:string};expect(receipt.dispatch).toBe('UNRESOLVED');
+  await until(()=>pool.query<{contract:Task}>('select contract from tasks where id=$1',[receipt.taskId]),r=>r.rows[0]?.contract.status==='WAITING');
+  compose('kill','-s','SIGKILL','worker','restate');compose('start','restate','worker');
+  await until(()=>fetch(`${ADMIN}/health`),r=>r.ok);
+  const retry=await send();expect(retry.status).toBe(202);expect((await retry.json() as {taskId:string}).taskId).toBe(receipt.taskId);
+  const signal=()=>fetch(`${base}/v1/tasks/${receipt.taskId}/signal`,{method:'POST',headers,body:JSON.stringify({action:'RESUME'})});
+  expect([202,409]).toContain((await signal()).status);
+  const completed=await until(async()=>{const r=await fetch(`${base}/v1/tasks/${receipt.taskId}`,{headers});return r.json() as Promise<{status:string;outcome:unknown}>;},r=>r.status==='COMPLETED');
+  expect(Outcome.parse(completed.outcome).evidenceRefs.length).toBeGreaterThan(0);
+  expect((await signal()).status).toBe(409);
+  expect((await pool.query("select 1 from task_events where task_id=$1 and type='TASK_CREATED'",[receipt.taskId])).rowCount).toBe(1);
+  expect((await pool.query("select 1 from task_events where task_id=$1 and type='TASK_COMPLETED'",[receipt.taskId])).rowCount).toBe(1);
+  expect((await pool.query('select 1 from kernel_private.task_admissions where task_id=$1',[receipt.taskId])).rowCount).toBe(1);
+ }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+});
+
+it.each(['TaskWorkflow','KernelWorkflowV1'] as const)('Gate 1 cancellation resolves %s binding and retains a terminal result',async family=>{
+ const task=family==='TaskWorkflow'?await submit():await (async()=>{const submission={...kernelSubmission,intent:{...kernelSubmission.intent,id:randomUUID()}};const compiled=compileIntent(submission);await post(`/KernelWorkflowV1/${compiled.task.id}/run/send`,submission);return compiled.task;})();
+ await status(task,'WAITING');
+ const controls=createRestateControls(INGRESS,async()=>({}),{pool});
+ expect(['ACCEPTED','COMPLETED']).toContain((await controls.cancel({tenantId:task.tenant.id,principal:task.principal},task.id))?.status);
+ await status(task,'CANCELLED');
+ expect((await controls.cancel({tenantId:task.tenant.id,principal:task.principal},task.id))?.status).toBe('COMPLETED');
+ expect((await pool.query('select 1 from kernel_private.terminal_results where task_id=$1',[task.id])).rowCount).toBe(1);
+});
+
+it('Gate 1 permanent verification failure survives a failure-outcome commit acknowledgement crash',async()=>{
+ const task=await submit();await status(task,'WAITING');
+ compose('exec','-T','worker','touch','/tmp/kerneljson-corrupt-step-once','/tmp/kerneljson-failed-crash-once');
+ await client.signal(task.id);
+ await status(task,'FAILED');
+ await until(async()=>compose('ps','-a','--format','json','worker'),s=>s.includes('exited'));
+ compose('start','worker');
+ const response=await fetch(`${INGRESS}/restate/workflow/TaskWorkflow/${task.id}/attach`,{signal:AbortSignal.timeout(30000)});
+ expect(response.ok).toBe(true);expect(Outcome.parse(await response.json()).status).toBe('FAILED');
+ expect((await pool.query("select 1 from task_events where task_id=$1 and type='TASK_COMPLETED'",[task.id])).rowCount).toBe(0);
+ expect((await pool.query("select 1 from task_events where task_id=$1 and type='TASK_FAILED'",[task.id])).rowCount).toBe(1);
+});

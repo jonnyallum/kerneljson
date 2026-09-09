@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { assertResolvedEffects } from "./terminal.js";
 import type pg from "pg";
 import {
   Id,
@@ -14,6 +16,7 @@ import { compileIntent, stableId } from "./compiler/index.js";
 import { scheduleCriterion } from "./schedule.js";
 import { readVerificationBundle } from "./verification-store.js";
 import { verifyTaskEvidence } from "./verification.js";
+export class ScheduleVerificationError extends Error {}
 export async function finishSchedule(
   pool: pg.Pool,
   taskId: string,
@@ -42,6 +45,7 @@ export async function finishSchedule(
       [taskId],
     );
     const task = Task.parse(rows.rows[0]?.contract);
+    await assertResolvedEffects(db, taskId);
     const plans = await db.query<{ payload: { schedule: unknown } }>(
       "select payload from task_events where task_id=$1 and type='PLAN_COMPILED'",
       [taskId],
@@ -55,7 +59,7 @@ export async function finishSchedule(
       capabilityDigest(task.acceptanceCriteria) !==
         capabilityDigest([scheduleCriterion(plan.children.length)])
     )
-      throw new Error("Invalid schedule completion scope");
+      throw new ScheduleVerificationError("Invalid schedule completion scope");
     const steps = await db.query<{ contract: unknown }>(
       "select contract from task_steps where task_id=$1",
       [taskId],
@@ -68,7 +72,7 @@ export async function finishSchedule(
       step.status !== "COMPLETED" ||
       capabilityDigest(step.input) !== capabilityDigest(plan)
     )
-      throw new Error("Schedule step incomplete");
+      throw new ScheduleVerificationError("Schedule step incomplete");
     const children = [];
     for (const submission of plan.children) {
       const expected = Task.parse({
@@ -88,13 +92,13 @@ export async function finishSchedule(
           completedAt: child.completedAt,
         }) !== capabilityDigest(child)
       )
-        throw new Error("Child task definition mismatch");
+        throw new ScheduleVerificationError("Child task definition mismatch");
       // Recheck immutable completed child evidence without changing its state.
       const bundle = await readVerificationBundle(db, child);
       const report = verifyTaskEvidence({
         ...bundle,
         task: { ...child, status: "VERIFYING" },
-      });
+      }, outcome.completedAt);
       if (
         outcome.status !== "COMPLETED" ||
         outcome.taskId !== child.id ||
@@ -103,7 +107,7 @@ export async function finishSchedule(
           capabilityDigest([...report.evidenceRefs].sort()) ||
         outcome.summary !== child.objective.trim().toUpperCase()
       )
-        throw new Error("Child has no verified evidence");
+        throw new ScheduleVerificationError("Child has no verified evidence");
       assertCompletion(
         { ...child, status: "VERIFYING" },
         outcome,
@@ -182,6 +186,7 @@ export async function finishSchedule(
     return outcome;
   } catch (error) {
     await db.query("rollback");
+    if (error instanceof z.ZodError) throw new ScheduleVerificationError("Schedule verification failed");
     throw error;
   } finally {
     db.release();

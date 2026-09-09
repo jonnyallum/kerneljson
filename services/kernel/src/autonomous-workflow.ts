@@ -12,7 +12,7 @@ import {
 import { withTenant } from "../../../packages/identity/src/index.js";
 import { compileSchedule } from "./schedule.js";
 import { compileIntent, stableId } from "./compiler/index.js";
-import { finishSchedule } from "./schedule-store.js";
+import { finishSchedule, ScheduleVerificationError } from "./schedule-store.js";
 import type { Ledger } from "./ledger.js";
 import type { Authenticator } from "./policy-workflow.js";
 // Omit SDK jsonSchema?: object | undefined to preserve exactOptionalPropertyTypes.
@@ -31,6 +31,7 @@ export function createAutonomousWorkflow(
     afterOutcomeCommit?: () => Promise<void>;
   },
 ) {
+  ledger = ledger.forWorkflow("BoundedScheduleWorkflowV1");
   const config = ScheduleConfig.parse(options.config);
   const identity = async (
     ctx: restate.Context | restate.WorkflowSharedContext,
@@ -80,6 +81,7 @@ export function createAutonomousWorkflow(
               plan.intervalMs >= config.minIntervalMs &&
               plan.intervalMs <= config.maxIntervalMs &&
               (await options.authorizedNow(context)),
+            'schedule',
           ).catch((error) => {
             if (
               error instanceof Error &&
@@ -206,7 +208,13 @@ export function createAutonomousWorkflow(
           at: new Date(await ctx.date.now()).toISOString(),
         };
         const outcome = await ctx.run("verify-schedule", async () => {
-          const outcome = await finishSchedule(ledger.pool, task.id, audit);
+          let outcome: Outcome;
+            try { outcome = await finishSchedule(ledger.pool, task.id, audit); } catch (error) {
+              if (!(error instanceof ScheduleVerificationError)) throw error;
+              const failed = Task.parse({...task,status:"FAILED"});
+              outcome = Outcome.parse({taskId:task.id,status:"FAILED",acceptanceResults:task.acceptanceCriteria.map(criterion=>({criterion,passed:false,evidenceRefs:[]})),evidenceRefs:[],summary:"Schedule verification failed",completedAt:audit.at});
+              await ledger.write({key:"schedule-verification-failed",task:failed,outcome,event:{id:audit.eventId,taskId:task.id,type:"TASK_FAILED",actor:task.principal,traceId:task.traceId,occurredAt:audit.at,payload:{reason:"VERIFICATION_FAILED"}}});
+            }
           await options.afterOutcomeCommit?.();
           return outcome;
         });
@@ -237,6 +245,7 @@ export function createAutonomousWorkflow(
               ledger.pool,
               { tenantId: task.tenant.id, principal: actor },
               async () => true,
+              'schedule',
             ),
           );
           if (["COMPLETED", "FAILED", "CANCELLED"].includes(task.status))

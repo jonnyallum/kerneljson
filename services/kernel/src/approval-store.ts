@@ -1,3 +1,4 @@
+import { authorize, type Permission } from "../../../packages/identity/src/index.js";
 import pg from "pg";
 import {
   ApprovalAnswer,
@@ -19,13 +20,8 @@ type Ticket = {
 };
 export class ApprovalStore {
   constructor(private readonly pool: pg.Pool) {}
-  private async member(db: pg.PoolClient, tenant: string, actor: PrincipalRef) {
-    const rows = await db.query(
-      "select 1 from tenant_memberships m join principals p on p.id=m.principal_id where m.tenant_id=$1 and p.id=$2 and p.kind=$3",
-      [tenant, actor.id, actor.kind],
-    );
-    if (rows.rowCount !== 1)
-      throw new ApprovalError("Identity is not a member of the task tenant");
+  private async member(db:pg.PoolClient,tenant:string,actor:PrincipalRef,action:Permission="read") {
+    try { await authorize(db,{tenantId:tenant,principal:actor},action); } catch { throw new ApprovalError("Identity is not an authorized member of the task tenant"); }
   }
   async record(
     evaluation: PolicyEvaluation,
@@ -82,9 +78,9 @@ export class ApprovalStore {
           capabilityDigest([request.capability])
       )
         throw new ApprovalError("Policy does not match persisted task step");
-      await this.member(db, task.tenant.id, task.principal);
+      await this.member(db, task.tenant.id, task.principal, "submit");
       if (e.decision.decision === "APPROVAL_REQUIRED") {
-        await this.member(db, task.tenant.id, e.approver!);
+        await this.member(db, task.tenant.id, e.approver!, "approve");
         await db.query(
           "insert into approvals(id,task_id,step_id,requested_from,requested_at,status) values($1,$2,$3,$4,$5,'PENDING')",
           [
@@ -213,7 +209,7 @@ export class ApprovalStore {
           (action !== "CANCEL" && scopeDigest !== e.scopeDigest)
         )
           throw new ApprovalError("Approval identity or scope mismatch");
-        await this.member(db, e.scope.tenantId, actor);
+        await this.member(db, e.scope.tenantId, actor, action === "CANCEL" ? "cancel" : "approve");
       }
       if (resolution.status !== "PENDING") {
         await db.query("commit");

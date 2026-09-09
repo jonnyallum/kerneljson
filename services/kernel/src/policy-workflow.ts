@@ -29,6 +29,7 @@ export function createPolicyWorkflow(
   configuredRules: PolicyRules,
   authenticate: Authenticator,
 ) {
+  ledger = ledger.forWorkflow("PolicyCapabilityWorkflowV1");
   const rules = PolicyRules.parse(configuredRules),
     registry = createBuiltinRegistry();
   const approvals = new ApprovalStore(ledger.pool),

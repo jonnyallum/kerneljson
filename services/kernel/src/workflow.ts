@@ -26,6 +26,7 @@ function parse<T>(schema: { parse(value: unknown): T }, value: unknown): T {
   }
 }
 export function createTaskWorkflow(ledger: Ledger) {
+  ledger = ledger.forWorkflow("TaskWorkflow");
   const decide = async (ctx: restate.WorkflowSharedContext, signal: Signal) => {
     const promise = ctx.promise<Signal>("decision");
     if (!(await promise.peek())) {
@@ -75,10 +76,12 @@ export function createTaskWorkflow(ledger: Ledger) {
                 : {}),
             },
           });
-          await ctx.run(key, () =>
-            ledger.write({ key, task, event, ...extra }),
-          );
+          const result = status === "COMPLETED"
+            ? await ctx.run(key, () => ledger.finish({ key, task, event, ...extra }))
+            : await ctx.run(key, () => ledger.write({ key, task, event, ...extra }));
+          if(result) task = Task.parse({...task,status:result.status});
           ctx.set("status", task.status);
+          return result;
         };
         await emit("create", "TASK_CREATED", "RECEIVED");
         await emit("compile", "PLAN_COMPILED", "COMPILED");
@@ -169,8 +172,7 @@ export function createTaskWorkflow(ledger: Ledger) {
           summary: output,
           completedAt: await now(),
         });
-        await emit("complete", "TASK_COMPLETED", "COMPLETED", { outcome });
-        return outcome;
+        return await emit("complete", "TASK_COMPLETED", "COMPLETED", { outcome }) ?? outcome;
       },
       status: async (ctx: restate.WorkflowSharedContext) =>
         ctx.run("read-projection", () => ledger.status(ctx.key)),

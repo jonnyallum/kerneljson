@@ -101,3 +101,11 @@ Adaptive routing ranks evaluated, policy-allowed capability versions using evide
 ## Phase 15 implementation
 
 Opt-in bounded schedules execute fixed uppercase child tasks with durable waits, current authorization checks and cooperative cancellation. Parent completion independently verifies child capability/policy evidence and acceptance criteria. Two database rejection tests and four real recovery tests passed in the saved 224-test full suite. No production scheduler is enabled. The fresh preservation run also passed all 224 tests; typecheck/build passed and catalogue validation passed. See [the final handoff](PHASE_15_HANDOFF.md) for current checks, exact source/test inventory and deployment gaps.
+
+## Post-Phase-15 qualification
+
+Gate 1 adds reproducible CI and ESLint, trusted persisted execution bindings, membership revocation, workflow-aware controls and an authenticated gateway handler. Its public contract supports two deterministic recipes; authentication and admission are mandatory injected dependencies. It does not expose a public Restate endpoint or deploy infrastructure.
+
+Use Node 22.19.0 and pnpm 10.4.0. Run frozen install, `pnpm typecheck`, `pnpm lint`, the full `pnpm test` suite with Docker, and `pnpm build`. See [Gate 1 qualification](docs/production/QUALIFICATION_GATE_1.md) for exact commands, test evidence and deployment prerequisites. Earlier phase counts below/above are historical checkpoint counts.
+
+Gate 1 local qualification passed: **277 tests, including 31 recovery tests; zero failures or skips**, plus frozen install, typecheck, lint and build from a fresh source export. All 224 original tests and 27 original recovery tests remain. No remote migrations or deployment were performed.

@@ -11,7 +11,15 @@ import { createCapabilityProbe } from "./capability-probe.js";
 import { createPolicyProbe } from "./policy-probe.js";
 const ledger = new Ledger(
   new pg.Pool({ connectionString: process.env["DATABASE_URL"] }),
-  async (key) => {
+  async (key, taskId) => {
+    if(key==='verify' && existsSync('/tmp/kerneljson-corrupt-step-once')) {
+      unlinkSync('/tmp/kerneljson-corrupt-step-once');
+      const db=new pg.Pool({connectionString:process.env['DATABASE_URL']});
+      try { await db.query("update task_steps set contract=jsonb_set(contract,'{output}','\"forged\"') where task_id=$1 and contract->>'kind'='DETERMINISTIC_FUNCTION'",[taskId]); } finally { await db.end(); }
+    }
+    if(key==='complete:verification-failed' && existsSync('/tmp/kerneljson-failed-crash-once')) {
+      unlinkSync('/tmp/kerneljson-failed-crash-once');process.exit(137);
+    }
     if (
       (key === "b-complete" ||
         (key.startsWith("step:") && key.endsWith(":complete"))) &&

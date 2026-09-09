@@ -1,8 +1,11 @@
+import { readBinding } from "../../../services/kernel/src/execution-binding.js";
+import { readOutcome } from "../../../services/kernel/src/terminal.js";
+import { permissions } from "../../../packages/identity/src/index.js";
+import { ControlResult, type ControlAction } from "../../../packages/contracts/src/index.js";
 import type pg from "pg";
 import {
   Id,
   Task,
-  Outcome,
   PolicyEvaluation,
   type TenantContext,
 } from "../../../packages/contracts/src/index.js";
@@ -27,10 +30,10 @@ export class MissionControlStore {
       );
       if (!rows.rows[0]) return null;
       const task = Task.parse(rows.rows[0].contract);
-      const outcomes = await db.query<{ contract: unknown }>(
-        "select contract from outcomes where task_id=$1",
-        [taskId],
-      );
+      const outcome = await readOutcome(db,taskId);
+      const binding = await readBinding(db,taskId);
+      const controlRows = await db.query<{contract:unknown}>("select contract from kernel_private.control_events where task_id=$1 order by occurred_at desc,id desc limit 1",[taskId]);
+      const lastControl = controlRows.rows[0] ? ControlResult.parse(controlRows.rows[0].contract) : null;
       const events = await db.query<{
         id: string;
         type: string;
@@ -57,11 +60,11 @@ export class MissionControlStore {
         [taskId],
       );
       const pending = approvals.rows[0];
+      const membership = await db.query<{role:string}>("select role from tenant_memberships where tenant_id=$1 and principal_id=$2",[ctx.tenantId,ctx.principal.id]);
+      const controls: ControlAction[] = (binding?.controls ?? []).filter(action => !["COMPLETED","FAILED","CANCELLED"].includes(task.status) && (permissions[action] as readonly string[]).includes(membership.rows[0]?.role ?? "") && (action === "approve" ? !!pending && pending.requestedFrom === ctx.principal.id && ctx.principal.kind === "HUMAN" : task.principal.id === ctx.principal.id) && (action !== "signal" || task.status === "WAITING") && !(action === "cancel" && ["GoldenTaskWorkflowV1","PolicyCapabilityWorkflowV1","AutonomousChildTaskWorkflowV1"].includes(binding?.service ?? "") && task.status !== "APPROVAL_REQUIRED"));
       return {
-        task,
-        outcome: outcomes.rows[0]
-          ? Outcome.parse(outcomes.rows[0].contract)
-          : null,
+        task, binding, controls, lastControl,
+        outcome,
         events: events.rows,
         evidence: evidence.rows,
         pending: pending

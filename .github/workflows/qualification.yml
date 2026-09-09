@@ -1,0 +1,48 @@
+name: Kernel qualification
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CI: 'true'
+      KERNELJSON_RELEASE_ID: ${{ github.sha }}
+      DOCKER_CONTEXT: default
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - name: Disposable local regression suite
+        run: |
+          test -z "$DOCKER_HOST"
+          test "$(docker context show)" = default
+          mkdir -p artifacts/local
+          git rev-parse HEAD > artifacts/local/tested-commit.txt
+          pnpm test --reporter=default --reporter=json --outputFile=artifacts/local/tests.json
+          pnpm test:baseline
+      - run: pnpm build
+      - name: Retain test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qualification-${{ github.sha }}
+          path: artifacts/local/
+          retention-days: 14
+      - name: Dispose test stack
+        if: always()
+        run: docker --context default compose -f infrastructure/docker/validation.compose.yaml down --volumes
+# No environment, deployment credentials, vault access, remote Docker endpoint,
+# Supabase CLI, or production project is supplied to this job.

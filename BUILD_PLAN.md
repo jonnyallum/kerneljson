@@ -1,4 +1,4 @@
-﻿# KernelJSON Build Plan
+# KernelJSON Build Plan
 
 Preservation audit: 2026-09-09. Completion below refers to the bounded implementation in accepted ADRs and phase runbooks, verified by the saved 224-test full suite. It does not mean production deployment. See PHASE_15_HANDOFF.md for fresh checks and readiness gaps; lint is not configured.
 
@@ -49,3 +49,7 @@ Adaptive execution routing.
 
 ## Phase 15 — complete (documented scope verified)
 Autonomous workflows.
+
+## Post-Phase-15 production qualification
+
+Gate 1 is complete within its local qualification scope: A1, F1, G1, A3, A4, D1, E1. Fresh-source validation passed 277 tests, including 31 recovery tests, with all original 224/27 cases retained. Frozen install, typecheck, real lint and build passed. See `docs/production/QUALIFICATION_GATE_1.md` for evidence and remaining deployment prerequisites. The Phase 0-15 history above is preserved; its lint statement describes the checkpoint before Gate 1 introduced ESLint. No Phase 16 or Gate 2 work is authorized here.

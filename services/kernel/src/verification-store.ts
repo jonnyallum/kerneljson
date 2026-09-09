@@ -1,3 +1,4 @@
+import { assertResolvedEffects } from "./terminal.js";
 import pg from "pg";
 import { z } from "zod";
 import {
@@ -42,9 +43,10 @@ export class VerificationStore {
         [taskId],
       );
       const task = Task.parse(tasks.rows[0]?.contract);
+      await assertResolvedEffects(db, taskId);
       if (task.status !== "VERIFYING")
         throw new Error("Task must be VERIFYING before final verification");
-      const report = verifyTaskEvidence(await readVerificationBundle(db, task));
+      const report = verifyTaskEvidence(await readVerificationBundle(db, task), audit.at);
       const passed = report.status === "PASSED";
       const outcome = Outcome.parse({
         taskId,

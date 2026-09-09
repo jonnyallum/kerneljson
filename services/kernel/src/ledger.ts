@@ -1,3 +1,6 @@
+import { authorize } from "../../../packages/identity/src/index.js";
+import { assertResolvedEffects, readOutcome } from "./terminal.js";
+import { bindingFor, persistBinding, workflowTargets, type WorkflowName } from "./execution-binding.js";
 import pg from "pg";
 import {
   Task,
@@ -19,11 +22,34 @@ export interface Write {
   evidence?: Evidence;
   outcome?: Outcome;
 }
+export class CompletionVerificationError extends Error {}
+function verifyCompletion(check:()=>void):void {
+  try { check(); } catch { throw new CompletionVerificationError("Persisted completion verification failed"); }
+}
 export class Ledger {
   constructor(
     readonly pool: pg.Pool,
-    private readonly afterCommit?: (key: string) => Promise<void>,
+    private readonly afterCommit?: (key: string, taskId?: string) => Promise<void>,
+    private readonly workflow?: WorkflowName,
+    private readonly releaseId: string = process.env["KERNELJSON_RELEASE_ID"] ?? "unreleased-development",
   ) {}
+  forWorkflow(workflow: WorkflowName): Ledger {
+    return new Ledger(this.pool, this.afterCommit, workflow, this.releaseId);
+  }
+  /** Same durable operation as completion; infrastructure uncertainty remains retryable. */
+  async finish(input: Write): Promise<Outcome> {
+    const existing = await readOutcome(this.pool, input.task.id);
+    if (existing) return existing;
+    try {
+      await this.write(input);
+      return Outcome.parse(input.outcome);
+    } catch (error) {
+      if (!(error instanceof CompletionVerificationError)) throw error;
+      const outcome = Outcome.parse({taskId:input.task.id,status:"FAILED",acceptanceResults:input.task.acceptanceCriteria.map(criterion=>({criterion,passed:false,evidenceRefs:[]})),evidenceRefs:[],summary:"Persisted completion verification failed",completedAt:input.event.occurredAt});
+      await this.write({...input,key:input.key+":verification-failed",task:Task.parse({...input.task,status:"FAILED"}),outcome,event:TaskEvent.parse({...input.event,type:"TASK_FAILED",payload:{reason:"VERIFICATION_FAILED"}})});
+      return outcome;
+    }
+  }
   async write(input: Write): Promise<void> {
     const task = Task.parse(input.task),
       event = TaskEvent.parse(input.event);
@@ -81,6 +107,11 @@ export class Ledger {
         );
         if (actor.rows[0]?.kind !== task.principal.kind)
           throw new Error("Principal kind mismatch");
+        await authorize(db, {tenantId: task.tenant.id, principal: task.principal}, "submit");
+        if (this.workflow) {
+          const binding = await persistBinding(db, bindingFor(task, workflowTargets[this.workflow], this.releaseId));
+          if (binding.releaseId !== this.releaseId) throw new Error("Task requires its bound worker release");
+        }
         await db.query(
           "insert into public.tasks(id,tenant_id,principal_id,parent_task_id,trace_id,status,contract,created_at) values($1,$2,$3,$4,$5,$6,$7,$8)",
           [
@@ -107,7 +138,8 @@ export class Ledger {
         if (old.status !== task.status)
           assertTransition(old.status, task.status);
         if (task.status === "COMPLETED") {
-          if (!outcome) throw new Error("Completion requires an outcome");
+          await assertResolvedEffects(db, task.id);
+          if (!outcome) throw new CompletionVerificationError("Completion requires an outcome");
           const rows = await db.query<{ record: unknown; step: unknown }>(
             `select jsonb_build_object('id',e.id,'taskId',e.task_id,'stepId',e.step_id,'type',e.type,'source',e.source,'digest',e.digest,'capturedAt',to_char(e.captured_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),'metadata',e.metadata) as record, s.contract as step from public.evidence e join public.task_steps s on s.id=e.step_id and s.task_id=e.task_id where e.task_id=$1`,
             [task.id],
@@ -117,8 +149,12 @@ export class Ledger {
             [task.id],
           );
           const plan = planEvent.rows[0]?.payload.plan;
+          verifyCompletion(()=>{if (rows.rows.some(r => {
+            const captured = Date.parse(Evidence.parse(r.record).capturedAt);
+            return captured < Date.parse(task.createdAt) || captured > Date.parse(event.occurredAt);
+          })) throw new Error("Evidence freshness mismatch");});
           if (planEvent.rows.length !== 1)
-            throw new Error(
+            throw new CompletionVerificationError(
               "Completion requires exactly one authoritative compiled plan",
             );
           if (plan !== undefined) {
@@ -126,14 +162,15 @@ export class Ledger {
               "select contract from public.task_steps where task_id=$1",
               [task.id],
             );
-            verifyPlanCompletion(
+            verifyCompletion(()=>verifyPlanCompletion(
               old,
               outcome,
               plan,
               persisted.rows.map((r) => r.contract),
               rows.rows,
-            );
+            ));
           } else {
+            verifyCompletion(()=>{
             const checked = rows.rows.flatMap((r) => {
               const e = Evidence.parse(r.record),
                 s = TaskStep.parse(r.step);
@@ -147,9 +184,10 @@ export class Ledger {
                 : [];
             });
             assertCompletion(old, outcome, checked);
+            });
           }
           if (event.type !== "TASK_COMPLETED")
-            throw new Error("Completion event required");
+            throw new CompletionVerificationError("Completion event required");
         }
         await db.query(
           "update public.tasks set status=$2,contract=$3,updated_at=$4 where id=$1",
@@ -204,7 +242,7 @@ export class Ledger {
     } finally {
       db.release();
     }
-    await this.afterCommit?.(input.key);
+    await this.afterCommit?.(input.key,task.id);
   }
   async status(id: string): Promise<Task | null> {
     const result = await this.pool.query<{ contract: unknown }>(

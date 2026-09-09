@@ -1,5 +1,5 @@
 project: kerneljson
-state: phase_15_implemented_locally_verified
+state: production_qualification_gate_1_passed_locally
 version: 0.0.1
 
 github:
@@ -215,3 +215,36 @@ preservation_audit:
   remote_changes_performed_by_this_session: false
   implementation_frozen: true
   staged_diff_check: whitespace_warnings_in_preserved_reference_files
+
+production_qualification_gate_1:
+  status: passed_locally
+  baseline_commit: 705a1af5c9ac882d590dfa3ef37fd04f385f2f00
+  phase_15_baseline_protected: true
+  workstreams: [A1, F1, G1, A3, A4, D1, E1]
+  report: docs/production/QUALIFICATION_GATE_1.md
+  architecture_decision: docs/adr/0017-production-authority-and-execution-binding.md
+  remote_migrations_applied: false
+  deployments_performed: false
+  production_ready: false
+  gate_2_started: false
+  tested_tree: 6e3775b0bb6754b92a89a5d21c85dade98864d02
+  tested_release: gate1-6e3775b0bb6754b92a89a5d21c85dade98864d02
+  node: 22.19.0
+  pnpm: 10.4.0
+  fresh_source_validation: true
+  tests_total: 277
+  tests_passed: 277
+  tests_failed: 0
+  tests_skipped: 0
+  recovery_tests: 31
+  baseline_tests_retained: 224
+  baseline_recovery_retained: 27
+  new_tests: 53
+  typecheck: passed
+  lint: passed
+  build: passed
+  frozen_install: passed
+  local_migrations: passed
+  evidence: docs/production/gate-1-validation.json
+  unresolved_local_test_failures: []
+  github_ci_execution: not_yet_observed

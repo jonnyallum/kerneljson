@@ -13,6 +13,7 @@ import { resolveInput, executeFunction } from "./index.js";
 import { digest, Signal } from "../deterministic.js";
 import { Ledger, type Write } from "../ledger.js";
 export function createKernelWorkflow(ledger: Ledger) {
+  ledger = ledger.forWorkflow("KernelWorkflowV1");
   const decide = async (ctx: restate.WorkflowSharedContext, raw: unknown) => {
     const parsed = Signal.safeParse(raw);
     if (!parsed.success)
@@ -77,9 +78,9 @@ export function createKernelWorkflow(ledger: Ledger) {
             ...(extra.step ? { stepId: extra.step.id } : {}),
             payload: { status, ...payload },
           });
-          await ctx.run(key, () =>
-            ledger.write({ key, task, event, ...extra }),
-          );
+          return status === "COMPLETED"
+            ? ctx.run(key, () => ledger.finish({ key, task, event, ...extra }))
+            : ctx.run(key, () => ledger.write({ key, task, event, ...extra }));
         };
         await emit(
           "create",
@@ -195,8 +196,7 @@ export function createKernelWorkflow(ledger: Ledger) {
         });
         // The ledger independently verifies the immutable plan, every persisted step,
         // and the evidence inside the transaction that commits completion.
-        await emit("complete", "TASK_COMPLETED", "COMPLETED", { outcome });
-        return outcome;
+        return await emit("complete", "TASK_COMPLETED", "COMPLETED", { outcome }) ?? outcome;
       },
       status: async (ctx: restate.WorkflowSharedContext) =>
         ctx.run("status", () => ledger.status(ctx.key)),

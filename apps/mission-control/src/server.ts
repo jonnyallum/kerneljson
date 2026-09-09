@@ -1,3 +1,5 @@
+import type { ControlResult } from "../../../packages/contracts/src/index.js";
+import { Signal } from "../../../services/kernel/src/deterministic.js";
 import type {
   IncomingMessage,
   ServerResponse,
@@ -16,8 +18,9 @@ export interface ControlPort {
     context: TenantContext,
     taskId: string,
     answer: ApprovalAnswer,
-  ): Promise<void>;
-  cancel(context: TenantContext, taskId: string): Promise<void>;
+  ): Promise<void | ControlResult>;
+  cancel(context: TenantContext, taskId: string): Promise<void | ControlResult>;
+  signal?(context: TenantContext, taskId:string, signal:Signal): Promise<void | ControlResult>;
 }
 class HttpError extends Error {
   constructor(readonly status: number) {
@@ -52,7 +55,7 @@ export function createMissionControl(options: {
         res.end(renderList(await options.store.list(context)));
         return;
       }
-      const match = /^\/tasks\/([^/]+)(?:\/(approve|cancel))?$/.exec(
+      const match = /^\/tasks\/([^/]+)(?:\/(approve|cancel|signal))?$/.exec(
         url.pathname,
       );
       if (!match) throw new HttpError(404);
@@ -65,7 +68,7 @@ export function createMissionControl(options: {
       }
       if (req.method !== "POST" || !match[2]) throw new HttpError(405);
       if (req.headers.origin !== origin) throw new HttpError(403);
-      if (!options.controls || !view.pending) throw new HttpError(409);
+      if (!options.controls || !view.controls.includes(match[2] as "approve"|"cancel"|"signal")) throw new HttpError(409);
       if (
         !req.headers["content-type"]?.startsWith(
           "application/x-www-form-urlencoded",
@@ -84,21 +87,26 @@ export function createMissionControl(options: {
       const form = new URLSearchParams(body);
       if (new Set(form.keys()).size !== Array.from(form.keys()).length)
         throw new HttpError(400);
+      let result: void | ControlResult;
       if (match[2] === "approve") {
         if (
           context.principal.kind !== "HUMAN" ||
-          view.pending.requestedFrom !== context.principal.id
+          view.pending?.requestedFrom !== context.principal.id
         )
           throw new HttpError(403);
         const answer = ApprovalAnswer.parse(Object.fromEntries(form));
-        if (answer.scopeDigest !== view.pending.evaluation.scopeDigest)
+        if (answer.scopeDigest !== view.pending?.evaluation.scopeDigest)
           throw new HttpError(403);
-        await options.controls.approve(context, taskId, answer);
+        result = await options.controls.approve(context, taskId, answer);
+      } else if (match[2] === "signal") {
+        if (!options.controls.signal || context.principal.id !== view.task.principal.id) throw new HttpError(403);
+        result = await options.controls.signal(context, taskId, Signal.parse(Object.fromEntries(form)));
       } else {
         if (form.size || context.principal.id !== view.task.principal.id)
           throw new HttpError(403);
-        await options.controls.cancel(context, taskId);
+        result = await options.controls.cancel(context, taskId);
       }
+      if (result && ["FAILED", "UNSUPPORTED", "UNRESOLVED"].includes(result.status)) { res.statusCode = result.status === "UNRESOLVED" ? 503 : 409; res.end(layout("Control result", `<p>${result.action}: ${result.status}</p>`)); return; }
       res.writeHead(303, { location: `/tasks/${taskId}` });
       res.end();
     } catch (error) {

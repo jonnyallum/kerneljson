@@ -37,6 +37,7 @@ export interface VerificationBundle {
 }
 export function verifyTaskEvidence(
   bundle: VerificationBundle,
+  verifiedAt?: string,
 ): VerificationReport {
   const task = Task.parse(bundle.task);
   const failures: string[] = [],
@@ -125,6 +126,7 @@ export function verifyTaskEvidence(
     );
     check(evaluation.decision.decision !== "DENY", "POLICY_DENIED");
     const records = bundle.evidence.map((e) => Evidence.parse(e));
+    check(records.every(e => Date.parse(e.capturedAt) >= Date.parse(task.createdAt) && (!verifiedAt || Date.parse(e.capturedAt) <= Date.parse(verifiedAt))), "STALE_OR_FUTURE_EVIDENCE");
     const evidence = records.find((e) => e.id === run.evidenceId);
     check(
       !!evidence &&

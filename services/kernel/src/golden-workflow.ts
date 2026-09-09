@@ -37,6 +37,7 @@ export function createGoldenWorkflow(
   afterOutcomeCommit: () => Promise<void> = async () => {},
   mode: "GOLDEN" | "SCHEDULED_CHILD" = "GOLDEN",
 ) {
+  ledger = ledger.forWorkflow(mode === "GOLDEN" ? "GoldenTaskWorkflowV1" : "AutonomousChildTaskWorkflowV1");
   const rules = PolicyRules.parse(configuredRules),
     registry = createBuiltinRegistry();
   const approvals = new ApprovalStore(ledger.pool),

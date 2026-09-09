@@ -25,6 +25,7 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres@db:5432/kerneljson
       PORT: 9080
+      KERNELJSON_RELEASE_ID: ${KERNELJSON_RELEASE_ID:-unreleased-development}
     ports: ["127.0.0.1:19080:9080"]
     depends_on:
       db: {condition: service_healthy}
