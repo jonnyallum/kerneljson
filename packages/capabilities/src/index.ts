@@ -263,6 +263,7 @@ export const RepositoryReadOutput = z.strictObject({
   output_hash: z.string().min(1).max(64),
   skills_mounted: z.array(z.string().min(1)).max(64),
   mutations_detected: z.literal(0),
+  timeout_seconds: z.number().int().positive().max(3600),
   summary: z.string().min(1).max(2048),
 });
 /** Stable UUID for catalogue id repository.read (Track A / KJ-000000). */

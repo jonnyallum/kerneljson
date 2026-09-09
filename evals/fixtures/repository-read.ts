@@ -36,6 +36,7 @@ export function mockSpawnerStructuredOutput(overrides: Record<string, unknown> =
     output_hash: CONTENT_SHA256.slice(0, 12),
     skills_mounted: ["repository.read"],
     mutations_detected: 0,
+    timeout_seconds: 45,
     summary: "Read 'kerneljson' NOTES.md successfully with 0 mutations",
     ...overrides,
   };

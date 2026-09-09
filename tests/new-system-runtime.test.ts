@@ -19,6 +19,7 @@ import {
 import {
   CONTENT_SHA256,
   mockSpawnerCompletedResponse,
+  mockSpawnerStructuredOutput,
   repositoryReadInvocation,
 } from "../evals/fixtures/repository-read.js";
 
@@ -239,3 +240,68 @@ it("KJ-000000 minimum plan + verifier PASS on adapter result", async () => {
   expect(packed.digests.contentSha256).toHaveLength(64);
   expect(createHash("sha256").update("x").digest("hex")).toHaveLength(64);
 });
+
+
+it("accepts live Spawner-shaped output including timeout_seconds", async () => {
+  const runtime = createRuntimeRegistry();
+  const adapter = new NewSystemRuntimeAdapter(runtime, {
+    spawnerBaseUrl: "http://127.0.0.1:8766",
+    fetch: mockFetch(
+      async () =>
+        new Response(JSON.stringify(mockSpawnerCompletedResponse()), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    ),
+    now: () => FIXED_NOW,
+  });
+  const packed = await adapter.invoke(repositoryReadInvocation);
+  expect(packed.result.output).toMatchObject({ timeout_seconds: 45 });
+  expect(packed.digests.contentSha256).toBe(CONTENT_SHA256);
+});
+
+it("fail-closes on unknown Spawner structured fields (strict contract)", async () => {
+  const runtime = createRuntimeRegistry();
+  const adapter = new NewSystemRuntimeAdapter(runtime, {
+    spawnerBaseUrl: "http://127.0.0.1:8766",
+    fetch: mockFetch(
+      async () =>
+        new Response(
+          JSON.stringify(
+            mockSpawnerCompletedResponse({
+              structured: { unexpected_field: "nope" },
+            }),
+          ),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    ),
+    now: () => FIXED_NOW,
+  });
+  await expect(adapter.invoke(repositoryReadInvocation)).rejects.toMatchObject({
+    code: "INVALID_SPAWNER_OUTPUT",
+  });
+});
+
+it("fail-closes when timeout_seconds is missing from Spawner output", async () => {
+  const runtime = createRuntimeRegistry();
+  const base = mockSpawnerStructuredOutput();
+  const { timeout_seconds: _drop, ...withoutTimeout } = base;
+  const adapter = new NewSystemRuntimeAdapter(runtime, {
+    spawnerBaseUrl: "http://127.0.0.1:8766",
+    fetch: mockFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            ...mockSpawnerCompletedResponse(),
+            output: JSON.stringify(withoutTimeout),
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    ),
+    now: () => FIXED_NOW,
+  });
+  await expect(adapter.invoke(repositoryReadInvocation)).rejects.toMatchObject({
+    code: "INVALID_SPAWNER_OUTPUT",
+  });
+});
+
