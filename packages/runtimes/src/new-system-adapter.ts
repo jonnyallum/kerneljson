@@ -46,6 +46,7 @@ const SpawnerStructuredOutput = z.strictObject({
   output_hash: z.string().min(1),
   skills_mounted: z.array(z.string()),
   mutations_detected: z.literal(0),
+  timeout_seconds: z.number().int().positive().max(3600),
   summary: z.string(),
 });
 
