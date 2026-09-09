@@ -8,6 +8,9 @@ import {
 import { stableId, criteria } from "../compiler/index.js";
 export function planTask(raw: Task, recipe: RecipeId): ExecutionPlan {
   recipe = RecipeId.parse(recipe);
+  if (recipe === "estate-email-triage/v1") {
+    throw new Error("estate-email-triage/v1 is admission-only and not executable");
+  }
   const task = Task.parse(raw);
   if (
     task.riskClass !== "LOW" ||

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { Id } from "./common.js";
 import { IntentEnvelope } from "./intent.js";
-export const RecipeId = z.enum(["uppercase-reverse/v1", "uppercase/v1", "repository-read/v1"]);
+export const RecipeId = z.enum(["uppercase-reverse/v1", "uppercase/v1", "repository-read/v1", "estate-email-triage/v1"]);
 export type RecipeId = z.infer<typeof RecipeId>;
 export const KernelSubmission = z.strictObject({
   intent: IntentEnvelope,

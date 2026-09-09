@@ -1,8 +1,8 @@
-﻿import { capabilityDigest } from "../../capabilities/src/index.js";
+import { capabilityDigest } from "../../capabilities/src/index.js";
 import { stableId } from "../../../services/kernel/src/compiler/index.js";
 import type { PrincipalRef } from "../../contracts/src/index.js";
 
-/** Shadow-only recipe placeholder â€” never submitted to live gateway this pass. */
+/** Estate email triage recipe - PublicSubmission admission-only (ADMIT=YES EXECUTE=NO). */
 export const SHADOW_EMAIL_RECIPE = "estate-email-triage/v1" as const;
 
 export const SHADOW_CONSUMER = "kj-admission-shadow-email" as const;
@@ -15,11 +15,11 @@ export const LIVE_INGEST_SUFFIX = "email-ingest-live" as const;
 /**
  * Non-secret stable mailbox namespace for Hostinger info@jonnyai.co.uk.
  * Resource id from GET /api/v1/me (see email-ingest-live.py MAILBOX_RESOURCE_ID).
- * NEVER credentials â€” used only in hostinger-uid fallback discovery keys.
+ * NEVER credentials — used only in hostinger-uid fallback discovery keys.
  */
 export const DEFAULT_MAILBOX_NAMESPACE = "ACee10ad9280d330d279eacd0a3d69" as const;
 
-/** Deterministic estate tenant â€” documented mapping, not body-spoofed authority. */
+/** Deterministic estate tenant — documented mapping, not body-spoofed authority. */
 export const ESTATE_TENANT_ID = stableId(["estate-tenant/v1", "estate"]);
 
 /** Deterministic email-ingest SERVICE principal (auth-resolved mapping). */
@@ -29,7 +29,7 @@ export const ESTATE_EMAIL_PRINCIPAL: PrincipalRef = {
 };
 
 /**
- * Option C â€” RFC-style Message-ID normalisation for email_source_event_id:
+ * Option C — RFC-style Message-ID normalisation for email_source_event_id:
  * 1. trim
  * 2. strip surrounding <> (repeat while both ends are brackets)
  * 3. collapse internal whitespace (remove)
@@ -115,7 +115,7 @@ export function priorityHintFromUrgency(
 
 /**
  * Live source_ref may retain raw brackets/case; Option C collapses to discovery key.
- * Same Message-ID with/without brackets â†’ same key (intentional Hostinger UID collapse).
+ * Same Message-ID with/without brackets → same key (intentional Hostinger UID collapse).
  */
 export function normalizeLiveSourceRef(sourceRef: string): string {
   const m = /^email:(.+)\|email-ingest-live$/.exec(sourceRef.trim());

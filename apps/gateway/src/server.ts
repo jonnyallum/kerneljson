@@ -13,7 +13,8 @@ import { MemoryStore } from "../../../services/memory/src/index.js";
 import { WorldStore } from "../../../services/world-model/src/index.js";
 import type { ControlPort } from "../../mission-control/src/server.js";
 import { Signal } from "../../../services/kernel/src/deterministic.js";
-export const PublicSubmission=z.strictObject({recipe:z.enum(['uppercase/v1','uppercase-reverse/v1']),objective:z.string().trim().min(1).max(8000)});
+export const ADMISSION_ONLY_RECIPES=new Set<string>(['estate-email-triage/v1']);
+export const PublicSubmission=z.strictObject({recipe:z.enum(['uppercase/v1','uppercase-reverse/v1','estate-email-triage/v1']),objective:z.string().trim().min(1).max(8000)});
 export type PublicSubmission=z.infer<typeof PublicSubmission>;
 const Key=z.string().regex(/^[A-Za-z0-9._:-]{8,128}$/);
 export type Dispatch=(binding:ExecutionBinding,payload:KernelSubmission,context:TenantContext)=>Promise<{status:'ACCEPTED'|'UNRESOLVED';invocationId?:string}>;
@@ -78,22 +79,27 @@ export function createGateway(options:GatewayOptions){
      const prior=await db.query<{task_id:string;request_digest:string;payload:unknown}>('select task_id,request_digest,payload from kernel_private.task_admissions where tenant_id=$1 and principal_id=$2 and key_digest=$3',[ctx.tenantId,ctx.principal.id,keyDigest]);
      if(prior.rows[0]){
       if(prior.rows[0].request_digest!==requestDigest)throw new GatewayError(409,'IDEMPOTENCY_CONFLICT');
-      const binding=await readBinding(db,prior.rows[0].task_id);if(!binding)throw new Error('Missing admission binding');return {binding,payload:KernelSubmission.parse(prior.rows[0].payload)};
+      const binding=await readBinding(db,prior.rows[0].task_id);if(!binding)throw new Error('Missing admission binding');return {binding,payload:KernelSubmission.parse(prior.rows[0].payload),replay:true as const};
      }
      const trace= req.headers['x-correlation-id']===undefined ? correlationId : Id.parse(req.headers['x-correlation-id']);
      const payload=KernelSubmission.parse({recipe:input.recipe,intent:{id:stableId(['gateway/v1',ctx.tenantId,ctx.principal.id,keyDigest]),principal:ctx.principal,tenant:{id:ctx.tenantId},source:'kerneljson:gateway/v1',objective:input.objective,attachments:[],contextRefs:[],receivedAt:new Date().toISOString(),trace:{traceId:trace,correlationId:trace}}});
      const task=compileIntent(payload).task,target=input.recipe==='uppercase/v1'?workflowTargets.GoldenTaskWorkflowV1:workflowTargets.KernelWorkflowV1;
      const binding=await persistBinding(db,bindingFor(task,target,options.releaseId));
      await db.query('insert into kernel_private.task_admissions(task_id,tenant_id,principal_id,key_digest,request_digest,payload) values($1,$2,$3,$4,$5,$6)',[task.id,ctx.tenantId,ctx.principal.id,keyDigest,requestDigest,payload]);
-     return {binding,payload};
+     return {binding,payload,replay:false as const};
     },'submit');
+    // estate-email-triage/v1 and other ADMISSION_ONLY recipes: durable task_admissions only — never dispatch/execute.
+    if(ADMISSION_ONLY_RECIPES.has(input.recipe)){
+     res.setHeader('location',`/v1/tasks/${accepted.binding.taskId}`);
+     reply(202,{...await status(context,accepted.binding.taskId),dispatch:null,admission:accepted.replay?'REPLAY':'ADMITTED'});return;
+    }
     const dispatched=await withTenant(options.pool,context,async(db,ctx)=>{
      await db.query("insert into kernel_private.dispatch_events(id,task_id,status) values($1,$2,'REQUESTED')",[randomUUID(),accepted.binding.taskId]);
      let result:Awaited<ReturnType<Dispatch>>;try{result=await options.dispatch(accepted.binding,accepted.payload,ctx);}catch{result={status:'UNRESOLVED'};}
      await db.query('insert into kernel_private.dispatch_events(id,task_id,status,invocation_id) values($1,$2,$3,$4)',[randomUUID(),accepted.binding.taskId,result.status,result.invocationId??null]);return result;
     },'submit');
     res.setHeader('location',`/v1/tasks/${accepted.binding.taskId}`);
-    reply(202,{...await status(context,accepted.binding.taskId),dispatch:dispatched.status});return;
+    reply(202,{...await status(context,accepted.binding.taskId),dispatch:dispatched.status,admission:accepted.replay?'REPLAY':'ADMITTED'});return;
    }
    if(req.method==='GET'&&url.pathname==='/v1/memory'){reply(200,await memory.retrieve(context,Object.fromEntries(url.searchParams)));return;}
    if(req.method==='GET'&&url.pathname==='/v1/world'){reply(200,await world.view(context,Object.fromEntries(url.searchParams)));return;}
