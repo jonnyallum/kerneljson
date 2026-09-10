@@ -54,14 +54,17 @@ it("happy path: bridge ok -> CapabilityResult + Evidence + Outcome verified", as
   const adapter = adapterWith(runBridge);
   const packed = await adapter.invoke(conductorBrainQueryInvocation);
   expect(runBridge).toHaveBeenCalledTimes(1);
-  const req = runBridge.mock.calls[0]![0] as Record<string, unknown>;
-  expect(req.capability).toBe("conductor.brain_query");
-  expect(req.tool).toBe("brain_query_projects");
-  expect(req.args).toEqual({
-    query: "KernelJSON migration project knowledge",
-    scope: "projects",
-    limit: 8,
-  });
+  expect(runBridge).toHaveBeenCalledWith(
+    expect.objectContaining({
+      capability: "conductor.brain_query",
+      tool: "brain_query_projects",
+      args: {
+        query: "KernelJSON migration project knowledge",
+        scope: "projects",
+        limit: 8,
+      },
+    }),
+  );
   expect(packed.digests.resultDigest).toBe(SAMPLE_RESULT_DIGEST);
   expect(packed.evidence.digest).toBe(SAMPLE_RESULT_DIGEST);
   expect(packed.outcome.status).toBe("COMPLETED");
@@ -172,7 +175,7 @@ it("discovered work is returned but never auto-scheduled by adapter", async () =
   expect(Array.isArray(packed.discoveredWork)).toBe(true);
   expect(packed.evidence.metadata.discovered_work_count).toBe(1);
   expect(packed.evidence.metadata.conductor_done_is_not_kj_completion).toBe(true);
-  // Adapter does not mint tasks — discoveredWork is data only
+  // Adapter does not mint tasks â€” discoveredWork is data only
   expect(packed.result.taskId).toBe(conductorBrainQueryInvocation.taskId);
 });
 
