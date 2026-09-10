@@ -2,7 +2,7 @@
  * Phase 5.1 — minimal KernelJSON gateway for estate-email admission-only.
  * Env: KERNELJSON_DATABASE_URL, KERNELJSON_GATEWAY_BEARER (required).
  * Optional: KERNELJSON_GATEWAY_HOST (127.0.0.1), KERNELJSON_GATEWAY_PORT (8787),
- * KERNELJSON_RELEASE_ID (email-admission-gateway/v1). Never prints secrets.
+ * KERNELJSON_RELEASE_ID (email-admission-gateway.v1). Never prints secrets.
  */
 import { createServer } from "node:http";
 import pg from "pg";
@@ -14,7 +14,7 @@ const databaseUrl = process.env.KERNELJSON_DATABASE_URL || process.env.DATABASE_
 const bearer = process.env.KERNELJSON_GATEWAY_BEARER;
 const host = process.env.KERNELJSON_GATEWAY_HOST || "127.0.0.1";
 const port = Number(process.env.KERNELJSON_GATEWAY_PORT || "8787");
-const releaseId = process.env.KERNELJSON_RELEASE_ID || "email-admission-gateway/v1";
+const releaseId = process.env.KERNELJSON_RELEASE_ID || "email-admission-gateway.v1";
 
 if (!databaseUrl) { console.error("MISSING KERNELJSON_DATABASE_URL"); process.exit(2); }
 if (!bearer || bearer.length < 16) { console.error("MISSING_OR_WEAK KERNELJSON_GATEWAY_BEARER"); process.exit(2); }
