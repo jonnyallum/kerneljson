@@ -346,3 +346,94 @@ export function createRuntimeRegistry(): CapabilityRegistry {
     "runtime",
   );
 }
+
+export const ConductorBrainQueryInput = z.strictObject({
+  query: z.string().min(1).max(2048),
+  scope: z.literal("projects"),
+  limit: z.number().int().min(1).max(8),
+});
+export const DiscoveredWorkItem = z.strictObject({
+  title: z.string().min(1).max(512),
+  rationale: z.string().min(1).max(2048),
+  suggestedCapability: z.string().min(1).max(128),
+  priorityHint: z.string().min(1).max(16),
+  evidenceRefs: z.array(z.string()).max(32),
+});
+export const ConductorBrainQueryOutput = z.strictObject({
+  capability: z.literal("conductor.brain_query"),
+  scope: z.literal("projects"),
+  limit: z.number().int().min(1).max(8),
+  query: z.string().min(1).max(2048),
+  tool: z.literal("brain_query_projects"),
+  row_count: z.number().int().nonnegative(),
+  result_digest: z.string().regex(/^[a-f0-9]{64}$/),
+  result_chars: z.number().int().nonnegative(),
+  mutations: z.literal(0),
+  discovered_work: z.array(DiscoveredWorkItem).max(32),
+  summary: z.string().min(1).max(2048),
+  transport: z.literal("private-stdio-import"),
+  env_keys_loaded: z.array(z.string().min(1)).max(8),
+});
+/** Stable UUID for catalogue id conductor.brain_query (Phase 6 read-only). */
+export const CONDUCTOR_BRAIN_QUERY = Object.freeze({
+  id: "60000000-0000-4000-8000-000000000004",
+  version: "1.0.0",
+});
+function conductorBrainQueryDefinition(): CapabilityDefinition {
+  return {
+    metadata: Capability.parse({
+      ...CONDUCTOR_BRAIN_QUERY,
+      description:
+        "Read-only Shared Brain projects query via LegacyConductorAdapter (Conductor brain_query_projects)",
+      inputSchemaRef: "kerneljson:conductor-brain-query-input/v1",
+      outputSchemaRef: "kerneljson:conductor-brain-query-output/v1",
+      riskClass: "LOW",
+      permissions: ["read-brain-projects"],
+      implementationType: "API",
+      verificationRequirements: ["result-digest/v1", "mutations-zero/v1", "scope-projects/v1"],
+    }),
+    inputSchema: ConductorBrainQueryInput as z.ZodType<JsonValue>,
+    outputSchema: ConductorBrainQueryOutput as z.ZodType<JsonValue>,
+    execute: () => {
+      throw new CapabilityError("IMPLEMENTATION_FAILED");
+    },
+    verify: (_input, output) => {
+      const parsed = ConductorBrainQueryOutput.safeParse(output);
+      return (
+        parsed.success &&
+        parsed.data.mutations === 0 &&
+        parsed.data.scope === "projects" &&
+        parsed.data.tool === "brain_query_projects" &&
+        /^[a-f0-9]{64}$/.test(parsed.data.result_digest)
+      );
+    },
+  };
+}
+/**
+ * Legacy Conductor runtime registry: builtins + conductor.brain_query ONLY.
+ * Does not alter Track A createRuntimeRegistry (repository.read sealed).
+ */
+export function createLegacyConductorRegistry(): CapabilityRegistry {
+  return new CapabilityRegistry(
+    [
+      definition(
+        UPPERCASE,
+        "Trim and uppercase text",
+        (text) => text.trim().toUpperCase(),
+        (input, output) => output === input.trim().toUpperCase(),
+      ),
+      definition(
+        REVERSE,
+        "Reverse Unicode code points",
+        (text) => Array.from(text).reverse().join(""),
+        (input, output) => {
+          let expected = "";
+          for (const point of input) expected = point + expected;
+          return output === expected;
+        },
+      ),
+      conductorBrainQueryDefinition(),
+    ],
+    "runtime",
+  );
+}
