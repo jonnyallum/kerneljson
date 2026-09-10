@@ -11,3 +11,10 @@ export {
   KJ_000000_CRITERION,
   type RepositoryReadPlan,
 } from "./kj-000000.js";
+export {
+  LegacyConductorAdapter,
+  LegacyConductorError,
+  LEGACY_CONDUCTOR_DENIED,
+  type LegacyConductorAdapterConfig,
+  type LegacyConductorInvokeResult,
+} from "./legacy-conductor-adapter.js";
