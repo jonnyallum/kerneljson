@@ -134,11 +134,11 @@ run("S1 Postgres runtime qualification", () => {
     const taskA = randomUUID(); const taskB = randomUUID();
     await seedTask(pool, taskA); await seedTask(pool, taskB);
     const key = idempotencyKey(spec, WIN);
-    const r1 = await store.bindAdmission(key, { admissionRequestId: randomUUID(), childTaskId: taskA, at: AT });
+    const r1 = await store.bindAdmissionPrivileged(key, { admissionRequestId: randomUUID(), childTaskId: taskA, at: AT });
     expect(r1.replay).toBe(false);
-    await expect(store.bindAdmission(key, { admissionRequestId: randomUUID(), childTaskId: taskB, at: AT }))
+    await expect(store.bindAdmissionPrivileged(key, { admissionRequestId: randomUUID(), childTaskId: taskB, at: AT }))
       .rejects.toBeInstanceOf(FireBindingConflict);
-    const r3 = await store.bindAdmission(key, { admissionRequestId: randomUUID(), childTaskId: taskA, at: AT });
+    const r3 = await store.bindAdmissionPrivileged(key, { admissionRequestId: randomUUID(), childTaskId: taskA, at: AT });
     expect(r3.replay).toBe(true);
     // prove the DB trigger itself rejects a raw rebind (not just app logic)
     let triggerBlocked = false; let msg = "";

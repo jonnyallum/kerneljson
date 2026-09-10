@@ -42,6 +42,29 @@ export interface FireInput {
   createdAt: string;
 }
 
+/**
+ * The runtime scheduler store. STRUCTURAL FENCING (Phase S1-F2):
+ * ownership-sensitive methods REQUIRE a `LeaseFence` at the type level, so ordinary
+ * runtime code typed against this interface CANNOT perform a protected mutation
+ * without a current lease token. The DB remains the final authority.
+ *
+ * Operation classification:
+ *   OWNERSHIP-SENSITIVE (fence REQUIRED) — a claimed worker mutating fire state:
+ *     - bindAdmission : binds the canonical child task; a stale worker must not bind.
+ *     - transition    : moves fire lifecycle state; a stale worker must not e.g. FAIL it.
+ *     - releaseLease  : must not release the new owner's lease (epoch required).
+ *   AUTHORITY-SAFE / NON-LEASED (no fence):
+ *     - createOrGetFire      : idempotent; the UNIQUE (schedule_id,version,fire_window)
+ *                              constraint prevents a second truth regardless of who calls.
+ *     - claimLease           : this is how ownership is ACQUIRED (you have no fence yet);
+ *                              guarded by its own expiry/owner ON CONFLICT predicate.
+ *     - setState             : schedule lifecycle, a human-owner/admin action, not a
+ *                              per-fire worker mutation under a lease.
+ *     - upsertSpecVersion    : immutable schedule definition (admin), not lease-scoped.
+ *     - createBackfillRequest: governed by human approval + DB CHECKs (no self-approval).
+ *     - recordObservation    : append-only telemetry, never authority.
+ *   READS (never fenced): getSchedule, listFires, listObservations.
+ */
 export interface ScheduleStore {
   upsertSpecVersion(spec: PersistedScheduleSpec): Promise<void>;
   getSchedule(
@@ -49,17 +72,17 @@ export interface ScheduleStore {
   ): Promise<{ state: PersistedScheduleState; spec: PersistedScheduleSpec } | null>;
   setState(next: PersistedScheduleState): Promise<void>;
 
-  /** Idempotent: a repeated logical fire resolves to the existing row. */
+  /** Idempotent, AUTHORITY-SAFE: a repeated logical fire resolves to the existing row. */
   createOrGetFire(input: FireInput): Promise<{ fire: ScheduleFire; created: boolean }>;
-  /** Bind the admitted child task. Same task = REPLAY; different task = FAIL CLOSED.
-   *  Ownership-sensitive: pass `fence` to require the current lease owner+epoch. */
+  /** OWNERSHIP-SENSITIVE. Bind the admitted child task under the CURRENT lease fence.
+   *  Same task = REPLAY; different task = FAIL CLOSED (bind-once). Stale fence = fail closed. */
   bindAdmission(
     idempotencyKey: string,
     b: { admissionRequestId: string; childTaskId: string; at: string },
-    fence?: LeaseFence,
+    fence: LeaseFence,
   ): Promise<{ fire: ScheduleFire; replay: boolean }>;
-  /** Ownership-sensitive lifecycle transition. Pass `fence` to require current owner+epoch. */
-  transition(idempotencyKey: string, to: FireState, fence?: LeaseFence): Promise<ScheduleFire>;
+  /** OWNERSHIP-SENSITIVE. Lifecycle transition under the CURRENT lease fence. */
+  transition(idempotencyKey: string, to: FireState, fence: LeaseFence): Promise<ScheduleFire>;
 
   claimLease(
     scheduleId: string,
@@ -67,18 +90,32 @@ export interface ScheduleStore {
     nowMs: number,
     ttlMs: number,
   ): Promise<ScheduleLease | null>;
-  /** Release the lease. Pass `epoch` to fence: a stale-epoch release is a no-op. */
-  releaseLease(scheduleId: string, owner: string, epoch?: number): Promise<void>;
+  /** OWNERSHIP-SENSITIVE. Release requires owner+epoch; a stale-epoch release is a no-op. */
+  releaseLease(scheduleId: string, owner: string, epoch: number): Promise<void>;
 
   createBackfillRequest(req: ScheduleBackfillRequest): Promise<ScheduleBackfillRequest>;
   recordObservation(obs: ScheduleObservation): Promise<void>;
 
-  // Read-only introspection (tests / operators).
+  // Read-only introspection (tests / operators). Never fenced.
   listFires(scheduleId: string): Promise<ScheduleFire[]>;
   listObservations(scheduleId: string): Promise<ScheduleObservation[]>;
 }
 
-export class InMemoryScheduleStore implements ScheduleStore {
+/**
+ * PRIVILEGED unfenced mutations — NOT part of the runtime ScheduleStore interface.
+ * Only bootstrap/migration/reconciliation and lease-independent CONTRACT TESTS may use
+ * these (they need a concrete store reference, not a ScheduleStore). Ordinary runtime
+ * code cannot reach them. The concrete stores implement this alongside ScheduleStore.
+ */
+export interface PrivilegedScheduleStore {
+  bindAdmissionPrivileged(
+    idempotencyKey: string,
+    b: { admissionRequestId: string; childTaskId: string; at: string },
+  ): Promise<{ fire: ScheduleFire; replay: boolean }>;
+  transitionPrivileged(idempotencyKey: string, to: FireState): Promise<ScheduleFire>;
+}
+
+export class InMemoryScheduleStore implements ScheduleStore, PrivilegedScheduleStore {
   private specs = new Map<string, PersistedScheduleSpec>(); // key scheduleId|version
   private states = new Map<string, PersistedScheduleState>();
   private fires = new Map<string, ScheduleFire>(); // key idempotencyKey
@@ -140,6 +177,20 @@ export class InMemoryScheduleStore implements ScheduleStore {
   async bindAdmission(
     idempotencyKey: string,
     b: { admissionRequestId: string; childTaskId: string; at: string },
+    fence: LeaseFence,
+  ): Promise<{ fire: ScheduleFire; replay: boolean }> {
+    return this.bindImpl(idempotencyKey, b, fence);
+  }
+  /** PRIVILEGED: unfenced bind for bootstrap / lease-independent contract tests. */
+  async bindAdmissionPrivileged(
+    idempotencyKey: string,
+    b: { admissionRequestId: string; childTaskId: string; at: string },
+  ): Promise<{ fire: ScheduleFire; replay: boolean }> {
+    return this.bindImpl(idempotencyKey, b, undefined);
+  }
+  private async bindImpl(
+    idempotencyKey: string,
+    b: { admissionRequestId: string; childTaskId: string; at: string },
     fence?: LeaseFence,
   ): Promise<{ fire: ScheduleFire; replay: boolean }> {
     const fire = this.fires.get(idempotencyKey);
@@ -175,7 +226,14 @@ export class InMemoryScheduleStore implements ScheduleStore {
     return { fire: next, replay: false };
   }
 
-  async transition(idempotencyKey: string, to: FireState, fence?: LeaseFence): Promise<ScheduleFire> {
+  async transition(idempotencyKey: string, to: FireState, fence: LeaseFence): Promise<ScheduleFire> {
+    return this.transitionImpl(idempotencyKey, to, fence);
+  }
+  /** PRIVILEGED: unfenced transition for bootstrap / lease-independent contract tests. */
+  async transitionPrivileged(idempotencyKey: string, to: FireState): Promise<ScheduleFire> {
+    return this.transitionImpl(idempotencyKey, to, undefined);
+  }
+  private async transitionImpl(idempotencyKey: string, to: FireState, fence?: LeaseFence): Promise<ScheduleFire> {
     const fire = this.fires.get(idempotencyKey);
     if (!fire) throw new StoreError("no such fire");
     this.assertFence(fire.scheduleId, fence);
@@ -218,10 +276,9 @@ export class InMemoryScheduleStore implements ScheduleStore {
     return lease;
   }
 
-  async releaseLease(scheduleId: string, owner: string, epoch?: number): Promise<void> {
+  async releaseLease(scheduleId: string, owner: string, epoch: number): Promise<void> {
     const cur = this.leases.get(scheduleId);
-    if (cur && cur.owner === owner && (epoch === undefined || cur.epoch === epoch))
-      this.leases.delete(scheduleId);
+    if (cur && cur.owner === owner && cur.epoch === epoch) this.leases.delete(scheduleId);
   }
 
   async createBackfillRequest(req: ScheduleBackfillRequest): Promise<ScheduleBackfillRequest> {

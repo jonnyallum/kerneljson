@@ -110,8 +110,8 @@ describe("S1 persistence: admission binding", () => {
     const key = idempotencyKey(spec, WIN);
     await store.createOrGetFire(mkFireInput(spec, WIN, AT));
     const child = randomUUID();
-    const r1 = await store.bindAdmission(key, { admissionRequestId: randomUUID(), childTaskId: child, at: AT });
-    const r2 = await store.bindAdmission(key, { admissionRequestId: randomUUID(), childTaskId: child, at: AT });
+    const r1 = await store.bindAdmissionPrivileged(key, { admissionRequestId: randomUUID(), childTaskId: child, at: AT });
+    const r2 = await store.bindAdmissionPrivileged(key, { admissionRequestId: randomUUID(), childTaskId: child, at: AT });
     expect(r1.replay).toBe(false);
     expect(r2.replay).toBe(true);
     expect(r2.fire.admittedChildTaskId).toBe(child);
@@ -122,9 +122,9 @@ describe("S1 persistence: admission binding", () => {
     const spec = mkSpec(randomUUID());
     const key = idempotencyKey(spec, WIN);
     await store.createOrGetFire(mkFireInput(spec, WIN, AT));
-    await store.bindAdmission(key, { admissionRequestId: randomUUID(), childTaskId: randomUUID(), at: AT });
+    await store.bindAdmissionPrivileged(key, { admissionRequestId: randomUUID(), childTaskId: randomUUID(), at: AT });
     await expect(
-      store.bindAdmission(key, { admissionRequestId: randomUUID(), childTaskId: randomUUID(), at: AT }),
+      store.bindAdmissionPrivileged(key, { admissionRequestId: randomUUID(), childTaskId: randomUUID(), at: AT }),
     ).rejects.toBeInstanceOf(FireBindingConflict);
     const obs = await store.listObservations(spec.scheduleId);
     expect(obs.some((o) => o.kind === "AUTHORITY")).toBe(true);
@@ -135,8 +135,8 @@ describe("S1 persistence: admission binding", () => {
     const spec = mkSpec(randomUUID());
     const key = idempotencyKey(spec, WIN);
     await store.createOrGetFire(mkFireInput(spec, WIN, AT));
-    await store.bindAdmission(key, { admissionRequestId: randomUUID(), childTaskId: randomUUID(), at: AT });
-    await expect(store.transition(key, "PLANNED")).rejects.toBeInstanceOf(StoreError);
+    await store.bindAdmissionPrivileged(key, { admissionRequestId: randomUUID(), childTaskId: randomUUID(), at: AT });
+    await expect(store.transitionPrivileged(key, "PLANNED")).rejects.toBeInstanceOf(StoreError);
   });
 });
 

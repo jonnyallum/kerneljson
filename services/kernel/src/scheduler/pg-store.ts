@@ -14,6 +14,7 @@ import {
   StoreError,
   StaleFenceError,
   type ScheduleStore,
+  type PrivilegedScheduleStore,
   type FireInput,
   type LeaseFence,
 } from "./store.js";
@@ -48,7 +49,7 @@ function rowToFire(r: Record<string, unknown>): ScheduleFire {
   });
 }
 
-export class PgScheduleStore implements ScheduleStore {
+export class PgScheduleStore implements ScheduleStore, PrivilegedScheduleStore {
   constructor(private readonly pool: pg.Pool) {}
 
   async upsertSpecVersion(spec: PersistedScheduleSpec): Promise<void> {
@@ -147,6 +148,20 @@ export class PgScheduleStore implements ScheduleStore {
   async bindAdmission(
     idempotencyKey: string,
     b: { admissionRequestId: string; childTaskId: string; at: string },
+    fence: LeaseFence,
+  ): Promise<{ fire: ScheduleFire; replay: boolean }> {
+    return this.bindImpl(idempotencyKey, b, fence);
+  }
+  /** PRIVILEGED: unfenced bind for bootstrap / lease-independent contract tests. */
+  async bindAdmissionPrivileged(
+    idempotencyKey: string,
+    b: { admissionRequestId: string; childTaskId: string; at: string },
+  ): Promise<{ fire: ScheduleFire; replay: boolean }> {
+    return this.bindImpl(idempotencyKey, b, undefined);
+  }
+  private async bindImpl(
+    idempotencyKey: string,
+    b: { admissionRequestId: string; childTaskId: string; at: string },
     fence?: LeaseFence,
   ): Promise<{ fire: ScheduleFire; replay: boolean }> {
     const cur = await this.pool.query("select * from schedule_fires where idempotency_key=$1", [idempotencyKey]);
@@ -197,7 +212,14 @@ export class PgScheduleStore implements ScheduleStore {
     return { fire: rowToFire(upd.rows[0]), replay: false };
   }
 
-  async transition(idempotencyKey: string, to: FireState, fence?: LeaseFence): Promise<ScheduleFire> {
+  async transition(idempotencyKey: string, to: FireState, fence: LeaseFence): Promise<ScheduleFire> {
+    return this.transitionImpl(idempotencyKey, to, fence);
+  }
+  /** PRIVILEGED: unfenced transition for bootstrap / lease-independent contract tests. */
+  async transitionPrivileged(idempotencyKey: string, to: FireState): Promise<ScheduleFire> {
+    return this.transitionImpl(idempotencyKey, to, undefined);
+  }
+  private async transitionImpl(idempotencyKey: string, to: FireState, fence?: LeaseFence): Promise<ScheduleFire> {
     // App-enforced: an ADMITTED fire may not leave ADMITTED. Ownership-sensitive: with a
     // fence, the UPDATE requires the current lease (owner,epoch) via a join predicate.
     const upd = fence
@@ -249,12 +271,9 @@ export class PgScheduleStore implements ScheduleStore {
     });
   }
 
-  async releaseLease(scheduleId: string, owner: string, epoch?: number): Promise<void> {
+  async releaseLease(scheduleId: string, owner: string, epoch: number): Promise<void> {
     // Fenced: a stale-epoch release matches no row and is a no-op (current owner keeps the lease).
-    if (epoch === undefined)
-      await this.pool.query("delete from schedule_leases where schedule_id=$1 and owner=$2", [scheduleId, owner]);
-    else
-      await this.pool.query("delete from schedule_leases where schedule_id=$1 and owner=$2 and epoch=$3", [scheduleId, owner, epoch]);
+    await this.pool.query("delete from schedule_leases where schedule_id=$1 and owner=$2 and epoch=$3", [scheduleId, owner, epoch]);
   }
 
   async createBackfillRequest(req: ScheduleBackfillRequest): Promise<ScheduleBackfillRequest> {
