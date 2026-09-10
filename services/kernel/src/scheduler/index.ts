@@ -15,3 +15,5 @@ export * from "./time.js";
 export * from "./fire.js";
 export * from "./policy.js";
 export * from "./runtime.js";
+export * from "./persistence.js";
+export * from "./store.js";
