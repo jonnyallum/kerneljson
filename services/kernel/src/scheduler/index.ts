@@ -17,3 +17,4 @@ export * from "./policy.js";
 export * from "./runtime.js";
 export * from "./persistence.js";
 export * from "./store.js";
+export * from "./durable-timer.js";
