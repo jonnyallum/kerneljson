@@ -71,3 +71,19 @@ it.each(['REVOKED','REMOVED'] as const)('denies %s HTTP and Mission Control oper
  }finally{await fixture.pool.query("update tenant_memberships set status='ACTIVE' where tenant_id=$1 and principal_id=$2",[fixture.context.tenantId,fixture.context.principal.id]);}
  expect((await fixture.pool.query('select 1 from tasks where id=$1',[fixture.task.id])).rowCount).toBe(1);
 });
+
+it('admits estate-email-triage/v1 without dispatch and replays by Idempotency-Key',async()=>{
+ const before=dispatches;const key=randomUUID();
+ const emailInput={recipe:'estate-email-triage/v1',objective:'Email triage: KERNELJSON EMAIL AUTHORITY CANARY REAL ADMISSION'};
+ const first=await post('/v1/tasks',emailInput,'owner',key);expect(first.status).toBe(202);
+ const body=await first.json();expect(body.admission).toBe('ADMITTED');expect(body.dispatch).toBeNull();
+ expect(body.taskId).toMatch(/^[0-9a-f-]{36}$/);expect(dispatches).toBe(before);
+ expect((await fixture.pool.query('select 1 from kernel_private.task_admissions where task_id=$1',[body.taskId])).rowCount).toBe(1);
+ expect((await fixture.pool.query('select 1 from kernel_private.dispatch_events where task_id=$1',[body.taskId])).rowCount).toBe(0);
+ const second=await post('/v1/tasks',emailInput,'owner',key);expect(second.status).toBe(202);
+ const replay=await second.json();expect(replay.admission).toBe('REPLAY');expect(replay.taskId).toBe(body.taskId);
+ expect(replay.dispatch).toBeNull();expect(dispatches).toBe(before);
+});
+it('rejects unknown public recipes still',async()=>{
+ const before=dispatches;expect((await post('/v1/tasks',{recipe:'shell/v1',objective:'nope'})).status).toBe(400);expect(dispatches).toBe(before);
+});

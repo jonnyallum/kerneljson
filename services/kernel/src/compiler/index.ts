@@ -9,6 +9,8 @@ export const criteria: Record<RecipeId, string> = {
   "uppercase/v1": "Output equals uppercase(trim(objective))",
   "repository-read/v1":
     "repository.read returns content_sha256 (64 hex) with mutations_detected=0",
+  "estate-email-triage/v1":
+    "Admission-only estate email triage; no execution effects",
 };
 // A content-derived UUID in a kernel-specific namespace. Pure across processes.
 export function stableId(value: unknown): string {

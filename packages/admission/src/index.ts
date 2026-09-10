@@ -1,4 +1,4 @@
-export {
+﻿export {
   AttachmentManifestItem,
   CompatibilityHints,
   EstateAdmissionRequest,
@@ -7,6 +7,7 @@ export {
 export {
   SHADOW_EMAIL_RECIPE,
   SHADOW_CONSUMER,
+  CANARY_CONSUMER,
   LIVE_INGEST_SUFFIX,
   DEFAULT_MAILBOX_NAMESPACE,
   ESTATE_TENANT_ID,
@@ -49,3 +50,4 @@ export {
   CompatibilityAdmissionAdapter,
   type ShadowAdmissionResult,
 } from "./compatibility-adapter.js";
+

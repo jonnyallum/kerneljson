@@ -2,10 +2,13 @@ import { capabilityDigest } from "../../capabilities/src/index.js";
 import { stableId } from "../../../services/kernel/src/compiler/index.js";
 import type { PrincipalRef } from "../../contracts/src/index.js";
 
-/** Shadow-only recipe placeholder — never submitted to live gateway this pass. */
+/** Estate email triage recipe - PublicSubmission admission-only (ADMIT=YES EXECUTE=NO). */
 export const SHADOW_EMAIL_RECIPE = "estate-email-triage/v1" as const;
 
 export const SHADOW_CONSUMER = "kj-admission-shadow-email" as const;
+
+/** Phase 5 single-message authority canary consumer (admission receipts only). */
+export const CANARY_CONSUMER = "kj-admission-canary-email" as const;
 
 export const LIVE_INGEST_SUFFIX = "email-ingest-live" as const;
 
@@ -120,3 +123,4 @@ export function normalizeLiveSourceRef(sourceRef: string): string {
   const eventId = normalizeEmailSourceEventId(m[1]);
   return estateDiscoveryKey(eventId);
 }
+

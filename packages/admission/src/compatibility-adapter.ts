@@ -17,7 +17,7 @@ import type {
   EstateAdmissionRequest,
   ShadowVerdict,
 } from "./estate-admission-request.js";
-import { SHADOW_CONSUMER } from "./identity.js";
+import { CANARY_CONSUMER, SHADOW_CONSUMER } from "./identity.js";
 
 export interface ShadowAdmissionResult {
   mode: "shadow";
@@ -200,6 +200,82 @@ export class CompatibilityAdmissionAdapter {
         diff: { error: message, isolated: true },
         error: message,
       };
+    }
+  }
+
+  /**
+   * Phase 5 — EMAIL single-message canary ADMISSION (no execution).
+   * Derives real would-be KJ taskId via simulateWouldBeAdmission; persists a
+   * durable canary receipt through the injected store. NEVER dispatches
+   * Spawner / NewSystemRuntimeAdapter / public.actions.
+   */
+  async admitEmailCanary(
+    envelope: EmailEnvelopeInput,
+  ): Promise<{
+    status: "ADMITTED" | "REPLAY" | "FAILED";
+    taskId?: string;
+    keyDigest?: string;
+    requestDigest?: string;
+    run_id?: string;
+    error?: string;
+  }> {
+    const started = Date.now();
+    try {
+      const request = mapEmailToEstateAdmissionRequest(envelope);
+      const simulated = simulateWouldBeAdmission(request);
+      const prior = this.priorByKey.get(simulated.keyDigest);
+      const status = prior ? "REPLAY" : "ADMITTED";
+      const output = {
+        mode: "canary",
+        channel: "email",
+        admission_status: status,
+        task_id: simulated.wouldBeTaskId,
+        idempotency_key: simulated.idempotencyKey,
+        key_digest: simulated.keyDigest,
+        request_digest: simulated.requestDigest,
+        intent_id: simulated.intentId,
+        estate_discovery_key: simulated.estate_discovery_key,
+        recipe: simulated.recipe,
+        objective: simulated.objective,
+        message_id: request.message_id ?? null,
+        spawner_invoked: false,
+        new_system_runtime_invoked: false,
+        public_actions_written: false,
+        dispatch_invoked: false,
+        consumer: CANARY_CONSUMER,
+      };
+      const persisted = await this.store.persist({
+        input_hash: inputHash({
+          estate_discovery_key: simulated.estate_discovery_key,
+          request_digest: simulated.requestDigest,
+          mode: "canary",
+        }),
+        status: status === "REPLAY" ? "admitted_replay" : "admitted_ok",
+        latency_ms: Math.max(1, Date.now() - started),
+        output,
+        verdict: "MATCH",
+        diff: {
+          consumer: CANARY_CONSUMER,
+          admission_status: status,
+          task_id: simulated.wouldBeTaskId,
+          key_digest: simulated.keyDigest,
+        },
+      });
+      this.priorByKey.set(simulated.keyDigest, {
+        keyDigest: simulated.keyDigest,
+        requestDigest: simulated.requestDigest,
+        wouldBeTaskId: simulated.wouldBeTaskId,
+      });
+      return {
+        status,
+        taskId: simulated.wouldBeTaskId,
+        keyDigest: simulated.keyDigest,
+        requestDigest: simulated.requestDigest,
+        run_id: persisted.run.id,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { status: "FAILED", error: message };
     }
   }
 }

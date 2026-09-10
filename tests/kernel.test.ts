@@ -254,3 +254,13 @@ it("rejects tampered or missing evidence, incomplete steps, substituted plans an
     ]),
   ).toThrow();
 });
+
+it("rejects planning estate-email-triage/v1 as admission-only non-executable", () => {
+  const { task } = compileIntent({
+    ...kernelSubmission,
+    recipe: "estate-email-triage/v1",
+  });
+  expect(() => planTask(task, "estate-email-triage/v1")).toThrow(
+    /admission-only and not executable/,
+  );
+});

@@ -16,7 +16,8 @@
     "test:recovery": "vitest run tests/recovery.test.ts",
     "eval:golden": "tsx services/evaluator/src/cli.ts",
     "lint": "eslint packages services apps runtimes tests evals vitest.config.ts --max-warnings=0",
-    "test:baseline": "node scripts/check-baseline.mjs"
+    "test:baseline": "node scripts/check-baseline.mjs",
+    "start:email-admission-gateway": "tsx scripts/email-admission-gateway.ts"
   },
   "engines": {
     "node": ">=22"
