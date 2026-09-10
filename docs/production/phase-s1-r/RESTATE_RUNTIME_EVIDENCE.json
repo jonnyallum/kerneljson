@@ -1,0 +1,31 @@
+{
+  "capturedAt": "2026-09-10T22:24:18.868Z",
+  "note": "S1-R runtime qualification vs real Postgres + real admission door",
+  "admission_mapping": {
+    "fireIdentity": "09028845-5773-84af-ac42-0948010c4931",
+    "keyDigest8": "47b8bbc2",
+    "canonicalTaskId": "20f777c1-e495-8f66-a75e-9a3b1f802046",
+    "concurrent": 5,
+    "distinctTaskIds": 1,
+    "replaySameTask": true,
+    "conflictStatus": 409,
+    "admissionRows": 1
+  },
+  "createOrGetFire_dedupe": {
+    "firstCreated": true,
+    "secondCreated": false,
+    "fireRows": 1
+  },
+  "fencing": {
+    "epochA": 0,
+    "epochB": 1,
+    "staleBindRejected": true
+  },
+  "bind_blocker": {
+    "bindError": "insert or update on table \"schedule_fires\" violates foreign key constraint \"schedule_fires_admitted_child_task_id_fkey\"",
+    "admittedTaskId": "673662dc-d5f2-8d89-ac0f-5ef24bf8d6e8",
+    "inPublicTasks": 0,
+    "inTaskAdmissions": 1,
+    "fk": "schedule_fires_admitted_child_task_id_fkey -> public.tasks(id)"
+  }
+}
