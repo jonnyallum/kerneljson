@@ -6,6 +6,7 @@ import { ScheduleSpec, fireIdentity, idempotencyKey, type FireInput } from "../s
 import { PersistedScheduleSpec } from "../services/kernel/src/scheduler/persistence.js";
 import { PgScheduleStore } from "../services/kernel/src/scheduler/pg-store.js";
 import { StaleFenceError, FireBindingConflict } from "../services/kernel/src/scheduler/store.js";
+import { seedAdmittedTask } from "./support/seed-admission.js";
 
 /**
  * Phase S1-F — LEASE FENCING qualification (integration, real Postgres).
@@ -53,11 +54,8 @@ run("S1-F lease fencing qualification", () => {
       fireIdentity: fireIdentity(spec, win), fireAtUtc: `2026-09-${day}T00:30:00Z`, createdAt: "2026-09-10T00:00:00Z" };
   };
   async function seedTask(id: string): Promise<void> {
-    const traceId = randomUUID();
-    const contract = { id, tenant: { id: tenantId }, principal: { id: svc }, status: "RECEIVED",
-      acceptanceCriteria: ["seed"], objective: "seed", traceId, createdAt: "2026-09-10T00:00:00Z" };
-    await pool.query("insert into tasks(id,tenant_id,principal_id,trace_id,status,contract,created_at) values($1,$2,$3,$4,'RECEIVED',$5,now())",
-      [id, tenantId, svc, traceId, JSON.stringify(contract)]);
+    // S1-R Option B: bindable child task id lives in the admission ledger, not public.tasks.
+    await seedAdmittedTask(pool, { taskId: id, tenantId, principalId: svc });
   }
   const t0 = Date.parse("2026-09-11T00:00:00Z");
   let epochA = -1, epochB = -1;

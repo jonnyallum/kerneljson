@@ -52,6 +52,17 @@ export const PersistedScheduleState = z.strictObject({
 });
 export type PersistedScheduleState = z.infer<typeof PersistedScheduleState>;
 
+/**
+ * Fire lifecycle. S1-R Option B semantics:
+ *   PLANNED           — a due window with no admission attempt yet.
+ *   ADMISSION_PENDING — an admission attempt has not yet produced a successful
+ *                       canonical admission (transient/retrying).
+ *   ADMITTED          — KernelJSON Admission SUCCEEDED and the fire is bound to its
+ *                       CANONICAL taskId via kernel_private.task_admissions.
+ *                       ADMITTED does NOT mean public.tasks has materialised —
+ *                       task materialisation/execution belongs to the child task
+ *                       lifecycle (downstream), not to the ScheduleFire lifecycle.
+ */
 export const FireState = z.enum([
   "PLANNED",
   "ADMISSION_PENDING",

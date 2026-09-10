@@ -1,10 +1,10 @@
 {
-  "capturedAt": "2026-09-10T22:24:18.868Z",
+  "capturedAt": "2026-09-10T22:43:52.790Z",
   "note": "S1-R runtime qualification vs real Postgres + real admission door",
   "admission_mapping": {
-    "fireIdentity": "09028845-5773-84af-ac42-0948010c4931",
-    "keyDigest8": "47b8bbc2",
-    "canonicalTaskId": "20f777c1-e495-8f66-a75e-9a3b1f802046",
+    "fireIdentity": "aa0543c8-0571-882d-a223-fefc8ae028af",
+    "keyDigest8": "f169e11c",
+    "canonicalTaskId": "f9ae7c67-8b5f-89b0-a5aa-1bdaa532f0b2",
     "concurrent": 5,
     "distinctTaskIds": 1,
     "replaySameTask": true,
@@ -21,11 +21,20 @@
     "epochB": 1,
     "staleBindRejected": true
   },
-  "bind_blocker": {
-    "bindError": "insert or update on table \"schedule_fires\" violates foreign key constraint \"schedule_fires_admitted_child_task_id_fkey\"",
-    "admittedTaskId": "673662dc-d5f2-8d89-ac0f-5ef24bf8d6e8",
-    "inPublicTasks": 0,
+  "option_b_end_to_end": {
+    "taskId": "eaac9b2f-beda-8688-aed1-1cbb01b69e7e",
+    "fireState": "ADMITTED",
+    "boundId": "eaac9b2f-beda-8688-aed1-1cbb01b69e7e",
     "inTaskAdmissions": 1,
-    "fk": "schedule_fires_admitted_child_task_id_fkey -> public.tasks(id)"
+    "inPublicTasksAtBind": 0,
+    "inPublicTasksAfterMaterialise": 1
+  },
+  "duplicate_wake": {
+    "firstAdmitted": 1,
+    "secondReplays": 1,
+    "fireRows": 1
+  },
+  "bind_once": {
+    "rebindDifferentAdmittedTaskRejected": true
   }
 }
