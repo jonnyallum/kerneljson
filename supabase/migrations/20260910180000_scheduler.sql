@@ -11,7 +11,7 @@
 --   and resolve to the existing row.
 
 -- DB-enforced enums: unknown/invalid policy or state values cannot be persisted.
-create type public.schedule_state as enum ('enabled','paused','disabled');
+create type public.schedule_lifecycle_state as enum ('enabled','paused','disabled');
 create type public.schedule_fire_state as enum
   ('PLANNED','ADMISSION_PENDING','ADMITTED','SKIPPED','FAILED','CANCELLED');
 create type public.schedule_missed_run_policy as enum ('SKIP','RUN_ONCE','BACKLOG_BOUNDED');
@@ -47,7 +47,7 @@ create table public.schedule_specs (
 -- Current lifecycle state. Toggling enabled/paused/disabled is NOT a version change.
 create table public.schedule_state (
   schedule_id uuid primary key,
-  state public.schedule_state not null default 'disabled',
+  state public.schedule_lifecycle_state not null default 'disabled',
   active_version text not null,
   updated_at timestamptz not null default now(),
   updated_by uuid not null references public.principals,

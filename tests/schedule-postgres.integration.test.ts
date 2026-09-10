@@ -179,7 +179,7 @@ run("S1 Postgres runtime qualification", () => {
     await expect(ins(base({ computed_windows: 10, max_runs: 3 }))).rejects.toBeTruthy();          // unbounded
     await expect(ins(base({ status: "APPROVED", approved_by: owner }))).rejects.toBeTruthy();      // self-approval
     await expect(ins(base({ status: "APPROVED", approved_by: null }))).rejects.toBeTruthy();       // approved w/o approver
-    await expect(ins(base({ status: "APPROVED", approved_by: randomUUID() }))).resolves.toBeTruthy(); // valid
+    await expect(ins(base({ status: "APPROVED", approved_by: svc }))).resolves.toBeTruthy(); // valid: real approver != requester
     evidence["backfill_checks_enforced"] = true;
   });
 

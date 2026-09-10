@@ -1,0 +1,50 @@
+# S1 Postgres runtime evidence — 2026-09-10T19:56:40Z
+# DB: throwaway local container kj-sched-qual (postgres:16), db=kjqual, 127.0.0.1:55499. No production.
+
+## UNIQUE constraints on schedule_fires (core invariant):
+                             conname                             |                  pg_get_constraintdef                   
+-----------------------------------------------------------------+---------------------------------------------------------
+ schedule_fires_fire_identity_key                                | UNIQUE (fire_identity)
+ schedule_fires_schedule_id_schedule_version_fire_window_key_key | UNIQUE (schedule_id, schedule_version, fire_window_key)
+(2 rows)
+
+## bind-once trigger + function:
+           tgname            |                                                             pg_get_triggerdef                                                             
+-----------------------------+-------------------------------------------------------------------------------------------------------------------------------------------
+ schedule_fire_bind_once_trg | CREATE TRIGGER schedule_fire_bind_once_trg BEFORE UPDATE ON public.schedule_fires FOR EACH ROW EXECUTE FUNCTION schedule_fire_bind_once()
+(1 row)
+
+## fire rows (proves one row per logical fire; v1+v2 for same window = distinct namespace):
+ schedule_version |            fire_window_key             |  state   | bound 
+------------------+----------------------------------------+----------+-------
+ v1               | dailyAt/01:30|Europe/London|2026-09-11 | ADMITTED | t
+ v1               | dailyAt/01:30|Europe/London|2026-09-12 | PLANNED  | f
+ v2               | dailyAt/01:30|Europe/London|2026-09-11 | PLANNED  | f
+(3 rows)
+
+## observations (AUTHORITY = bind conflict; LEASE_RECOVERED = takeover):
+   kind    | count 
+-----------+-------
+ AUTHORITY |     1
+(1 row)
+
+## lease epoch after takeover:
+  owner   | epoch 
+----------+-------
+ worker-B |     1
+(1 row)
+
+## LIVE duplicate-insert rejection (attempt second fire with same triple):
+ERROR:  duplicate key value violates unique constraint "schedule_fires_pkey"
+## backfill CHECK constraints:
+                      conname                      |                                                           pg_get_constraintdef                                                           
+---------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------------------
+ schedule_backfill_requests_check                  | CHECK ((requested_to >= requested_from))
+ schedule_backfill_requests_check1                 | CHECK ((computed_windows <= max_runs))
+ schedule_backfill_requests_check2                 | CHECK (((status = ANY (ARRAY['PREVIEW'::schedule_backfill_status, 'REJECTED'::schedule_backfill_status])) OR (approved_by IS NOT NULL)))
+ schedule_backfill_requests_check3                 | CHECK (((approved_by IS NULL) OR (approved_by <> requested_by)))
+ schedule_backfill_requests_computed_windows_check | CHECK ((computed_windows >= 0))
+ schedule_backfill_requests_max_runs_check         | CHECK (((max_runs >= 1) AND (max_runs <= 100)))
+ schedule_backfill_requests_preview_digest_check   | CHECK ((preview_digest ~ '^[a-f0-9]{8,64}$'::text))
+(7 rows)
+

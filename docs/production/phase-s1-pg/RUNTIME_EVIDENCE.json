@@ -1,0 +1,18 @@
+{
+  "unique_sequential_rows": 1,
+  "unique_concurrent_creators": 1,
+  "bind_once_trigger_blocked": true,
+  "bind_once_trigger_msg": "schedule fire d207e184-87fb-4f5f-be77-2ca5ef9f1d97|v1|dailyAt/01:30|Europe/London|2026-09-11 already bound to 137acaee-e",
+  "lease_epoch_before": 0,
+  "lease_epoch_after": 1,
+  "backfill_checks_enforced": true,
+  "enum_fail_closed": true,
+  "version_namespace_rows": 2,
+  "schedule_fires_unique_constraints": [
+    "schedule_fires_fire_identity_key",
+    "schedule_fires_schedule_id_schedule_version_fire_window_key_key"
+  ],
+  "schedule_fires_triggers": [
+    "schedule_fire_bind_once_trg"
+  ]
+}
