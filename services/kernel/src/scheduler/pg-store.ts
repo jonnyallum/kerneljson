@@ -12,8 +12,10 @@ import {
 import {
   FireBindingConflict,
   StoreError,
+  StaleFenceError,
   type ScheduleStore,
   type FireInput,
+  type LeaseFence,
 } from "./store.js";
 
 /**
@@ -133,17 +135,31 @@ export class PgScheduleStore implements ScheduleStore {
     return { fire: rowToFire(sel.rows[0]), created: false };
   }
 
+  /** True iff the DB lease row for scheduleId is currently (fence.owner, fence.epoch). */
+  private async fenceIsCurrent(scheduleId: string, fence: LeaseFence): Promise<boolean> {
+    const l = await this.pool.query(
+      "select 1 from schedule_leases where schedule_id=$1 and owner=$2 and epoch=$3",
+      [scheduleId, fence.owner, fence.epoch],
+    );
+    return (l.rowCount ?? 0) > 0;
+  }
+
   async bindAdmission(
     idempotencyKey: string,
     b: { admissionRequestId: string; childTaskId: string; at: string },
+    fence?: LeaseFence,
   ): Promise<{ fire: ScheduleFire; replay: boolean }> {
     const cur = await this.pool.query("select * from schedule_fires where idempotency_key=$1", [idempotencyKey]);
     if (!cur.rows[0]) throw new StoreError("no such fire");
+    const scheduleId = cur.rows[0].schedule_id as string;
     if (cur.rows[0].admitted_child_task_id) {
-      if (cur.rows[0].admitted_child_task_id === b.childTaskId)
+      if (cur.rows[0].admitted_child_task_id === b.childTaskId) {
+        if (fence && !(await this.fenceIsCurrent(scheduleId, fence)))
+          throw new StaleFenceError(`stale fence: not current owner of ${scheduleId}`);
         return { fire: rowToFire(cur.rows[0]), replay: true };
+      }
       await this.recordObservation({
-        id: randomUUID(), scheduleId: cur.rows[0].schedule_id, idempotencyKey,
+        id: randomUUID(), scheduleId, idempotencyKey,
         kind: "AUTHORITY",
         detail: { reason: "fire_bind_conflict", bound: cur.rows[0].admitted_child_task_id, attempted: b.childTaskId },
         createdAt: b.at,
@@ -152,15 +168,28 @@ export class PgScheduleStore implements ScheduleStore {
         `fire ${idempotencyKey} already bound to ${cur.rows[0].admitted_child_task_id}`,
       );
     }
-    // The bind-once trigger enforces immutability at the DB even if this guard is bypassed.
-    const upd = await this.pool.query(
-      `update schedule_fires set state='ADMITTED', admission_request_id=$2,
-         admitted_child_task_id=$3, admitted_at=$4
-       where idempotency_key=$1 and admitted_child_task_id is null returning *`,
-      [idempotencyKey, b.admissionRequestId, b.childTaskId, b.at],
-    );
+    // DB-ENFORCED mutation. With a fence, the UPDATE joins schedule_leases so a stale
+    // epoch/owner matches no lease row -> zero rows updated -> fail closed. The bind-once
+    // trigger independently blocks any rebind to a different task.
+    const upd = fence
+      ? await this.pool.query(
+          `update schedule_fires f set state='ADMITTED', admission_request_id=$2,
+             admitted_child_task_id=$3, admitted_at=$4
+           from schedule_leases l
+           where f.idempotency_key=$1 and f.admitted_child_task_id is null
+             and l.schedule_id=f.schedule_id and l.owner=$5 and l.epoch=$6
+           returning f.*`,
+          [idempotencyKey, b.admissionRequestId, b.childTaskId, b.at, fence.owner, fence.epoch],
+        )
+      : await this.pool.query(
+          `update schedule_fires set state='ADMITTED', admission_request_id=$2,
+             admitted_child_task_id=$3, admitted_at=$4
+           where idempotency_key=$1 and admitted_child_task_id is null returning *`,
+          [idempotencyKey, b.admissionRequestId, b.childTaskId, b.at],
+        );
     if (!upd.rows[0]) {
-      // lost a race to another binder; re-read and treat same-task as replay
+      if (fence && !(await this.fenceIsCurrent(scheduleId, fence)))
+        throw new StaleFenceError(`stale fence: worker is not the current owner of ${scheduleId}`);
       const re = await this.pool.query("select * from schedule_fires where idempotency_key=$1", [idempotencyKey]);
       if (re.rows[0]?.admitted_child_task_id === b.childTaskId) return { fire: rowToFire(re.rows[0]), replay: true };
       throw new FireBindingConflict(`fire ${idempotencyKey} bound concurrently to another task`);
@@ -168,16 +197,28 @@ export class PgScheduleStore implements ScheduleStore {
     return { fire: rowToFire(upd.rows[0]), replay: false };
   }
 
-  async transition(idempotencyKey: string, to: FireState): Promise<ScheduleFire> {
-    // App-enforced: an ADMITTED fire may not leave ADMITTED (DB does not constrain this).
-    const upd = await this.pool.query(
-      `update schedule_fires set state=$2
-       where idempotency_key=$1 and (admitted_child_task_id is null or $2='ADMITTED') returning *`,
-      [idempotencyKey, to],
-    );
+  async transition(idempotencyKey: string, to: FireState, fence?: LeaseFence): Promise<ScheduleFire> {
+    // App-enforced: an ADMITTED fire may not leave ADMITTED. Ownership-sensitive: with a
+    // fence, the UPDATE requires the current lease (owner,epoch) via a join predicate.
+    const upd = fence
+      ? await this.pool.query(
+          `update schedule_fires f set state=$2::public.schedule_fire_state
+           from schedule_leases l
+           where f.idempotency_key=$1 and l.schedule_id=f.schedule_id
+             and l.owner=$3 and l.epoch=$4
+             and (f.admitted_child_task_id is null or $2='ADMITTED') returning f.*`,
+          [idempotencyKey, to, fence.owner, fence.epoch],
+        )
+      : await this.pool.query(
+          `update schedule_fires set state=$2::public.schedule_fire_state
+           where idempotency_key=$1 and (admitted_child_task_id is null or $2='ADMITTED') returning *`,
+          [idempotencyKey, to],
+        );
     if (!upd.rows[0]) {
-      const cur = await this.pool.query("select 1 from schedule_fires where idempotency_key=$1", [idempotencyKey]);
+      const cur = await this.pool.query("select schedule_id from schedule_fires where idempotency_key=$1", [idempotencyKey]);
       if ((cur.rowCount ?? 0) === 0) throw new StoreError("no such fire");
+      if (fence && !(await this.fenceIsCurrent(cur.rows[0].schedule_id, fence)))
+        throw new StaleFenceError(`stale fence: worker is not the current owner of ${cur.rows[0].schedule_id}`);
       throw new StoreError("cannot move an admitted fire out of ADMITTED");
     }
     return rowToFire(upd.rows[0]);
@@ -208,8 +249,12 @@ export class PgScheduleStore implements ScheduleStore {
     });
   }
 
-  async releaseLease(scheduleId: string, owner: string): Promise<void> {
-    await this.pool.query("delete from schedule_leases where schedule_id=$1 and owner=$2", [scheduleId, owner]);
+  async releaseLease(scheduleId: string, owner: string, epoch?: number): Promise<void> {
+    // Fenced: a stale-epoch release matches no row and is a no-op (current owner keeps the lease).
+    if (epoch === undefined)
+      await this.pool.query("delete from schedule_leases where schedule_id=$1 and owner=$2", [scheduleId, owner]);
+    else
+      await this.pool.query("delete from schedule_leases where schedule_id=$1 and owner=$2 and epoch=$3", [scheduleId, owner, epoch]);
   }
 
   async createBackfillRequest(req: ScheduleBackfillRequest): Promise<ScheduleBackfillRequest> {

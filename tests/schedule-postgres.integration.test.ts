@@ -125,7 +125,7 @@ run("S1 Postgres runtime qualification", () => {
     });
     const [r1, r2] = await Promise.all([store.createOrGetFire(inp()), s2.createOrGetFire(inp())]);
     expect([r1.created, r2.created].filter(Boolean).length).toBe(1); // exactly one creator
-    const c = await pool.query("select count(*)::int n from schedule_fires where fire_window_key=$1", [win2]);
+    const c = await pool.query("select count(*)::int n from schedule_fires where schedule_id=$1 and fire_window_key=$2", [scheduleId, win2]);
     expect(c.rows[0].n).toBe(1);
     evidence["unique_concurrent_creators"] = 1;
   });

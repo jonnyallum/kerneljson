@@ -21,6 +21,16 @@ import {
  */
 export class FireBindingConflict extends Error {}
 export class StoreError extends Error {}
+/** Thrown when an ownership-sensitive mutation is attempted with a stale/invalid
+ *  lease fence (another worker has taken ownership, epoch advanced). Fail-closed. */
+export class StaleFenceError extends Error {}
+
+/** Fencing token: the current lease owner + epoch. Ownership-sensitive
+ *  ScheduleFire mutations require the CURRENT (owner, epoch). Enforced by the DB. */
+export interface LeaseFence {
+  owner: string;
+  epoch: number;
+}
 
 export interface FireInput {
   idempotencyKey: string;
@@ -41,12 +51,15 @@ export interface ScheduleStore {
 
   /** Idempotent: a repeated logical fire resolves to the existing row. */
   createOrGetFire(input: FireInput): Promise<{ fire: ScheduleFire; created: boolean }>;
-  /** Bind the admitted child task. Same task = REPLAY; different task = FAIL CLOSED. */
+  /** Bind the admitted child task. Same task = REPLAY; different task = FAIL CLOSED.
+   *  Ownership-sensitive: pass `fence` to require the current lease owner+epoch. */
   bindAdmission(
     idempotencyKey: string,
     b: { admissionRequestId: string; childTaskId: string; at: string },
+    fence?: LeaseFence,
   ): Promise<{ fire: ScheduleFire; replay: boolean }>;
-  transition(idempotencyKey: string, to: FireState): Promise<ScheduleFire>;
+  /** Ownership-sensitive lifecycle transition. Pass `fence` to require current owner+epoch. */
+  transition(idempotencyKey: string, to: FireState, fence?: LeaseFence): Promise<ScheduleFire>;
 
   claimLease(
     scheduleId: string,
@@ -54,7 +67,8 @@ export interface ScheduleStore {
     nowMs: number,
     ttlMs: number,
   ): Promise<ScheduleLease | null>;
-  releaseLease(scheduleId: string, owner: string): Promise<void>;
+  /** Release the lease. Pass `epoch` to fence: a stale-epoch release is a no-op. */
+  releaseLease(scheduleId: string, owner: string, epoch?: number): Promise<void>;
 
   createBackfillRequest(req: ScheduleBackfillRequest): Promise<ScheduleBackfillRequest>;
   recordObservation(obs: ScheduleObservation): Promise<void>;
@@ -116,12 +130,21 @@ export class InMemoryScheduleStore implements ScheduleStore {
     return { fire, created: true };
   }
 
+  private assertFence(scheduleId: string, fence?: LeaseFence): void {
+    if (!fence) return; // fencing is opt-in per call
+    const l = this.leases.get(scheduleId);
+    if (!l || l.owner !== fence.owner || l.epoch !== fence.epoch)
+      throw new StaleFenceError(`stale/invalid lease fence for ${scheduleId}`);
+  }
+
   async bindAdmission(
     idempotencyKey: string,
     b: { admissionRequestId: string; childTaskId: string; at: string },
+    fence?: LeaseFence,
   ): Promise<{ fire: ScheduleFire; replay: boolean }> {
     const fire = this.fires.get(idempotencyKey);
     if (!fire) throw new StoreError("no such fire");
+    this.assertFence(fire.scheduleId, fence);
     if (fire.admittedChildTaskId !== null) {
       if (fire.admittedChildTaskId === b.childTaskId) return { fire, replay: true };
       // FAIL CLOSED: never overwrite a bound child task; surface an authority observation.
@@ -152,9 +175,10 @@ export class InMemoryScheduleStore implements ScheduleStore {
     return { fire: next, replay: false };
   }
 
-  async transition(idempotencyKey: string, to: FireState): Promise<ScheduleFire> {
+  async transition(idempotencyKey: string, to: FireState, fence?: LeaseFence): Promise<ScheduleFire> {
     const fire = this.fires.get(idempotencyKey);
     if (!fire) throw new StoreError("no such fire");
+    this.assertFence(fire.scheduleId, fence);
     if (fire.admittedChildTaskId !== null && to !== "ADMITTED")
       throw new StoreError("cannot move an admitted fire out of ADMITTED");
     const next = ScheduleFire.parse({ ...fire, state: to });
@@ -194,9 +218,10 @@ export class InMemoryScheduleStore implements ScheduleStore {
     return lease;
   }
 
-  async releaseLease(scheduleId: string, owner: string): Promise<void> {
+  async releaseLease(scheduleId: string, owner: string, epoch?: number): Promise<void> {
     const cur = this.leases.get(scheduleId);
-    if (cur && cur.owner === owner) this.leases.delete(scheduleId);
+    if (cur && cur.owner === owner && (epoch === undefined || cur.epoch === epoch))
+      this.leases.delete(scheduleId);
   }
 
   async createBackfillRequest(req: ScheduleBackfillRequest): Promise<ScheduleBackfillRequest> {
