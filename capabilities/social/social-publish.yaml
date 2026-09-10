@@ -1,0 +1,38 @@
+id: social.publish
+implementation: social-mcp (social-mcp-jaios) / VM LinkedIn auto-scheduler cron (fail-closed, status:approved queue)
+runtime: social-scheduler
+inputs:
+  platform:
+    type: string
+    enum: [linkedin]
+    required: true
+  content:
+    type: string
+    required: true
+  media_refs:
+    type: array
+    items: string
+    required: false
+outputs:
+  post_id:
+    type: string
+  published_at:
+    type: string
+  status:
+    type: string
+    enum: [queued, approved, published, failed]
+side_effects:
+  - public-content-publish
+permissions:
+  - linkedin-access-token
+  - human-approval-gate
+evidence_produced:
+  format: social_publish_receipt
+  fields:
+    - post_id
+    - published_at
+    - platform
+stateful: true
+# Publishing is public content: no automatic social publishing (GROUND_RULES). The VM */15 scheduler
+# only publishes items flipped to status:approved, and is fail-closed.
+status: staged

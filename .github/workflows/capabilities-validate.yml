@@ -1,0 +1,29 @@
+name: Validate capability catalogue
+
+# The capability catalogue is executable constitutional metadata, not documentation:
+# KernelJSON consumes it. Validate it on every change to capabilities/.
+
+on:
+  push:
+    paths:
+      - "capabilities/**"
+      - "scripts/validate_capabilities.py"
+      - ".github/workflows/capabilities-validate.yml"
+  pull_request:
+    paths:
+      - "capabilities/**"
+      - "scripts/validate_capabilities.py"
+      - ".github/workflows/capabilities-validate.yml"
+
+jobs:
+  validate-capabilities:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install PyYAML
+        run: pip install pyyaml
+      - name: Validate capability catalogue
+        run: python scripts/validate_capabilities.py

@@ -1,0 +1,63 @@
+id: repository.read
+implementation: spawner/engine.py (SpawnerEngine.execute_task)
+runtime: spawner-runtime
+inputs:
+  repo_path:
+    type: string
+    description: Absolute or relative filesystem path to the target repository or document
+    required: false
+    default: "."
+  target_file:
+    type: string
+    description: Optional specific file to inspect (e.g. README.md)
+    required: false
+  timeout_seconds:
+    type: integer
+    description: Execution timeout in seconds
+    required: false
+    default: 60
+outputs:
+  capability:
+    type: string
+    example: "repository.read"
+  project_name:
+    type: string
+    description: Extracted project title or repository name
+  target_path:
+    type: string
+    description: Absolute path of the resolved file
+  bytes_read:
+    type: integer
+    description: Total byte count read
+  lines_read:
+    type: integer
+    description: Total line count
+  content_sha256:
+    type: string
+    description: Full SHA256 hash of read content
+  output_hash:
+    type: string
+    description: 12-character truncated output hash
+  skills_mounted:
+    type: array
+    items: string
+    description: List of skills loaded into ephemeral worker context
+  mutations_detected:
+    type: integer
+    description: Count of filesystem mutations (must be 0 for read capability)
+  summary:
+    type: string
+    description: Single-line human and machine readable outcome summary
+side_effects: []
+permissions:
+  - read-only-filesystem
+evidence_produced:
+  format: structured_json
+  fields:
+    - project_name
+    - target_path
+    - output_hash
+    - mutations_detected
+  guarantee: Zero filesystem modifications; deterministic SHA256 integrity hash
+stateful: false
+status: enabled

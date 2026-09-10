@@ -1,0 +1,37 @@
+id: browser.use
+implementation: puppeteer / browser-tools MCP (headless Chromium)
+runtime: mcp-browser
+inputs:
+  url:
+    type: string
+    required: true
+  actions:
+    type: array
+    items: object
+    description: Ordered navigate / click / type / read actions
+    required: false
+  extract:
+    type: string
+    description: What to return (text, screenshot, accessibility-tree)
+    required: false
+outputs:
+  content:
+    type: string
+  screenshot_ref:
+    type: string
+    description: Object-storage ref for a captured screenshot
+  status:
+    type: string
+side_effects:
+  - outbound-http
+  - browser-automation
+permissions:
+  - guardian-pre-gate
+evidence_produced:
+  format: browser_action_receipt
+  fields:
+    - final_url
+    - screenshot_ref
+    - status
+stateful: false
+status: candidate

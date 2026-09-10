@@ -1,0 +1,30 @@
+id: voice.synthesize
+implementation: ElevenLabs MCP (elevenlabs-mcp-jaios, jai-os internal)
+runtime: elevenlabs-mcp
+inputs:
+  text:
+    type: string
+    required: true
+  voice_id:
+    type: string
+    required: false
+outputs:
+  audio_ref:
+    type: string
+    description: Object-storage ref for the synthesized audio artefact
+  duration_ms:
+    type: integer
+side_effects:
+  - outbound-http
+  - audio-artefact
+permissions:
+  - elevenlabs-api-key
+evidence_produced:
+  format: audio_artefact_ref
+  fields:
+    - audio_ref
+    - duration_ms
+stateful: false
+# Exposed only through a jai-os internal MCP (being retired). Available as a capability but not yet
+# wired into the new-system runtime.
+status: candidate

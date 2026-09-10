@@ -1,0 +1,38 @@
+id: cloud.escalate
+implementation: conductor/mcp/server.py (tool_cloud_escalate) - OpenRouter branch + local SQLite spend ledger
+runtime: conductor-mcp
+inputs:
+  prompt:
+    type: string
+    required: true
+  model:
+    type: string
+    description: OpenRouter model slug
+    required: true
+  max_spend_gbp:
+    type: number
+    required: false
+outputs:
+  text:
+    type: string
+  cost_gbp:
+    type: number
+  model:
+    type: string
+side_effects:
+  - external-spend
+  - outbound-http
+permissions:
+  - openrouter-api-key
+  - spend-approval-token
+  - human-approval-gate
+evidence_produced:
+  format: cloud_spend_receipt
+  fields:
+    - model
+    - cost_gbp
+    - tokens
+stateful: true
+# LEGACY: OpenRouter is retired in estate docs and the account is out of credit (2026-08-31),
+# but cloud_escalate code + Mission Control cost SQL still reference it. AUTHORITY CONFLICT #4.
+status: legacy

@@ -1,0 +1,46 @@
+id: workflow.n8n
+implementation: n8n (Docker :5678, https://n8n.jonnyai.co.uk) workflow trigger via webhook / REST API
+runtime: n8n
+inputs:
+  workflow_id:
+    type: string
+    description: Registered n8n workflow id. Unknown / unregistered ids MUST fail closed (deny, no dispatch).
+    required: true
+  declared_side_effects:
+    type: array
+    items: string
+    description: >-
+      The specific workflow's real downstream effects (e.g. outbound-email, outbound-http,
+      write-db), resolved from the workflow registry BEFORE dispatch so the policy layer
+      approves the ACTUAL effects, not the generic wrapper. Required.
+    required: true
+  payload:
+    type: object
+    required: false
+outputs:
+  execution_id:
+    type: string
+  status:
+    type: string
+    enum: [success, error, running]
+side_effects:
+  - workflow-execution
+  - declared-per-workflow   # the real effects are whatever declared_side_effects resolves to
+permissions:
+  - n8n-api-key
+  - human-approval-gate     # gate on the resolved declared_side_effects, not on bare 'workflow-execution'
+evidence_produced:
+  format: n8n_execution_receipt
+  fields:
+    - execution_id
+    - status
+    - resolved_side_effects
+stateful: true
+# ANTI-LAUNDERING (review 2026-09-07): a generic workflow.n8n hides each workflow's real
+# effects (workflow 17 might send a customer email AND write the prod db). KernelJSON must
+# not approve 'workflow-execution' blind. RULE: workflow_id must be in the registry and its
+# declared_side_effects resolved + approved BEFORE dispatch; unknown ids fail closed.
+# TARGET: promote each approved workflow to its own capability -
+#   workflow.n8n.daily_research / workflow.n8n.email_triage / workflow.n8n.publish_report -
+# each with explicit permissions and effects. STAGED until that registry + resolution exists.
+status: staged

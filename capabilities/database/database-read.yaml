@@ -1,0 +1,41 @@
+id: database.read
+implementation: Supabase REST API / supabase-mcp-server (execute_sql)
+runtime: supabase-mcp
+inputs:
+  table:
+    type: string
+    description: Target database table name
+    required: true
+  select:
+    type: string
+    description: Select column expression (default *)
+    required: false
+    default: "*"
+  filters:
+    type: object
+    description: Key-value filter parameters
+    required: false
+  limit:
+    type: integer
+    description: Result count limit
+    required: false
+    default: 100
+outputs:
+  rows:
+    type: array
+    items: object
+  count:
+    type: integer
+  duration_ms:
+    type: integer
+side_effects: []
+permissions:
+  - supabase-anon-key
+  - supabase-service-key (for service tables)
+evidence_produced:
+  format: structured_json
+  fields:
+    - count
+    - duration_ms
+stateful: false
+status: enabled

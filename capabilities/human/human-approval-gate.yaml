@@ -1,0 +1,47 @@
+id: human.approval_gate
+implementation: conductor/mcp/server.py (cloud_escalate) + Boardroom DSP TYPE=GATE
+runtime: boardroom-dsp
+inputs:
+  action_type:
+    type: string
+    enum: [financial_spend, production_deploy, client_message, contract_signoff]
+    required: true
+  description:
+    type: string
+    description: Full summary of proposed action and rationale
+    required: true
+  cost_estimate_gbp:
+    type: number
+    required: false
+    default: 0.00
+  target_signoff:
+    type: string
+    enum: [jonny, keith]
+    default: "jonny"
+outputs:
+  decision:
+    type: string
+    enum: [approved, rejected, amended]
+  approved_by:
+    type: string
+  signed_at:
+    type: string
+  reasons:
+    type: string
+side_effects:
+  - graph-interrupt
+permissions:
+  - human-principal-authority
+evidence_produced:
+  format: approval_dsp_receipt
+  assurance: advisory   # DSP-based approval; no cryptographic signature/attestation yet -
+                        # 'signed' overstates trust while central human-gate enforcement is weak
+  fields:
+    - decision
+    - approved_by
+    - issued_at
+stateful: true
+# When KernelJSON owns approvals, replace with a proper attested evidence object:
+# approval_id, principal_id, mission_id, action_digest, decision, issued_at, expires_at,
+# nonce, policy_version - cryptographically signed. Until then this is advisory only.
+status: enabled

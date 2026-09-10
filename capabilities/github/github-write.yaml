@@ -1,0 +1,45 @@
+id: github.write
+implementation: MCP GitHub / scripts/git-ops.py
+runtime: conductor-mcp
+inputs:
+  repo:
+    type: string
+    description: GitHub repository slug (e.g. owner/repo)
+    required: true
+  branch:
+    type: string
+    description: Head branch name
+    required: true
+  base:
+    type: string
+    description: Base branch to merge into (default main)
+    required: false
+    default: "main"
+  title:
+    type: string
+    description: Pull request title
+    required: true
+  body:
+    type: string
+    description: Pull request markdown description
+    required: false
+outputs:
+  pr_url:
+    type: string
+  pr_id:
+    type: integer
+  status:
+    type: string
+side_effects:
+  - github-pr-create
+  - github-branch-push
+permissions:
+  - github-token-write
+  - jonny-signoff (for production merge)
+evidence_produced:
+  format: github_pr_url
+  fields:
+    - pr_url
+    - pr_id
+stateful: true
+status: staged
