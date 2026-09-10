@@ -1,0 +1,35 @@
+id: research.web
+implementation: read_url_content / Brave Search MCP
+runtime: mcp-web
+inputs:
+  query:
+    type: string
+    description: Web search query string
+    required: false
+  url:
+    type: string
+    description: Direct URL to fetch and convert to markdown
+    required: false
+  domain_filter:
+    type: string
+    description: Recommended domain restriction
+    required: false
+outputs:
+  citations:
+    type: array
+    items: string
+  content_markdown:
+    type: string
+  http_status:
+    type: integer
+side_effects:
+  - outbound-http
+permissions:
+  - web-search-key
+evidence_produced:
+  format: source_citations
+  fields:
+    - citations
+    - http_status
+stateful: false
+status: enabled

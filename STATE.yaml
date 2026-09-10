@@ -1,10 +1,10 @@
 project: kerneljson
-state: foundation_committed
+state: production_qualification_gate_1_passed_locally
 version: 0.0.1
 
 github:
   repository: jonnyallum/kerneljson
-  branch: main
+  branch: docs/kerneljson-prep-track-c
 
 supabase:
   project_ref: banqdzddfganzfhckdps
@@ -15,24 +15,236 @@ vault:
 
 runtime:
   durable_execution: restate
-  model_provider: deepseek
-  sandbox: gvisor
+  model_provider: deepseek_adapter_live_verified
+  production_model_recipes: not_enabled
+  capability_layer: deterministic_registry_and_durable_receipts_verified
+  production_capability_recipes: not_enabled
+  sandbox: not_implemented
 
 implemented:
   - repository_bootstrap
   - architecture_constitution
   - adr_seed
   - supabase_cli_link
+  - zod_contracts
+  - strict_typescript
+  - contract_and_lifecycle_unit_tests
+  - initial_supabase_migrations_locally_validated
+  - immutable_task_ledger_and_idempotency_constraints
+  - deterministic_restate_task_workflow
+  - durable_wait_signal_and_cooperative_cancellation
+  - real_restate_and_worker_restart_tests
+  - post_commit_pre_acknowledgement_recovery_test
+  - deterministic_intent_compiler
+  - validated_execution_plan_contract
+  - deterministic_dependency_graph_planner
+  - restate_kernel_workflow_v1_executor
+  - plan_bound_completion_verification
+  - phase_4_live_recovery_and_cancellation_tests
+  - typed_task_scoped_model_port
+  - bounded_deepseek_text_adapter
+  - model_receipt_provenance_and_sanitized_failures
+  - restate_journaled_model_calls_and_receipt_recovery
+  - explicit_jvault_injected_live_smoke_command
+  - versioned_deterministic_capability_registry
+  - capability_input_output_schemas_and_independent_verification
+  - task_bound_capability_invocations_and_receipts
+  - atomic_idempotent_capability_run_evidence_event_persistence
+  - capability_receipt_restart_recovery_test
+  - deterministic_default_deny_policy
+  - scope_bound_human_approvals_and_membership_checks
+  - durable_approval_wait_expiry_cancellation_and_recovery
+  - persisted_evidence_verification_and_atomic_outcomes
+  - golden_intent_to_verified_outcome_workflow
+  - tenant_scoped_verified_result_memory
+  - temporal_evidenced_world_model
+  - executable_golden_evaluations_and_promotion_gate
+  - authenticated_task_mission_control_and_human_controls
+  - bounded_evaluated_adaptive_capability_routing
+  - bounded_scheduled_tasks_with_independent_child_evidence_verification
 
-current_phase: 1
+current_phase: 15
 
 next:
-  - typed_contracts
-  - initial_supabase_migrations
-  - restate_task_workflow
+  - production_readiness_review_separately_scoped
+  - remote_migration_review_still_pending
 
 blocked: []
 
+phase4_validation:
+  unit_tests: 18_passed
+  integration: 5_passed_with_4_phase_3_regressions
+  combined_suite: 63_passed_0_failed_0_skipped
+  report: artifacts/local/phase4-tests.json
+
+phase5_validation:
+  unit_and_http_tests: 44_passed
+  recovery_tests: 2_passed_with_9_existing_recovery_regressions
+  combined_suite: 109_passed_0_failed_0_skipped
+  report: artifacts/local/phase5-tests.json
+  live_provider: passed_exact_response_check
+  live_report: artifacts/local/phase5-live-smoke.json
+  live_requested_model: deepseek-chat
+  live_response_model: deepseek-v4-flash
+  live_total_tokens: 22
+  live_verified_at: '2026-09-05T16:46:00.814Z'
+  initial_live_smoke_prerequisite_check: exited_2_before_network_request
+  phase_complete: true
+
+phase6_validation:
+  unit_tests: 25_passed
+  database_tests: 7_passed_with_7_existing_regressions
+  recovery_tests: 1_passed_with_11_existing_recovery_regressions
+  combined_suite: 142_passed_0_failed_0_skipped
+  report: artifacts/local/phase6-tests.json
+  phase_complete: true
+
+phase7_validation:
+  unit_tests: 13_passed
+  database_tests: 3_passed_with_14_existing_regressions
+  recovery_tests: 4_passed_with_12_existing_recovery_regressions
+  combined_suite: 162_passed_0_failed_0_skipped
+  report: artifacts/local/phase7-tests.json
+  final_worker_recovery: 4_passed_12_unrelated_tests_not_selected
+  final_worker_report: artifacts/local/phase7-final-recovery.json
+  phase_complete: true
+
+phase8_validation:
+  combined_suite: 173_passed_0_failed_0_skipped
+  report: artifacts/local/phase8-tests.json
+  phase_complete: true
+
+phase9_validation:
+  combined_suite: 175_passed_0_failed_0_skipped
+  report: artifacts/local/phase9-tests.json
+  phase_complete: true
+
+phase10_validation:
+  focused_suite: 25_passed_0_failed_0_skipped
+  memory_tests: 8_passed
+  database_regressions: 17_passed
+  typecheck: passed
+  build: passed
+  report: artifacts/local/phase10-tests.json
+  phase_complete: true
+
+phase11_validation:
+  focused_suite: 32_passed_0_failed_0_skipped
+  world_tests: 7_passed
+  memory_and_database_regressions: 25_passed
+  typecheck: passed
+  build: passed
+  report: artifacts/local/phase11-tests.json
+  phase_complete: true
+
+phase12_validation:
+  focused_suite: 27_passed_0_failed_0_skipped
+  evaluation_tests: 10_passed
+  database_regressions: 17_passed
+  golden_cli: 5_cases_passed
+  typecheck: passed
+  build: passed
+  report: artifacts/local/phase12-tests.json
+  golden_report: artifacts/local/golden-evaluation.json
+  phase_complete: true
+
+phase13_validation:
+  http_tests: 5_passed
+  control_integration: 2_passed_20_unrelated_tests_not_selected
+  browser: overview_detail_and_evidence_disclosure_verified
+  preview: stopped
+  typecheck: passed
+  build: passed
+  http_report: artifacts/local/phase13-http-tests.json
+  recovery_report: artifacts/local/phase13-recovery-tests.json
+  phase_complete: true
+
+phase14_validation:
+  routing_tests: 6_passed
+  recovery_tests: 2_passed_21_unrelated_tests_not_selected
+  typecheck: passed
+  build: passed
+  unit_report: artifacts/local/phase14-unit-tests.json
+  recovery_report: artifacts/local/phase14-recovery-tests.json
+  phase_complete: true
+
+phase15_validation:
+  unit_tests: 4_passed
+  database_negative_tests: 2_passed
+  recovery_tests: 4_passed_in_full_27_test_recovery_suite
+  typecheck: passed
+  build: passed
+  report: artifacts/local/phase15-full-tests.json
+  combined_suite: 224_passed_0_failed_0_skipped
+  phase_complete: true
+  production_ready: false
+  remaining_implementation_in_documented_scope: []
+
+validation:
+  scope: preservation_full_suite_phases_1_to_15
+  unit_tests: 155_passed
+  typecheck: passed
+  sql: 17_tests_passed_on_local_postgres_17_6
+  recovery: 27_tests_passed_with_restate_1_7_9
+  combined_suite: 224_passed_0_failed_0_skipped
+  verified_at: 2026-09-09
+  report: artifacts/local/handoff-tests.json
+  build: passed
+  remote_migrations_pushed: false
+  remote_dry_run_executed: false
+  full_supabase_local_stack_tested: false
+  local_runtime: docker_engine_in_existing_ubuntu_wsl
+
 handoff:
   target: codex
-  file: CODEX_HANDOFF.md
+  file: PHASE_15_HANDOFF.md
+
+preservation_audit:
+  date: 2026-09-09
+  typecheck: passed
+  build: passed
+  lint: failed_command_not_configured
+  catalogue_validation: 23_manifests_passed
+  fresh_full_suite: 224_passed_0_failed_0_skipped
+  fresh_report: artifacts/local/handoff-tests.json
+  report_sha256: 3edf1715d45d1074f51b0d10ec68a3b39c21c82f9f033a4512d612c9e8eeac63
+  duration_seconds: 242.43
+  runtime_after_checks: stopped
+  worker_exit_code_after_checks: 255
+  hosted_migration_history: not_queried
+  remote_changes_performed_by_this_session: false
+  implementation_frozen: true
+  staged_diff_check: whitespace_warnings_in_preserved_reference_files
+
+production_qualification_gate_1:
+  status: passed_locally
+  baseline_commit: 705a1af5c9ac882d590dfa3ef37fd04f385f2f00
+  phase_15_baseline_protected: true
+  workstreams: [A1, F1, G1, A3, A4, D1, E1]
+  report: docs/production/QUALIFICATION_GATE_1.md
+  architecture_decision: docs/adr/0017-production-authority-and-execution-binding.md
+  remote_migrations_applied: false
+  deployments_performed: false
+  production_ready: false
+  gate_2_started: false
+  tested_tree: 6e3775b0bb6754b92a89a5d21c85dade98864d02
+  tested_release: gate1-6e3775b0bb6754b92a89a5d21c85dade98864d02
+  node: 22.19.0
+  pnpm: 10.4.0
+  fresh_source_validation: true
+  tests_total: 277
+  tests_passed: 277
+  tests_failed: 0
+  tests_skipped: 0
+  recovery_tests: 31
+  baseline_tests_retained: 224
+  baseline_recovery_retained: 27
+  new_tests: 53
+  typecheck: passed
+  lint: passed
+  build: passed
+  frozen_install: passed
+  local_migrations: passed
+  evidence: docs/production/gate-1-validation.json
+  unresolved_local_test_failures: []
+  github_ci_execution: not_yet_observed

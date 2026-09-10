@@ -1,0 +1,427 @@
+{
+  "gate": 1,
+  "status": "PASSED",
+  "verifiedAt": "2026-09-09T00:12:56.429Z",
+  "protectedBaseline": "705a1af5c9ac882d590dfa3ef37fd04f385f2f00",
+  "testedTree": "6e3775b0bb6754b92a89a5d21c85dade98864d02",
+  "testedRelease": "gate1-6e3775b0bb6754b92a89a5d21c85dade98864d02",
+  "node": "22.19.0",
+  "pnpm": "10.4.0",
+  "postgres": "17.6",
+  "restate": "1.7.9",
+  "freshSourceExport": true,
+  "copiedEnvironmentFile": false,
+  "checks": {
+    "install": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "test": "passed",
+    "baseline": "passed",
+    "build": "passed"
+  },
+  "total": 277,
+  "passed": 277,
+  "failed": 0,
+  "skipped": 0,
+  "recovery": 31,
+  "baselineRetained": 224,
+  "newTestsCount": 53,
+  "reportSha256": "7f271e68a19988c6bd8239ecd0d6fdd4387dfbcffdb3dcd70c61c19a46e8a8eb",
+  "files": [
+    {
+      "file": "tests/authority.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/capabilities.test.ts",
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/contracts.test.ts",
+      "passed": 29,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/controls.test.ts",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/database.test.ts",
+      "passed": 17,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/evaluation-db.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/evaluation.test.ts",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/execution-binding.test.ts",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/kernel.test.ts",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/memory.test.ts",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/mission-control.test.ts",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/models.test.ts",
+      "passed": 44,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/policy.test.ts",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/recovery.test.ts",
+      "passed": 31,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/routing.test.ts",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/schedule-db.test.ts",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/schedule.test.ts",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/terminal-hardening.test.ts",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/verification.test.ts",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "file": "tests/world.test.ts",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "newTests": [
+    {
+      "file": "tests/authority.test.ts",
+      "name": "REVOKED denies every current permission and retains historical task attribution",
+      "status": "passed"
+    },
+    {
+      "file": "tests/authority.test.ts",
+      "name": "REMOVED denies every current permission and retains historical task attribution",
+      "status": "passed"
+    },
+    {
+      "file": "tests/authority.test.ts",
+      "name": "rejects principal kind forgery, foreign tenant and unknown roles",
+      "status": "passed"
+    },
+    {
+      "file": "tests/authority.test.ts",
+      "name": "reader membership permits reads but cannot submit, signal, cancel, approve or schedule",
+      "status": "passed"
+    },
+    {
+      "file": "tests/controls.test.ts",
+      "name": "routes cancellation through persisted TaskWorkflow identity",
+      "status": "passed"
+    },
+    {
+      "file": "tests/controls.test.ts",
+      "name": "routes cancellation through persisted KernelWorkflowV1 identity",
+      "status": "passed"
+    },
+    {
+      "file": "tests/controls.test.ts",
+      "name": "routes cancellation through persisted PolicyCapabilityWorkflowV1 identity",
+      "status": "passed"
+    },
+    {
+      "file": "tests/controls.test.ts",
+      "name": "routes cancellation through persisted GoldenTaskWorkflowV1 identity",
+      "status": "passed"
+    },
+    {
+      "file": "tests/controls.test.ts",
+      "name": "routes cancellation through persisted AutonomousChildTaskWorkflowV1 identity",
+      "status": "passed"
+    },
+    {
+      "file": "tests/controls.test.ts",
+      "name": "routes cancellation through persisted BoundedScheduleWorkflowV1 identity",
+      "status": "passed"
+    },
+    {
+      "file": "tests/controls.test.ts",
+      "name": "signals only supported bindings and never guesses a legacy task target",
+      "status": "passed"
+    },
+    {
+      "file": "tests/controls.test.ts",
+      "name": "keeps transport uncertainty distinct from failed and completed cancellation",
+      "status": "passed"
+    },
+    {
+      "file": "tests/controls.test.ts",
+      "name": "rejects REVOKED controls before transport",
+      "status": "passed"
+    },
+    {
+      "file": "tests/controls.test.ts",
+      "name": "rejects REMOVED controls before transport",
+      "status": "passed"
+    },
+    {
+      "file": "tests/controls.test.ts",
+      "name": "does not report cancellation accepted when a previous RESUME decision won",
+      "status": "passed"
+    },
+    {
+      "file": "tests/controls.test.ts",
+      "name": "rejects cancellation during golden verification without claiming acceptance",
+      "status": "passed"
+    },
+    {
+      "file": "tests/controls.test.ts",
+      "name": "requires an explicitly supported historical version and routes through trusted deployment configuration",
+      "status": "passed"
+    },
+    {
+      "file": "tests/execution-binding.test.ts",
+      "name": "reads historical tasks without guessing an execution binding",
+      "status": "passed"
+    },
+    {
+      "file": "tests/execution-binding.test.ts",
+      "name": "persists trusted TaskWorkflow binding atomically with creation",
+      "status": "passed"
+    },
+    {
+      "file": "tests/execution-binding.test.ts",
+      "name": "persists trusted KernelWorkflowV1 binding atomically with creation",
+      "status": "passed"
+    },
+    {
+      "file": "tests/execution-binding.test.ts",
+      "name": "persists trusted PolicyCapabilityWorkflowV1 binding atomically with creation",
+      "status": "passed"
+    },
+    {
+      "file": "tests/execution-binding.test.ts",
+      "name": "persists trusted GoldenTaskWorkflowV1 binding atomically with creation",
+      "status": "passed"
+    },
+    {
+      "file": "tests/execution-binding.test.ts",
+      "name": "persists trusted AutonomousChildTaskWorkflowV1 binding atomically with creation",
+      "status": "passed"
+    },
+    {
+      "file": "tests/execution-binding.test.ts",
+      "name": "persists trusted BoundedScheduleWorkflowV1 binding atomically with creation",
+      "status": "passed"
+    },
+    {
+      "file": "tests/execution-binding.test.ts",
+      "name": "keeps historical release identity and rejects incompatible family/version rebinding",
+      "status": "passed"
+    },
+    {
+      "file": "tests/execution-binding.test.ts",
+      "name": "rejects a new task on the wrong release without destroying its reserved binding",
+      "status": "passed"
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "name": "authenticates outside the body and persists stable admission across concurrent equivalent retries",
+      "status": "passed"
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "name": "keeps dispatch uncertainty durable and retries the same task identity",
+      "status": "passed"
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "name": "rejects authority and workflow injection {\"principal\":{\"id\":\"fake\"}}",
+      "status": "passed"
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "name": "rejects authority and workflow injection {\"tenant\":{\"id\":\"fake\"}}",
+      "status": "passed"
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "name": "rejects authority and workflow injection {\"workflow\":\"TaskWorkflow\"}",
+      "status": "passed"
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "name": "rejects authority and workflow injection {\"service\":\"Admin\"}",
+      "status": "passed"
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "name": "rejects authority and workflow injection {\"releaseId\":\"forged\"}",
+      "status": "passed"
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "name": "rejects authority and workflow injection {\"routingId\":\"admin\"}",
+      "status": "passed"
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "name": "enforces authentication, role, admission, content size and idempotency header",
+      "status": "passed"
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "name": "isolates cross-tenant task read ",
+      "status": "passed"
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "name": "isolates cross-tenant task read /history",
+      "status": "passed"
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "name": "isolates cross-tenant task read /evidence",
+      "status": "passed"
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "name": "isolates cross-tenant task read /outcome",
+      "status": "passed"
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "name": "denies REVOKED HTTP and Mission Control operations while preserving records",
+      "status": "passed"
+    },
+    {
+      "file": "tests/gateway.test.ts",
+      "name": "denies REMOVED HTTP and Mission Control operations while preserving records",
+      "status": "passed"
+    },
+    {
+      "file": "tests/recovery.test.ts",
+      "name": "Gate 1 gateway retries a lost dispatch acknowledgement and resumes its bound workflow after restart",
+      "status": "passed"
+    },
+    {
+      "file": "tests/recovery.test.ts",
+      "name": "Gate 1 cancellation resolves TaskWorkflow binding and retains a terminal result",
+      "status": "passed"
+    },
+    {
+      "file": "tests/recovery.test.ts",
+      "name": "Gate 1 cancellation resolves KernelWorkflowV1 binding and retains a terminal result",
+      "status": "passed"
+    },
+    {
+      "file": "tests/recovery.test.ts",
+      "name": "Gate 1 permanent verification failure survives a failure-outcome commit acknowledgement crash",
+      "status": "passed"
+    },
+    {
+      "file": "tests/terminal-hardening.test.ts",
+      "name": "keeps durable FAILED result when a legacy workflow emits no Outcome",
+      "status": "passed"
+    },
+    {
+      "file": "tests/terminal-hardening.test.ts",
+      "name": "keeps durable CANCELLED result when a legacy workflow emits no Outcome",
+      "status": "passed"
+    },
+    {
+      "file": "tests/terminal-hardening.test.ts",
+      "name": "rejects stale evidence",
+      "status": "passed"
+    },
+    {
+      "file": "tests/terminal-hardening.test.ts",
+      "name": "rejects future evidence",
+      "status": "passed"
+    },
+    {
+      "file": "tests/terminal-hardening.test.ts",
+      "name": "rejects foreign-step evidence",
+      "status": "passed"
+    },
+    {
+      "file": "tests/terminal-hardening.test.ts",
+      "name": "rejects altered-digest evidence",
+      "status": "passed"
+    },
+    {
+      "file": "tests/terminal-hardening.test.ts",
+      "name": "keeps ambiguous effects unresolved, binds confirmation evidence, and deduplicates receipts",
+      "status": "passed"
+    },
+    {
+      "file": "tests/terminal-hardening.test.ts",
+      "name": "keeps an unclassified database disconnect retryable instead of manufacturing a failed outcome",
+      "status": "passed"
+    }
+  ],
+  "remoteMigrationsApplied": false,
+  "deployed": false
+}

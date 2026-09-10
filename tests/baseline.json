@@ -1,0 +1,901 @@
+{
+  "commit": "705a1af5c9ac882d590dfa3ef37fd04f385f2f00",
+  "tests": [
+    {
+      "file": "capabilities.test.ts",
+      "name": "discovers immutable exact versions and their JSON schemas"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "executes and independently verifies a built-in (0)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "executes and independently verifies a built-in (1)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "executes and independently verifies a built-in (2)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "executes and independently verifies a built-in (3)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "rejects invalid or scope-expanding invocation fixtures (0)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "rejects invalid or scope-expanding invocation fixtures (1)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "rejects invalid or scope-expanding invocation fixtures (2)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "rejects invalid or scope-expanding invocation fixtures (3)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "rejects invalid or scope-expanding invocation fixtures (4)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "rejects invalid or scope-expanding invocation fixtures (5)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "validates capability-specific input before execution (0)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "validates capability-specific input before execution (1)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "validates capability-specific input before execution (2)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "refuses permissioned, external or unversioned registration (0)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "refuses permissioned, external or unversioned registration (1)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "refuses permissioned, external or unversioned registration (2)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "refuses permissioned, external or unversioned registration (3)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "refuses permissioned, external or unversioned registration (4)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "refuses permissioned, external or unversioned registration (5)"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "detects output schema errors, incorrect results, thrown verifiers and implementation failures"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "does not let receipt hashes replace independent verification"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "binds every receipt to task, step, trace, version, key, descriptor and input"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "canonical digests survive JSONB key order but preserve array order and values"
+    },
+    {
+      "file": "capabilities.test.ts",
+      "name": "captures registrations and refuses silent schema coercion"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures PrincipalRef accepts valid fixture"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures PrincipalRef rejects malformed, missing and unknown fields"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures TenantRef accepts valid fixture"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures TenantRef rejects malformed, missing and unknown fields"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures TraceRef accepts valid fixture"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures TraceRef rejects malformed, missing and unknown fields"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures IntentEnvelope accepts valid fixture"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures IntentEnvelope rejects malformed, missing and unknown fields"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures Task accepts valid fixture"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures Task rejects malformed, missing and unknown fields"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures TaskStep accepts valid fixture"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures TaskStep rejects malformed, missing and unknown fields"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures TaskEvent accepts valid fixture"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures TaskEvent rejects malformed, missing and unknown fields"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures Evidence accepts valid fixture"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures Evidence rejects malformed, missing and unknown fields"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures Capability accepts valid fixture"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures Capability rejects malformed, missing and unknown fields"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures PolicyDecision accepts valid fixture"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures PolicyDecision rejects malformed, missing and unknown fields"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures Approval accepts valid fixture"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures Approval rejects malformed, missing and unknown fields"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures Outcome accepts valid fixture"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "contract fixtures Outcome rejects malformed, missing and unknown fields"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "rejects invalid enums, IDs, timestamps and self-dependencies"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "freezes nested immutable event data"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "enforces lifecycle transitions and terminal states"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "requires verified task-bound evidence and every criterion"
+    },
+    {
+      "file": "contracts.test.ts",
+      "name": "recomputes deterministic evidence and rejects tampering"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "Phase 6 atomically persists one capability run, evidence and event under concurrent retries"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "Phase 6 rejects idempotency conflicts without another evidence record"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "Phase 6 rejects wrong trace, step, input and capability bindings before persistence"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "Phase 6 rolls back evidence and event if capability run insertion fails"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "Phase 6 rejects forged output even when the attacker recomputes its digest"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "Phase 6 refuses descriptor changes under an already-persisted version"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "Phase 6 refuses to persist new execution receipts for a waiting task"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "Phase 7 binds approvals to scope and authenticated identity, with first terminal decision winning"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "Phase 7 cannot grant an expired approval"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "Phase 7 rechecks tenant membership before granting"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "applies all four migration groups with RLS and no public API grants"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "rejects event UPDATE, DELETE and TRUNCATE even for the local owner"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "retries ledger writes without duplicates and rejects changed input"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "rejects lifecycle skips and completion without evidence at the database boundary"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "enforces tenant ownership and provenance foreign keys"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "enforces capability side-effect idempotency and immutable evidence"
+    },
+    {
+      "file": "database.test.ts",
+      "name": "commits evidence-bound completion atomically and protects terminal records"
+    },
+    {
+      "file": "evaluation-db.test.ts",
+      "name": "runs and persists an idempotent executable evaluation with a verified task anchor"
+    },
+    {
+      "file": "evaluation-db.test.ts",
+      "name": "rejects result injection, unverified anchors and stale candidate promotion"
+    },
+    {
+      "file": "evaluation-db.test.ts",
+      "name": "isolates tenant reports and protects evaluation history in SQL"
+    },
+    {
+      "file": "evaluation.test.ts",
+      "name": "executes the golden corpus against the real registered capability"
+    },
+    {
+      "file": "evaluation.test.ts",
+      "name": "blocks a schema-valid semantic regression"
+    },
+    {
+      "file": "evaluation.test.ts",
+      "name": "classifies thrown failures without exposing error content"
+    },
+    {
+      "file": "evaluation.test.ts",
+      "name": "rejects non-JSON outputs including unawaited promises"
+    },
+    {
+      "file": "evaluation.test.ts",
+      "name": "requires exact candidate and suite versions with every case present"
+    },
+    {
+      "file": "evaluation.test.ts",
+      "name": "rejects forged passing flags, duplicate cases and malformed suites"
+    },
+    {
+      "file": "evaluation.test.ts",
+      "name": "does not let candidate mutation rewrite expected fixtures"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "compiles the same intent deterministically and preserves identity and provenance"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "rejects unsupported recipes, resolvers and caller-supplied permissions or plans"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "treats objective text literally rather than as executable instructions"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "plans uppercase/v1 with stable task-owned steps and dependency-bound inputs"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "plans uppercase-reverse/v1 with stable task-owned steps and dependency-bound inputs"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "rejects tasks whose requirements cannot be met by a recipe"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "rejects execution graph: missing dependency"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "rejects execution graph: cycle"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "rejects execution graph: duplicate step"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "rejects execution graph: foreign task"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "rejects execution graph: hidden input edge"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "rejects execution graph: disconnected work"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "rejects execution graph: unsupported execution"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "rejects execution graph: missing result"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "rejects execution graph: caller permissions"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "refuses to execute with unresolved dependencies or bypass a durable wait"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "verifies persisted plan, every step, evidence and outcome together"
+    },
+    {
+      "file": "kernel.test.ts",
+      "name": "rejects tampered or missing evidence, incomplete steps, substituted plans and invented outcomes"
+    },
+    {
+      "file": "memory.test.ts",
+      "name": "remembers verified output once under concurrent retries and retrieves provenance"
+    },
+    {
+      "file": "memory.test.ts",
+      "name": "excludes future observations and expired memory, including expiry boundary"
+    },
+    {
+      "file": "memory.test.ts",
+      "name": "does not interpret search wildcards or accept unbounded requests"
+    },
+    {
+      "file": "memory.test.ts",
+      "name": "rejects foreign or unsupported evidence and conflicting validity"
+    },
+    {
+      "file": "memory.test.ts",
+      "name": "isolates tenants even for a principal belonging to both"
+    },
+    {
+      "file": "memory.test.ts",
+      "name": "rejects non-completed task evidence and evidence outside the verified outcome"
+    },
+    {
+      "file": "memory.test.ts",
+      "name": "database rejects memory mutation and deletion"
+    },
+    {
+      "file": "memory.test.ts",
+      "name": "rechecks revoked membership and principal kind"
+    },
+    {
+      "file": "mission-control.test.ts",
+      "name": "serves a task overview and evidence-backed task detail over HTTP"
+    },
+    {
+      "file": "mission-control.test.ts",
+      "name": "requires authentication and tenant membership"
+    },
+    {
+      "file": "mission-control.test.ts",
+      "name": "escapes stored content and applies restrictive browser security headers"
+    },
+    {
+      "file": "mission-control.test.ts",
+      "name": "rejects cross-origin mutations and cannot complete a task through the UI"
+    },
+    {
+      "file": "mission-control.test.ts",
+      "name": "returns bounded, non-leaking errors for invalid or unknown task identifiers"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects mismatched task/trace/input/output provenance before persistence"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "keeps ModelPort results provider-independent and normalizes property order"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "returns validated text and a task/step/trace-bound receipt with usage and digests"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects invalid or scope-expanding model requests before I/O (0)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects invalid or scope-expanding model requests before I/O (1)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects invalid or scope-expanding model requests before I/O (2)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects invalid or scope-expanding model requests before I/O (3)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects invalid or scope-expanding model requests before I/O (4)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects invalid or scope-expanding model requests before I/O (5)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects invalid or scope-expanding model requests before I/O (6)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects invalid or scope-expanding model requests before I/O (7)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects invalid or scope-expanding model requests before I/O (8)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects invalid or scope-expanding model requests before I/O (9)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects invalid or scope-expanding model requests before I/O (10)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects invalid or scope-expanding model requests before I/O (11)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects invalid or scope-expanding model requests before I/O (12)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects invalid or scope-expanding model requests before I/O (13)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "classifies HTTP 400 without retries or leaking its body"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "classifies HTTP 401 without retries or leaking its body"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "classifies HTTP 403 without retries or leaking its body"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "classifies HTTP 402 without retries or leaking its body"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "classifies HTTP 429 without retries or leaking its body"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "classifies HTTP 500 without retries or leaking its body"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "classifies HTTP 503 without retries or leaking its body"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "does not treat finish reason length as successful output"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "does not treat finish reason content_filter as successful output"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "does not treat finish reason tool_calls as successful output"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "does not treat finish reason insufficient_system_resource as successful output"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "fails closed on malformed provider data (0)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "fails closed on malformed provider data (1)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "fails closed on malformed provider data (2)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "fails closed on malformed provider data (3)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "fails closed on malformed provider data (4)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "fails closed on malformed provider data (5)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects unsolicited tool calls even with a stop finish reason"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "bounds response bytes and rejects invalid JSON"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "sanitizes transport exceptions and exposes uncertain execution"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "does not send a pre-cancelled request"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "rejects invalid deployment configuration and inconsistent usage"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "sends only the documented bounded text request over HTTP"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "enforces timeout before headers or during body reads (body=false)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "enforces timeout before headers or during body reads (body=true)"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "supports cancellation after dispatch"
+    },
+    {
+      "file": "models.test.ts",
+      "name": "does not follow redirects with authorization"
+    },
+    {
+      "file": "policy.test.ts",
+      "name": "evaluates an explicit ALLOW rule with a stable scope"
+    },
+    {
+      "file": "policy.test.ts",
+      "name": "evaluates an explicit DENY rule with a stable scope"
+    },
+    {
+      "file": "policy.test.ts",
+      "name": "evaluates an explicit APPROVAL_REQUIRED rule with a stable scope"
+    },
+    {
+      "file": "policy.test.ts",
+      "name": "denies unmatched identity/tenant/version (0)"
+    },
+    {
+      "file": "policy.test.ts",
+      "name": "denies unmatched identity/tenant/version (1)"
+    },
+    {
+      "file": "policy.test.ts",
+      "name": "denies unmatched identity/tenant/version (2)"
+    },
+    {
+      "file": "policy.test.ts",
+      "name": "denies by default and refuses scope mismatch before considering ALLOW"
+    },
+    {
+      "file": "policy.test.ts",
+      "name": "cannot authorize an unsupported capability (0)"
+    },
+    {
+      "file": "policy.test.ts",
+      "name": "cannot authorize an unsupported capability (1)"
+    },
+    {
+      "file": "policy.test.ts",
+      "name": "cannot authorize an unsupported capability (2)"
+    },
+    {
+      "file": "policy.test.ts",
+      "name": "rejects ambiguous, service-approver and unbounded approval rules"
+    },
+    {
+      "file": "policy.test.ts",
+      "name": "rejects actor/permissions injection into an approval answer"
+    },
+    {
+      "file": "policy.test.ts",
+      "name": "fails closed on task requirements the initial executor cannot enforce"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 15 resumes a bounded schedule timer and recovers its final evidence commit"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 15 cancel stops future child work at its durable wait"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 15 revoke stops future child work at its durable wait"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 15 rejects unauthorized schedules and orphan child execution"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 14 journals route selection across its database commit and worker recovery"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 13 Mission Control approve routes an authenticated human action through the golden workflow"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 13 Mission Control cancel routes an authenticated human action through the golden workflow"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 9 golden intent recovers approval and outcome commit with one complete audit chain"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 9 rejects unsupported recipes and spoofed intent ownership before persistence"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 8 verifies persisted approved execution before terminal outcome (matching criteria=true)"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 8 verifies persisted approved execution before terminal outcome (matching criteria=false)"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 7 waits durably, rejects spoofed approval and executes only after an authenticated grant"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 7 DENIED prevents execution and a late grant cannot reverse it"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 7 CANCEL prevents execution and a late grant cannot reverse it"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 7 expires its durable approval wait without executing the capability"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 6 recovers capability receipt commit before acknowledgement without repeating execution"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "survives worker and Restate restart at durable wait; duplicate signal/submission is safe"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "replays after database commit but before Restate acknowledgement without duplicate effects"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "cancels a waiting task durably; a late resume cannot execute step B"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "rejects unsupported recipe requests without creating a task projection"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 4 compiles an intent and executes a one-step plan without a wait"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 4 executes the persisted DAG across Restate/worker restart and duplicate signals"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 4 recovers after a graph step commit before Restate acknowledgement"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 4 cancels a waiting graph without executing downstream work"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 4 rejects graph injection at the workflow boundary before persistence"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 5 journals model HTTP 200 results across a receipt commit/acknowledgement crash"
+    },
+    {
+      "file": "recovery.test.ts",
+      "name": "Phase 5 journals model HTTP 429 results across a receipt commit/acknowledgement crash"
+    },
+    {
+      "file": "routing.test.ts",
+      "name": "adapts deterministically to measured latency among evaluated compatible versions"
+    },
+    {
+      "file": "routing.test.ts",
+      "name": "never trades policy or evaluation failure for faster execution"
+    },
+    {
+      "file": "routing.test.ts",
+      "name": "enforces reliability, latency, cost, freshness and descriptor binding"
+    },
+    {
+      "file": "routing.test.ts",
+      "name": "requires explicit cold-start opt-in and uses only the evaluated default"
+    },
+    {
+      "file": "routing.test.ts",
+      "name": "breaks ties stably and rejects duplicate or injected measurement evidence"
+    },
+    {
+      "file": "routing.test.ts",
+      "name": "rejects task/step/invocation scope mismatches before selection"
+    },
+    {
+      "file": "schedule-db.test.ts",
+      "name": "rejects schedule completion with unverified children (asserted outcome=false)"
+    },
+    {
+      "file": "schedule-db.test.ts",
+      "name": "rejects schedule completion with unverified children (asserted outcome=true)"
+    },
+    {
+      "file": "schedule.test.ts",
+      "name": "compiles a bounded task plan with stable unique child task identities"
+    },
+    {
+      "file": "schedule.test.ts",
+      "name": "defaults disabled and requires an explicit authenticated human owner"
+    },
+    {
+      "file": "schedule.test.ts",
+      "name": "enforces run counts, execution-unit budgets and interval limits"
+    },
+    {
+      "file": "schedule.test.ts",
+      "name": "rejects attempts to enable, choose arbitrary workflows or inject plan fields"
+    },
+    {
+      "file": "verification.test.ts",
+      "name": "passes only independently verified, policy-authorized capability evidence"
+    },
+    {
+      "file": "verification.test.ts",
+      "name": "fails without steps"
+    },
+    {
+      "file": "verification.test.ts",
+      "name": "fails without runs"
+    },
+    {
+      "file": "verification.test.ts",
+      "name": "fails without evidence"
+    },
+    {
+      "file": "verification.test.ts",
+      "name": "fails without policies"
+    },
+    {
+      "file": "verification.test.ts",
+      "name": "rejects arbitrary acceptance criteria and unverified task state"
+    },
+    {
+      "file": "verification.test.ts",
+      "name": "rejects incomplete steps and forged output despite a recomputed digest"
+    },
+    {
+      "file": "verification.test.ts",
+      "name": "rejects foreign evidence, descriptor drift and denied policy"
+    },
+    {
+      "file": "verification.test.ts",
+      "name": "requires bound human evidence for approval-required execution"
+    },
+    {
+      "file": "world.test.ts",
+      "name": "keeps a stable tenant identity and rejects changing its type"
+    },
+    {
+      "file": "world.test.ts",
+      "name": "stores verified observations once and filters knowledge and validity intervals"
+    },
+    {
+      "file": "world.test.ts",
+      "name": "retains multiple valid observations and rejects rewriting an observation window"
+    },
+    {
+      "file": "world.test.ts",
+      "name": "requires matching evidence on both endpoints before recording a typed relationship"
+    },
+    {
+      "file": "world.test.ts",
+      "name": "isolates entity identities and prevents cross-tenant observations and edges"
+    },
+    {
+      "file": "world.test.ts",
+      "name": "rejects injected claims, confidence, invalid windows and missing evidence"
+    },
+    {
+      "file": "world.test.ts",
+      "name": "database prevents graph history mutation and requires relationship provenance"
+    }
+  ]
+}

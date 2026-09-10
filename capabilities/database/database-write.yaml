@@ -1,0 +1,46 @@
+id: database.write
+implementation: supabase-mcp-server (execute_sql, apply_migration)
+runtime: supabase-mcp
+inputs:
+  table:
+    type: string
+    description: Target database table
+    required: true
+  operation:
+    type: string
+    enum: [insert, update, delete, upsert, ddl]
+    required: true
+  records:
+    type: array
+    items: object
+    required: false
+  sql:
+    type: string
+    description: Raw SQL statement for DDL operations
+    required: false
+outputs:
+  affected_rows:
+    type: integer
+  status:
+    type: string
+  transaction_id:
+    type: string
+side_effects:
+  - write-db
+  - schema-migration
+permissions:
+  - supabase-service-key
+  - human-approval-gate   # required for delete and all DDL until the split below lands
+evidence_produced:
+  format: postgres_tx_id
+  fields:
+    - affected_rows
+    - status
+    - transaction_id
+stateful: true
+# STAGED, not enabled: the supabase MCP is STAGED (unverified) and there is no central
+# default-deny approval enforcement yet (see AUTHORITY_MAP conflict #7). A capability that
+# can DROP TABLE must not read as enabled before the runtime/policy is ready.
+# TARGET: split into database.insert / database.update / database.delete / database.migrate
+# so a routine insert and a DROP TABLE never share one authority envelope.
+status: staged

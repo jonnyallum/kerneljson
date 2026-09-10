@@ -1,0 +1,41 @@
+id: repository.write
+implementation: spawner/sandbox.py + execution/file_ops.py
+runtime: gvisor-sandbox
+inputs:
+  repo_path:
+    type: string
+    description: Target repository root
+    required: true
+  files:
+    type: object
+    description: Map of relative file paths to content strings
+    required: true
+  commit_message:
+    type: string
+    description: Structured git commit message
+    required: false
+  author_handle:
+    type: string
+    description: Author persona handle
+    required: false
+outputs:
+  files_modified:
+    type: array
+    items: string
+  diff_stat:
+    type: string
+    description: Git diff summary
+  commit_hash:
+    type: string
+    description: Resulting git commit SHA
+side_effects:
+  - write-filesystem
+  - git-commit
+permissions:
+  - git-write
+  - guardian-pre-gate
+evidence_produced:
+  format: git_commit_sha
+  guarantee: Atomic write verified by git status and commit tree
+stateful: true
+status: staged

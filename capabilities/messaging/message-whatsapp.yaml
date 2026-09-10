@@ -1,0 +1,32 @@
+id: message.whatsapp
+implementation: scripts/whatsapp-shadow.py + WhatsApp Cloud API
+runtime: whatsapp-cloud-api
+inputs:
+  recipient_phone:
+    type: string
+    description: E.164 formatted telephone number
+    required: true
+  template_name:
+    type: string
+    description: Approved WhatsApp message template
+    required: true
+  parameters:
+    type: array
+    items: string
+    required: false
+outputs:
+  wa_message_id:
+    type: string
+  delivery_status:
+    type: string
+side_effects:
+  - outbound-notification
+permissions:
+  - wa-cloud-token
+  - jonny-signoff (for bulk client broadcast)
+evidence_produced:
+  format: wa_cloud_message_id
+  fields:
+    - wa_message_id
+stateful: false
+status: staged
