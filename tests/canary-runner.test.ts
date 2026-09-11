@@ -80,6 +80,9 @@ const reviewedDeps: RunnerDeps = {
     perScheduleConcurrency: CANARY_SPEC.perScheduleConcurrency,
     createdAt,
     }),
+  enableCanary: async () => ({ enabled: true }),
+  disableCanary: async () => ({ disabled: true }),
+  fireOnce: async () => ({ preview: true }),
 };
 
 describe("canary runner — arg parsing (fail closed, explicit)", () => {
@@ -130,6 +133,9 @@ describe("canary runner — delegation only (no business logic, no raw SQL)", ()
     const deps: RunnerDeps = {
       provisionHuman: vi.fn(async () => ({ provisioned: true })),
       installCanary: vi.fn(async () => ({ installed: true })),
+      enableCanary: vi.fn(async () => ({ enabled: true })),
+      disableCanary: vi.fn(async () => ({ disabled: true })),
+      fireOnce: vi.fn(async () => ({ preview: true })),
     };
     await runCanaryOperation(deps, pool, parseArgs(["provision-human", "--principal-id", HUMAN, "--tenant-id", TENANT]));
     expect(deps.provisionHuman).toHaveBeenCalledWith({ pool, principalId: HUMAN, tenantId: TENANT });
@@ -139,6 +145,9 @@ describe("canary runner — delegation only (no business logic, no raw SQL)", ()
     const deps: RunnerDeps = {
       provisionHuman: vi.fn(async () => ({})),
       installCanary: vi.fn(async () => ({ installed: true })),
+      enableCanary: vi.fn(async () => ({ enabled: true })),
+      disableCanary: vi.fn(async () => ({ disabled: true })),
+      fireOnce: vi.fn(async () => ({ preview: true })),
     };
     await runCanaryOperation(
       deps,
@@ -204,5 +213,84 @@ describe("canary runner — reviewed validation flows through the runner", () =>
         ),
       ),
     ).toBe("MALFORMED_INPUT");
+  });
+});
+
+describe("canary runner — Gate 3 operation dispatch (enable/disable/fire-once)", () => {
+  const g3deps = (): RunnerDeps => ({
+    provisionHuman: vi.fn(async () => ({})),
+    installCanary: vi.fn(async () => ({})),
+    enableCanary: vi.fn(async () => ({ enabled: true })),
+    disableCanary: vi.fn(async () => ({ disabled: true })),
+    fireOnce: vi.fn(async () => ({ preview: true })),
+  });
+
+  it("parses enable-canary and rejects a missing flag", () => {
+    expect(
+      parseArgs([
+        "enable-canary", "--schedule-id", SCHEDULE, "--tenant-id", TENANT, "--actor-id", HUMAN,
+        "--from-version", "v1", "--to-version", "v2", "--created-at", CREATED_AT, "--expected-state", "disabled",
+      ]).operation,
+    ).toBe("enable-canary");
+    expect(throwsCode(() => parseArgs(["enable-canary", "--schedule-id", SCHEDULE]))).toBe("MISSING_ARG");
+  });
+
+  it("rejects an unknown operation", () => {
+    expect(throwsCode(() => parseArgs(["frobnicate"]))).toBe("OPERATION_REQUIRED");
+  });
+
+  it("routes enable-canary to deps.enableCanary with mapped args", async () => {
+    const deps = g3deps();
+    await runCanaryOperation(
+      deps,
+      pool,
+      parseArgs([
+        "enable-canary", "--schedule-id", SCHEDULE, "--tenant-id", TENANT, "--actor-id", HUMAN,
+        "--from-version", "v1", "--to-version", "v2", "--created-at", CREATED_AT, "--expected-state", "disabled",
+      ]),
+    );
+    expect(deps.enableCanary).toHaveBeenCalledWith({
+      pool, scheduleId: SCHEDULE, tenantId: TENANT, actorPrincipalId: HUMAN,
+      fromVersion: "v1", toVersion: "v2", createdAt: CREATED_AT, expectedState: "disabled",
+    });
+  });
+
+  it("routes disable-canary to deps.disableCanary", async () => {
+    const deps = g3deps();
+    await runCanaryOperation(deps, pool, parseArgs(["disable-canary", "--schedule-id", SCHEDULE, "--actor-id", HUMAN, "--at", CREATED_AT]));
+    expect(deps.disableCanary).toHaveBeenCalledWith({
+      pool, scheduleId: SCHEDULE, actorPrincipalId: HUMAN, at: CREATED_AT, expectedActiveVersion: undefined,
+    });
+  });
+
+  it("routes fire-once, converting ISO window bounds and boolean flags", async () => {
+    const deps = g3deps();
+    await runCanaryOperation(
+      deps,
+      pool,
+      parseArgs([
+        "fire-once", "--schedule-id", SCHEDULE, "--tenant-id", TENANT,
+        "--last-tick", "2026-09-11T07:59:00Z", "--now", "2026-09-11T08:01:00Z",
+        "--owner", "gate3", "--production", "true", "--preview", "true",
+      ]),
+    );
+    expect(deps.fireOnce).toHaveBeenCalledWith({
+      pool, scheduleId: SCHEDULE, tenantId: TENANT,
+      lastTickMs: Date.parse("2026-09-11T07:59:00Z"), nowMs: Date.parse("2026-09-11T08:01:00Z"),
+      owner: "gate3", productionRuntime: true, preview: true, leaseTtlMs: undefined,
+    });
+  });
+
+  it("routes fire-once with productionRuntime=false when --production is not 'true' (ack refused downstream)", async () => {
+    const deps = g3deps();
+    await runCanaryOperation(
+      deps,
+      pool,
+      parseArgs([
+        "fire-once", "--schedule-id", SCHEDULE, "--tenant-id", TENANT,
+        "--last-tick", "2026-09-11T07:59:00Z", "--now", "2026-09-11T08:01:00Z", "--owner", "gate3", "--production", "false",
+      ]),
+    );
+    expect(deps.fireOnce).toHaveBeenCalledWith(expect.objectContaining({ productionRuntime: false, preview: false }));
   });
 });

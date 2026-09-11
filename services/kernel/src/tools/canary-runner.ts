@@ -3,6 +3,12 @@ import pg from "pg";
 import { runHumanProvision } from "../identity/provisioning-pg.js";
 import { PgScheduleStore } from "../scheduler/pg-store.js";
 import { PgIdentityGate, installDisabledCanary } from "../scheduler/canary-seed.js";
+import {
+  enableCanaryForProduction,
+  disableCanary as runDisableCanary,
+} from "../scheduler/canary-lifecycle.js";
+import { fireOnce as runFireOnce } from "../scheduler/canary-fire.js";
+import { HttpAdmissionGateway } from "../scheduler/http-admission.js";
 
 /**
  * S1 canary — production execution runner (Gate 2).
@@ -15,9 +21,18 @@ import { PgIdentityGate, installDisabledCanary } from "../scheduler/canary-seed.
  * closed. Jonny runs it locally with the secret injected from jVault; the secret
  * never reaches Claude, chat, logs, evidence, or git.
  *
- * Two explicit, separate operations:
+ * Explicit, separate operations (each fail-closed; no generated IDs; no hidden defaults):
  *   provision-human --principal-id <uuid> --tenant-id <uuid>
  *   install-canary  --schedule-id <uuid> --tenant-id <uuid> --owner-id <uuid> --created-at <iso>
+ *   enable-canary   --schedule-id <uuid> --tenant-id <uuid> --actor-id <uuid>
+ *                   --from-version <v> --to-version <v> --created-at <iso> --expected-state <state>
+ *   disable-canary  --schedule-id <uuid> --actor-id <uuid> --at <iso> [--expected-active-version <v>]
+ *   fire-once       --schedule-id <uuid> --tenant-id <uuid> --last-tick <iso> --now <iso>
+ *                   --owner <id> --production true [--preview true] [--lease-ttl-ms <n>]
+ *
+ * Gate 3 tooling (enable-canary / disable-canary / fire-once) is REPO-ONLY and production-
+ * gated; fire-once execution additionally needs KJ_ADMISSION_URL + KJ_ADMISSION_BEARER
+ * (jVault-injected) and a deployed admission door. `fire-once --preview true` is read-only.
  */
 
 /** The canary's fixed schedule definition (disabled; state/enabled are forced by the seed). */
@@ -43,7 +58,12 @@ export class RunnerError extends Error {
   }
 }
 
-export type Operation = "provision-human" | "install-canary";
+export type Operation =
+  | "provision-human"
+  | "install-canary"
+  | "enable-canary"
+  | "disable-canary"
+  | "fire-once";
 
 export interface ParsedArgs {
   operation: Operation;
@@ -53,16 +73,28 @@ export interface ParsedArgs {
 const REQUIRED: Record<Operation, string[]> = {
   "provision-human": ["principal-id", "tenant-id"],
   "install-canary": ["schedule-id", "tenant-id", "owner-id", "created-at"],
+  "enable-canary": [
+    "schedule-id",
+    "tenant-id",
+    "actor-id",
+    "from-version",
+    "to-version",
+    "created-at",
+    "expected-state",
+  ],
+  "disable-canary": ["schedule-id", "actor-id", "at"],
+  "fire-once": ["schedule-id", "tenant-id", "last-tick", "now", "owner", "production"],
 };
 
 /** Pure arg parser. Fails closed on missing/unknown operation or missing flags. */
 export function parseArgs(argv: readonly string[]): ParsedArgs {
-  const [operation, ...rest] = argv;
-  if (operation !== "provision-human" && operation !== "install-canary")
+  const [op, ...rest] = argv;
+  if (!op || !Object.prototype.hasOwnProperty.call(REQUIRED, op))
     throw new RunnerError(
       "OPERATION_REQUIRED",
-      'first argument must be "provision-human" or "install-canary"',
+      "first argument must be a known canary operation",
     );
+  const operation = op as Operation;
   const values: Record<string, string> = {};
   for (let i = 0; i < rest.length; i += 2) {
     const flag = rest[i];
@@ -106,6 +138,50 @@ export interface RunnerDeps {
     ownerId: string;
     createdAt: string;
   }): Promise<unknown>;
+  enableCanary(args: {
+    pool: pg.Pool;
+    scheduleId: string;
+    tenantId: string;
+    actorPrincipalId: string;
+    fromVersion: string;
+    toVersion: string;
+    createdAt: string;
+    expectedState: string;
+  }): Promise<unknown>;
+  disableCanary(args: {
+    pool: pg.Pool;
+    scheduleId: string;
+    actorPrincipalId: string;
+    at: string;
+    expectedActiveVersion?: string | undefined;
+  }): Promise<unknown>;
+  fireOnce(args: {
+    pool: pg.Pool;
+    scheduleId: string;
+    tenantId: string;
+    lastTickMs: number;
+    nowMs: number;
+    owner: string;
+    productionRuntime: boolean;
+    preview: boolean;
+    leaseTtlMs?: number | undefined;
+  }): Promise<unknown>;
+}
+
+/** The canary recipe the scheduled admission requests. Fixed — this is a canary tool. */
+const CANARY_RECIPE = "claude_md_check/v1";
+
+/** Build the admission seam from the environment (jVault-injected). The bearer is read from
+ *  the environment only and is NEVER an argument or printed. Preview mode never calls this. */
+function buildAdmissionGatewayFromEnv(): HttpAdmissionGateway {
+  const url = process.env["KJ_ADMISSION_URL"];
+  const authorization = process.env["KJ_ADMISSION_BEARER"];
+  if (!url || !authorization)
+    throw new RunnerError(
+      "ADMISSION_ENV_MISSING",
+      "KJ_ADMISSION_URL and KJ_ADMISSION_BEARER must be injected from jVault for fire-once execution",
+    );
+  return new HttpAdmissionGateway(url, { authorization, recipe: CANARY_RECIPE });
 }
 
 /** Real delegation to the reviewed functions. */
@@ -130,6 +206,16 @@ export const realDeps: RunnerDeps = {
       perScheduleConcurrency: CANARY_SPEC.perScheduleConcurrency,
       createdAt,
     }),
+  enableCanary: ({ pool, ...input }) =>
+    enableCanaryForProduction(new PgScheduleStore(pool), new PgIdentityGate(pool), input),
+  disableCanary: ({ pool, ...input }) =>
+    runDisableCanary(new PgScheduleStore(pool), new PgIdentityGate(pool), input),
+  fireOnce: ({ pool, ...input }) =>
+    runFireOnce(
+      new PgScheduleStore(pool),
+      input.preview ? null : buildAdmissionGatewayFromEnv(),
+      input,
+    ),
 };
 
 /** Dispatch to the selected reviewed operation. pg lives entirely in deps. */
@@ -144,12 +230,45 @@ export async function runCanaryOperation(
       principalId: parsed.values["principal-id"]!,
       tenantId: parsed.values["tenant-id"]!,
     });
-  return deps.installCanary({
+  if (parsed.operation === "install-canary")
+    return deps.installCanary({
+      pool,
+      scheduleId: parsed.values["schedule-id"]!,
+      tenantId: parsed.values["tenant-id"]!,
+      ownerId: parsed.values["owner-id"]!,
+      createdAt: parsed.values["created-at"]!,
+    });
+  if (parsed.operation === "enable-canary")
+    return deps.enableCanary({
+      pool,
+      scheduleId: parsed.values["schedule-id"]!,
+      tenantId: parsed.values["tenant-id"]!,
+      actorPrincipalId: parsed.values["actor-id"]!,
+      fromVersion: parsed.values["from-version"]!,
+      toVersion: parsed.values["to-version"]!,
+      createdAt: parsed.values["created-at"]!,
+      expectedState: parsed.values["expected-state"]!,
+    });
+  if (parsed.operation === "disable-canary")
+    return deps.disableCanary({
+      pool,
+      scheduleId: parsed.values["schedule-id"]!,
+      actorPrincipalId: parsed.values["actor-id"]!,
+      at: parsed.values["at"]!,
+      expectedActiveVersion: parsed.values["expected-active-version"],
+    });
+  return deps.fireOnce({
     pool,
     scheduleId: parsed.values["schedule-id"]!,
     tenantId: parsed.values["tenant-id"]!,
-    ownerId: parsed.values["owner-id"]!,
-    createdAt: parsed.values["created-at"]!,
+    lastTickMs: Date.parse(parsed.values["last-tick"]!),
+    nowMs: Date.parse(parsed.values["now"]!),
+    owner: parsed.values["owner"]!,
+    productionRuntime: parsed.values["production"] === "true",
+    preview: parsed.values["preview"] === "true",
+    leaseTtlMs: parsed.values["lease-ttl-ms"]
+      ? Number(parsed.values["lease-ttl-ms"])
+      : undefined,
   });
 }
 

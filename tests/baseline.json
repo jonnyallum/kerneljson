@@ -1026,6 +1026,26 @@
     {
       "file": "schedule-restate-runtime.integration.test.ts",
       "name": "S1-R runtime qualification (real Postgres + real admission door) Option B end-to-end: wake COMPLETES; fire ADMITTED bound to canonical admission id; public.tasks not required (A–D,G)"
+    },
+    {
+      "file": "canary-tooling.integration.test.ts",
+      "name": "Gate 3 tooling — Postgres runtime qualification installs disabled@v1 (baseline)"
+    },
+    {
+      "file": "canary-tooling.integration.test.ts",
+      "name": "Gate 3 tooling — Postgres runtime qualification enable-canary: disabled@v1 -> enabled@v2 (production), idempotent"
+    },
+    {
+      "file": "canary-tooling.integration.test.ts",
+      "name": "Gate 3 tooling — Postgres runtime qualification fire-once: exactly one ADMITTED fire bound to one canonical task"
+    },
+    {
+      "file": "canary-tooling.integration.test.ts",
+      "name": "Gate 3 tooling — Postgres runtime qualification fire-once duplicate: replays to the same task; still one fire, one admission"
+    },
+    {
+      "file": "canary-tooling.integration.test.ts",
+      "name": "Gate 3 tooling — Postgres runtime qualification disable-canary: enabled@v2 -> disabled@v2, fire history intact"
     }
   ]
 }
