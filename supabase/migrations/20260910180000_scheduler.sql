@@ -64,7 +64,10 @@ create table public.schedule_fires (
   fire_at_utc timestamptz not null,
   state public.schedule_fire_state not null default 'PLANNED',
   admission_request_id uuid,
-  admitted_child_task_id uuid references public.tasks(id),
+  -- S1-R Option B: bind the canonical ADMISSION identity, which exists synchronously
+  -- once KernelJSON Admission (POST /v1/tasks) succeeds. public.tasks is downstream
+  -- materialisation and MUST NOT gate the fire's record of the canonical child task id.
+  admitted_child_task_id uuid references kernel_private.task_admissions(task_id),
   admission_result jsonb check (admission_result is null or jsonb_typeof(admission_result) = 'object'),
   admitted_at timestamptz,
   created_at timestamptz not null default now(),

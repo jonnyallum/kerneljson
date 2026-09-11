@@ -17,3 +17,8 @@ export * from "./policy.js";
 export * from "./runtime.js";
 export * from "./persistence.js";
 export * from "./store.js";
+export * from "./durable-timer.js";
+export * from "./http-admission.js";
+// Note: restate-service.js is intentionally NOT re-exported here — it is the only
+// module that imports @restatedev/restate-sdk, and keeping it off the barrel keeps
+// the scheduler core importable without pulling the Restate SDK. Import it directly.

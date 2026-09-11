@@ -11,6 +11,7 @@ import {
 import { PersistedScheduleSpec } from "../services/kernel/src/scheduler/persistence.js";
 import { PgScheduleStore, } from "../services/kernel/src/scheduler/pg-store.js";
 import { FireBindingConflict } from "../services/kernel/src/scheduler/store.js";
+import { seedAdmittedTask } from "./support/seed-admission.js";
 
 /**
  * Phase S1 — PostgreSQL RUNTIME qualification (integration).
@@ -73,15 +74,9 @@ run("S1 Postgres runtime qualification", () => {
   });
 
   async function seedTask(pool_: pg.Pool, id: string): Promise<void> {
-    const traceId = randomUUID();
-    const contract = {
-      id, tenant: { id: tenantId }, principal: { id: svc }, status: "RECEIVED",
-      acceptanceCriteria: ["seed"], objective: "seed task", traceId, createdAt: "2026-09-10T00:00:00Z",
-    };
-    await pool_.query(
-      "insert into tasks(id,tenant_id,principal_id,trace_id,status,contract,created_at) values($1,$2,$3,$4,'RECEIVED',$5,now())",
-      [id, tenantId, svc, traceId, JSON.stringify(contract)],
-    );
+    // S1-R Option B: a bindable child task id lives in the admission ledger
+    // (execution_bindings -> task_admissions), not public.tasks.
+    await seedAdmittedTask(pool_, { taskId: id, tenantId, principalId: svc });
   }
 
   beforeAll(async () => {

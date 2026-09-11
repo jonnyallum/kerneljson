@@ -1,0 +1,74 @@
+{
+  "capturedAt": "2026-09-10T23:58:17.370Z",
+  "restateImage": "docker.restate.dev/restatedev/restate:1.7.9",
+  "sdk": "@restatedev/restate-sdk@1.17.0",
+  "note": "S1-R LIVE durable-timer qualification vs real Restate + real Postgres + real admission door",
+  "A_normal_wake": {
+    "scheduleId": "b36e14cd-3550-4ecd-bc06-bfa2c4acae6e",
+    "fireIdentity": "a485f6b5-2af8-8f58-a5f5-3d55b9921aa4",
+    "idempotencyKeyDigest8": "3cfd66b3",
+    "canonicalTaskId": "90ba6dbd-85ac-85f3-a6e4-3a841fcdcd87",
+    "restateInvocationId": "inv_10P6oDQo7yDx4D35fpOkobNBjWY8H8VFiK",
+    "durableSleepMs": 1500,
+    "observedElapsedMs": 1795,
+    "leaseOwner": "restate-driver",
+    "leaseEpoch": 0,
+    "fireState": "ADMITTED",
+    "boundTaskId": "90ba6dbd-85ac-85f3-a6e4-3a841fcdcd87",
+    "inTaskAdmissions": 1,
+    "inPublicTasksAtBind": 0,
+    "fireRows": 1
+  },
+  "B_duplicate_wake": {
+    "scheduleId": "0d7a5709-c521-4271-bbb6-acc89ecfc947",
+    "taskId": "e2ae0f5c-43cd-82e0-a06c-70f0c421ebe1",
+    "secondReplays": 1,
+    "fireRows": 1
+  },
+  "C_worker_restart": {
+    "scheduleId": "5c507525-e84d-4d07-bab8-229fbf8122e9",
+    "taskId": "32597b65-e749-848d-aaab-51f2b9b673a8",
+    "fireRows": 1,
+    "survived": true
+  },
+  "D_restate_restart": {
+    "scheduleId": "757738ed-bbda-490a-8c1f-c71d0dece76b",
+    "taskId": "83e5712f-f4bb-843f-ab39-8a81b3964334",
+    "fireRows": 1,
+    "survived": true
+  },
+  "H_crash_between_admit_and_bind": {
+    "scheduleId": "8a968055-6585-460f-acad-2ca26e74e025",
+    "fireIdentity": "ee63758b-87e9-8635-af35-f59b366a7b79",
+    "taskId": "e24224ac-a37c-89d9-a7ac-2df733932451",
+    "admissionsDelta": 1,
+    "fireRows": 1,
+    "boundToCanonical": true
+  },
+  "K_stale_continuation_fenced": {
+    "scheduleId": "dd563407-0f78-49e9-abac-c5f4208a89a0",
+    "takeoverEpoch": 1,
+    "staleBindRejectedByPostgres": true,
+    "admissionsDelta": 1,
+    "reconciledBoundTaskId": "7916715f-93ed-8e14-a720-299bf95ac8b1",
+    "fireRows": 1
+  },
+  "J_postgres_outage": {
+    "scheduleId": "1b971b45-ea2e-4744-a740-2aa13e5d1965",
+    "taskId": "c81f5cf4-8679-8e4d-ad07-8296a469ac42",
+    "fireRows": 1,
+    "recovered": true
+  },
+  "LM_pause_disable": {
+    "pausedGated": true,
+    "pausedFires": 0,
+    "disabledGated": true,
+    "disabledFires": 0
+  },
+  "N_version_change": {
+    "scheduleId": "002c0f53-605a-483e-add3-1e070adb1306",
+    "activeVersion": "v2",
+    "v2Identity": "ddbe1a2a-87c3-8777-a40d-e9be9b5626be",
+    "v1Fires": 0
+  }
+}
