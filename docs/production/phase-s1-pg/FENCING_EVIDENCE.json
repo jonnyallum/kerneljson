@@ -1,0 +1,7 @@
+{
+  "epochA": 0,
+  "epochB": 1,
+  "stale_A_bound_fire13": false,
+  "lease_after_stale_release_owner": "worker-B",
+  "fire_count_after_churn": 4
+}

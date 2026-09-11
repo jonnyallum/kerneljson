@@ -1,0 +1,32 @@
+# S1-F lease fencing — direct DB evidence — 2026-09-10T20:12:26Z
+# throwaway local kj-sched-qual/kjqual, 127.0.0.1:55499. No production.
+## lease row (single current owner after churn):
+  owner   | epoch 
+----------+-------
+ worker-B |     1
+(1 row)
+
+## fire rows (13 stays PLANNED/unbound = stale worker A blocked; 12 bound once; count=4):
+    day     |  state   | bound 
+------------+----------+-------
+ 2026-09-11 | ADMITTED | t
+ 2026-09-12 | ADMITTED | t
+ 2026-09-13 | PLANNED  | f
+ 2026-09-14 | SKIPPED  | f
+(4 rows)
+
+## LIVE stale-fence proof — attempt a fenced UPDATE as a stale owner (epoch 0 when current is 1):
+ idempotency_key 
+-----------------
+(0 rows)
+
+UPDATE 0
+   (^ zero rows updated = physically fenced by the DB predicate)
+## behavioural evidence json:
+{
+  "epochA": 0,
+  "epochB": 1,
+  "stale_A_bound_fire13": false,
+  "lease_after_stale_release_owner": "worker-B",
+  "fire_count_after_churn": 4
+}
