@@ -84,6 +84,29 @@ export interface AdmissionGateway {
   admit(req: AdmissionRequestInput): Promise<AdmissionResult>;
 }
 
+/**
+ * The journaling seam. In production the durable wake handler runs inside a Restate
+ * invocation and every external I/O step (read truth, claim lease, create fire,
+ * admit, bind) must be a journaled `ctx.run` action so a crash resumes mid-handler
+ * without re-doing already-committed, already-journaled work. But the scheduler core
+ * MUST NOT import `@restatedev/restate-sdk` (Restate stays replaceable), so it depends
+ * on this one-method seam instead. `directJournal` runs each step inline — used by the
+ * in-memory reference driver and every non-Restate test, so existing behaviour is
+ * unchanged. The Restate service passes `{ run: (k, fn) => ctx.run(k, fn) }`.
+ *
+ * Only fields the driver actually consumes downstream (child task ids as strings,
+ * `created`/`replay` booleans) cross this seam, so JSON journaling is lossless here.
+ */
+export interface StepJournal {
+  run<T>(key: string, fn: () => Promise<T>): Promise<T>;
+}
+
+/** Inline journal: run each step immediately, no durability. The default, so the
+ *  in-memory driver and all pure/PG tests behave exactly as before this seam existed. */
+export const directJournal: StepJournal = {
+  run: (_key, fn) => fn(),
+};
+
 /** Combine the persisted (spec, state) into the runtime ScheduleSpec that the pure
  *  deterministic core (fire.ts/policy.ts) operates on. State (enabled/paused/
  *  disabled) lives in ScheduleState; the spec is the ACTIVE version's definition. */
@@ -159,6 +182,9 @@ export class ScheduleTimerDriver {
       productionRuntime: boolean;
       leaseTtlMs: number;
     },
+    /** Journals each external I/O step. Defaults to inline execution; the Restate
+     *  service injects a `ctx.run`-backed journal so replays skip committed steps. */
+    private readonly journal: StepJournal = directJournal,
   ) {}
 
   async onWake(scheduleId: string, lastTickMs: number, nowMs: number): Promise<WakeResult> {
@@ -172,7 +198,10 @@ export class ScheduleTimerDriver {
       nextWakeAtMs: null,
     });
 
-    const sched = await this.store.getSchedule(scheduleId);
+    // Read truth (journaled): the wake re-derives everything from Postgres.
+    const sched = await this.journal.run("getSchedule", () =>
+      this.store.getSchedule(scheduleId),
+    );
     if (!sched) return gatedResult("no_such_schedule");
 
     const spec = runtimeSpecFrom(sched.spec, sched.state);
@@ -186,11 +215,13 @@ export class ScheduleTimerDriver {
       return gatedResult(gate.reason);
     }
 
-    const lease = await this.store.claimLease(
-      scheduleId,
-      this.opts.owner,
-      nowMs,
-      this.opts.leaseTtlMs,
+    const lease = await this.journal.run("claimLease", () =>
+      this.store.claimLease(
+        scheduleId,
+        this.opts.owner,
+        nowMs,
+        this.opts.leaseTtlMs,
+      ),
     );
     if (!lease) return gatedResult("lease_held_by_other");
     const fence: LeaseFence = { owner: lease.owner, epoch: lease.epoch };
@@ -243,36 +274,43 @@ export class ScheduleTimerDriver {
     const idem = idempotencyKey(spec, w.fireWindowKey);
     const identity = fireIdentity(spec, w.fireWindowKey);
 
-    const { fire, created } = await this.store.createOrGetFire({
-      idempotencyKey: idem,
-      scheduleId: spec.scheduleId,
-      version: spec.version,
-      fireWindowKey: w.fireWindowKey,
-      fireIdentity: identity,
-      fireAtUtc: w.fireAtUtcIso,
-      createdAt: atIso,
-    });
+    const { fire, created } = await this.journal.run(`fire:${idem}`, () =>
+      this.store.createOrGetFire({
+        idempotencyKey: idem,
+        scheduleId: spec.scheduleId,
+        version: spec.version,
+        fireWindowKey: w.fireWindowKey,
+        fireIdentity: identity,
+        fireAtUtc: w.fireAtUtcIso,
+        createdAt: atIso,
+      }),
+    );
 
     if (fire.admittedChildTaskId !== null)
       return { childTaskId: fire.admittedChildTaskId, created, replay: true };
 
     // KernelJSON Admission mints (or dedupes) the canonical child task. The
     // scheduler NEVER mints. admit is idempotent on fireIdentity, so calling it
-    // from a stale continuation is harmless (same id); the fenced bind below is
-    // what fails closed for a stale owner.
-    const adm = await this.admission.admit({
-      admissionIdentity: identity,
-      scheduleId: spec.scheduleId,
-      version: spec.version,
-      fireWindowKey: w.fireWindowKey,
-      fireAtUtc: w.fireAtUtcIso,
-      at: atIso,
-    });
+    // from a stale continuation — or re-calling it on a Restate replay after a
+    // crash that committed the admission but not the journal — returns the SAME
+    // canonical id; the fenced bind below is what fails closed for a stale owner.
+    const adm = await this.journal.run(`admit:${identity}`, () =>
+      this.admission.admit({
+        admissionIdentity: identity,
+        scheduleId: spec.scheduleId,
+        version: spec.version,
+        fireWindowKey: w.fireWindowKey,
+        fireAtUtc: w.fireAtUtcIso,
+        at: atIso,
+      }),
+    );
 
-    const bound = await this.store.bindAdmission(
-      idem,
-      { admissionRequestId: identity, childTaskId: adm.childTaskId, at: atIso },
-      fence,
+    const bound = await this.journal.run(`bind:${idem}`, () =>
+      this.store.bindAdmission(
+        idem,
+        { admissionRequestId: identity, childTaskId: adm.childTaskId, at: atIso },
+        fence,
+      ),
     );
     return {
       childTaskId: bound.fire.admittedChildTaskId ?? adm.childTaskId,

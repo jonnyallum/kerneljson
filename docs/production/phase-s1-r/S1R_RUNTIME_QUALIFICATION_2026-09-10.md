@@ -1,5 +1,12 @@
 # Phase S1-R — Runtime Qualification Report (2026-09-10)
 
+> **SUPERSEDED (2026-09-11).** This report recorded FAILED at the FK bind gap — the
+> state BEFORE the Option B fix (`814314b`, which retargeted the fire FK to
+> `kernel_private.task_admissions(task_id)`). Option B landed, the bind now completes,
+> and the LIVE Restate runtime qualification PASSED. See
+> `S1R_LIVE_RUNTIME_QUALIFICATION_2026-09-11.md` and `RESTATE_LIVE_EVIDENCE.json`.
+> This document is retained as the historical record of the pre-Option-B blocker.
+
 > Branch `feat/phase-s1-restate-boundary`. Executed against REAL Postgres
 > (disposable `postgres:17.6`, compose project `kerneljson-validation`, tmpfs, on
 > 127.0.0.1:55432) and the REAL KernelJSON admission door (`apps/gateway/src/server.ts`).
