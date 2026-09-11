@@ -966,6 +966,66 @@
     {
       "file": "schedule-postgres.integration.test.ts",
       "name": "S1 Postgres runtime qualification version namespace: same window under a new version is a distinct fire"
+    },
+    {
+      "file": "schedule-restate-live.integration.test.ts",
+      "name": "S1-R LIVE durable-timer qualification (real Restate + real Postgres + real door) A: real durable timer wakes and completes wake->fireIdentity->createOrGetFire->lease->fence->Admission->task_admissions->bind->ADMITTED"
+    },
+    {
+      "file": "schedule-restate-live.integration.test.ts",
+      "name": "S1-R LIVE durable-timer qualification (real Restate + real Postgres + real door) B: duplicate wake dedupes to the same fire and the same canonical task (no second task)"
+    },
+    {
+      "file": "schedule-restate-live.integration.test.ts",
+      "name": "S1-R LIVE durable-timer qualification (real Restate + real Postgres + real door) C: durable timer survives WORKER restart mid-sleep; wake still completes exactly once"
+    },
+    {
+      "file": "schedule-restate-live.integration.test.ts",
+      "name": "S1-R LIVE durable-timer qualification (real Restate + real Postgres + real door) D: durable timer survives RESTATE restart mid-sleep; wake still completes exactly once"
+    },
+    {
+      "file": "schedule-restate-live.integration.test.ts",
+      "name": "S1-R LIVE durable-timer qualification (real Restate + real Postgres + real door) H: crash AFTER admission commits, BEFORE bind -> replay re-admits same id, binds once (Section 16)"
+    },
+    {
+      "file": "schedule-restate-live.integration.test.ts",
+      "name": "S1-R LIVE durable-timer qualification (real Restate + real Postgres + real door) J: recovery after a temporary Postgres outage during the wake; completes exactly once"
+    },
+    {
+      "file": "schedule-restate-live.integration.test.ts",
+      "name": "S1-R LIVE durable-timer qualification (real Restate + real Postgres + real door) K: stale continuation after epoch takeover is fenced out at Postgres; no duplicate; reconciles later (Section 17)"
+    },
+    {
+      "file": "schedule-restate-live.integration.test.ts",
+      "name": "S1-R LIVE durable-timer qualification (real Restate + real Postgres + real door) L/M: paused and disabled schedules admit NO canonical work on wake"
+    },
+    {
+      "file": "schedule-restate-live.integration.test.ts",
+      "name": "S1-R LIVE durable-timer qualification (real Restate + real Postgres + real door) N: version change -> wake admits under the ACTIVE version identity, not the old one"
+    },
+    {
+      "file": "schedule-restate-runtime.integration.test.ts",
+      "name": "S1-R runtime qualification (real Postgres + real admission door) admission mapping: fireIdentity as Idempotency-Key -> replay same task, concurrent one task, changed payload 409"
+    },
+    {
+      "file": "schedule-restate-runtime.integration.test.ts",
+      "name": "S1-R runtime qualification (real Postgres + real admission door) bind-once: rebinding the fire to a DIFFERENT admitted task fails closed (E)"
+    },
+    {
+      "file": "schedule-restate-runtime.integration.test.ts",
+      "name": "S1-R runtime qualification (real Postgres + real admission door) createOrGetFire dedupe against real Postgres: one logical fire per (scheduleId,version,window)"
+    },
+    {
+      "file": "schedule-restate-runtime.integration.test.ts",
+      "name": "S1-R runtime qualification (real Postgres + real admission door) duplicate wake / replay: same fire, same canonical taskId, idempotent bind"
+    },
+    {
+      "file": "schedule-restate-runtime.integration.test.ts",
+      "name": "S1-R runtime qualification (real Postgres + real admission door) lease fencing: a stale-fence bind is rejected at the DB (StaleFenceError / UPDATE 0)"
+    },
+    {
+      "file": "schedule-restate-runtime.integration.test.ts",
+      "name": "S1-R runtime qualification (real Postgres + real admission door) Option B end-to-end: wake COMPLETES; fire ADMITTED bound to canonical admission id; public.tasks not required (A–D,G)"
     }
   ]
 }
