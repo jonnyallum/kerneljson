@@ -1050,6 +1050,30 @@
     {
       "file": "canary-tooling.integration.test.ts",
       "name": "Gate 3 tooling — Postgres runtime qualification authority: a REVOKED membership is rejected by the real PgIdentityGate (non-ACTIVE fails closed)"
+    },
+    {
+      "file": "gateway-bootstrap.integration.test.ts",
+      "name": "admission door — Postgres admission qualification GET /healthz is 200 and creates no admission"
+    },
+    {
+      "file": "gateway-bootstrap.integration.test.ts",
+      "name": "admission door — Postgres admission qualification rejects a missing bearer and a wrong bearer with 401"
+    },
+    {
+      "file": "gateway-bootstrap.integration.test.ts",
+      "name": "admission door — Postgres admission qualification rejects a recipe outside the allow-list with 400 (under a valid bearer)"
+    },
+    {
+      "file": "gateway-bootstrap.integration.test.ts",
+      "name": "admission door — Postgres admission qualification admits a valid claude_md_check/v1 request: 202 and exactly one task_admissions row"
+    },
+    {
+      "file": "gateway-bootstrap.integration.test.ts",
+      "name": "admission door — Postgres admission qualification same idempotency key + same payload returns the same task; no duplicate admission row"
+    },
+    {
+      "file": "gateway-bootstrap.integration.test.ts",
+      "name": "admission door — Postgres admission qualification same idempotency key + changed payload is 409 (fail closed)"
     }
   ]
 }

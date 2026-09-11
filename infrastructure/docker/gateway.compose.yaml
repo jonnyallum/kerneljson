@@ -1,0 +1,40 @@
+# KernelJSON admission door — production deploy artefact (estate VM, localhost behind Caddy).
+#
+# Runtime contract (all values injected at deploy time, e.g. via
+#   jvault run --project kerneljson-canary-admit -- docker compose -f gateway.compose.yaml up -d
+# ). NEVER commit secret values into this file.
+#
+#   Required:  DATABASE_URL (production Postgres), KJ_ADMISSION_BEARER (jVault),
+#              KJ_ADMISSION_TENANT_ID, KJ_ADMISSION_PRINCIPAL_ID, KJ_ADMISSION_PRINCIPAL_KIND
+#   Optional:  PORT (default 8081), KERNELJSON_RELEASE_ID (default unreleased-development),
+#              KJ_RESTATE_INGRESS_URL (unset => admission-only mode; set => Restate dispatch)
+#
+#   Port:      container listens on PORT, published on 127.0.0.1 only (Caddy is the TLS front).
+#   Caddy:     reverse_proxy the door's public host to http://127.0.0.1:${PORT}
+#   Health:    GET /healthz (liveness; no auth, no DB, no admission)
+#   Start:     docker compose -f infrastructure/docker/gateway.compose.yaml up -d
+#   Shutdown:  SIGTERM/SIGINT drain the HTTP server then close the pg pool (see main.ts)
+name: kerneljson-admission-door
+services:
+  gateway:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/gateway.Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL (production Postgres, from jVault)}
+      KJ_ADMISSION_BEARER: ${KJ_ADMISSION_BEARER:?set KJ_ADMISSION_BEARER (from jVault; never commit)}
+      KJ_ADMISSION_TENANT_ID: ${KJ_ADMISSION_TENANT_ID:?set KJ_ADMISSION_TENANT_ID}
+      KJ_ADMISSION_PRINCIPAL_ID: ${KJ_ADMISSION_PRINCIPAL_ID:?set KJ_ADMISSION_PRINCIPAL_ID}
+      KJ_ADMISSION_PRINCIPAL_KIND: ${KJ_ADMISSION_PRINCIPAL_KIND:-HUMAN}
+      KERNELJSON_RELEASE_ID: ${KERNELJSON_RELEASE_ID:-unreleased-development}
+      PORT: ${PORT:-8081}
+      KJ_RESTATE_INGRESS_URL: ${KJ_RESTATE_INGRESS_URL:-}
+    ports: ["127.0.0.1:${PORT:-8081}:${PORT:-8081}"]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8081)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
