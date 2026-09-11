@@ -12,6 +12,11 @@ export {
   type RepositoryReadPlan,
 } from "./kj-000000.js";
 export {
+  verifyClaudeMdCheck,
+  CLAUDE_MD_CHECK_CRITERION,
+  type ClaudeMdCheckVerification,
+} from "./claude-md-check.js";
+export {
   LegacyConductorAdapter,
   LegacyConductorError,
   LEGACY_CONDUCTOR_DENIED,

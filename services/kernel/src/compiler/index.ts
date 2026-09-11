@@ -9,6 +9,10 @@ export const criteria: Record<RecipeId, string> = {
   "uppercase/v1": "Output equals uppercase(trim(objective))",
   "repository-read/v1":
     "repository.read returns content_sha256 (64 hex) with mutations_detected=0",
+  // Kept byte-identical to CLAUDE_MD_CHECK_CRITERION in
+  // packages/runtimes/src/claude-md-check.ts (a test asserts equality).
+  "claude_md_check/v1":
+    "repository.read of CLAUDE.md returns content_sha256 == approved digest with mutations_detected=0",
 };
 // A content-derived UUID in a kernel-specific namespace. Pure across processes.
 export function stableId(value: unknown): string {
