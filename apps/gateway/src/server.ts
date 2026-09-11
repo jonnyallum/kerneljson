@@ -13,8 +13,14 @@ import { MemoryStore } from "../../../services/memory/src/index.js";
 import { WorldStore } from "../../../services/world-model/src/index.js";
 import type { ControlPort } from "../../mission-control/src/server.js";
 import { Signal } from "../../../services/kernel/src/deterministic.js";
-export const PublicSubmission=z.strictObject({recipe:z.enum(['uppercase/v1','uppercase-reverse/v1']),objective:z.string().trim().min(1).max(8000)});
+// S1 canary (Gate 1.5): `claude_md_check/v1` is admitted through the normal task
+// path. The accept-list is an explicit enum — no wildcard — so only these exact
+// recipe ids are admissible; any other/ malformed id is rejected by the parse.
+export const PublicSubmission=z.strictObject({recipe:z.enum(['uppercase/v1','uppercase-reverse/v1','claude_md_check/v1']),objective:z.string().trim().min(1).max(8000)});
 export type PublicSubmission=z.infer<typeof PublicSubmission>;
+// Recipe -> durable workflow target. Only the golden uppercase recipe routes to the
+// golden workflow; everything else (incl. the read-only canary) uses the kernel workflow.
+export function recipeTarget(recipe:PublicSubmission['recipe']){return recipe==='uppercase/v1'?workflowTargets.GoldenTaskWorkflowV1:workflowTargets.KernelWorkflowV1;}
 const Key=z.string().regex(/^[A-Za-z0-9._:-]{8,128}$/);
 export type Dispatch=(binding:ExecutionBinding,payload:KernelSubmission,context:TenantContext)=>Promise<{status:'ACCEPTED'|'UNRESOLVED';invocationId?:string}>;
 class GatewayError extends Error {constructor(readonly status:number,readonly code:string){super(code);}}
@@ -82,7 +88,7 @@ export function createGateway(options:GatewayOptions){
      }
      const trace= req.headers['x-correlation-id']===undefined ? correlationId : Id.parse(req.headers['x-correlation-id']);
      const payload=KernelSubmission.parse({recipe:input.recipe,intent:{id:stableId(['gateway/v1',ctx.tenantId,ctx.principal.id,keyDigest]),principal:ctx.principal,tenant:{id:ctx.tenantId},source:'kerneljson:gateway/v1',objective:input.objective,attachments:[],contextRefs:[],receivedAt:new Date().toISOString(),trace:{traceId:trace,correlationId:trace}}});
-     const task=compileIntent(payload).task,target=input.recipe==='uppercase/v1'?workflowTargets.GoldenTaskWorkflowV1:workflowTargets.KernelWorkflowV1;
+     const task=compileIntent(payload).task,target=recipeTarget(input.recipe);
      const binding=await persistBinding(db,bindingFor(task,target,options.releaseId));
      await db.query('insert into kernel_private.task_admissions(task_id,tenant_id,principal_id,key_digest,request_digest,payload) values($1,$2,$3,$4,$5,$6)',[task.id,ctx.tenantId,ctx.principal.id,keyDigest,requestDigest,payload]);
      return {binding,payload};
