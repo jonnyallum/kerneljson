@@ -897,5 +897,75 @@
       "file": "world.test.ts",
       "name": "database prevents graph history mutation and requires relationship provenance"
     }
+  ],
+  "intentionalSkips": [
+    {
+      "file": "schedule-fencing.integration.test.ts",
+      "name": "S1-F lease fencing qualification A claims (epoch N); after expiry B claims (epoch N+1); stale A cannot mutate; only B's mutation persists"
+    },
+    {
+      "file": "schedule-fencing.integration.test.ts",
+      "name": "S1-F lease fencing qualification bind-once remains intact under fencing; lease churn creates no extra fire and no second child"
+    },
+    {
+      "file": "schedule-fencing.integration.test.ts",
+      "name": "S1-F lease fencing qualification duplicate current-owner write succeeds (idempotent transition under current fence)"
+    },
+    {
+      "file": "schedule-fencing.integration.test.ts",
+      "name": "S1-F lease fencing qualification reads are NOT fenced (no over-fencing)"
+    },
+    {
+      "file": "schedule-fencing.integration.test.ts",
+      "name": "S1-F lease fencing qualification right owner with stale epoch is rejected"
+    },
+    {
+      "file": "schedule-fencing.integration.test.ts",
+      "name": "S1-F lease fencing qualification stale failure transition is rejected by the DB"
+    },
+    {
+      "file": "schedule-fencing.integration.test.ts",
+      "name": "S1-F lease fencing qualification stale release is a no-op; current owner keeps the lease"
+    },
+    {
+      "file": "schedule-fencing.integration.test.ts",
+      "name": "S1-F lease fencing qualification wrong owner with correct-looking epoch is rejected"
+    },
+    {
+      "file": "schedule-postgres.integration.test.ts",
+      "name": "S1 Postgres runtime qualification backfill: DB CHECKs reject unbounded / self-approval / approved-without-approver; valid succeeds"
+    },
+    {
+      "file": "schedule-postgres.integration.test.ts",
+      "name": "S1 Postgres runtime qualification bind-once: DB rejects rebinding to a different task; same task replays"
+    },
+    {
+      "file": "schedule-postgres.integration.test.ts",
+      "name": "S1 Postgres runtime qualification captures schema-level evidence (constraints/trigger)"
+    },
+    {
+      "file": "schedule-postgres.integration.test.ts",
+      "name": "S1 Postgres runtime qualification immutable spec version cannot be silently rewritten"
+    },
+    {
+      "file": "schedule-postgres.integration.test.ts",
+      "name": "S1 Postgres runtime qualification invalid persisted state: DB enum types reject unknown values"
+    },
+    {
+      "file": "schedule-postgres.integration.test.ts",
+      "name": "S1 Postgres runtime qualification lease: expired lease recovered by another worker; epoch advances"
+    },
+    {
+      "file": "schedule-postgres.integration.test.ts",
+      "name": "S1 Postgres runtime qualification unique logical fire: concurrent duplicate from two independent pools → one row"
+    },
+    {
+      "file": "schedule-postgres.integration.test.ts",
+      "name": "S1 Postgres runtime qualification unique logical fire: sequential duplicate → one row"
+    },
+    {
+      "file": "schedule-postgres.integration.test.ts",
+      "name": "S1 Postgres runtime qualification version namespace: same window under a new version is a distinct fire"
+    }
   ]
 }
