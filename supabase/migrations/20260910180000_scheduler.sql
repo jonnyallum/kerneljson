@@ -138,3 +138,20 @@ create table public.schedule_leases (
   acquired_at timestamptz not null default now(),
   expires_at timestamptz not null
 );
+
+-- Row-level security. These six tables are KernelJSON's private authority state, so
+-- they follow the SAME convention as every other kernel table (see identity /
+-- task_ledger migrations): RLS ENABLED (deny-by-default, NO policies) AND all grants
+-- REVOKED from the public API roles. Result: anon/authenticated have zero access.
+-- The kernel's own privileged DB path (superuser / service_role, which bypasses RLS)
+-- is unaffected — there are deliberately NO permissive public policies here. Tenant-
+-- scoped scheduler policies, if ever wanted, are a separate future authority decision.
+do $$ declare t text; begin
+  foreach t in array array[
+    'schedule_specs','schedule_state','schedule_fires',
+    'schedule_backfill_requests','schedule_observations','schedule_leases'
+  ] loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('revoke all on public.%I from anon, authenticated', t);
+  end loop;
+end $$;

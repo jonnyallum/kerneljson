@@ -494,15 +494,37 @@ it("applies all four migration groups with RLS and no public API grants", async 
   const r = await pool.query<{ tablename: string; rowsecurity: boolean }>(
     "select tablename,rowsecurity from pg_tables where schemaname='public'",
   );
-  expect(r.rows).toHaveLength(19);
+  expect(r.rows).toHaveLength(25);
   expect(r.rows.every((t) => t.rowsecurity)).toBe(true);
+  // S1 scheduler authority tables must be RLS-protected exactly like every other
+  // kernel table (regression guard for the RLS omission fixed on the S1 branch).
+  const scheduler = r.rows
+    .filter((t) => t.tablename.startsWith("schedule_"))
+    .sort((a, b) => a.tablename.localeCompare(b.tablename));
+  expect(scheduler.map((t) => t.tablename)).toEqual([
+    "schedule_backfill_requests",
+    "schedule_fires",
+    "schedule_leases",
+    "schedule_observations",
+    "schedule_specs",
+    "schedule_state",
+  ]);
+  expect(scheduler.every((t) => t.rowsecurity)).toBe(true);
+  // No public API role (anon/authenticated) may hold ANY grant on a scheduler table.
+  const schedulerGrants = await pool.query(
+    "select table_name, grantee, privilege_type from information_schema.role_table_grants where table_schema='public' and table_name like 'schedule%' and grantee in ('anon','authenticated')",
+  );
+  expect(schedulerGrants.rows).toHaveLength(0);
   for (const role of ["anon", "authenticated"]) {
     const db = await pool.connect();
     try {
       await db.query(`set role ${role}`);
-      await expect(db.query("select * from tasks")).rejects.toMatchObject({
-        code: "42501",
-      });
+      // A public API role is denied on kernel AND scheduler authority tables.
+      for (const rel of ["tasks", "schedule_specs", "schedule_fires", "schedule_leases"]) {
+        await expect(db.query(`select * from ${rel}`)).rejects.toMatchObject({
+          code: "42501",
+        });
+      }
     } finally {
       await db.query("reset role");
       db.release();
