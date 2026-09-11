@@ -21,8 +21,10 @@ export function planTask(raw: Task, recipe: RecipeId): ExecutionPlan {
   const operations: PlanStep["operation"][] =
     recipe === "uppercase-reverse/v1"
       ? ["UPPERCASE", "WAIT_FOR_EVENT", "REVERSE"]
-      : recipe === "repository-read/v1"
-        ? ["REPOSITORY_READ"]
+      : recipe === "repository-read/v1" || recipe === "claude_md_check/v1"
+        ? // The canary reuses the sealed read-only REPOSITORY_READ capability; the
+          // CLAUDE.md drift assertion is applied by verifyClaudeMdCheck, not a new op.
+          ["REPOSITORY_READ"]
         : ["UPPERCASE"];
   const steps: PlanStep[] = operations.map((operation, index) => ({
     id: stableId([task.id, recipe, index]),

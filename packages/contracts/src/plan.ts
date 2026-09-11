@@ -1,7 +1,14 @@
 import { z } from "zod";
 import { Id } from "./common.js";
 import { IntentEnvelope } from "./intent.js";
-export const RecipeId = z.enum(["uppercase-reverse/v1", "uppercase/v1", "repository-read/v1"]);
+export const RecipeId = z.enum([
+  "uppercase-reverse/v1",
+  "uppercase/v1",
+  "repository-read/v1",
+  // S1 production canary: a read-only CLAUDE.md drift check. Plans to a single
+  // REPOSITORY_READ step (the sealed read-only capability); adds no new operation.
+  "claude_md_check/v1",
+]);
 export type RecipeId = z.infer<typeof RecipeId>;
 export const KernelSubmission = z.strictObject({
   intent: IntentEnvelope,
