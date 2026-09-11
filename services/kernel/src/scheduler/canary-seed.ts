@@ -60,7 +60,7 @@ export interface IdentitySnapshot {
   principalExists: boolean;
   ownerExists: boolean;
   ownerKind: "HUMAN" | "SERVICE" | null;
-  membershipExists: boolean; // (tenantId, principalId)
+  membershipExists: boolean; // an ACTIVE (tenantId, principalId) membership exists
 }
 
 export interface IdentityGate {
@@ -246,8 +246,12 @@ export class PgIdentityGate implements IdentityGate {
     const o = await this.pool.query("select kind from public.principals where id=$1", [
       ids.ownerId,
     ]);
+    // Membership must be ACTIVE: a REVOKED/REMOVED row is NOT a member (fail closed).
+    // `tenant_memberships.status` was added in 20260908234711_qualification_membership_lifecycle.sql
+    // (ACTIVE|REVOKED|REMOVED, default ACTIVE); the seed/enable/disable/fire-once gates all rely on
+    // this, so `membershipExists` means "an ACTIVE membership exists".
     const m = await this.pool.query(
-      "select 1 from public.tenant_memberships where tenant_id=$1 and principal_id=$2",
+      "select 1 from public.tenant_memberships where tenant_id=$1 and principal_id=$2 and status='ACTIVE'",
       [ids.tenantId, ids.principalId],
     );
     const ownerKind = (o.rows[0]?.["kind"] as "HUMAN" | "SERVICE" | undefined) ?? null;
