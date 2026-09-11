@@ -27,7 +27,8 @@ import { HttpAdmissionGateway } from "../scheduler/http-admission.js";
  *   enable-canary   --schedule-id <uuid> --tenant-id <uuid> --actor-id <uuid>
  *                   --from-version <v> --to-version <v> --created-at <iso> --expected-state <state>
  *   disable-canary  --schedule-id <uuid> --actor-id <uuid> --at <iso> [--expected-active-version <v>]
- *   fire-once       --schedule-id <uuid> --tenant-id <uuid> --last-tick <iso> --now <iso>
+ *   fire-once       --schedule-id <uuid> --tenant-id <uuid> --actor-id <uuid>
+ *                   --expected-active-version <v> --last-tick <iso> --now <iso>
  *                   --owner <id> --production true [--preview true] [--lease-ttl-ms <n>]
  *
  * Gate 3 tooling (enable-canary / disable-canary / fire-once) is REPO-ONLY and production-
@@ -83,7 +84,16 @@ const REQUIRED: Record<Operation, string[]> = {
     "expected-state",
   ],
   "disable-canary": ["schedule-id", "actor-id", "at"],
-  "fire-once": ["schedule-id", "tenant-id", "last-tick", "now", "owner", "production"],
+  "fire-once": [
+    "schedule-id",
+    "tenant-id",
+    "actor-id",
+    "expected-active-version",
+    "last-tick",
+    "now",
+    "owner",
+    "production",
+  ],
 };
 
 /** Pure arg parser. Fails closed on missing/unknown operation or missing flags. */
@@ -159,6 +169,8 @@ export interface RunnerDeps {
     pool: pg.Pool;
     scheduleId: string;
     tenantId: string;
+    actorPrincipalId: string;
+    expectedActiveVersion: string;
     lastTickMs: number;
     nowMs: number;
     owner: string;
@@ -213,6 +225,7 @@ export const realDeps: RunnerDeps = {
   fireOnce: ({ pool, ...input }) =>
     runFireOnce(
       new PgScheduleStore(pool),
+      new PgIdentityGate(pool),
       input.preview ? null : buildAdmissionGatewayFromEnv(),
       input,
     ),
@@ -261,6 +274,8 @@ export async function runCanaryOperation(
     pool,
     scheduleId: parsed.values["schedule-id"]!,
     tenantId: parsed.values["tenant-id"]!,
+    actorPrincipalId: parsed.values["actor-id"]!,
+    expectedActiveVersion: parsed.values["expected-active-version"]!,
     lastTickMs: Date.parse(parsed.values["last-tick"]!),
     nowMs: Date.parse(parsed.values["now"]!),
     owner: parsed.values["owner"]!,

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Id } from "../../../../packages/contracts/src/index.js";
 import type { ScheduleStore } from "./store.js";
+import type { IdentityGate } from "./canary-seed.js";
 import {
   ScheduleTimerDriver,
   directJournal,
@@ -19,6 +20,9 @@ import { canFire } from "./policy.js";
  * through the already-qualified `ScheduleTimerDriver.onWake` path (create-or-get fire ->
  * KernelJSON Admission with `Idempotency-Key = fireIdentity` -> fenced bind-once), with:
  *   - an explicit `productionRuntime=true` acknowledgement (no accidental fire);
+ *   - an approved HUMAN actor with an ACTIVE tenant membership (same read-only gate as enable/
+ *     disable) plus an explicit expected active version — Gate 3 is only possible via approved
+ *     HUMAN authority, and version drift fails closed;
  *   - a bounded window that MUST resolve to exactly one due slot (fail closed otherwise);
  *   - NO recurring wake (a local no-op timer; the tool never arms a next fire);
  *   - NO Restate (the durable timer/SDK is not imported — the first controlled fire is
@@ -46,6 +50,11 @@ export type CanaryFireCode =
   | "MALFORMED_INPUT"
   | "UNKNOWN_SCHEDULE"
   | "TENANT_MISMATCH"
+  | "UNKNOWN_TENANT"
+  | "UNKNOWN_PRINCIPAL"
+  | "ACTOR_NOT_HUMAN"
+  | "MISSING_TENANT_MEMBERSHIP"
+  | "UNEXPECTED_ACTIVE_VERSION"
   | "NOT_FIRABLE"
   | "WINDOW_NOT_UNIQUE";
 
@@ -62,9 +71,11 @@ export class CanaryFireError extends Error {
 export const FireOnceInput = z.strictObject({
   scheduleId: Id,
   tenantId: Id,
+  actorPrincipalId: Id, // the HUMAN principal authorising this one controlled fire
+  expectedActiveVersion: z.string().min(1), // asserted against reality; drift fails closed
   lastTickMs: z.number().int(),
   nowMs: z.number().int(),
-  owner: z.string().min(1), // lease owner id for this one-shot driver instance
+  owner: z.string().min(1), // lease owner id for this one-shot driver instance (NOT the actor)
   productionRuntime: z.literal(true), // explicit acknowledgement; anything else is refused
   leaseTtlMs: z.number().int().min(1000).max(86_400_000).default(3_600_000),
   preview: z.boolean().default(false),
@@ -94,10 +105,14 @@ export type FireOnceResult = FireOncePreview | FireOnceExecuted;
  * Compute (and, unless `preview`, execute) exactly one fire.
  *
  * @param store    the schedule store (PgScheduleStore in production).
+ * @param gate     the read-only authority gate (PgIdentityGate in production); used in BOTH
+ *                 preview and execute so a production fire can only be driven under an approved
+ *                 HUMAN principal — Gate 3 is only possible via approved HUMAN authority.
  * @param gateway  KernelJSON Admission seam; may be null ONLY in preview mode.
  */
 export async function fireOnce(
   store: ScheduleStore,
+  gate: IdentityGate,
   gateway: AdmissionGateway | null,
   rawInput: unknown,
 ): Promise<FireOnceResult> {
@@ -119,11 +134,41 @@ export async function fireOnce(
   if (current.spec.tenant.id !== input.tenantId)
     throw new CanaryFireError("TENANT_MISMATCH", "schedule tenant does not match input");
 
+  // Authority: the actor MUST be a real HUMAN with an ACTIVE membership of the schedule's tenant.
+  // Rejects SERVICE / unknown / non-member / non-ACTIVE actors (read-only; same gate as enable
+  // and disable). Enforced even in preview so a production fire can never be inspected or driven
+  // without approved HUMAN authority.
+  const snap = await gate.snapshot({
+    tenantId: input.tenantId,
+    principalId: input.actorPrincipalId,
+    ownerId: input.actorPrincipalId,
+  });
+  if (!snap.tenantExists)
+    throw new CanaryFireError("UNKNOWN_TENANT", "tenant does not exist");
+  if (!snap.principalExists)
+    throw new CanaryFireError("UNKNOWN_PRINCIPAL", "actor principal does not exist");
+  if (snap.ownerKind !== "HUMAN")
+    throw new CanaryFireError("ACTOR_NOT_HUMAN", "actor principal is not HUMAN");
+  if (!snap.membershipExists)
+    throw new CanaryFireError(
+      "MISSING_TENANT_MEMBERSHIP",
+      "actor has no ACTIVE membership in the tenant",
+    );
+
+  // Drift guard: reality MUST match the declared active version, else fail closed. This binds the
+  // fire to the version the operator approved (v2 after enable); the version is also embedded in
+  // fireIdentity/idempotencyKey, so a drifted version can never share an identity with the approved one.
+  if (current.state.activeVersion !== input.expectedActiveVersion)
+    throw new CanaryFireError(
+      "UNEXPECTED_ACTIVE_VERSION",
+      `expected active version ${input.expectedActiveVersion}, found ${current.state.activeVersion}`,
+    );
+
   const spec = runtimeSpecFrom(current.spec, current.state);
 
   // Must be firable in production (enabled + enabled_for_production=true). Fail closed otherwise.
-  const gate = canFire(spec, { productionRuntime: true });
-  if (!gate.ok) throw new CanaryFireError("NOT_FIRABLE", `not firable: ${gate.reason}`);
+  const firable = canFire(spec, { productionRuntime: true });
+  if (!firable.ok) throw new CanaryFireError("NOT_FIRABLE", `not firable: ${firable.reason}`);
 
   // The bounded window MUST resolve to exactly one due slot. Zero or many => fail closed.
   const windows = dueFireWindows(spec, input.lastTickMs, input.nowMs);

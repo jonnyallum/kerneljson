@@ -118,7 +118,7 @@ run("Gate 3 tooling — Postgres runtime qualification", () => {
 
   it("fire-once: exactly one ADMITTED fire bound to one canonical task", async () => {
     const gw = new SeedingAdmissionGateway(pool, tenantId, svc);
-    const r = await fireOnce(store, gw, { scheduleId, tenantId, lastTickMs: LAST, nowMs: NOW, owner: "pg-fire", productionRuntime: true });
+    const r = await fireOnce(store, gate, gw, { scheduleId, tenantId, actorPrincipalId: owner, expectedActiveVersion: "v2", lastTickMs: LAST, nowMs: NOW, owner: "pg-fire", productionRuntime: true });
     expect(r.preview).toBe(false);
     const fires = await pool.query("select state, admitted_child_task_id from schedule_fires where schedule_id=$1", [scheduleId]);
     expect(fires.rowCount).toBe(1);
@@ -133,7 +133,7 @@ run("Gate 3 tooling — Postgres runtime qualification", () => {
     const before = await pool.query("select admitted_child_task_id from schedule_fires where schedule_id=$1", [scheduleId]);
     const childId = before.rows[0].admitted_child_task_id as string;
     const gw = new SeedingAdmissionGateway(pool, tenantId, svc);
-    const r = await fireOnce(store, gw, { scheduleId, tenantId, lastTickMs: LAST, nowMs: NOW, owner: "pg-fire", productionRuntime: true });
+    const r = await fireOnce(store, gate, gw, { scheduleId, tenantId, actorPrincipalId: owner, expectedActiveVersion: "v2", lastTickMs: LAST, nowMs: NOW, owner: "pg-fire", productionRuntime: true });
     if (r.preview === false) expect(r.childTaskId).toBe(childId);
     const fires = await pool.query("select count(*)::int n from schedule_fires where schedule_id=$1", [scheduleId]);
     expect(fires.rows[0].n).toBe(1);
@@ -148,5 +148,23 @@ run("Gate 3 tooling — Postgres runtime qualification", () => {
     expect(st.rows[0].active_version).toBe("v2"); // preserved
     const fires = await pool.query("select count(*)::int n from schedule_fires where schedule_id=$1", [scheduleId]);
     expect(fires.rows[0].n).toBe(1); // history not deleted
+  });
+
+  it("authority: a REVOKED membership is rejected by the real PgIdentityGate (non-ACTIVE fails closed)", async () => {
+    // tenant_memberships.status (20260908234711) must gate the authority: a REVOKED/REMOVED row is
+    // NOT a member. This proves the fire-once HUMAN-actor gate against the real gate, end to end.
+    await pool.query("update tenant_memberships set status='REVOKED' where tenant_id=$1 and principal_id=$2", [tenantId, owner]);
+    let code = "OK";
+    try {
+      await fireOnce(store, gate, new SeedingAdmissionGateway(pool, tenantId, svc), {
+        scheduleId, tenantId, actorPrincipalId: owner, expectedActiveVersion: "v2",
+        lastTickMs: LAST, nowMs: NOW, owner: "pg-fire", productionRuntime: true,
+      });
+    } catch (e) {
+      code = (e as { code?: string }).code ?? (e as Error).name;
+    }
+    expect(code).toBe("MISSING_TENANT_MEMBERSHIP");
+    // restore ACTIVE so the shared fixture is left clean
+    await pool.query("update tenant_memberships set status='ACTIVE' where tenant_id=$1 and principal_id=$2", [tenantId, owner]);
   });
 });

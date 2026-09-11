@@ -1046,6 +1046,10 @@
     {
       "file": "canary-tooling.integration.test.ts",
       "name": "Gate 3 tooling — Postgres runtime qualification disable-canary: enabled@v2 -> disabled@v2, fire history intact"
+    },
+    {
+      "file": "canary-tooling.integration.test.ts",
+      "name": "Gate 3 tooling — Postgres runtime qualification authority: a REVOKED membership is rejected by the real PgIdentityGate (non-ACTIVE fails closed)"
     }
   ]
 }

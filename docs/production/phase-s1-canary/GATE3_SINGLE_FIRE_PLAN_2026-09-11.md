@@ -95,12 +95,15 @@ and a change-window decision, still to be done before execution.
   Recommended `disable-canary` tool: `setState(scheduleId, state='disabled', activeVersion=<current>, updatedBy=ownerId)`.
   A bound fire is immutable (bind-once); disabling stops any NEW fire but never rewrites history.
 - **GAP C (BUILT) — reviewed SINGLE-FIRE tool.** One-shot `fire-once` tool: constructs
-  `PgScheduleStore` + `HttpAdmissionGateway` and call
-  `new ScheduleTimerDriver(store, NoopDurableTimerRuntime, gateway, {owner, productionRuntime:true, leaseTtlMs}, directJournal).onWake(scheduleId, lastTickMs, nowMs)` ONCE, with `(lastTickMs, nowMs]`
-  chosen to bound EXACTLY ONE due civil slot, `armNext` OFF. This uses the Restate-independent
-  path (proven by the "real PG + real door, in-memory timer" layer, 6 EXECUTED). No Restate
-  deploy. The tool prints only non-secret result codes and the canonical id it read back from
-  the fire row.
+  `PgScheduleStore` + `PgIdentityGate` + `HttpAdmissionGateway` and calls
+  `new ScheduleTimerDriver(store, NoRecurringTimer, gateway, {owner, productionRuntime:true, leaseTtlMs}, directJournal).onWake(scheduleId, lastTickMs, nowMs)` ONCE, with `(lastTickMs, nowMs]`
+  chosen to bound EXACTLY ONE due civil slot, `armNext` OFF. Before any read or write it enforces
+  approved HUMAN authority (`--actor-id` must be a HUMAN with an ACTIVE tenant membership via the
+  same read-only `PgIdentityGate` as enable/disable) and an explicit `--expected-active-version`
+  (version drift fails closed) — Gate 3 is only possible via approved HUMAN authority. This uses the
+  Restate-independent path (proven by the "real PG + real door, in-memory timer" layer). No Restate
+  deploy. The tool prints only non-secret result codes and the canonical id it read back from the
+  fire row.
 - **GAP D — admission door not in production.** `POST /v1/tasks` (`apps/gateway/src/server.ts`)
   with the `claude_md_check/v1` accept-list was built in Gate 1.5 but "not deployed/activated".
   Gate 3 requires the door reachable at a known `admissionUrl`, accepting `claude_md_check/v1`,
@@ -143,13 +146,17 @@ replays as a clean no-op (`alreadyEnabled`). This is the ONLY production write o
 jvault run --project kerneljson -- pnpm exec tsx services/kernel/src/tools/canary-runner.ts \
   fire-once --schedule-id acab9ebc-dc92-5c3a-90d6-4d6f9ddb0a1b \
   --tenant-id 5f970749-7507-894b-a2e4-872ce20a94b7 \
+  --actor-id da5c6dfc-38c5-4773-bd47-5c80ed908d75 --expected-active-version v2 \
   --last-tick <ISO_JUST_BEFORE_SLOT> --now <ISO_JUST_AFTER_SLOT> \
   --owner gate3 --production true --preview true
 ```
 
-Preview reads the schedule, checks it is firable, asserts the window resolves to exactly one slot,
-and prints the `fireWindowKey`, `fireIdentity` and `idempotencyKey` that the real fire would use —
-without touching anything. Run it and confirm the identity before executing.
+Preview verifies the acting HUMAN authority (`--actor-id`), asserts the active version matches
+`--expected-active-version`, reads the schedule, checks it is firable, asserts the window resolves to
+exactly one slot, and prints the `fireWindowKey`, `fireIdentity` and `idempotencyKey` that the real
+fire would use — without touching anything. `--owner` is only the lease-owner label for the one-shot
+driver; `--actor-id` is the HUMAN principal that authorises the fire (they are distinct). Run preview
+and confirm the identity before executing.
 
 **Execute (single production write; needs `KJ_ADMISSION_URL` + `KJ_ADMISSION_BEARER` injected via
 jVault, and a deployed admission door — GAP D):**
@@ -158,16 +165,21 @@ jVault, and a deployed admission door — GAP D):**
 jvault run --project kerneljson -- pnpm exec tsx services/kernel/src/tools/canary-runner.ts \
   fire-once --schedule-id acab9ebc-dc92-5c3a-90d6-4d6f9ddb0a1b \
   --tenant-id 5f970749-7507-894b-a2e4-872ce20a94b7 \
+  --actor-id da5c6dfc-38c5-4773-bd47-5c80ed908d75 --expected-active-version v2 \
   --last-tick <ISO_JUST_BEFORE_SLOT> --now <ISO_JUST_AFTER_SLOT> \
   --owner gate3 --production true
 ```
 
 `--last-tick`/`--now` bound exactly one `dailyAt 09:00 Europe/London` slot; the tool fails closed
 `WINDOW_NOT_UNIQUE` unless exactly one due window is found, `PRODUCTION_ACK_REQUIRED` unless
-`--production true`, `TENANT_MISMATCH` on the wrong tenant, and `NOT_FIRABLE` unless the schedule is
-`enabled` with `enabled_for_production=true` ([policy.ts:25](../../../services/kernel/src/scheduler/policy.ts#L25)).
-It uses `NoRecurringTimer` (never arms a next wake) and `directJournal`, and imports no Restate SDK.
-`KJ_ADMISSION_BEARER` is read from the environment only — never an argument, never printed.
+`--production true`, `TENANT_MISMATCH` on the wrong tenant, `UNEXPECTED_ACTIVE_VERSION` on version
+drift, `ACTOR_NOT_HUMAN` / `UNKNOWN_PRINCIPAL` / `UNKNOWN_TENANT` / `MISSING_TENANT_MEMBERSHIP` unless
+the actor is a HUMAN with an ACTIVE membership of the tenant (Gate 3 is HUMAN-only; the read-only
+`PgIdentityGate` requires `tenant_memberships.status='ACTIVE'`), and `NOT_FIRABLE` unless the schedule
+is `enabled` with `enabled_for_production=true`
+([policy.ts:25](../../../services/kernel/src/scheduler/policy.ts#L25)). It uses `NoRecurringTimer`
+(never arms a next wake) and `directJournal`, and imports no Restate SDK. `KJ_ADMISSION_BEARER` is read
+from the environment only — never an argument, never printed.
 
 **Why Restate is not required for the first fire:** the durable timer only provides *when* to wake;
 for a controlled manual fire Jonny triggers the wake directly, and every exactly-once guarantee
@@ -312,9 +324,17 @@ Touch none of the pre-existing untracked files. Do not touch the SERVICE princip
 ## 15. Status
 
 Production mutation = NONE. The Gate 3 TOOLING (enable-canary / disable-canary / fire-once, incl.
-`fire-once --preview`) is BUILT, reviewed-ready and qualified in-repo (typecheck 0, lint 0, build 0,
-in-memory + dispatch tests green; Postgres integration test ready, gated on `KJ_TEST_PG_URL`).
-Gate 3 EXECUTION still requires, before any change window: GAP D (admission door deployed +
-`KJ_ADMISSION_URL`/`KJ_ADMISSION_BEARER` in jVault), GAP E (executor/verifier + approved digest
-configured), the approved `createdAt(v2)`, and Jonny's explicit go-ahead per step. No tool here
-enables, fires, or deploys on its own.
+`fire-once --preview`) is BUILT, reviewed-ready and qualified in-repo. All three tools now enforce
+approved HUMAN authority (a HUMAN principal with an ACTIVE tenant membership, via the read-only
+`PgIdentityGate`, which requires `tenant_memberships.status='ACTIVE'`) and explicit expected
+state/version drift guards that fail closed — fire-once takes `--actor-id` and
+`--expected-active-version` in line with enable/disable. Qualification (2026-09-11): typecheck 0,
+lint 0 (`--max-warnings=0`), build 0; unit + dispatch tests green (canary suite 81 passed, 0
+failures); Postgres runtime integration RUN and PASSED against a disposable local Postgres 17.6
+(`tests/canary-tooling.integration.test.ts`, 6/6 — install → enable → single ADMITTED fire bound to
+one canonical task → duplicate replay to the same task → disable preserving history → REVOKED
+membership rejected), plus `schedule-postgres`/`schedule-fencing` integration green on the same
+throwaway DB. Gate 3 EXECUTION still requires, before any change window: GAP D (admission door
+deployed + `KJ_ADMISSION_URL`/`KJ_ADMISSION_BEARER` in jVault), GAP E (executor/verifier + approved
+digest configured), the approved `createdAt(v2)`, and Jonny's explicit go-ahead per step. No tool
+here enables, fires, or deploys on its own.

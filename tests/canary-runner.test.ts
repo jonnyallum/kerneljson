@@ -270,15 +270,29 @@ describe("canary runner — Gate 3 operation dispatch (enable/disable/fire-once)
       pool,
       parseArgs([
         "fire-once", "--schedule-id", SCHEDULE, "--tenant-id", TENANT,
+        "--actor-id", HUMAN, "--expected-active-version", "v2",
         "--last-tick", "2026-09-11T07:59:00Z", "--now", "2026-09-11T08:01:00Z",
         "--owner", "gate3", "--production", "true", "--preview", "true",
       ]),
     );
     expect(deps.fireOnce).toHaveBeenCalledWith({
       pool, scheduleId: SCHEDULE, tenantId: TENANT,
+      actorPrincipalId: HUMAN, expectedActiveVersion: "v2",
       lastTickMs: Date.parse("2026-09-11T07:59:00Z"), nowMs: Date.parse("2026-09-11T08:01:00Z"),
       owner: "gate3", productionRuntime: true, preview: true, leaseTtlMs: undefined,
     });
+  });
+
+  it("rejects fire-once missing the HUMAN actor / expected version (fail closed)", () => {
+    expect(
+      throwsCode(() =>
+        parseArgs([
+          "fire-once", "--schedule-id", SCHEDULE, "--tenant-id", TENANT,
+          "--last-tick", "2026-09-11T07:59:00Z", "--now", "2026-09-11T08:01:00Z",
+          "--owner", "gate3", "--production", "true",
+        ]),
+      ),
+    ).toBe("MISSING_ARG");
   });
 
   it("routes fire-once with productionRuntime=false when --production is not 'true' (ack refused downstream)", async () => {
@@ -288,6 +302,7 @@ describe("canary runner — Gate 3 operation dispatch (enable/disable/fire-once)
       pool,
       parseArgs([
         "fire-once", "--schedule-id", SCHEDULE, "--tenant-id", TENANT,
+        "--actor-id", HUMAN, "--expected-active-version", "v2",
         "--last-tick", "2026-09-11T07:59:00Z", "--now", "2026-09-11T08:01:00Z", "--owner", "gate3", "--production", "false",
       ]),
     );
