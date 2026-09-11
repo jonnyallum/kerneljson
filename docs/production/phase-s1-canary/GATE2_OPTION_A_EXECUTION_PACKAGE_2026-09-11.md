@@ -267,8 +267,26 @@ Do not: execute any production mutation from Claude; enable `claude_md_check`; c
 production fire; deploy Restate changes; execute Phase B or C1 hygiene; alter EMAIL authority
 or Phase 8.1; alter WhatsApp / n8n / OpenClaw / JaiOS; touch the SERVICE principal.
 
-## 7. Status at time of writing
+## 7. Gate 2 result — PASSED (executed and manually verified 2026-09-11)
 
-Production mutation = NONE. Migration not applied. HUMAN principal not created. Canary not
-installed. Next action: Jonny runs Checkpoint 0 (preconditions), then Checkpoint A (dry-run),
-and pastes the dry-run output back before any mutation command is issued.
+Gate 2 was executed by Jonny step-by-step and verified. Recorded result:
+
+- Scheduler migration `20260910180000_scheduler.sql` APPLIED and present in the remote
+  migration history of `banqdzddfganzfhckdps`.
+- Schema verification PASSED: all six scheduler tables exist; RLS enabled on all six;
+  `admitted_child_task_id` FK points to `kernel_private.task_admissions(task_id)`;
+  `anon`/`authenticated` grants = 0; permissive policies = 0.
+- HUMAN principal `da5c6dfc-38c5-4773-bd47-5c80ed908d75` created; `kind = HUMAN`; membership in
+  tenant `5f970749-7507-894b-a2e4-872ce20a94b7`, role `operator`, status `ACTIVE`. Existing
+  SERVICE principal `72db0114-839e-8ca9-a2fa-462b561a936b` unchanged.
+- Disabled canary installed: schedule `claude_md_check`, scheduleId
+  `acab9ebc-dc92-5c3a-90d6-4d6f9ddb0a1b`, owner = HUMAN, tenant = estate, createdAt
+  `2026-09-11T09:00:00.000+00:00`, `state = disabled`, `enabled_for_production = false`,
+  `active_version = v1`, `schedule_specs` count = 1, `schedule_fires` count = 0.
+- No execution has occurred. No fire. No admission. No canonical task.
+
+**GATE 2 VERDICT: PASSED — DISABLED CANARY INSTALLED.**
+
+The identities and `createdAt` above are immutable for this canary and must be reused verbatim.
+Next: Gate 3 is prepared as a plan only in
+`GATE3_SINGLE_FIRE_PLAN_2026-09-11.md`; Gate 3 is NOT authorised to execute.
