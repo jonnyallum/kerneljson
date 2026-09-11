@@ -108,7 +108,12 @@ and a change-window decision, still to be done before execution.
   with the `claude_md_check/v1` accept-list was built in Gate 1.5 but "not deployed/activated".
   Gate 3 requires the door reachable at a known `admissionUrl`, accepting `claude_md_check/v1`,
   with its bearer token held in jVault (project `kerneljson`, injected like `DATABASE_URL`,
-  never in argv). Deploying the door is a production change with its own go/no-go.
+  never in argv). **Update (Change Plan A, repo-only): the door is now runnable** — a bootstrap
+  entrypoint (`apps/gateway/src/main.ts`), a deterministic constant-time bearer -> TenantContext
+  resolver, a non-admitting `GET /healthz`, a `start:gateway` script, and a deploy artefact
+  (`infrastructure/docker/gateway.{Dockerfile,compose.yaml}`) exist and are qualified in-repo
+  (see `ADMISSION_DOOR_BOOTSTRAP_2026-09-11.md`). Deploying it, provisioning `KJ_ADMISSION_BEARER`,
+  and the first real admission remain separately gated production changes with their own go/no-go.
 - **GAP E — executor/verifier + digest.** For execution -> evidence -> completion, the kernel
   executor/verifier for `claude_md_check/v1` must be deployed and configured with
   `SCHED_APPROVED_SHA256 = 27255772…` ([canary-config.ts](../../../services/kernel/src/scheduler/canary-config.ts)).
