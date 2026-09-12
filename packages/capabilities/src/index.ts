@@ -270,7 +270,15 @@ export const REPOSITORY_READ = Object.freeze({
   id: "60000000-0000-4000-8000-000000000003",
   version: "1.0.0",
 });
-function repositoryReadDefinition(): CapabilityDefinition {
+/** A sealed, read-only backend for `repository.read`. Injected at registry
+ *  construction; when absent the capability id exists but cannot self-execute
+ *  (execute throws), exactly as before. The descriptor metadata is unchanged either
+ *  way, so the capability's id/version/descriptor digest stay stable. */
+export type RepositoryReader = (
+  input: z.infer<typeof RepositoryReadInput>,
+) => z.infer<typeof RepositoryReadOutput>;
+
+function repositoryReadDefinition(read?: RepositoryReader): CapabilityDefinition {
   return {
     metadata: Capability.parse({
       ...REPOSITORY_READ,
@@ -284,9 +292,11 @@ function repositoryReadDefinition(): CapabilityDefinition {
     }),
     inputSchema: RepositoryReadInput as z.ZodType<JsonValue>,
     outputSchema: RepositoryReadOutput as z.ZodType<JsonValue>,
-    execute: () => {
-      throw new CapabilityError("IMPLEMENTATION_FAILED");
-    },
+    execute: read
+      ? (input) => read(RepositoryReadInput.parse(input))
+      : () => {
+          throw new CapabilityError("IMPLEMENTATION_FAILED");
+        },
     verify: (_input, output) => {
       const parsed = RepositoryReadOutput.safeParse(output);
       return (
@@ -321,8 +331,11 @@ export function createBuiltinRegistry(): CapabilityRegistry {
     "builtin",
   );
 }
-/** Runtime registry: builtins + Spawner-backed repository.read. */
-export function createRuntimeRegistry(): CapabilityRegistry {
+/** Runtime registry: builtins + repository.read. With no reader the repository.read
+ *  execute throws (unchanged); with a sealed reader injected (Gate 3) it executes a
+ *  confined, read-only local read. The Spawner-backed adapter uses `verify`, not
+ *  `execute`, so its callers are unaffected either way. */
+export function createRuntimeRegistry(read?: RepositoryReader): CapabilityRegistry {
   return new CapabilityRegistry(
     [
       definition(
@@ -341,7 +354,7 @@ export function createRuntimeRegistry(): CapabilityRegistry {
           return output === expected;
         },
       ),
-      repositoryReadDefinition(),
+      repositoryReadDefinition(read),
     ],
     "runtime",
   );

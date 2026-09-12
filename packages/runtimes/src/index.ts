@@ -17,6 +17,12 @@ export {
   type ClaudeMdCheckVerification,
 } from "./claude-md-check.js";
 export {
+  createSealedRepositoryReader,
+  SealedReadError,
+  type SealedReadCode,
+  type SealedRepositoryReaderConfig,
+} from "./repository-read-local.js";
+export {
   LegacyConductorAdapter,
   LegacyConductorError,
   LEGACY_CONDUCTOR_DENIED,
