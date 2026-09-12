@@ -7,19 +7,33 @@
 #   Required:  DATABASE_URL (production Postgres), KJ_ADMISSION_BEARER (jVault),
 #              KJ_ADMISSION_TENANT_ID, KJ_ADMISSION_PRINCIPAL_ID, KJ_ADMISSION_PRINCIPAL_KIND
 #   Optional:  PORT (default 8081), KERNELJSON_RELEASE_ID (default unreleased-development),
-#              KJ_RESTATE_INGRESS_URL (unset => admission-only mode; set => Restate dispatch)
+#              KJ_RESTATE_INGRESS_URL (unset => admission-only mode; set => Restate dispatch),
+#              KJ_GATEWAY_IMAGE (default kerneljson-admission-door:dev; a deploy sets the
+#              exact pre-built production tag, e.g. kerneljson-admission-door:125a0bd, so
+#              `up` runs that verified image verbatim instead of rebuilding under a floating
+#              default)
 #
 #   Port:      container listens on PORT, published on 127.0.0.1 only (Caddy is the TLS front).
 #   Caddy:     reverse_proxy the door's public host to http://127.0.0.1:${PORT}
 #   Health:    GET /healthz (liveness; no auth, no DB, no admission)
 #   Start:     docker compose -f infrastructure/docker/gateway.compose.yaml up -d
 #   Shutdown:  SIGTERM/SIGINT drain the HTTP server then close the pg pool (see main.ts)
+#   Network:   kerneljson-exec is a pre-created EXTERNAL network shared with
+#              execution.compose.yaml (Restate + worker) — create it first with
+#              `docker network create kerneljson-exec` (idempotent: skip if it already
+#              exists). Neither this file nor execution.compose.yaml owns/creates it, so
+#              bring-up order between the two compose stacks no longer matters.
 name: kerneljson-admission-door
 services:
   gateway:
     build:
       context: ../..
       dockerfile: infrastructure/docker/gateway.Dockerfile
+    # Tag resolved at deploy time. With no image of this name present locally, `up` builds
+    # it fresh from `build:` above and tags it kerneljson-admission-door:dev (dev default,
+    # build capability preserved). In production, set KJ_GATEWAY_IMAGE to the exact
+    # pre-built, verified tag so `up` runs that image verbatim without rebuilding.
+    image: ${KJ_GATEWAY_IMAGE:-kerneljson-admission-door:dev}
     environment:
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL (production Postgres, from jVault)}
       KJ_ADMISSION_BEARER: ${KJ_ADMISSION_BEARER:?set KJ_ADMISSION_BEARER (from jVault; never commit)}
@@ -38,13 +52,15 @@ services:
       timeout: 5s
       retries: 6
     restart: unless-stopped
-    # Shared execution network (see execution.compose.yaml). OWNED here (compose-managed) so
-    # the door still runs standalone/admission-only with NO runbook change; the execution
-    # stack joins it as external. Attaching the door here is what lets it reach Restate by
-    # service name in dispatch mode (KJ_RESTATE_INGRESS_URL=http://restate:8080) — never
-    # 127.0.0.1:8080, which inside the door container is the door itself. Host binding stays
-    # 127.0.0.1:${PORT:-8081}; admission-only mode is unchanged when KJ_RESTATE_INGRESS_URL is absent.
+    # Shared execution network (see execution.compose.yaml). EXTERNAL here too — neither
+    # this file nor execution.compose.yaml owns/creates kerneljson-exec (see the header
+    # note); it is pre-created once, out of band, and both stacks just join it. Attaching
+    # the door here is what lets it reach Restate by service name in dispatch mode
+    # (KJ_RESTATE_INGRESS_URL=http://restate:8080) — never 127.0.0.1:8080, which inside the
+    # door container is the door itself. Host binding stays 127.0.0.1:${PORT:-8081};
+    # admission-only mode is unchanged when KJ_RESTATE_INGRESS_URL is absent.
     networks: [kerneljson-exec]
 networks:
   kerneljson-exec:
+    external: true
     name: kerneljson-exec
