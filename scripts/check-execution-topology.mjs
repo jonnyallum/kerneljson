@@ -10,10 +10,22 @@
 //   - every published port binds 127.0.0.1 (no 0.0.0.0 / no bare public publish)
 //   - the worker has NO host-published port
 //   - gateway + restate + worker all attach to the shared network `kerneljson-exec`
+//   - `kerneljson-exec` is EXTERNAL in BOTH files — neither compose file owns/creates it
+//     (regression guard: this is exactly the ownership conflict Gate 3's D1 deploy hit)
+//   - the gateway image resolves to a concrete tag (never unresolved/empty — regression
+//     guard for the exact defect Gate 3's D1 deploy hit, where `build:` with no `image:`
+//     resolved to nothing at all); if EXPECTED_GATEWAY_IMAGE is set, it must match exactly
 //   - restate has persistent named-volume storage at /restate-data
 //   - the worker's repo mount (/opt/kerneljson/app) is read-only
 //   - there is NO Postgres/db container in the execution stack
 //   - the gateway keeps a localhost-only publish of :8081
+//
+// Env overrides (all optional):
+//   EXEC_COMPOSE_FILE, GATEWAY_COMPOSE_FILE — point at alternate compose files (used by the
+//     negative-test harness in tests/topology-guard.test.ts against deliberately-broken
+//     fixture copies; default to the real repo files).
+//   KJ_GATEWAY_IMAGE — passed through to `config` like any other deploy-time var.
+//   EXPECTED_GATEWAY_IMAGE — if set, the resolved gateway image must equal it exactly.
 //
 // Exit 0 = all pass; exit 1 = any failure (prints the failing checks).
 import { execFileSync } from "node:child_process";
@@ -42,8 +54,8 @@ const check = (ok, label) => {
   if (!ok) failures.push(label);
 };
 const svcNets = (svc) => Object.keys(svc?.networks ?? {});
-const EXEC = "infrastructure/docker/execution.compose.yaml";
-const GW = "infrastructure/docker/gateway.compose.yaml";
+const EXEC = process.env.EXEC_COMPOSE_FILE || "infrastructure/docker/execution.compose.yaml";
+const GW = process.env.GATEWAY_COMPOSE_FILE || "infrastructure/docker/gateway.compose.yaml";
 
 let exec, gw;
 try {
@@ -102,6 +114,13 @@ const gwSvc = gw.services?.gateway;
 check(!!gwSvc, "gateway: gateway service missing");
 check(svcNets(gwSvc).includes("kerneljson-exec"), "gateway: gateway not on kerneljson-exec");
 check(gw.networks?.["kerneljson-exec"]?.name === "kerneljson-exec", "gateway: kerneljson-exec must have fixed name 'kerneljson-exec'");
+check(gw.networks?.["kerneljson-exec"]?.external === true, "gateway: kerneljson-exec must be external in gateway.compose.yaml (Compose-owned means it will try to manage a network it did not create)");
+
+// --- Gateway image must resolve to a concrete tag, never unresolved/empty ---
+check(typeof gwSvc?.image === "string" && gwSvc.image.length > 0, `gateway: image did not resolve to a concrete tag (resolved: ${JSON.stringify(gwSvc?.image)})`);
+if (process.env.EXPECTED_GATEWAY_IMAGE) {
+  check(gwSvc?.image === process.env.EXPECTED_GATEWAY_IMAGE, `gateway: image resolved to '${gwSvc?.image}', expected exactly '${process.env.EXPECTED_GATEWAY_IMAGE}'`);
+}
 
 // --- Gateway keeps a localhost-only publish of :8081 ---
 const gwPorts = gwSvc?.ports ?? [];

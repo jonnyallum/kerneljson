@@ -12,9 +12,10 @@
 # Networking (proven, not assumed): the worker is NOT published to the host. Restate
 # reaches it in-network as http://worker:9080. The door reaches Restate in-network as
 # http://restate:8080 (NEVER 127.0.0.1:8080, which inside the door container is the door
-# itself). The shared network `kerneljson-exec` is OWNED by gateway.compose.yaml so the
-# door keeps working standalone/admission-only; this file joins it as EXTERNAL, so bring
-# the door (or `docker network create kerneljson-exec`) up first.
+# itself). The shared network `kerneljson-exec` is a pre-created EXTERNAL network — NEITHER
+# this file NOR gateway.compose.yaml owns/creates it, so bring-up order between the two
+# compose stacks doesn't matter. Create it once, out of band, before bringing up either
+# stack: `docker network create kerneljson-exec` (idempotent: skip if it already exists).
 #
 # Restate ready/health (restate 1.7.9, verified against the image): admin GET :9070/health
 # and ingress GET :8080/restate/health both return 200; the image ships /usr/bin/curl.
@@ -83,9 +84,9 @@ services:
 volumes:
   restate-data:
 networks:
-  # Owned by gateway.compose.yaml (so the door runs standalone/admission-only without this
-  # file); joined here as external. Create it first (bring the door up, or:
-  # `docker network create kerneljson-exec`).
+  # Pre-created, external network shared with gateway.compose.yaml. Neither compose file
+  # owns/creates it (see the header note) — create it once, out of band, before either
+  # stack: `docker network create kerneljson-exec` (idempotent: skip if it already exists).
   kerneljson-exec:
     external: true
     name: kerneljson-exec
