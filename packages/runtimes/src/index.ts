@@ -13,9 +13,16 @@ export {
 } from "./kj-000000.js";
 export {
   verifyClaudeMdCheck,
+  assertClaudeMdReceipt,
   CLAUDE_MD_CHECK_CRITERION,
   type ClaudeMdCheckVerification,
 } from "./claude-md-check.js";
+export {
+  createSealedRepositoryReader,
+  SealedReadError,
+  type SealedReadCode,
+  type SealedRepositoryReaderConfig,
+} from "./repository-read-local.js";
 export {
   LegacyConductorAdapter,
   LegacyConductorError,

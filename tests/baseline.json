@@ -1074,6 +1074,14 @@
     {
       "file": "gateway-bootstrap.integration.test.ts",
       "name": "admission door — Postgres admission qualification same idempotency key + changed payload is 409 (fail closed)"
+    },
+    {
+      "file": "gate3-executor.integration.test.ts",
+      "name": "Gate 3 executor — production worker (index.ts) end to end completes claude_md_check/v1 with a digest-verified TOOL_RECEIPT when CLAUDE.md matches"
+    },
+    {
+      "file": "gate3-executor.integration.test.ts",
+      "name": "Gate 3 executor — production worker (index.ts) end to end terminates FAILED (no COMPLETED) when CLAUDE.md drifts from the approved digest"
     }
   ]
 }

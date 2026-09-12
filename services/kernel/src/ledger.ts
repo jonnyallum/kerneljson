@@ -12,7 +12,7 @@ import {
   assertCompletion,
 } from "../../../packages/contracts/src/index.js";
 import { digest, verifyEvidence, stepA, stepB } from "./deterministic.js";
-import { verifyPlanCompletion } from "./executor/index.js";
+import { verifyPlanCompletion, type CanaryVerifyConfig } from "./executor/index.js";
 export interface Write {
   key: string;
   task: Task;
@@ -32,9 +32,10 @@ export class Ledger {
     private readonly afterCommit?: (key: string, taskId?: string) => Promise<void>,
     private readonly workflow?: WorkflowName,
     private readonly releaseId: string = process.env["KERNELJSON_RELEASE_ID"] ?? "unreleased-development",
+    private readonly canary?: CanaryVerifyConfig,
   ) {}
   forWorkflow(workflow: WorkflowName): Ledger {
-    return new Ledger(this.pool, this.afterCommit, workflow, this.releaseId);
+    return new Ledger(this.pool, this.afterCommit, workflow, this.releaseId, this.canary);
   }
   /** Same durable operation as completion; infrastructure uncertainty remains retryable. */
   async finish(input: Write): Promise<Outcome> {
@@ -168,6 +169,7 @@ export class Ledger {
               plan,
               persisted.rows.map((r) => r.contract),
               rows.rows,
+              this.canary,
             ));
           } else {
             verifyCompletion(()=>{
