@@ -38,3 +38,13 @@ services:
       timeout: 5s
       retries: 6
     restart: unless-stopped
+    # Shared execution network (see execution.compose.yaml). OWNED here (compose-managed) so
+    # the door still runs standalone/admission-only with NO runbook change; the execution
+    # stack joins it as external. Attaching the door here is what lets it reach Restate by
+    # service name in dispatch mode (KJ_RESTATE_INGRESS_URL=http://restate:8080) — never
+    # 127.0.0.1:8080, which inside the door container is the door itself. Host binding stays
+    # 127.0.0.1:${PORT:-8081}; admission-only mode is unchanged when KJ_RESTATE_INGRESS_URL is absent.
+    networks: [kerneljson-exec]
+networks:
+  kerneljson-exec:
+    name: kerneljson-exec

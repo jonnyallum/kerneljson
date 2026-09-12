@@ -1,0 +1,91 @@
+# KernelJSON Gate 3 production EXECUTION topology (estate VM, localhost-only).
+#
+# Stands up the durable execution path the admission door dispatches into:
+#   door (gateway.compose.yaml) -> Restate ingress -> KernelWorkflowV1 -> CapabilityServiceV1
+#   -> sealed-local repository.read -> production Supabase ledger/evidence.
+#
+# This file adds ONLY Restate + the production kernel worker. There is NO Postgres
+# container: production uses Supabase, reached by DATABASE_URL (runtime-injected only,
+# never committed). The worker runs the PRODUCTION entrypoint services/kernel/src/index.ts
+# (the image CMD), NOT tests/support/worker.ts.
+#
+# Networking (proven, not assumed): the worker is NOT published to the host. Restate
+# reaches it in-network as http://worker:9080. The door reaches Restate in-network as
+# http://restate:8080 (NEVER 127.0.0.1:8080, which inside the door container is the door
+# itself). The shared network `kerneljson-exec` is OWNED by gateway.compose.yaml so the
+# door keeps working standalone/admission-only; this file joins it as EXTERNAL, so bring
+# the door (or `docker network create kerneljson-exec`) up first.
+#
+# Restate ready/health (restate 1.7.9, verified against the image): admin GET :9070/health
+# and ingress GET :8080/restate/health both return 200; the image ships /usr/bin/curl.
+#
+# Register the worker with Restate AFTER both are healthy (idempotent, force re-registers):
+#   curl -fsS -X POST http://127.0.0.1:9070/deployments \
+#     -H 'content-type: application/json' \
+#     -d '{"uri":"http://worker:9080","force":true}'
+# Verify both services are registered:
+#   curl -fsS http://127.0.0.1:9070/services   # must list KernelWorkflowV1 AND CapabilityServiceV1
+#
+# Runtime contract (injected at deploy, e.g. via jVault; NEVER commit secret values):
+#   Required:  DATABASE_URL (production Supabase), KERNELJSON_RELEASE_ID (MUST equal the
+#              admission door's KERNELJSON_RELEASE_ID, or the ledger rejects every task with
+#              "Task requires its bound worker release").
+#   Pinned:    KJ_REPO_ROOT=/opt/kerneljson/app, SCHED_RECIPE=claude_md_check/v1,
+#              SCHED_APPROVED_SHA256 (approved LF CLAUDE.md digest), PORT=9080.
+#   Mount:     the host repo checkout is bind-mounted READ-ONLY at the same path so the
+#              sealed reader can resolve KJ_REPO_ROOT (realpathSync at startup) and hash
+#              CLAUDE.md. The worker never writes it.
+#   Start:     docker compose -f infrastructure/docker/execution.compose.yaml up -d
+name: kerneljson-execution
+services:
+  restate:
+    image: docker.restate.dev/restatedev/restate:1.7.9
+    environment:
+      RESTATE_BASE_DIR: /restate-data
+    # Persistent durable state (registrations, journals, timers) survives restart.
+    volumes: ["restate-data:/restate-data"]
+    # Localhost-only: ingress 8080, admin 9070. No 0.0.0.0, no public exposure.
+    ports: ["127.0.0.1:8080:8080", "127.0.0.1:9070:9070"]
+    networks: [kerneljson-exec]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9070/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 5s
+    restart: unless-stopped
+  worker:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/worker.Dockerfile
+    image: ${KJ_WORKER_IMAGE:-kerneljson-worker:dev}
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL (production Supabase, from jVault; never commit)}
+      KJ_REPO_ROOT: /opt/kerneljson/app
+      SCHED_RECIPE: claude_md_check/v1
+      SCHED_APPROVED_SHA256: ${SCHED_APPROVED_SHA256:-27255772beb1418e462fe262a2a747c53bf6a34973c3ad75907f7505a32f2b10}
+      KERNELJSON_RELEASE_ID: ${KERNELJSON_RELEASE_ID:?set KERNELJSON_RELEASE_ID (MUST equal the admission door's value)}
+      PORT: "9080"
+    # Read-only repo mount: the sealed reader resolves KJ_REPO_ROOT and hashes CLAUDE.md.
+    volumes: ["/opt/kerneljson/app:/opt/kerneljson/app:ro"]
+    # Deliberately NO `ports:` — the worker is reachable only in-network as http://worker:9080.
+    networks: [kerneljson-exec]
+    depends_on:
+      restate:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(9080,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+volumes:
+  restate-data:
+networks:
+  # Owned by gateway.compose.yaml (so the door runs standalone/admission-only without this
+  # file); joined here as external. Create it first (bring the door up, or:
+  # `docker network create kerneljson-exec`).
+  kerneljson-exec:
+    external: true
+    name: kerneljson-exec
