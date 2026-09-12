@@ -31,6 +31,41 @@ function targetIsClaudeMd(targetPath: unknown): boolean {
   );
 }
 
+/**
+ * The single semantic assertion for a claude_md_check receipt: the read targeted a
+ * CLAUDE.md file, its content hash is a 64-hex string equal to the approved digest,
+ * and (when supplied) it detected zero mutations. Returns the failure codes ([] =
+ * pass). This is the ONE place these checks live; both `verifyClaudeMdCheck` (over a
+ * live CapabilityResult+evidence+outcome bundle) and the ledger completion backstop
+ * (over the persisted TOOL_RECEIPT evidence metadata) call it, so the drift logic is
+ * never duplicated divergently.
+ */
+export function assertClaudeMdReceipt(
+  receipt: {
+    targetPath: unknown;
+    contentSha256: unknown;
+    mutationsDetected?: unknown;
+  },
+  approvedContentSha256: string,
+): string[] {
+  const failures: string[] = [];
+  const approvedOk = Digest64.safeParse(approvedContentSha256).success;
+  if (!approvedOk) failures.push("APPROVED_DIGEST_SHAPE");
+  if (!targetIsClaudeMd(receipt.targetPath)) failures.push("TARGET_NOT_CLAUDE_MD");
+  if (
+    receipt.mutationsDetected !== undefined &&
+    receipt.mutationsDetected !== 0
+  )
+    failures.push("MUTATIONS_DETECTED");
+  const shaOk =
+    typeof receipt.contentSha256 === "string" &&
+    /^[a-f0-9]{64}$/.test(receipt.contentSha256);
+  if (!shaOk) failures.push("CONTENT_SHA256");
+  else if (approvedOk && receipt.contentSha256 !== approvedContentSha256)
+    failures.push("CLAUDE_MD_DRIFT");
+  return failures;
+}
+
 export type ClaudeMdCheckVerification = {
   status: "PASSED" | "FAILED";
   failures: string[];
@@ -42,11 +77,11 @@ export type ClaudeMdCheckVerification = {
 /**
  * Verify a `claude_md_check/v1` run. Reuses the KJ-000000 repository.read
  * verification (capability id, `repository.read` output, `mutations_detected===0`,
- * 64-hex content hash, evidence/outcome linkage) and adds two canary-specific,
- * deterministic assertions:
- *  - the read targeted a CLAUDE.md file (`TARGET_NOT_CLAUDE_MD`);
- *  - the read's content hash equals the approved digest (`CLAUDE_MD_DRIFT`).
- * The approved digest itself must be a 64-hex string (`APPROVED_DIGEST_SHAPE`).
+ * 64-hex content hash, evidence/outcome linkage) and adds the canary-specific,
+ * deterministic assertions from `assertClaudeMdReceipt` (target is CLAUDE.md, content
+ * hash equals the approved digest, approved digest well-formed). Content-shape and
+ * mutations are already covered by `verifyRepositoryRead` over a parseable result, so
+ * those codes are not double-added here.
  */
 export function verifyClaudeMdCheck(args: {
   taskId: string;
@@ -63,21 +98,22 @@ export function verifyClaudeMdCheck(args: {
   });
   const failures = [...base.failures];
 
-  if (!Digest64.safeParse(args.approvedContentSha256).success)
-    failures.push("APPROVED_DIGEST_SHAPE");
-
-  // Canary-specific assertions are only meaningful over a parseable result.
   const parsed = CapabilityResult.safeParse(args.result);
-  if (parsed.success) {
-    const output = parsed.data.output as Record<string, unknown>;
-    if (!targetIsClaudeMd(output["target_path"]))
-      failures.push("TARGET_NOT_CLAUDE_MD");
-    if (
-      Digest64.safeParse(args.approvedContentSha256).success &&
-      typeof output["content_sha256"] === "string" &&
-      output["content_sha256"] !== args.approvedContentSha256
-    )
-      failures.push("CLAUDE_MD_DRIFT");
+  const output = parsed.success
+    ? (parsed.data.output as Record<string, unknown>)
+    : undefined;
+
+  // Canary-specific semantic checks, shared with the ledger backstop. CONTENT_SHA256
+  // and MUTATIONS_DETECTED are owned by the base over a parseable result; TARGET and
+  // DRIFT are only meaningful over a parseable result.
+  for (const code of assertClaudeMdReceipt(
+    { targetPath: output?.["target_path"], contentSha256: output?.["content_sha256"] },
+    args.approvedContentSha256,
+  )) {
+    if (code === "CONTENT_SHA256") continue;
+    if ((code === "TARGET_NOT_CLAUDE_MD" || code === "CLAUDE_MD_DRIFT") && !parsed.success)
+      continue;
+    if (!failures.includes(code)) failures.push(code);
   }
 
   return {

@@ -12,7 +12,22 @@ import { planTask, orderedSteps, projectStep } from "../planner/index.js";
 import { resolveInput, executeFunction } from "./index.js";
 import { digest, Signal } from "../deterministic.js";
 import { Ledger, type Write } from "../ledger.js";
-export function createKernelWorkflow(ledger: Ledger) {
+import { verifyClaudeMdCheck } from "../../../../packages/runtimes/src/index.js";
+import type { CapabilityService } from "../capability-service.js";
+
+/** Optional capability-recipe wiring. Present only on a worker configured to serve the
+ *  canary: the registered CapabilityServiceV1 to call, the approved digest to verify
+ *  against, and the fixed target file (never derived from task payload). */
+export interface KernelWorkflowOptions {
+  canary?: { recipe: string; approvedContentSha256: string };
+  capabilityService?: CapabilityService;
+  canaryTargetFile?: string;
+}
+
+export function createKernelWorkflow(
+  ledger: Ledger,
+  options?: KernelWorkflowOptions,
+) {
   ledger = ledger.forWorkflow("KernelWorkflowV1");
   const decide = async (ctx: restate.WorkflowSharedContext, raw: unknown) => {
     const parsed = Signal.safeParse(raw);
@@ -112,6 +127,117 @@ export function createKernelWorkflow(ledger: Ledger) {
         );
         await emit("ready", "TASK_READY", "READY");
         await emit("start", "TASK_STARTED", "RUNNING");
+        // Capability recipe (canary): a single REPOSITORY_READ executed by the
+        // registered CapabilityServiceV1 (filesystem I/O out of the deterministic
+        // executor). The returned receipt is persisted into THIS task's ledger as
+        // TOOL_RECEIPT evidence, then completion is decided by the shared
+        // verifyClaudeMdCheck. Drift/mutation/wrong-target => terminal FAILED.
+        const capabilityNode = orderedSteps(plan).find(
+          (n) => n.operation === "REPOSITORY_READ",
+        );
+        if (capabilityNode) {
+          if (!options?.canary || !options.capabilityService)
+            throw new restate.TerminalError(
+              "Capability recipe requires a configured capability service and approved digest",
+              { errorCode: 500 },
+            );
+          const base = projectStep(capabilityNode);
+          await emit(`step:${capabilityNode.id}:start`, "STEP_STARTED", "RUNNING", {
+            step: TaskStep.parse({
+              ...base,
+              status: "RUNNING",
+              input: capabilityNode.input,
+            }),
+          });
+          const result = await ctx
+            .serviceClient(options.capabilityService)
+            .repositoryRead({
+              runId: ctx.rand.uuidv4(),
+              taskId: task.id,
+              stepId: capabilityNode.id,
+              trace: { traceId: task.traceId, correlationId: task.id },
+              idempotencyKey: `${task.id}:${capabilityNode.id}`,
+              targetFile: options.canaryTargetFile ?? "CLAUDE.md",
+            });
+          const receipt = result.output as Record<string, unknown>;
+          const contentSha256 = String(receipt["content_sha256"]);
+          const evidenceId = ctx.rand.uuidv4();
+          const evidence = Evidence.parse({
+            id: evidenceId,
+            taskId: task.id,
+            stepId: capabilityNode.id,
+            type: "TOOL_RECEIPT",
+            source: "kerneljson:repository-read-local/v1",
+            digest: contentSha256,
+            capturedAt: await now(),
+            metadata: {
+              capability: "repository.read",
+              target_path: receipt["target_path"] ?? null,
+              content_sha256: contentSha256,
+              mutations_detected: receipt["mutations_detected"] ?? null,
+              output_hash: receipt["output_hash"] ?? null,
+            },
+          });
+          await emit(
+            `step:${capabilityNode.id}:complete`,
+            "STEP_COMPLETED",
+            "RUNNING",
+            {
+              step: TaskStep.parse({
+                ...base,
+                status: "COMPLETED",
+                input: capabilityNode.input,
+                output: result.output,
+              }),
+              evidence,
+            },
+            { output: result.output },
+          );
+          await emit("verify", "TASK_VERIFYING", "VERIFYING");
+          const candidate = Outcome.parse({
+            taskId: task.id,
+            status: "COMPLETED",
+            acceptanceResults: task.acceptanceCriteria.map((criterion) => ({
+              criterion,
+              passed: true,
+              evidenceRefs: [evidenceId],
+            })),
+            evidenceRefs: [evidenceId],
+            summary: String(receipt["summary"] ?? "repository.read complete"),
+            completedAt: await now(),
+          });
+          const verification = verifyClaudeMdCheck({
+            taskId: task.id,
+            result,
+            evidence,
+            outcome: candidate,
+            approvedContentSha256: options.canary.approvedContentSha256,
+          });
+          if (verification.status === "PASSED")
+            return (
+              (await emit("complete", "TASK_COMPLETED", "COMPLETED", {
+                outcome: candidate,
+              })) ?? candidate
+            );
+          const failed = Outcome.parse({
+            taskId: task.id,
+            status: "FAILED",
+            acceptanceResults: task.acceptanceCriteria.map((criterion) => ({
+              criterion,
+              passed: false,
+              evidenceRefs: [],
+            })),
+            evidenceRefs: [],
+            summary: `claude_md_check FAILED: ${
+              verification.failures.join(",") || "CLAUDE_MD_DRIFT"
+            }`,
+            completedAt: await now(),
+          });
+          await emit("fail", "TASK_FAILED", "FAILED", { outcome: failed }, {
+            failures: verification.failures,
+          });
+          return failed;
+        }
         const outputs = new Map<string, string>();
         const cancel = async (step?: TaskStep) => {
           const outcome = Outcome.parse({
