@@ -1,10 +1,11 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import type pg from "pg";
 import {
   parseArgs,
   resolveDatabaseUrl,
   formatResult,
   runCanaryOperation,
+  buildAdmissionGatewayFromEnv,
   CANARY_SPEC,
   type RunnerDeps,
 } from "../services/kernel/src/tools/canary-runner.js";
@@ -307,5 +308,52 @@ describe("canary runner — Gate 3 operation dispatch (enable/disable/fire-once)
       ]),
     );
     expect(deps.fireOnce).toHaveBeenCalledWith(expect.objectContaining({ productionRuntime: false, preview: false }));
+  });
+});
+
+describe("canary runner — admission bearer header (Gate 3 auth hotfix regression)", () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    vi.unstubAllGlobals();
+  });
+
+  it("sends the admission bearer as 'Bearer <token>', not the raw token alone", async () => {
+    process.env["KJ_ADMISSION_URL"] = "http://gateway:8081";
+    process.env["KJ_ADMISSION_BEARER"] = "RAW_TEST_TOKEN_VALUE";
+
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response(JSON.stringify({ taskId: "t1" }), { status: 202 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const gateway = buildAdmissionGatewayFromEnv();
+    await gateway.admit({
+      admissionIdentity: "fire-identity-1",
+      scheduleId: SCHEDULE,
+      version: "v2",
+      fireWindowKey: "dailyAt/09:00|Europe/London|2026-09-12",
+      fireAtUtc: "2026-09-12T08:00:00.000Z",
+      at: "2026-09-12T08:00:00.000Z",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0]!;
+    const headers = (init as RequestInit).headers as Record<string, string>;
+
+    // The exact RFC 6750 form the door requires (server.ts: /^Bearer [^\s]{1,4096}$/).
+    expect(headers.authorization).toBe("Bearer RAW_TEST_TOKEN_VALUE");
+    // The historical bug: the raw token alone, with no "Bearer " prefix.
+    expect(headers.authorization).not.toBe("RAW_TEST_TOKEN_VALUE");
+  });
+
+  it("fails closed (ADMISSION_ENV_MISSING) when the bearer is absent, never sending an empty auth header", () => {
+    delete process.env["KJ_ADMISSION_URL"];
+    delete process.env["KJ_ADMISSION_BEARER"];
+    expect(() => buildAdmissionGatewayFromEnv()).toThrowError(
+      expect.objectContaining({ code: "ADMISSION_ENV_MISSING" }),
+    );
   });
 });

@@ -185,15 +185,18 @@ const CANARY_RECIPE = "claude_md_check/v1";
 
 /** Build the admission seam from the environment (jVault-injected). The bearer is read from
  *  the environment only and is NEVER an argument or printed. Preview mode never calls this. */
-function buildAdmissionGatewayFromEnv(): HttpAdmissionGateway {
+export function buildAdmissionGatewayFromEnv(): HttpAdmissionGateway {
   const url = process.env["KJ_ADMISSION_URL"];
-  const authorization = process.env["KJ_ADMISSION_BEARER"];
-  if (!url || !authorization)
+  const bearer = process.env["KJ_ADMISSION_BEARER"];
+  if (!url || !bearer)
     throw new RunnerError(
       "ADMISSION_ENV_MISSING",
       "KJ_ADMISSION_URL and KJ_ADMISSION_BEARER must be injected from jVault for fire-once execution",
     );
-  return new HttpAdmissionGateway(url, { authorization, recipe: CANARY_RECIPE });
+  // The admission door requires the RFC 6750 "Bearer <token>" form
+  // (apps/gateway/src/server.ts: /^Bearer [^\s]{1,4096}$/) — the raw token alone is
+  // rejected with 401 UNAUTHENTICATED.
+  return new HttpAdmissionGateway(url, { authorization: `Bearer ${bearer}`, recipe: CANARY_RECIPE });
 }
 
 /** Real delegation to the reviewed functions. */
