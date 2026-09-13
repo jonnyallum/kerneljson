@@ -288,5 +288,5 @@ Gate 2 was executed by Jonny step-by-step and verified. Recorded result:
 **GATE 2 VERDICT: PASSED — DISABLED CANARY INSTALLED.**
 
 The identities and `createdAt` above are immutable for this canary and must be reused verbatim.
-Next: Gate 3 is prepared as a plan only in
-`GATE3_SINGLE_FIRE_PLAN_2026-09-11.md`; Gate 3 is NOT authorised to execute.
+Gate 3 was planned in `GATE3_SINGLE_FIRE_PLAN_2026-09-11.md` and **PASSED on 2026-09-13** —
+see `GATE3_RESULT_2026-09-13.md` for the executed evidence. Do not repeat Gate 3.

@@ -1,0 +1,95 @@
+{
+  "gate": "S1_CANARY_GATE_3",
+  "status": "PASSED",
+  "date": "2026-09-13",
+  "canonicalRuntimeSha": "b210c1b8e78dcea86b3a9080c6ebcf17ee16f527",
+  "priorCanonicalSha": "35b03fba6aa5edd46cf6fdf9592f52818a64329a",
+  "worker": {
+    "image": "kerneljson-worker:b210c1b",
+    "releaseId": "b210c1b8e78dcea86b3a9080c6ebcf17ee16f527",
+    "healthy": true,
+    "restarts": 0
+  },
+  "door": {
+    "image": "kerneljson-admission-door:b210c1b",
+    "releaseId": "b210c1b8e78dcea86b3a9080c6ebcf17ee16f527",
+    "healthy": true,
+    "mode": "restate-dispatch"
+  },
+  "restate": {
+    "healthy": true,
+    "servicesRegistered": ["KernelWorkflowV1", "CapabilityServiceV1", "TaskWorkflow"],
+    "rebuilt": false,
+    "restarted": false
+  },
+  "schedule": {
+    "name": "claude_md_check",
+    "scheduleId": "acab9ebc-dc92-5c3a-90d6-4d6f9ddb0a1b",
+    "activeVersion": "v2",
+    "stateAfterCompletion": "disabled"
+  },
+  "fire": {
+    "fireIdentity": "f27ada35-cfb4-8ff9-a61c-e115b0f9b2e9",
+    "fireWindowKey": "dailyAt/09:00|Europe/London|2026-09-12",
+    "taskId": "31698dcc-e3af-841b-a8ec-d4787dbd12d2",
+    "terminalState": "COMPLETED",
+    "startedAt": "2026-09-13T01:53:26.658Z",
+    "completedAt": "2026-09-13T01:53:26.938Z"
+  },
+  "counters": {
+    "admissionsBefore": 19,
+    "admissionsAfter": 20,
+    "firesBefore": 0,
+    "firesAfter": 1,
+    "distinctFireIdentities": 1,
+    "distinctAdmittedChildren": 1,
+    "admittedUndispatchedRemaining": 19
+  },
+  "evidence": {
+    "type": "TOOL_RECEIPT",
+    "source": "kerneljson:repository-read-local/v1",
+    "capability": "repository.read",
+    "targetPath": "CLAUDE.md",
+    "mutationsDetected": 0,
+    "approvedSha256": "27255772beb1418e462fe262a2a747c53bf6a34973c3ad75907f7505a32f2b10",
+    "observedSha256": "27255772beb1418e462fe262a2a747c53bf6a34973c3ad75907f7505a32f2b10",
+    "digestMatch": true,
+    "secretsInEvidence": false
+  },
+  "replayProof": {
+    "childTaskId": "31698dcc-e3af-841b-a8ec-d4787dbd12d2",
+    "fireCreated": false,
+    "admissionReplay": true,
+    "admissionsAfterReplay": 20,
+    "secondExecution": false
+  },
+  "resolvedDeviations": [
+    {
+      "id": 1,
+      "summary": "First fire attempt exposed a bearer-prefix bug in canary-runner.ts: KJ_ADMISSION_BEARER was sent raw instead of 'Bearer <token>', rejected 401 by the admission door.",
+      "impact": "schedule_fires row created PLANNED, admission never reached, 0 tasks admitted"
+    },
+    {
+      "id": 2,
+      "summary": "Fixed by PR #19 (fix/gate3-canary-admission-bearer-prefix), merged to main as b210c1b8e78dcea86b3a9080c6ebcf17ee16f527.",
+      "prNumber": 19,
+      "mergeCommit": "b210c1b8e78dcea86b3a9080c6ebcf17ee16f527"
+    },
+    {
+      "id": 3,
+      "summary": "Re-arming v2 after the failed attempt required a direct call to the reviewed PgScheduleStore.setState (same fail-closed identity check as disable-canary), because enable-canary's ALREADY_PRODUCTION guard correctly refuses to re-enable a version that already has enabled_for_production=true.",
+      "newVersionCreated": false,
+      "rawSqlUsed": false
+    },
+    {
+      "id": 4,
+      "summary": "Replay proof initially failed NOT_FIRABLE due to a temporal-consistency mismatch: --now was the historical window bound, which was before the re-arm's real updated_at. Corrected by using current time for --now while preserving the same fire-window identity.",
+      "sameFireIdentityPreserved": true
+    }
+  ],
+  "nextPhase": {
+    "isRepeatOfGate3": false,
+    "description": "First unattended production fire via the durable Restate-driven ScheduleTimerDriver wake path (ScheduleDriver Virtual Object), deliberately deferred by Gate 3 (GAP F). Requires its own separate change-window authorisation.",
+    "started": false
+  }
+}

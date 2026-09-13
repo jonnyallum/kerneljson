@@ -1,10 +1,15 @@
-# S1 Canary Gate 3 — single controlled production fire (PLAN ONLY)
+# S1 Canary Gate 3 — single controlled production fire (PLAN — EXECUTED, PASSED)
+
+> **STATUS UPDATE (2026-09-13): Gate 3 PASSED.** The plan below was executed. See
+> `GATE3_RESULT_2026-09-13.md` (+ `.json`) for the canonical evidence record — fire_identity,
+> task_id, terminal state, TOOL_RECEIPT, replay proof, and resolved deviations. Do not repeat
+> Gate 3; the next phase is the durable Restate-driven wake path (§4 GAP F), separately gated.
 
 Date: 2026-09-11 (Europe/London). Author: Claude B (takeover; planner).
-Scope: **PLAN ONLY. No production mutation. Gate 3 is NOT authorised to execute.** This
-document prepares the exact path to authorise EXACTLY ONE production fire of the disabled
-canary `claude_md_check`, and to return it to a safe (disabled) state, with full idempotency,
-fencing and evidence. Nothing here enables, fires, deploys, or executes.
+Scope: **PLAN ONLY at authoring time. No production mutation. Gate 3 is NOT authorised to
+execute.** This document prepares the exact path to authorise EXACTLY ONE production fire of
+the disabled canary `claude_md_check`, and to return it to a safe (disabled) state, with full
+idempotency, fencing and evidence. Nothing here enables, fires, deploys, or executes.
 
 Gate 2 result: PASSED (disabled canary installed and verified) — see
 `GATE2_OPTION_A_EXECUTION_PACKAGE_2026-09-11.md` section 7.
@@ -328,7 +333,15 @@ Touch none of the pre-existing untracked files. Do not touch the SERVICE princip
 
 ## 15. Status
 
-Production mutation = NONE. The Gate 3 TOOLING (enable-canary / disable-canary / fire-once, incl.
+**SUPERSEDED 2026-09-13 — Gate 3 PASSED.** Everything below this line describes status as of
+authoring (2026-09-11), before execution. See `GATE3_RESULT_2026-09-13.md` for the actual
+executed result: fire_identity `f27ada35-cfb4-8ff9-a61c-e115b0f9b2e9`, task
+`31698dcc-e3af-841b-a8ec-d4787dbd12d2`, terminal state `COMPLETED`, evidence verified, canary
+disabled again, replay proof passed. Two real deviations were found and resolved during
+execution (a bearer-prefix bug fixed in PR #19, and a re-arm/temporal-guard procedure) — see
+the result doc §5. Do not re-run Gate 3 from this plan; it is historical.
+
+Production mutation = NONE (as of 2026-09-11 authoring). The Gate 3 TOOLING (enable-canary / disable-canary / fire-once, incl.
 `fire-once --preview`) is BUILT, reviewed-ready and qualified in-repo. All three tools now enforce
 approved HUMAN authority (a HUMAN principal with an ACTIVE tenant membership, via the read-only
 `PgIdentityGate`, which requires `tenant_memberships.status='ACTIVE'`) and explicit expected
