@@ -107,10 +107,15 @@ canonical task, with zero new admissions on replay.
 
 ## 7. Next phase
 
-Gate 3 is complete. The next phase is **not** a repeat of Gate 3 — it is the first
-*unattended* production fire (the durable Restate-driven wake path, `ScheduleTimerDriver`
-via the registered `ScheduleDriver`), which Gate 3 itself deliberately deferred
-(`GATE3_SINGLE_FIRE_PLAN_2026-09-11.md` §4, GAP F: "For the FIRST controlled fire, do NOT
-deploy the ScheduleDriver Restate service... The durable Restate path is a later,
+**UPDATE 2026-09-13 (later same day): the durable Restate-driven unattended wake path this
+section described is now PASSED** — see `DURABLE_RESTATE_WAKE_RESULT_2026-09-13.md`. Gate 3
+and the durable wake path are now both complete; do not repeat either as "the next phase."
+See the estate-wide canonical migration plan (`new-system` repo) for what comes after.
+
+(Original text, historical:) Gate 3 is complete. The next phase is **not** a repeat of
+Gate 3 — it is the first *unattended* production fire (the durable Restate-driven wake path,
+`ScheduleTimerDriver` via the registered `ScheduleDriver`), which Gate 3 itself deliberately
+deferred (`GATE3_SINGLE_FIRE_PLAN_2026-09-11.md` §4, GAP F: "For the FIRST controlled fire,
+do NOT deploy the ScheduleDriver Restate service... The durable Restate path is a later,
 separately-authorised step"). That remains gated behind its own explicit change-window
 authorisation and is not started by this document.

@@ -1,0 +1,106 @@
+{
+  "phase": "S1_CANARY_DURABLE_RESTATE_WAKE",
+  "status": "PASSED",
+  "date": "2026-09-13",
+  "precededBy": "S1_CANARY_GATE_3",
+  "deployedRuntimeSha": "38b57af55a4ce893eab3cd6fe91082dfbddceb05",
+  "pullRequests": [
+    { "number": 20, "sha": "a6c6edf17f5ad8dbe3f319f5a8c24ab92799883c", "summary": "wired ScheduleDriver into the production worker" },
+    { "number": 21, "sha": "38b57af55a4ce893eab3cd6fe91082dfbddceb05", "summary": "passed KJ_ADMISSION_URL/KJ_ADMISSION_BEARER through execution.compose.yaml" }
+  ],
+  "architecture": {
+    "implementationPath": [
+      "ScheduleDriver Virtual Object",
+      "ScheduleTimerDriver.onWake",
+      "HttpAdmissionGateway",
+      "canonical admission door",
+      "KernelWorkflowV1",
+      "CapabilityServiceV1",
+      "sealed repository.read",
+      "evidence",
+      "completion"
+    ],
+    "restateOwnsDurableWaitingOnly": true,
+    "kernelJsonSoleTaskAuthority": true,
+    "independentTaskMintingByRestate": false,
+    "duplicateAuthorityIntroduced": false
+  },
+  "restate": {
+    "invocationId": "inv_10gzREX5HBAt6Ygho8YFcF8DjCgtFuL1CG",
+    "armMechanism": "POST /ScheduleDriver/{scheduleId}/fire/send",
+    "armAcceptedAt": "2026-09-13T11:11:13Z",
+    "autonomousExecutionAt": "2026-09-13T11:13:43Z",
+    "manualFireOnceInvoked": false
+  },
+  "fire": {
+    "fireIdentity": "06f4f916-7561-8d89-ab70-d7b30e2d0010",
+    "fireWindowKey": "dailyAt/09:00|Europe/London|2026-09-13",
+    "taskId": "59971e13-b690-84ab-a4f1-ed5e960220d8",
+    "terminalState": "COMPLETED",
+    "startedAt": "2026-09-13T11:13:43.700Z",
+    "completedAt": "2026-09-13T11:13:44.565Z"
+  },
+  "counters": {
+    "admissionsBefore": 20,
+    "admissionsAfter": 21,
+    "firesBefore": 1,
+    "firesAfter": 2,
+    "distinctNewFireIdentities": 1,
+    "distinctNewChildTasks": 1,
+    "authorityObservations": 0
+  },
+  "evidence": {
+    "type": "TOOL_RECEIPT",
+    "source": "kerneljson:repository-read-local/v1",
+    "capability": "repository.read",
+    "targetPath": "CLAUDE.md",
+    "mutationsDetected": 0,
+    "approvedSha256": "27255772beb1418e462fe262a2a747c53bf6a34973c3ad75907f7505a32f2b10",
+    "observedSha256": "27255772beb1418e462fe262a2a747c53bf6a34973c3ad75907f7505a32f2b10",
+    "digestMatch": true,
+    "secretsInEvidence": false
+  },
+  "replayProof": {
+    "mechanism": "duplicate POST /ScheduleDriver/{scheduleId}/fire/send for the same window",
+    "resolvedToSameFireIdentity": true,
+    "resolvedToSameChildTaskId": true,
+    "newAdmission": false,
+    "secondExecution": false
+  },
+  "restateRestartProof": {
+    "repeatedInProduction": false,
+    "reason": "already proven live on disposable qualification infrastructure (S1R_LIVE_RUNTIME_QUALIFICATION_2026-09-11, matrix A-N); repeating in production would add operational risk with no new evidence"
+  },
+  "resolvedDeviations": [
+    {
+      "id": 1,
+      "summary": "First draft of PR #20's registration-gating logic incorrectly treated 'canary configured, admission seam absent' (the valid pre-existing baseline) as an error. Caught by tests before commit, then fixed."
+    },
+    {
+      "id": 2,
+      "summary": "Compose env-passthrough gap discovered during deployed-config verification after PR #20 merged, fixed by PR #21."
+    },
+    {
+      "id": 3,
+      "summary": "Classifier/self-approval blocks on PR merges and the arming HTTP call were resolved only through explicit human approval or manual merge, never bypassed."
+    },
+    {
+      "id": 4,
+      "summary": "No duplicate authority, duplicate fire, duplicate admission, or second execution occurred."
+    }
+  ],
+  "finalState": {
+    "canaryState": "disabled",
+    "canaryActiveVersion": "v2",
+    "newVersionMinted": false,
+    "armNextEnabled": false,
+    "workerHealthy": true,
+    "doorHealthy": true,
+    "restateHealthy": true,
+    "servicesRegistered": ["ScheduleDriver", "KernelWorkflowV1", "CapabilityServiceV1", "TaskWorkflow"]
+  },
+  "nextPhase": {
+    "definedInThisDocument": false,
+    "note": "See the new-system repo's canonical migration plan for the authoritative next-phase sequence."
+  }
+}

@@ -123,8 +123,10 @@ and a change-window decision, still to be done before execution.
   executor/verifier for `claude_md_check/v1` must be deployed and configured with
   `SCHED_APPROVED_SHA256 = 27255772…` ([canary-config.ts](../../../services/kernel/src/scheduler/canary-config.ts)).
   Without it, admission would create a task that cannot complete with evidence.
-- **GAP F — Restate decision.** `services/kernel/src/index.ts` registers only the task + kernel
-  workflows; the `ScheduleDriver` Virtual Object is NOT wired
+- **GAP F — Restate decision.** *(Status as of 2026-09-11, historical — CLOSED 2026-09-13, see
+  `DURABLE_RESTATE_WAKE_RESULT_2026-09-13.md`: `ScheduleDriver` is now wired into production
+  via PR #20/#21 and has autonomously fired once, PASSED.)* `services/kernel/src/index.ts`
+  registers only the task + kernel workflows; the `ScheduleDriver` Virtual Object is NOT wired
   ([index.ts:12](../../../services/kernel/src/index.ts#L12)). For the FIRST controlled fire, do
   NOT deploy the ScheduleDriver Restate service (the boundary forbids production Restate deploys,
   and the one-shot `onWake` path does not need it). The durable Restate path is a later,
