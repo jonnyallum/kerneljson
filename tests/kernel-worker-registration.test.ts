@@ -53,4 +53,47 @@ describe("production worker service registration", () => {
     delete process.env["SCHED_APPROVED_SHA256"];
     await expect(import("../services/kernel/src/index.js")).rejects.toThrow();
   });
+
+  it("registers ScheduleDriver when the admission seam + canary are all configured", async () => {
+    process.env["KJ_REPO_ROOT"] = process.cwd();
+    process.env["SCHED_RECIPE"] = "claude_md_check/v1";
+    process.env["SCHED_APPROVED_SHA256"] = DIGEST;
+    process.env["KJ_ADMISSION_URL"] = "http://gateway:8081";
+    process.env["KJ_ADMISSION_BEARER"] = "RAW_TEST_TOKEN_VALUE";
+    const mod = await import("../services/kernel/src/index.js");
+    const registered = names(mod.services);
+    expect(registered).toContain("ScheduleDriver");
+    expect(registered).toContain("KernelWorkflowV1");
+    expect(registered).toContain("TaskWorkflow");
+    expect(registered).toContain("CapabilityServiceV1");
+  });
+
+  it("does not register ScheduleDriver without the admission seam configured", async () => {
+    process.env["KJ_REPO_ROOT"] = process.cwd();
+    process.env["SCHED_RECIPE"] = "claude_md_check/v1";
+    process.env["SCHED_APPROVED_SHA256"] = DIGEST;
+    delete process.env["KJ_ADMISSION_URL"];
+    delete process.env["KJ_ADMISSION_BEARER"];
+    const mod = await import("../services/kernel/src/index.js");
+    const registered = names(mod.services);
+    expect(registered).not.toContain("ScheduleDriver");
+  });
+
+  it("fails closed if the admission seam is half-configured (URL without bearer)", async () => {
+    process.env["KJ_REPO_ROOT"] = process.cwd();
+    process.env["SCHED_RECIPE"] = "claude_md_check/v1";
+    process.env["SCHED_APPROVED_SHA256"] = DIGEST;
+    process.env["KJ_ADMISSION_URL"] = "http://gateway:8081";
+    delete process.env["KJ_ADMISSION_BEARER"];
+    await expect(import("../services/kernel/src/index.js")).rejects.toThrow();
+  });
+
+  it("fails closed if the admission seam is configured without the canary", async () => {
+    delete process.env["KJ_REPO_ROOT"];
+    delete process.env["SCHED_RECIPE"];
+    delete process.env["SCHED_APPROVED_SHA256"];
+    process.env["KJ_ADMISSION_URL"] = "http://gateway:8081";
+    process.env["KJ_ADMISSION_BEARER"] = "RAW_TEST_TOKEN_VALUE";
+    await expect(import("../services/kernel/src/index.js")).rejects.toThrow();
+  });
 });
