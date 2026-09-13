@@ -33,6 +33,12 @@
 #              "Task requires its bound worker release").
 #   Pinned:    KJ_REPO_ROOT=/opt/kerneljson/app, SCHED_RECIPE=claude_md_check/v1,
 #              SCHED_APPROVED_SHA256 (approved LF CLAUDE.md digest), PORT=9080.
+#   Optional (ScheduleDriver — the durable Restate-driven wake path): KJ_ADMISSION_URL,
+#              KJ_ADMISSION_BEARER. Both unset = ScheduleDriver not registered (the prior,
+#              still-valid baseline). Both must be set together or the worker refuses to
+#              start (services/kernel/src/index.ts fails closed on a half-configured seam).
+#              KJ_ADMISSION_BEARER is the raw token; the worker adds the required "Bearer "
+#              prefix itself — never pre-format it here.
 #   Mount:     the host repo checkout is bind-mounted READ-ONLY at the same path so the
 #              sealed reader can resolve KJ_REPO_ROOT (realpathSync at startup) and hash
 #              CLAUDE.md. The worker never writes it.
@@ -66,6 +72,8 @@ services:
       SCHED_RECIPE: claude_md_check/v1
       SCHED_APPROVED_SHA256: ${SCHED_APPROVED_SHA256:-27255772beb1418e462fe262a2a747c53bf6a34973c3ad75907f7505a32f2b10}
       KERNELJSON_RELEASE_ID: ${KERNELJSON_RELEASE_ID:?set KERNELJSON_RELEASE_ID (MUST equal the admission door's value)}
+      KJ_ADMISSION_URL: ${KJ_ADMISSION_URL:-}
+      KJ_ADMISSION_BEARER: ${KJ_ADMISSION_BEARER:-}
       PORT: "9080"
     # Read-only repo mount: the sealed reader resolves KJ_REPO_ROOT and hashes CLAUDE.md.
     volumes: ["/opt/kerneljson/app:/opt/kerneljson/app:ro"]
