@@ -6,6 +6,7 @@ import { createTaskWorkflow } from "./workflow.js";
 import { createKernelWorkflow } from "./executor/workflow.js";
 import { createCapabilityService } from "./capability-service.js";
 import { loadCanaryConfig } from "./scheduler/canary-config.js";
+import { createScheduleDriverService } from "./scheduler/restate-service.js";
 
 const connectionString = process.env["DATABASE_URL"];
 if (!connectionString)
@@ -32,6 +33,43 @@ const capabilityService = repositoryRoot
 
 const ledger = new Ledger(pool, undefined, undefined, undefined, canary);
 
+// ScheduleDriver (the durable Restate-driven wake path) is enabled only when the
+// admission seam is fully configured — same fail-closed, all-or-nothing gating as
+// the canary/capability service above. This is the exact substitution class that
+// hid the pre-Gate-3 gap (see tests/kernel-worker-registration.test.ts): a
+// production worker missing a service silently, with no error, is worse than one
+// that refuses to start. KJ_ADMISSION_BEARER is read from the environment only —
+// never an argument, never printed — and given the required RFC 6750 "Bearer "
+// prefix here (apps/gateway/src/server.ts: /^Bearer [^\s]{1,4096}$/), since this is
+// a separate construction site from canary-runner.ts's buildAdmissionGatewayFromEnv.
+const admissionUrl = process.env["KJ_ADMISSION_URL"];
+const admissionBearer = process.env["KJ_ADMISSION_BEARER"];
+// The canary alone (no admission seam) is the current, valid, pre-existing state —
+// it must remain a silent no-op, not an error. Only an INCONSISTENT admission seam,
+// or an admission seam configured without the canary it depends on, fails closed.
+if (Boolean(admissionUrl) !== Boolean(admissionBearer))
+  throw new Error(
+    "KJ_ADMISSION_URL and KJ_ADMISSION_BEARER must both be set or both left unset " +
+      "— refusing to start half-configured",
+  );
+if (admissionUrl && admissionBearer && !canary)
+  throw new Error(
+    "KJ_ADMISSION_URL/KJ_ADMISSION_BEARER are set but the canary config " +
+      "(KJ_REPO_ROOT + SCHED_RECIPE + SCHED_APPROVED_SHA256) is not — ScheduleDriver " +
+      "requires both, refusing to start half-configured",
+  );
+const scheduleDriver =
+  admissionUrl && admissionBearer && canary
+    ? createScheduleDriverService({
+        pool,
+        admissionUrl,
+        authorization: `Bearer ${admissionBearer}`,
+        recipe: canary.recipe,
+        owner: "restate-schedule-driver",
+        productionRuntime: true,
+      })
+    : undefined;
+
 export const services = [
   createTaskWorkflow(ledger),
   createKernelWorkflow(
@@ -39,6 +77,7 @@ export const services = [
     canary && capabilityService ? { canary, capabilityService } : undefined,
   ),
   ...(capabilityService ? [capabilityService] : []),
+  ...(scheduleDriver ? [scheduleDriver] : []),
 ];
 
 // Serve only when invoked directly (not when imported by the registration test).
