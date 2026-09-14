@@ -1,6 +1,6 @@
 import * as restate from "@restatedev/restate-sdk";
 import pg from "pg";
-import { existsSync, unlinkSync } from "node:fs";
+import { existsSync, unlinkSync, readFileSync } from "node:fs";
 import {
   createScheduleDriverService,
   type ScheduleDriverConfig,
@@ -32,9 +32,11 @@ const authorization = process.env["SCHED_AUTH"] ?? "Bearer owner";
 const recipe = process.env["SCHED_RECIPE"] ?? "uppercase/v1";
 const owner = process.env["SCHED_OWNER"] ?? "restate-driver";
 const port = Number(process.env["PORT"] ?? 9091);
+const armNext = process.env["SCHED_ARM_NEXT"] === "1";
 const crashAfterAdmitFlag = process.env["SCHED_CRASH_AFTER_ADMIT"];
 const stallAfterAdmitFlag = process.env["SCHED_STALL_AFTER_ADMIT"];
 const stallMs = Number(process.env["SCHED_STALL_MS"] ?? 3000);
+const failAdmitOnceFlag = process.env["SCHED_FAIL_ADMIT_ONCE"];
 
 const pool = new pg.Pool({ connectionString });
 
@@ -81,11 +83,43 @@ class FaultAfterAdmit implements AdmissionGateway {
   }
 }
 
+/**
+ * S1B fault injection — throws a plain (non-terminal) Error BEFORE the inner admit is
+ * ever called, so nothing commits. This is the "admission/capability failure" case:
+ * the error is NOT a StaleFenceError, so it is never converted to a TerminalError; it
+ * propagates out of onWake (before reaching nextWindowAfter/scheduleWake — no re-arm on
+ * this attempt) and Restate's own default retry policy retries the SAME invocation
+ * (ctx.run re-runs the failing step on the next invocation-level retry attempt).
+ *
+ * Time-gated, not one-shot: the flag file's content is a deadline (epoch ms). Every
+ * attempt before the deadline throws; every attempt at/after it succeeds. This makes the
+ * "still failing" window a real, controllable wall-clock duration independent of exactly
+ * how many retries Restate needs or how fast its backoff fires.
+ */
+class FailAdmitUntil implements AdmissionGateway {
+  constructor(
+    private readonly inner: AdmissionGateway,
+    private readonly flag: string,
+  ) {}
+  async admit(req: AdmissionRequestInput): Promise<AdmissionResult> {
+    if (existsSync(this.flag)) {
+      const deadline = Number(readFileSync(this.flag, "utf8").trim());
+      if (Date.now() < deadline) throw new Error("S1B_INJECTED_ADMIT_FAILURE");
+      try {
+        unlinkSync(this.flag);
+      } catch {
+        /* best effort */
+      }
+    }
+    return this.inner.admit(req);
+  }
+}
+
 const baseAdmission = new HttpAdmissionGateway(admissionUrl, {
   authorization,
   recipe,
 });
-const admissionGateway: AdmissionGateway =
+const faultTolerant: AdmissionGateway =
   crashAfterAdmitFlag || stallAfterAdmitFlag
     ? new FaultAfterAdmit(baseAdmission, {
         crashFlag: crashAfterAdmitFlag,
@@ -93,6 +127,9 @@ const admissionGateway: AdmissionGateway =
         stallMs,
       })
     : baseAdmission;
+const admissionGateway: AdmissionGateway = failAdmitOnceFlag
+  ? new FailAdmitUntil(faultTolerant, failAdmitOnceFlag)
+  : faultTolerant;
 
 const cfg: ScheduleDriverConfig = {
   pool,
@@ -101,6 +138,7 @@ const cfg: ScheduleDriverConfig = {
   recipe,
   owner,
   admissionGateway,
+  armNext,
 };
 
 restate.serve({
