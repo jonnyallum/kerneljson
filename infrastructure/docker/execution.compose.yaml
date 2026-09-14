@@ -39,6 +39,13 @@
 #              start (services/kernel/src/index.ts fails closed on a half-configured seam).
 #              KJ_ADMISSION_BEARER is the raw token; the worker adds the required "Bearer "
 #              prefix itself — never pre-format it here.
+#   Optional (recurring self-rearm — S1B/S1D1): SCHED_ARM_NEXT. Unset = the qualified
+#              default (armNext=false, existing one-shot behaviour, services/kernel/src/
+#              index.ts:parseArmNext). Any other value than exactly "true"/"false" makes
+#              the worker refuse to start. Same env-passthrough gotcha as KJ_ADMISSION_URL/
+#              KJ_ADMISSION_BEARER above bit S1D2 in production 2026-09-14: this file's
+#              environment: block is an explicit allowlist, so a new env var index.ts reads
+#              is silently dropped — not an error, no crash — unless ALSO declared here.
 #   Mount:     the host repo checkout is bind-mounted READ-ONLY at the same path so the
 #              sealed reader can resolve KJ_REPO_ROOT (realpathSync at startup) and hash
 #              CLAUDE.md. The worker never writes it.
@@ -74,6 +81,7 @@ services:
       KERNELJSON_RELEASE_ID: ${KERNELJSON_RELEASE_ID:?set KERNELJSON_RELEASE_ID (MUST equal the admission door's value)}
       KJ_ADMISSION_URL: ${KJ_ADMISSION_URL:-}
       KJ_ADMISSION_BEARER: ${KJ_ADMISSION_BEARER:-}
+      SCHED_ARM_NEXT: ${SCHED_ARM_NEXT:-}
       PORT: "9080"
     # Read-only repo mount: the sealed reader resolves KJ_REPO_ROOT and hashes CLAUDE.md.
     volumes: ["/opt/kerneljson/app:/opt/kerneljson/app:ro"]

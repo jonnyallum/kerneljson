@@ -53,10 +53,16 @@ const admissionBearer = process.env["KJ_ADMISSION_BEARER"];
  * guessing. armNext=true is only meaningful once qualified (see S1B —
  * docs/production/phase-s1b-rearm/): the boundary fixes in durable-timer.ts and
  * restate-service.ts. Unset stays the existing one-shot behaviour unconditionally.
+ *
+ * Empty string is treated identically to unset (both -> false), same as
+ * Boolean(admissionUrl) above: execution.compose.yaml declares this var as
+ * `${SCHED_ARM_NEXT:-}`, so a genuinely-unset production deploy reaches the
+ * container as `""`, not `undefined` — caught live during S1D2 (2026-09-14) when
+ * wiring the compose passthrough for this same var (see that fix's own commit).
  */
 export function parseArmNext(env: NodeJS.ProcessEnv): boolean {
   const raw = env["SCHED_ARM_NEXT"];
-  if (raw === undefined) return false;
+  if (raw === undefined || raw === "") return false;
   if (raw === "true") return true;
   if (raw === "false") return false;
   throw new Error(
