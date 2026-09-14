@@ -1082,6 +1082,14 @@
     {
       "file": "gate3-executor.integration.test.ts",
       "name": "Gate 3 executor — production worker (index.ts) end to end terminates FAILED (no COMPLETED) when CLAUDE.md drifts from the approved digest"
+    },
+    {
+      "file": "schedule-restate-rearm-live.integration.test.ts",
+      "name": "S1B recurring self-rearm (armNext=true, real Restate + real Postgres) R1: 3 consecutive natural windows self-arm with zero manual fire-once between them, surviving a worker restart and a Restate restart, with duplicate delivery proven idempotent, then a disable stops recurrence with no 4th window"
+    },
+    {
+      "file": "schedule-restate-rearm-live.integration.test.ts",
+      "name": "S1B recurring self-rearm (armNext=true, real Restate + real Postgres) R2: an admission failure on the current window does not re-arm the next window; Restate's own retry recovers the SAME invocation, then normal recurrence resumes"
     }
   ]
 }
