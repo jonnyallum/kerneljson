@@ -97,3 +97,94 @@ describe("production worker service registration", () => {
     await expect(import("../services/kernel/src/index.js")).rejects.toThrow();
   });
 });
+
+/**
+ * S1D1 — the recurring self-rearm (armNext) config seam. armNext=true is only
+ * meaningful once qualified (S1B); production must default to the existing one-shot
+ * behaviour and never guess on an ambiguous value.
+ */
+describe("production recurring-mode (SCHED_ARM_NEXT) config", () => {
+  const saved = { ...process.env };
+  beforeEach(() => {
+    vi.resetModules();
+    process.env["DATABASE_URL"] = "postgresql://unused@127.0.0.1:1/unused";
+  });
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  it("parseArmNext: default/unset is false", async () => {
+    delete process.env["SCHED_ARM_NEXT"];
+    const mod = await import("../services/kernel/src/index.js");
+    expect(mod.parseArmNext(process.env)).toBe(false);
+  });
+
+  it('parseArmNext: explicit "false" is false', async () => {
+    const mod = await import("../services/kernel/src/index.js");
+    expect(mod.parseArmNext({ SCHED_ARM_NEXT: "false" })).toBe(false);
+  });
+
+  it('parseArmNext: explicit "true" is true', async () => {
+    const mod = await import("../services/kernel/src/index.js");
+    expect(mod.parseArmNext({ SCHED_ARM_NEXT: "true" })).toBe(true);
+  });
+
+  it("parseArmNext: any other value fails closed (throws, never guesses)", async () => {
+    const mod = await import("../services/kernel/src/index.js");
+    for (const bad of ["1", "0", "TRUE", "True", " true", "true ", "yes", "on", ""])
+      expect(() => mod.parseArmNext({ SCHED_ARM_NEXT: bad }), `value ${JSON.stringify(bad)}`).toThrow();
+  });
+
+  it("module load: SCHED_ARM_NEXT unset does not change existing ScheduleDriver registration", async () => {
+    process.env["KJ_REPO_ROOT"] = process.cwd();
+    process.env["SCHED_RECIPE"] = "claude_md_check/v1";
+    process.env["SCHED_APPROVED_SHA256"] = DIGEST;
+    process.env["KJ_ADMISSION_URL"] = "http://gateway:8081";
+    process.env["KJ_ADMISSION_BEARER"] = "RAW_TEST_TOKEN_VALUE";
+    delete process.env["SCHED_ARM_NEXT"];
+    const mod = await import("../services/kernel/src/index.js");
+    expect(names(mod.services)).toContain("ScheduleDriver");
+  });
+
+  it('module load: SCHED_ARM_NEXT="false" behaves identically to unset', async () => {
+    process.env["KJ_REPO_ROOT"] = process.cwd();
+    process.env["SCHED_RECIPE"] = "claude_md_check/v1";
+    process.env["SCHED_APPROVED_SHA256"] = DIGEST;
+    process.env["KJ_ADMISSION_URL"] = "http://gateway:8081";
+    process.env["KJ_ADMISSION_BEARER"] = "RAW_TEST_TOKEN_VALUE";
+    process.env["SCHED_ARM_NEXT"] = "false";
+    const mod = await import("../services/kernel/src/index.js");
+    expect(names(mod.services)).toContain("ScheduleDriver");
+  });
+
+  it('module load: SCHED_ARM_NEXT="true" still registers ScheduleDriver (recurring mode is an internal timer-runtime choice, not a registration change)', async () => {
+    process.env["KJ_REPO_ROOT"] = process.cwd();
+    process.env["SCHED_RECIPE"] = "claude_md_check/v1";
+    process.env["SCHED_APPROVED_SHA256"] = DIGEST;
+    process.env["KJ_ADMISSION_URL"] = "http://gateway:8081";
+    process.env["KJ_ADMISSION_BEARER"] = "RAW_TEST_TOKEN_VALUE";
+    process.env["SCHED_ARM_NEXT"] = "true";
+    const mod = await import("../services/kernel/src/index.js");
+    expect(names(mod.services)).toContain("ScheduleDriver");
+  });
+
+  it("module load: an invalid SCHED_ARM_NEXT refuses to start even with everything else valid", async () => {
+    process.env["KJ_REPO_ROOT"] = process.cwd();
+    process.env["SCHED_RECIPE"] = "claude_md_check/v1";
+    process.env["SCHED_APPROVED_SHA256"] = DIGEST;
+    process.env["KJ_ADMISSION_URL"] = "http://gateway:8081";
+    process.env["KJ_ADMISSION_BEARER"] = "RAW_TEST_TOKEN_VALUE";
+    process.env["SCHED_ARM_NEXT"] = "yes";
+    await expect(import("../services/kernel/src/index.js")).rejects.toThrow();
+  });
+
+  it("module load: an invalid SCHED_ARM_NEXT refuses to start even without ScheduleDriver configured (eager, fail-fast)", async () => {
+    delete process.env["KJ_REPO_ROOT"];
+    delete process.env["SCHED_RECIPE"];
+    delete process.env["SCHED_APPROVED_SHA256"];
+    delete process.env["KJ_ADMISSION_URL"];
+    delete process.env["KJ_ADMISSION_BEARER"];
+    process.env["SCHED_ARM_NEXT"] = "banana";
+    await expect(import("../services/kernel/src/index.js")).rejects.toThrow();
+  });
+});
