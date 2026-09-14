@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 /**
  * Production worker registration. Imports the ACTUAL production entrypoint
@@ -119,6 +120,11 @@ describe("production recurring-mode (SCHED_ARM_NEXT) config", () => {
     expect(mod.parseArmNext(process.env)).toBe(false);
   });
 
+  it('parseArmNext: empty string is false (execution.compose.yaml\'s ${SCHED_ARM_NEXT:-} default — a genuinely-unset deploy reaches the container as "", not undefined; caught live during S1D2)', async () => {
+    const mod = await import("../services/kernel/src/index.js");
+    expect(mod.parseArmNext({ SCHED_ARM_NEXT: "" })).toBe(false);
+  });
+
   it('parseArmNext: explicit "false" is false', async () => {
     const mod = await import("../services/kernel/src/index.js");
     expect(mod.parseArmNext({ SCHED_ARM_NEXT: "false" })).toBe(false);
@@ -129,9 +135,9 @@ describe("production recurring-mode (SCHED_ARM_NEXT) config", () => {
     expect(mod.parseArmNext({ SCHED_ARM_NEXT: "true" })).toBe(true);
   });
 
-  it("parseArmNext: any other value fails closed (throws, never guesses)", async () => {
+  it("parseArmNext: any other value fails closed (throws, never guesses) — excluding empty string, which is the compose-default falsy case tested separately", async () => {
     const mod = await import("../services/kernel/src/index.js");
-    for (const bad of ["1", "0", "TRUE", "True", " true", "true ", "yes", "on", ""])
+    for (const bad of ["1", "0", "TRUE", "True", " true", "true ", "yes", "on"])
       expect(() => mod.parseArmNext({ SCHED_ARM_NEXT: bad }), `value ${JSON.stringify(bad)}`).toThrow();
   });
 
@@ -186,5 +192,38 @@ describe("production recurring-mode (SCHED_ARM_NEXT) config", () => {
     delete process.env["KJ_ADMISSION_BEARER"];
     process.env["SCHED_ARM_NEXT"] = "banana";
     await expect(import("../services/kernel/src/index.js")).rejects.toThrow();
+  });
+});
+
+/**
+ * S1D2 — guards the exact defect class that bit KJ_ADMISSION_URL/KJ_ADMISSION_BEARER
+ * (PR #21) and then SCHED_ARM_NEXT itself, live in production, on 2026-09-14:
+ * execution.compose.yaml's worker `environment:` block is an explicit allowlist — Compose
+ * does not forward arbitrary --env-file contents to a container. A production env var
+ * that index.ts reads but this file does not declare is silently dropped: no crash, no
+ * error, the worker just runs as if the var were never set. Unit tests against index.ts
+ * directly (via process.env) cannot catch this — they never go through Compose. This
+ * reads the actual YAML text and is the only regression guard for this class of bug.
+ */
+describe("execution.compose.yaml worker env passthrough (S1D2 regression guard)", () => {
+  const yaml = readFileSync("infrastructure/docker/execution.compose.yaml", "utf8");
+  // Isolate the worker service's `environment:` block only (not restate's, not comments).
+  const workerBlock = yaml.slice(yaml.indexOf("\n  worker:"), yaml.indexOf("\nvolumes:"));
+
+  it("declares every env var services/kernel/src/index.ts reads from process.env", () => {
+    const indexTs = readFileSync("services/kernel/src/index.ts", "utf8");
+    const readVars = [...indexTs.matchAll(/process\.env\["([A-Z0-9_]+)"\]/g)].map((m) => m[1]!);
+    // DATABASE_URL/KJ_REPO_ROOT/PORT are pinned/derived, not passthrough-declared the same
+    // way; every other var index.ts reads must appear as a declared key in the compose
+    // worker block, or a production deploy can silently drop it exactly like SCHED_ARM_NEXT did.
+    const passthroughVars = readVars.filter((v) => !["DATABASE_URL", "KJ_REPO_ROOT", "PORT"].includes(v));
+    for (const v of new Set(passthroughVars))
+      expect(workerBlock, `${v} must be declared in execution.compose.yaml's worker environment: block`).toMatch(
+        new RegExp(`^\\s+${v}:`, "m"),
+      );
+  });
+
+  it("SCHED_ARM_NEXT specifically is declared (the exact var that was missing on 2026-09-14)", () => {
+    expect(workerBlock).toMatch(/^\s+SCHED_ARM_NEXT:/m);
   });
 });
