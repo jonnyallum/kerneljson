@@ -44,6 +44,27 @@ const ledger = new Ledger(pool, undefined, undefined, undefined, canary);
 // a separate construction site from canary-runner.ts's buildAdmissionGatewayFromEnv.
 const admissionUrl = process.env["KJ_ADMISSION_URL"];
 const admissionBearer = process.env["KJ_ADMISSION_BEARER"];
+
+/**
+ * Recurring self-rearm (armNext) is OFF by default — a production worker that
+ * silently starts self-arming is the same substitution-class risk called out above
+ * for ScheduleDriver itself, so this parses eagerly (fail-fast at startup, same as
+ * DATABASE_URL) and rejects anything that isn't exactly "true"/"false" rather than
+ * guessing. armNext=true is only meaningful once qualified (see S1B —
+ * docs/production/phase-s1b-rearm/): the boundary fixes in durable-timer.ts and
+ * restate-service.ts. Unset stays the existing one-shot behaviour unconditionally.
+ */
+export function parseArmNext(env: NodeJS.ProcessEnv): boolean {
+  const raw = env["SCHED_ARM_NEXT"];
+  if (raw === undefined) return false;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  throw new Error(
+    `SCHED_ARM_NEXT must be exactly "true" or "false" when set (got ${JSON.stringify(raw)}) ` +
+      "— refusing to start with an ambiguous recurring-mode flag",
+  );
+}
+const armNext = parseArmNext(process.env);
 // The canary alone (no admission seam) is the current, valid, pre-existing state —
 // it must remain a silent no-op, not an error. Only an INCONSISTENT admission seam,
 // or an admission seam configured without the canary it depends on, fails closed.
@@ -67,6 +88,7 @@ const scheduleDriver =
         recipe: canary.recipe,
         owner: "restate-schedule-driver",
         productionRuntime: true,
+        armNext,
       })
     : undefined;
 
