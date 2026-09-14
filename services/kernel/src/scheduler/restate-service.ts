@@ -97,6 +97,16 @@ export type ScheduleDriverApi = {
  * harmless because the handler re-reads state and `canFire` gates a paused/disabled
  * schedule to no admission. `observe` returns none: outstanding wakes live in
  * Restate, and reconciliation re-arms from the Postgres fire cursor, never from here.
+ *
+ * S1B-FIX (2026-09-14): the self-send's own request MUST supply `nowMs` strictly
+ * greater than `fireAtUtcMs`, not equal to it. `onWake` passes this request straight
+ * into `dueFireWindows(spec, lastTickMs, nowMs)`, whose [from,to) contract requires
+ * `to` to exceed a window's timestamp to include it. Passing `nowMs: fireAtUtcMs`
+ * (the exact boundary the request exists to process) queried a range that excluded
+ * that very window — every self-armed wake found zero due windows, created zero
+ * fires, and admitted nothing, while still correctly computing and arming the NEXT
+ * wake (masking the defect as "silently does no work" rather than a visible failure).
+ * `fireAtUtcMs + 1` is the minimal correction, mirroring `nextWindowAfter`'s own fix.
  */
 export class RestateDurableTimerRuntime implements DurableTimerRuntime {
   constructor(private readonly ctx: restate.ObjectContext) {}
@@ -109,7 +119,7 @@ export class RestateDurableTimerRuntime implements DurableTimerRuntime {
     this.ctx
       .objectSendClient<ScheduleDriverApi>({ name: SCHEDULE_DRIVER }, scheduleId)
       .fire(
-        { lastTickMs: fireAtUtcMs - 1, nowMs: fireAtUtcMs, sleepMs: 0 },
+        { lastTickMs: fireAtUtcMs - 1, nowMs: fireAtUtcMs + 1, sleepMs: 0 },
         restate.rpc.sendOpts({ delay }),
       );
   }

@@ -135,13 +135,32 @@ export function runtimeSpecFrom(
 
 const nowIso = (ms: number): string => new Date(ms).toISOString();
 
-/** The single next fire window strictly at/after `fromMs`, or null. */
+/**
+ * The single next fire window STRICTLY AFTER `fromMs` (never `fromMs` itself), or null.
+ *
+ * dueFireWindows' [from,to) contract intentionally includes `from` — correct for
+ * enumerating due/backlog windows, where the caller's `from` is "the last tick", not
+ * a window that already fired. This function has a different contract: every caller
+ * passes the window that WAS JUST FIRED as `fromMs` (onWake -> nextWindowAfter(spec,
+ * nowMs), and the self-rearm path — RestateDurableTimerRuntime.scheduleWake — sets the
+ * NEXT invocation's own `nowMs` to exactly that fired window's `fireAtUtcMs`). If
+ * dueFireWindows were queried starting AT that exact boundary, its inclusive `>=`/
+ * `ceil` semantics would return the SAME window again: nextWindowAfter would never
+ * advance, scheduleWake's delay would compute to 0 against real time, and the durable
+ * self-send would loop indefinitely with zero delay (confirmed live: S1B qualification,
+ * 2026-09-14 — a real armNext=true schedule looped several times per second against a
+ * disposable Restate instance). Querying from `fromMs + 1` instead guarantees the
+ * boundary just fired is excluded while every later window is still found, uniformly
+ * across every calendar kind (everyNMinutes/dailyAt/weeklyAt all share dueFireWindows'
+ * same [from,to) contract, so this single change fixes all three, not just one).
+ */
 export function nextWindowAfter(spec: ScheduleSpec, fromMs: number): FireWindow | null {
   const horizonMs =
     spec.calendar.kind === "everyNMinutes"
       ? spec.calendar.n * 60_000 * 2 + 60_000
       : 9 * 86_400_000; // covers weekly + slack
-  const ws = dueFireWindows(spec, fromMs, fromMs + horizonMs);
+  const searchFromMs = fromMs + 1; // exclude fromMs itself — see doc comment above
+  const ws = dueFireWindows(spec, searchFromMs, searchFromMs + horizonMs);
   return ws.length ? ws[0]! : null;
 }
 

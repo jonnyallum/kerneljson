@@ -1,0 +1,54 @@
+{
+  "capturedAt": "2026-09-14T06:37:30.456Z",
+  "restateImage": "docker.restate.dev/restatedev/restate:1.7.9",
+  "note": "S1B recurring self-rearm (armNext=true) qualification vs real Restate + real Postgres + real admission door",
+  "duplicate_delivery_window1": {
+    "scheduleId": "48aaeb68-8f02-4530-8461-258bddf8854c",
+    "fireWindowKey": "everyNMinutes/1@1789367820000",
+    "taskId": "1c4b09dc-ee31-80c3-a616-37bd1272ddeb",
+    "replays": 1,
+    "fireCountAfter": 1
+  },
+  "window2_after_worker_restart": {
+    "scheduleId": "48aaeb68-8f02-4530-8461-258bddf8854c",
+    "fireWindowKey": "everyNMinutes/1@1789367880000",
+    "taskId": "6b469fc9-4ee9-89c4-a1f7-3dd7eeacc042",
+    "workerRestarted": true,
+    "fireCountAfter": 2
+  },
+  "window3_after_restate_restart": {
+    "scheduleId": "48aaeb68-8f02-4530-8461-258bddf8854c",
+    "fireWindowKey": "everyNMinutes/1@1789367940000",
+    "taskId": "2d96d9d6-7166-8a4d-a825-8a8b9fd1c042",
+    "restateRestarted": true,
+    "fireCountAfter": 3
+  },
+  "disable_stops_recurrence": {
+    "scheduleId": "48aaeb68-8f02-4530-8461-258bddf8854c",
+    "fireCountAfterDisableWindow": 3,
+    "noFourthWindow": true
+  },
+  "R1_three_consecutive_windows": {
+    "scheduleId": "48aaeb68-8f02-4530-8461-258bddf8854c",
+    "invocationId0": "inv_15HAFhRyTGPR2WQG0BUE6h47j3CxCwYNIl",
+    "fireIdentities": [
+      "everyNMinutes/1@1789367820000",
+      "everyNMinutes/1@1789367880000",
+      "everyNMinutes/1@1789367940000"
+    ],
+    "childTaskIds": [
+      "1c4b09dc-ee31-80c3-a616-37bd1272ddeb",
+      "6b469fc9-4ee9-89c4-a1f7-3dd7eeacc042",
+      "2d96d9d6-7166-8a4d-a825-8a8b9fd1c042"
+    ],
+    "distinctTasks": 3,
+    "duplicateFireOrTask": false
+  },
+  "R2_retry_recovers_no_rearm_on_failure": {
+    "scheduleId": "c171518a-52a8-43e5-a6d4-75c07ed33bec",
+    "admittedCountDuringFailure": 0,
+    "recoveredFireWindowKey": "everyNMinutes/1@1789368000000",
+    "recoveredTaskId": "660fb65e-c44d-8e38-a259-cd174b710098",
+    "note": "Full exhaustion to Restate's documented on_max_attempts=Pause (70 attempts, up to 1m backoff each) was not run end-to-end here — infeasible in test wall-clock time. The retry-recovers path (no admission/no re-arm during failure, success resumes recurrence) is directly proven; the terminal Pause behaviour is Restate's own already-observed live service configuration (captured during S1A against production), not an app-invented policy."
+  }
+}
