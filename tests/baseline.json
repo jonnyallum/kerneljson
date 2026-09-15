@@ -900,6 +900,18 @@
   ],
   "intentionalSkips": [
     {
+      "file": "alerting-postgres.integration.test.ts",
+      "name": "KJ-P1.2 alert-state persistence (real Postgres) 1. two separate engine/CLI-style runs against the same persistent store deduplicate the same failure"
+    },
+    {
+      "file": "alerting-postgres.integration.test.ts",
+      "name": "KJ-P1.2 alert-state persistence (real Postgres) 2. recovery persists across runs"
+    },
+    {
+      "file": "alerting-postgres.integration.test.ts",
+      "name": "KJ-P1.2 alert-state persistence (real Postgres) 3. recurrence after persisted recovery creates a fresh NEW episode"
+    },
+    {
       "file": "schedule-fencing.integration.test.ts",
       "name": "S1-F lease fencing qualification A claims (epoch N); after expiry B claims (epoch N+1); stale A cannot mutate; only B's mutation persists"
     },

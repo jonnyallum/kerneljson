@@ -21,7 +21,8 @@ services/kernel/src/alerting/
   policy.ts            the explicit check-id -> severity policy table
   reducer.ts           PURE — (existing state row | null, fresh CheckResult) -> (next row, decision | null)
   state-store.ts        AlertStateStore interface + InMemoryAlertStateStore
-  pg-state-store.ts      PgAlertStateStore (prepared, not deployed — see "Persistence")
+  pg-state-store.ts      PgAlertStateStore (the canonical persistent store — see "Persistence")
+  select-store.ts         ALERT_STATE_STORE mode parsing + fail-closed store selection
   notifier.ts            Notifier interface + ConsoleNotifier + RecordingNotifier (test helper)
   format.ts               human-readable alert/recovery text
   engine.ts                async orchestration: health report -> decisions, via a store + optional notifier
@@ -32,8 +33,8 @@ Same collect/evaluate split discipline as P1.1: `reducer.ts` is 100% pure (no I/
 so the entire episode lifecycle — first detection, dedup, escalation,
 de-escalation, recovery, recurrence — is exhaustively unit-tested with synthetic
 `CheckResult`s and state rows (`tests/alerting-model.test.ts`, 20 tests). Only
-`engine.ts` (store + notifier orchestration), `pg-state-store.ts`, and `cli.ts`
-touch I/O.
+`engine.ts` (store + notifier orchestration), `pg-state-store.ts`, `select-store.ts`,
+and `cli.ts` touch I/O.
 
 ## Severity model
 
@@ -122,21 +123,46 @@ was never open, and a second consecutive healthy run is a silent no-op (see the
 
 ## Persistence
 
-`AlertStateStore` interface, two implementations:
+`AlertStateStore` interface, two implementations, selected by
+`ALERT_STATE_STORE=postgres|memory` (`select-store.ts`):
 
-- **`InMemoryAlertStateStore`** — used by every test, and the *only* store the CLI
-  uses today. The alert engine is fully correct with no external backend — dedup,
-  escalation, and recovery all work within a single process's state.
-- **`PgAlertStateStore`** — complete, typed against
-  `kernel_private.alert_state` (`supabase/migrations/20260915220000_alert_state.sql`).
-  **Prepared, not applied.** Per the KJ-P1.2 authorisation ("do not mutate
-  production during this phase unless explicitly authorised later"), this
-  migration has NOT been run against production. Applying it — so alert state
-  survives process restarts — is a separate, future, explicitly-authorised change
-  window, exactly like `20260910180000_scheduler.sql` was prepared long before S1
-  schedule enablement happened. Until then, `kerneljson alerts` starts from a
-  clean slate on every invocation: correct for "what would fire right now", not
-  yet a durable cross-restart dedup history.
+- **`ALERT_STATE_STORE=postgres` — the default when unset.** Durable
+  persistence is the production-safe default; `memory` must be explicitly
+  requested, never assumed. This mode constructs `PgAlertStateStore` (typed
+  against `kernel_private.alert_state`,
+  `supabase/migrations/20260915220000_alert_state.sql`) and **probes it before
+  use** (`PgAlertStateStore.probe()` — a cheap `select ... limit 1`). If the
+  table doesn't exist (the migration hasn't been applied yet — Postgres error
+  `42P01 undefined_table`), `probe()` throws `AlertStateStoreUnavailableError`
+  with a message naming the migration; `select-store.ts` lets this propagate
+  rather than catching it and silently substituting memory. Any OTHER probe
+  failure (a genuine connectivity/auth problem) is also left un-swallowed, as
+  its original error — never relabelled as "migration missing" when it might be
+  something else entirely. **A durable-mode caller getting silent ephemeral
+  behaviour instead of a clear failure would be worse than the failure itself.**
+- **`ALERT_STATE_STORE=memory`** — explicit opt-out, for local/dev/smoke work
+  only. Returns `InMemoryAlertStateStore`; the DB is never touched for alert
+  state. Every deterministic test uses this (or a mocked `pg.Pool` for the
+  store-selection contract itself — see
+  `tests/alerting-store-selection.test.ts`).
+
+**The migration itself remains PREPARED, NOT APPLIED to production.** Per the
+KJ-P1.2 authorisation ("do not mutate production during this phase unless
+explicitly authorised later"), `20260915220000_alert_state.sql` has not been run
+against production — exactly like `20260910180000_scheduler.sql` was prepared
+long before S1 schedule enablement happened. This means `kerneljson alerts` run
+against production **today, with the default `postgres` mode, correctly fails
+closed** (`AlertStateStoreUnavailableError`) rather than silently running in
+ephemeral mode — proven live, read-only, against real production (see the
+KJ-P1.2 persistence-fix result doc). Applying the migration — so durable
+production alert-state actually starts accumulating — is a separate, future,
+explicitly-authorised change window.
+
+Cross-process persistence itself (two independent `PgAlertStateStore`
+instances/connections against the same database correctly dedupe, recover, and
+reopen episodes) is proven in
+`tests/alerting-postgres.integration.test.ts`, gated on `KJ_TEST_PG_URL`
+against a disposable local Postgres — never production.
 
 ## Notifier abstraction
 
@@ -194,15 +220,19 @@ EXPECTED_RELEASE_ID=5a2335b41d8fe525ff940a3bd86912c98dae68af \
 Same env-var surface as `kerneljson health` (it runs the health model internally
 first). `--json` prints machine-readable decisions only, and suppresses the
 `ConsoleNotifier` (nothing is "sent" in JSON mode — the caller decides what to do
-with the decisions). `ALERT_STATE_PG=1` switches to `PgAlertStateStore` — has no
-effect until the migration above is applied.
+with the decisions). Add `ALERT_STATE_STORE=memory` for local/dev/smoke work —
+without it, the default `postgres` mode will fail closed until the migration
+above is applied to whichever database `DATABASE_URL` points at.
 
 ## Known gaps
 
-- **No durable cross-restart state yet** — see "Persistence". Every `kerneljson
-  alerts` invocation currently starts fresh; dedup/escalation/recovery all work
-  correctly *within* one process's lifetime, not yet across a redeploy or a
-  scheduled cron invocation.
+- **No durable production alert-state yet** — see "Persistence". The wiring and
+  the store are complete and cross-process persistence is proven against a
+  disposable Postgres; what's still pending is applying the migration to
+  production itself (a separate, explicitly-authorised change window). Until
+  then, `kerneljson alerts` run against production correctly fails closed
+  rather than silently running ephemeral — it does not yet run at all in
+  `postgres` mode against production, by design.
 - **`legacyAuthority.b1FreezeObservable` never notifies, by policy** (`notify:
   false`) — it is still tracked (a state row exists, `occurrenceCount`
   increments), but deliberately never reaches a notifier. This is the same

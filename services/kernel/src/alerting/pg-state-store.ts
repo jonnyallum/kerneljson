@@ -2,19 +2,54 @@ import type pg from "pg";
 import type { AlertSeverity, AlertStateRow } from "./types.js";
 
 /**
+ * Thrown by `probe()` specifically when `kernel_private.alert_state` does not
+ * exist (Postgres `42P01 undefined_table`) — i.e. the KJ-P1.2 migration
+ * (`supabase/migrations/20260915220000_alert_state.sql`) has not been applied to
+ * this database. Any OTHER failure (a genuine connectivity/auth problem) is
+ * deliberately left as its original error, not relabelled as this — conflating
+ * "wrong problem" with "migration missing" would make a real outage harder to
+ * diagnose. Callers (see `select-store.ts`) MUST let this propagate, never catch
+ * it to silently substitute `InMemoryAlertStateStore` — see that file's header.
+ */
+export class AlertStateStoreUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super(
+      "kernel_private.alert_state is not available — the KJ-P1.2 migration " +
+        "(supabase/migrations/20260915220000_alert_state.sql) has not been applied " +
+        "to this database. Refusing to silently fall back to ephemeral state; pass " +
+        'ALERT_STATE_STORE=memory explicitly if that is genuinely what you want ' +
+        "(local/dev/smoke work only — never production).",
+      { cause },
+    );
+    this.name = "AlertStateStoreUnavailableError";
+  }
+}
+
+/**
  * Postgres-backed `AlertStateStore`, against `kernel_private.alert_state`
  * (see `supabase/migrations/20260915220000_alert_state.sql`).
  *
- * PREPARED, NOT DEPLOYED: this class is complete and typed against the real
- * schema, but the migration it depends on has not been applied to production in
- * this phase, and nothing in KJ-P1.2 constructs/uses this class against a live
- * database. It exists so the persistence design is concrete and reviewable now,
- * with no further code changes needed when applying the migration is later
- * explicitly authorised — only a config wire-up (`config.ts` picking this store
- * instead of `InMemoryAlertStateStore`).
+ * This IS the canonical store `kerneljson alerts` wires when
+ * `ALERT_STATE_STORE=postgres` (the default — see `select-store.ts`). The
+ * migration itself remains PREPARED, NOT APPLIED to production in this phase —
+ * `probe()` is exactly how that gets caught cleanly instead of silently
+ * degrading to in-memory state.
  */
 export class PgAlertStateStore {
   constructor(private readonly pool: pg.Pool) {}
+
+  /** Cheap existence check. Throws `AlertStateStoreUnavailableError` if the
+   *  table doesn't exist; rethrows any other error unchanged. Never swallows,
+   *  never returns a "maybe it's fine" result — callers act on success/throw only. */
+  async probe(): Promise<void> {
+    try {
+      await this.pool.query("select 1 from kernel_private.alert_state limit 1");
+    } catch (err) {
+      const code = (err as { code?: unknown } | null)?.code;
+      if (code === "42P01") throw new AlertStateStoreUnavailableError(err);
+      throw err;
+    }
+  }
 
   async getAll(): Promise<AlertStateRow[]> {
     const res = await this.pool.query(
