@@ -1,5 +1,9 @@
 # KJ-P1.3B RELEASE TRANSITION HEALTH SEMANTICS — STOP
 
+Historical reproduction note: `evidence/kj-p1.3b/reproduce.mjs` exercises the pre-seam
+health API at commit `700d9e4` (merged PR #30). Run it from that revision. KJ-P1.3C
+replaces that API with canonical epoch provenance; its qualification is recorded separately.
+
 ## Decision
 
 FACT: No trustworthy release-cutover authority was found in repository configuration,

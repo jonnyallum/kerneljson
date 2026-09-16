@@ -59,7 +59,7 @@ string. Reproduced here for the checks KJ-P1.2 explicitly requires:
 | `scheduler.noDuplicateFireWindow` | P0 | — | — | double-admit invariant broke — proven-dangerous in S1-R |
 | `scheduler.noZeroDelayLoop` | P0 | — | — | exact signature of the S1B zero-delay loop defect |
 | `scheduler.scheduleEnabled` | P1 | — | — | canonical schedule not in expected state |
-| `authority.bindingReleaseConsistent` | — | P2 | P3 | release hygiene, not an active violation |
+| `authority.bindingReleaseConsistent` | P1 | — | P3 | canonical release-epoch integrity; see RELEASE_PROVENANCE.md |
 | `authority.admittedFiresHaveCanonicalTasks` | P0 | — | — | scheduler minted without KJ — direct authority breach |
 | `releaseParity.matchesExpected` | P1 | — | — | wrong release running is critical, not corruption |
 | `restate.noStuckInvocation` | P1 | — | — | recurring chain stalled |

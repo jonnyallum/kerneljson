@@ -24,7 +24,7 @@ export function evaluateHealthSnapshot(
   const checkedAt = snapshot.checkedAt;
 
   const domains = {
-    authority: evaluateAuthority(snapshot.authority, checkedAt),
+    authority: evaluateAuthority(snapshot.authority, checkedAt, expectations.releaseId),
     admission: evaluateAdmission(snapshot.admission, checkedAt),
     scheduler: evaluateScheduler(snapshot.scheduler, expectations, checkedAt),
     execution: evaluateExecution(snapshot.execution, expectations, checkedAt),

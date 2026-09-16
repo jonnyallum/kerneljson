@@ -42,10 +42,13 @@ export interface ScheduleFireRow {
   createdAt: string;
 }
 
-export interface ExecutionBindingRow {
-  taskId: string;
-  releaseId: string;
-  createdAt: string;
+export interface BindingProvenance {
+  activeEpoch: string;
+  activeReleaseId: string | null;
+  currentBindingCount: number;
+  mismatchedBindingCount: number;
+  missingProvenanceCount: number;
+  legacyBindingCount: number;
 }
 
 export interface RestateInvocationRow {
@@ -81,7 +84,7 @@ export interface SchedulerSnapshot {
 
 export interface AuthoritySnapshot {
   dbReachable: boolean;
-  recentBindings: ExecutionBindingRow[];
+  bindingProvenance: BindingProvenance | null;
   admittedFireTaskIdsMissingFromTasks: string[];
   boundReleaseRejectionSeen: boolean;
 }
@@ -119,7 +122,7 @@ export interface EvidenceSnapshot {
 export interface ReleaseParitySnapshot {
   dbReachable: boolean;
   selfReportedReleaseId: string | null;
-  recentBindingReleaseIds: string[];
+  bindingProvenance: BindingProvenance | null;
   boundReleaseRejectionSeen: boolean;
 }
 

@@ -1,3 +1,4 @@
+import { bindingProvenanceVerdict } from "./release-provenance.js";
 import { aggregateDomain } from "./aggregate.js";
 import { isUnavailable, type CheckResult, type DomainResult, type HealthStatus } from "./types.js";
 import type {
@@ -293,7 +294,7 @@ export function evaluateScheduler(
 // authority
 // ---------------------------------------------------------------------------
 
-export function evaluateAuthority(s: AuthoritySnapshot, checkedAt: string): DomainResult {
+export function evaluateAuthority(s: AuthoritySnapshot, checkedAt: string, expectedRelease?: string): DomainResult {
   const checks: CheckResult[] = [];
 
   if (!s.dbReachable) {
@@ -312,31 +313,9 @@ export function evaluateAuthority(s: AuthoritySnapshot, checkedAt: string): Doma
     return aggregateDomain(checks);
   }
 
-  if (s.recentBindings.length === 0) {
-    checks.push(
-      check(
-        "authority.bindingReleaseConsistent",
-        "UNKNOWN",
-        "kernel_private.execution_bindings",
-        "no execution bindings observed yet — cannot assert release consistency",
-        checkedAt,
-      ),
-    );
-  } else {
-    const distinct = new Set(s.recentBindings.map((b) => b.releaseId));
-    checks.push(
-      check(
-        "authority.bindingReleaseConsistent",
-        distinct.size === 1 ? "HEALTHY" : "DEGRADED",
-        "kernel_private.execution_bindings.contract->>releaseId",
-        distinct.size === 1
-          ? `recent bindings agree on release ${[...distinct][0]}`
-          : `recent bindings disagree on release: ${[...distinct].join(", ")}`,
-        checkedAt,
-        { observed: [...distinct] },
-      ),
-    );
-  }
+  const binding = bindingProvenanceVerdict(s.bindingProvenance, expectedRelease);
+  checks.push(check("authority.bindingReleaseConsistent", binding.status,
+    "database release epochs", binding.message, checkedAt, { observed: s.bindingProvenance }));
 
   checks.push(
     check(
@@ -777,42 +756,9 @@ export function evaluateReleaseParity(
     );
   }
 
-  if (!s.dbReachable) {
-    checks.push(
-      check(
-        "releaseParity.recentBindingsConsistent",
-        "UNKNOWN",
-        "kernel_private.execution_bindings",
-        "database unreachable — see the database domain",
-        checkedAt,
-      ),
-    );
-  } else if (s.recentBindingReleaseIds.length === 0) {
-    checks.push(
-      check(
-        "releaseParity.recentBindingsConsistent",
-        "UNKNOWN",
-        "kernel_private.execution_bindings",
-        "no recent bindings to check",
-        checkedAt,
-      ),
-    );
-  } else {
-    const distinct = new Set(s.recentBindingReleaseIds);
-    const expectedOk = !exp.releaseId || (distinct.size === 1 && distinct.has(exp.releaseId));
-    checks.push(
-      check(
-        "releaseParity.recentBindingsConsistent",
-        distinct.size === 1 && expectedOk ? "HEALTHY" : "CRITICAL",
-        "kernel_private.execution_bindings.contract->>releaseId",
-        distinct.size === 1 && expectedOk
-          ? `recent bindings are all release ${[...distinct][0]}`
-          : `recent bindings show release drift: ${[...distinct].join(", ")}`,
-        checkedAt,
-        { expected: exp.releaseId ?? null, observed: [...distinct] },
-      ),
-    );
-  }
+  const binding = bindingProvenanceVerdict(s.dbReachable ? s.bindingProvenance : null, exp.releaseId);
+  checks.push(check("releaseParity.recentBindingsConsistent", binding.status,
+    "database release epochs", binding.message, checkedAt, { observed: s.bindingProvenance }));
 
   checks.push(
     !s.dbReachable

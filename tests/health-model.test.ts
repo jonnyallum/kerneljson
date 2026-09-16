@@ -32,6 +32,11 @@ function baseExpectations(): HealthExpectations {
   };
 }
 
+function healthyProvenance() {
+  return { activeEpoch: "1", activeReleaseId: RELEASE_ID, currentBindingCount: 1,
+    mismatchedBindingCount: 0, missingProvenanceCount: 0, legacyBindingCount: 0 };
+}
+
 function healthySnapshot(): HealthSnapshot {
   return {
     checkedAt: CHECKED_AT,
@@ -71,7 +76,7 @@ function healthySnapshot(): HealthSnapshot {
     },
     authority: {
       dbReachable: true,
-      recentBindings: [{ taskId: TASK_ID, releaseId: RELEASE_ID, createdAt: CHECKED_AT }],
+      bindingProvenance: healthyProvenance(),
       admittedFireTaskIdsMissingFromTasks: [],
       boundReleaseRejectionSeen: false,
     },
@@ -114,7 +119,7 @@ function healthySnapshot(): HealthSnapshot {
     releaseParity: {
       dbReachable: true,
       selfReportedReleaseId: RELEASE_ID,
-      recentBindingReleaseIds: [RELEASE_ID],
+      bindingProvenance: healthyProvenance(),
       boundReleaseRejectionSeen: false,
     },
     productionConfig: {
@@ -160,7 +165,7 @@ describe("release mismatch", () => {
   it("self-reported release differing from expected is CRITICAL and drags overall to CRITICAL", () => {
     const snapshot = healthySnapshot();
     snapshot.releaseParity.selfReportedReleaseId = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
-    snapshot.releaseParity.recentBindingReleaseIds = ["deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"];
+    snapshot.releaseParity.bindingProvenance!.activeReleaseId = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
     const report = evaluateHealthSnapshot(snapshot, baseExpectations());
     expect(report.domains.releaseParity.status).toBe("CRITICAL");
     expect(report.overall).toBe("CRITICAL");
@@ -170,7 +175,7 @@ describe("release mismatch", () => {
 
   it("a drift between recent bindings themselves (not just vs expected) is CRITICAL", () => {
     const snapshot = healthySnapshot();
-    snapshot.releaseParity.recentBindingReleaseIds = [RELEASE_ID, "otherreleaseidxxxxxxxxxxxxxxxxxxxxxxxxxx"];
+    snapshot.releaseParity.bindingProvenance!.mismatchedBindingCount = 1;
     const report = evaluateHealthSnapshot(snapshot, baseExpectations());
     expect(report.domains.releaseParity.status).toBe("CRITICAL");
   });
