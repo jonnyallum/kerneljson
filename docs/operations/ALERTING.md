@@ -78,7 +78,9 @@ only, P2) rather than silently alerting nothing — see `resolvePolicy`'s
 
 ## Fingerprinting
 
-`fingerprint = sha256(checkId + " " + entityId)`, truncated to 32 hex chars.
+`fingerprint = sha256(checkId + "\n" + entityId)`, truncated to 32 hex chars
+(`\n` chosen in KJ-P1.2B — explicit, printable, greppable in source; neither
+field is ever user-controlled, so there's no delimiter-injection concern).
 **Deliberately excludes severity and the raw `observed` value.** A worsening or
 improving severity on the same underlying problem must stay the *same* episode (so
 it can be tracked as an `ESCALATED`/`DEESCALATED` event on it), not spawn an
