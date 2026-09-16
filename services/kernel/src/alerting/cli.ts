@@ -1,12 +1,17 @@
 import { pathToFileURL } from "node:url";
 import pg from "pg";
 import { collectHealthSnapshot } from "../health/collect.js";
-import { loadConnectionConfig, loadHealthExpectations } from "../health/config.js";
+import {
+  loadConnectionConfig,
+  loadHealthExpectations,
+} from "../health/config.js";
 import { evaluateHealthSnapshot } from "../health/run.js";
 import { runAlertEngine } from "./engine.js";
 import { formatDecisionsHuman } from "./format.js";
 import { ConsoleNotifier } from "./notifier.js";
 import { loadAlertStoreMode, selectAlertStateStore } from "./select-store.js";
+import { postgresMonitorExclusive } from "./runner-postgres.js";
+import type { AlertStateStore } from "./state-store.js";
 
 /**
  * `kerneljson alerts` — runs the P1.1 health model, then the P1.2 alert engine
@@ -33,32 +38,55 @@ async function main(): Promise<void> {
   const expectations = loadHealthExpectations(process.env);
   const pool = new pg.Pool({ connectionString: connection.databaseUrl });
   try {
-    const snapshot = await collectHealthSnapshot({ pool, connection, expectations, selfEnv: process.env });
-    const report = evaluateHealthSnapshot(snapshot, expectations);
+    const execute = async (store: AlertStateStore) => {
+      const snapshot = await collectHealthSnapshot({
+        pool,
+        connection,
+        expectations,
+        selfEnv: process.env,
+      });
+      const report = evaluateHealthSnapshot(snapshot, expectations);
 
+      const { decisions } = await runAlertEngine(report, {
+        store,
+        ...(jsonOnly ? {} : { notifier: new ConsoleNotifier() }),
+        canonicalScheduleId: expectations.scheduleId,
+      });
+
+      if (jsonOnly) {
+        process.stdout.write(
+          JSON.stringify({ overall: report.overall, decisions }, null, 2) +
+            "\n",
+        );
+      } else if (decisions.length === 0) {
+        process.stdout.write("No alert-worthy changes.\n");
+      } else {
+        process.stdout.write(formatDecisionsHuman(decisions) + "\n");
+      }
+    };
     const mode = loadAlertStoreMode(process.env);
-    const store = await selectAlertStateStore(mode, pool);
-    const { decisions } = await runAlertEngine(report, {
-      store,
-      ...(jsonOnly ? {} : { notifier: new ConsoleNotifier() }),
-      canonicalScheduleId: expectations.scheduleId,
-    });
-
-    if (jsonOnly) {
-      process.stdout.write(JSON.stringify({ overall: report.overall, decisions }, null, 2) + "\n");
-    } else if (decisions.length === 0) {
-      process.stdout.write("No alert-worthy changes.\n");
+    if (mode === "postgres") {
+      // Manual invocations and the recurring monitor share one exclusion boundary.
+      if (!(await postgresMonitorExclusive(pool)(execute)))
+        throw new Error(
+          "Another alert invocation is already running; no work performed",
+        );
     } else {
-      process.stdout.write(formatDecisionsHuman(decisions) + "\n");
+      await execute(await selectAlertStateStore(mode, pool));
     }
   } finally {
     await pool.end();
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   main().catch((err: unknown) => {
-    process.stderr.write(`kerneljson alerts failed to run: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(
+      `kerneljson alerts failed to run: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
     process.exitCode = 4;
   });
 }

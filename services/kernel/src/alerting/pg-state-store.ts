@@ -31,12 +31,13 @@ export class AlertStateStoreUnavailableError extends Error {
  *
  * This IS the canonical store `kerneljson alerts` wires when
  * `ALERT_STATE_STORE=postgres` (the default — see `select-store.ts`). The
- * migration itself remains PREPARED, NOT APPLIED to production in this phase —
- * `probe()` is exactly how that gets caught cleanly instead of silently
- * degrading to in-memory state.
+ * production migration was activated in KJ-P1.2A (2026-09-16). `probe()` still
+ * rejects missing tables in any target instead of degrading to in-memory state.
+ * A supplied PoolClient remains caller-owned, allowing the runner to hold its
+ * advisory lock and perform all alert-state I/O on the same session.
  */
 export class PgAlertStateStore {
-  constructor(private readonly pool: pg.Pool) {}
+  constructor(private readonly pool: pg.Pool | pg.PoolClient) {}
 
   /** Cheap existence check. Throws `AlertStateStoreUnavailableError` if the
    *  table doesn't exist; rethrows any other error unchanged. Never swallows,
@@ -62,7 +63,8 @@ export class PgAlertStateStore {
 
   async putAll(rows: readonly AlertStateRow[]): Promise<void> {
     if (rows.length === 0) return;
-    const client = await this.pool.connect();
+    const owned = !("release" in this.pool);
+    const client = owned ? await (this.pool as pg.Pool).connect() : this.pool as pg.PoolClient;
     try {
       await client.query("begin");
       for (const row of rows) {
@@ -98,7 +100,7 @@ export class PgAlertStateStore {
       await client.query("rollback");
       throw err;
     } finally {
-      client.release();
+      if (owned) client.release();
     }
   }
 }
