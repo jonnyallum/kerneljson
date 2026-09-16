@@ -20,6 +20,9 @@ export async function readBinding(db: Pick<pg.PoolClient,"query">,taskId: string
 }
 export async function persistBinding(db: pg.PoolClient, raw: ExecutionBinding) {
  const binding=ExecutionBinding.parse(raw);
+ // Database insert trigger assigns canonical release_epoch/persisted_at. Contract
+ // boundAt remains immutable intent time; it is never a release-order boundary.
+ // ON CONFLICT retains the original provenance, including across release replay.
  await db.query("insert into kernel_private.execution_bindings(task_id,tenant_id,principal_id,contract) values($1,$2,$3,$4) on conflict(task_id) do nothing",[binding.taskId,binding.tenantId,binding.principal.id,binding]);
  const stored=await readBinding(db,binding.taskId);
  // Replays retain their original release. Identity, definition and route never drift.

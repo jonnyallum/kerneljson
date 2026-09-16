@@ -71,7 +71,7 @@ database/evidence/authority stay HEALTHY in the same run).
 
 | Domain | Check id | What it means |
 |---|---|---|
-| authority | `authority.bindingReleaseConsistent` | recent `execution_bindings` all agree on one release id |
+| authority | `authority.bindingReleaseConsistent` | bindings agree with their database activation epochs; missing provenance or no current observations is UNKNOWN |
 | authority | `authority.admittedFiresHaveCanonicalTasks` | every `schedule_fires.admitted_child_task_id` exists in `tasks` — the scheduler never minted |
 | authority | `authority.noReleaseMismatchIncidents` | no recent `TASK_FAILED` event contains "Task requires its bound worker release" |
 | admission | `admission.doorReachable` | `GET {KJ_ADMISSION_URL}/healthz` returns 200 |
@@ -99,7 +99,7 @@ database/evidence/authority stay HEALTHY in the same run).
 | evidence | `evidence.boundToCorrectTask` | evidence rows are bound to the queried task, not another |
 | releaseParity | `releaseParity.selfReportedReleaseKnown` | this component reports its own `KERNELJSON_RELEASE_ID` |
 | releaseParity | `releaseParity.matchesExpected` | it matches `EXPECTED_RELEASE_ID` |
-| releaseParity | `releaseParity.recentBindingsConsistent` | recent `execution_bindings` all agree with the expected release |
+| releaseParity | `releaseParity.recentBindingsConsistent` | same canonical epoch check as authority, including explicit expected active release |
 | releaseParity | `releaseParity.noBoundReleaseRejection` | no live release-mismatch rejection observed |
 | productionConfig | `productionConfig.armNextExpected` | `SCHED_ARM_NEXT` matches expectation |
 | productionConfig | `productionConfig.approvedDigestPresentAndValid` | `SCHED_APPROVED_SHA256` is a well-shaped sha256 |
@@ -174,3 +174,5 @@ door `/healthz` GET. Nothing in this module or anything it imports can:
 This is enforced by construction (every DB call in `collect.ts` is a `select`; grep
 the file — there is no `insert`/`update`/`delete`), not by a runtime guard, because
 there is nothing here that could plausibly need one.
+
+Release transition semantics and the operator activation protocol are specified in [RELEASE_PROVENANCE.md](RELEASE_PROVENANCE.md).

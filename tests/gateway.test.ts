@@ -17,6 +17,7 @@ async function post(path:string,body:unknown,token='owner',key=randomUUID()){
 }
 beforeAll(async()=>{
  fixture=await knowledgeDatabase();foreign={...fixture.context,tenantId:randomUUID()};reader={...fixture.context,principal:{id:randomUUID(),kind:'HUMAN'}};
+ await fixture.pool.query("select kernel_private.activate_release($1,'test-release',0,$2)",[randomUUID(),{qualification:'gateway integration'}]);
  await fixture.pool.query("insert into tenants(id,name) values($1,'foreign')",[foreign.tenantId]);
  await fixture.pool.query("insert into tenant_memberships(tenant_id,principal_id,role) values($1,$2,'owner')",[foreign.tenantId,foreign.principal.id]);
  await fixture.pool.query("insert into principals(id,kind) values($1,'HUMAN')",[reader.principal.id]);
@@ -34,6 +35,7 @@ it('authenticates outside the body and persists stable admission across concurre
  expect(responses.every(r=>r.status===202)).toBe(true);const results=await Promise.all(responses.map(r=>r.json()));const id=results[0].taskId;expect(new Set(results.map(r=>r.taskId)).size).toBe(1);
  const response=await fetch(url+`/v1/tasks/${id}`,{headers:headers()});expect(response.status).toBe(200);expect((await response.json()).status).toBe('RECEIVED');
  expect((await fixture.pool.query('select 1 from kernel_private.task_admissions where task_id=$1',[id])).rowCount).toBe(1);
+ expect((await fixture.pool.query('select release_epoch,persisted_at is not null as stamped from kernel_private.execution_bindings where task_id=$1',[id])).rows[0]).toEqual({release_epoch:'1',stamped:true});
  expect((await post('/v1/tasks',{...input,objective:'changed'},'owner',key)).status).toBe(409);
  const foreignResponse=await post('/v1/tasks',input,'foreign',key);expect((await foreignResponse.json()).taskId).not.toBe(id);
 });

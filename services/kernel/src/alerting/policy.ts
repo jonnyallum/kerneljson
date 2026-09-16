@@ -43,8 +43,8 @@ export const ALERT_POLICY: readonly AlertPolicyEntry[] = [
   // ---- authority ---------------------------------------------------------
   simple(
     "authority.bindingReleaseConsistent",
-    { DEGRADED: "P2", UNKNOWN: "P3" },
-    "Recent execution bindings disagreeing on release is a release-hygiene issue needing attention, not an active safety violation — the runtime's own hard release-parity guard (ledger.ts) is the real enforcement point.",
+    { CRITICAL: "P1", UNKNOWN: "P3" },
+    "Binding release must match its canonical database activation epoch; historical epochs preserve their original release.",
   ),
   simple(
     "authority.admittedFiresHaveCanonicalTasks",
@@ -203,7 +203,7 @@ export const ALERT_POLICY: readonly AlertPolicyEntry[] = [
   simple(
     "releaseParity.recentBindingsConsistent",
     { CRITICAL: "P1" },
-    "Confirmed release drift across recent, time-scoped bindings vs. the expected release is a critical execution-correctness issue, P1.",
+    "A binding differing from its canonical activation epoch, or the active release differing from expectation, is a critical execution-correctness issue, P1.",
   ),
   simple(
     "releaseParity.noBoundReleaseRejection",

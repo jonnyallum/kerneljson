@@ -1,8 +1,8 @@
+import { collectBindingProvenance } from "./release-provenance.js";
 import type pg from "pg";
 import { createRestateAdminClient, type RestateAdminClient } from "./restate-client.js";
 import type { HealthConnectionConfig } from "./config.js";
 import type {
-  ExecutionBindingRow,
   HealthExpectations,
   HealthSnapshot,
   RestateInvocationRow,
@@ -53,33 +53,6 @@ async function fetchFires(pool: pg.Pool, scheduleId: string): Promise<ScheduleFi
     fireAtUtc: iso(r["fire_at_utc"]),
     state: String(r["state"]),
     admittedChildTaskId: r["admitted_child_task_id"] ? String(r["admitted_child_task_id"]) : null,
-    createdAt: iso(r["created_at"]),
-  }));
-}
-
-async function fetchRecentBindings(
-  pool: pg.Pool,
-  windowMs = 24 * 3_600_000,
-  limit = 50,
-): Promise<ExecutionBindingRow[]> {
-  // execution_bindings has no timestamp of its own — order by the task's own
-  // created_at (the join is the only honest way to get "recent"). Scoped by a TIME
-  // window, not just row count: `execution_bindings` is immutable, so in a
-  // low-admission-volume system (this one: ~20 admissions total across its whole
-  // history) the last N rows by count reach back through every past deploy's
-  // release id, which reads as "release drift" when it's really just history.
-  // Reproduced live during this module's own KJ-P1.1 validation run — see the
-  // result doc's "genuine issues discovered".
-  const res = await pool.query(
-    `select b.task_id, b.contract->>'releaseId' as release_id, t.created_at
-     from kernel_private.execution_bindings b join public.tasks t on t.id = b.task_id
-     where t.created_at > now() - ($1 || ' milliseconds')::interval
-     order by t.created_at desc limit $2`,
-    [windowMs, limit],
-  );
-  return res.rows.map((r: Record<string, unknown>) => ({
-    taskId: String(r["task_id"]),
-    releaseId: String(r["release_id"]),
     createdAt: iso(r["created_at"]),
   }));
 }
@@ -211,7 +184,7 @@ export async function collectHealthSnapshot(deps: CollectDeps): Promise<HealthSn
 
   const scheduleState = dbReachable ? await fetchScheduleState(pool, expectations.scheduleId) : null;
   const fires = dbReachable ? await fetchFires(pool, expectations.scheduleId) : [];
-  const recentBindings = dbReachable ? await fetchRecentBindings(pool) : [];
+  const bindingProvenance = dbReachable ? await collectBindingProvenance(pool) : null;
   const admittedMissing = dbReachable
     ? await fetchAdmittedFiresMissingTasks(pool, expectations.scheduleId)
     : [];
@@ -249,7 +222,7 @@ export async function collectHealthSnapshot(deps: CollectDeps): Promise<HealthSn
     },
     authority: {
       dbReachable,
-      recentBindings,
+      bindingProvenance,
       admittedFireTaskIdsMissingFromTasks: admittedMissing,
       boundReleaseRejectionSeen,
     },
@@ -281,7 +254,7 @@ export async function collectHealthSnapshot(deps: CollectDeps): Promise<HealthSn
     releaseParity: {
       dbReachable,
       selfReportedReleaseId: selfEnv["KERNELJSON_RELEASE_ID"] ?? null,
-      recentBindingReleaseIds: recentBindings.map((b) => b.releaseId),
+      bindingProvenance,
       boundReleaseRejectionSeen,
     },
     productionConfig: {

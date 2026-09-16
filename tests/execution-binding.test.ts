@@ -5,7 +5,7 @@ import { bindingFor, persistBinding, readBinding, workflowTargets } from "../ser
 import { Ledger } from "../services/kernel/src/ledger.js";
 import { ExecutionBinding, Task, TaskEvent } from "../packages/contracts/src/index.js";
 let fixture: Awaited<ReturnType<typeof knowledgeDatabase>>;
-beforeAll(async()=>{fixture=await knowledgeDatabase();});
+beforeAll(async()=>{fixture=await knowledgeDatabase();await fixture.pool.query("select kernel_private.activate_release($1,$2,0,$3)",[randomUUID(),process.env['KERNELJSON_RELEASE_ID']??'unreleased-development',{qualification:'ledger writers'}]);});
 afterAll(async()=>{await fixture?.close();});
 it("reads historical tasks without guessing an execution binding",async()=>{
  expect(await readBinding(fixture.pool,fixture.task.id)).toBeNull();
@@ -19,6 +19,7 @@ it.each(Object.keys(workflowTargets) as (keyof typeof workflowTargets)[])("persi
  const b=await readBinding(fixture.pool,task.id);
  expect(b?.service).toBe(name);expect(b?.executionKey).toBe(task.id);
  expect((await fixture.pool.query("select 1 from kernel_private.execution_bindings where task_id=$1",[task.id])).rowCount).toBe(1);
+ expect((await fixture.pool.query("select release_epoch,persisted_at is not null as stamped from kernel_private.execution_bindings where task_id=$1",[task.id])).rows[0]).toEqual({release_epoch:'1',stamped:true});
  await expect(fixture.pool.query("update kernel_private.execution_bindings set contract=contract where task_id=$1",[task.id])).rejects.toThrow();
 });
 it("keeps historical release identity and rejects incompatible family/version rebinding",async()=>{
