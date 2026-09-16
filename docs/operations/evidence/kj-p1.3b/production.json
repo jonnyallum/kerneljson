@@ -1,0 +1,101 @@
+{
+  "at": "2026-09-16T20:44:05.628384+00:00",
+  "database": {
+    "recentBindings": [
+      {
+        "task_id": "41f2ce1f-5044-84dc-aa5e-6ce5e5f30103",
+        "release_id": "5a2335b41d8fe525ff940a3bd86912c98dae68af",
+        "bound_at": "2026-09-16T08:00:00.645Z",
+        "created_at": "2026-09-16T08:00:00.645Z"
+      }
+    ],
+    "columns": [
+      {
+        "table_schema": "kernel_private",
+        "table_name": "execution_bindings",
+        "column_name": "task_id",
+        "data_type": "uuid"
+      },
+      {
+        "table_schema": "kernel_private",
+        "table_name": "execution_bindings",
+        "column_name": "tenant_id",
+        "data_type": "uuid"
+      },
+      {
+        "table_schema": "kernel_private",
+        "table_name": "execution_bindings",
+        "column_name": "principal_id",
+        "data_type": "uuid"
+      },
+      {
+        "table_schema": "kernel_private",
+        "table_name": "execution_bindings",
+        "column_name": "contract",
+        "data_type": "jsonb"
+      },
+      {
+        "table_schema": "kernel_private",
+        "table_name": "task_admissions",
+        "column_name": "task_id",
+        "data_type": "uuid"
+      },
+      {
+        "table_schema": "kernel_private",
+        "table_name": "task_admissions",
+        "column_name": "tenant_id",
+        "data_type": "uuid"
+      },
+      {
+        "table_schema": "kernel_private",
+        "table_name": "task_admissions",
+        "column_name": "principal_id",
+        "data_type": "uuid"
+      },
+      {
+        "table_schema": "kernel_private",
+        "table_name": "task_admissions",
+        "column_name": "key_digest",
+        "data_type": "text"
+      },
+      {
+        "table_schema": "kernel_private",
+        "table_name": "task_admissions",
+        "column_name": "request_digest",
+        "data_type": "text"
+      },
+      {
+        "table_schema": "kernel_private",
+        "table_name": "task_admissions",
+        "column_name": "payload",
+        "data_type": "jsonb"
+      }
+    ],
+    "boundReleaseRejectionSeen": false,
+    "counters": {
+      "admissions": "24",
+      "fires": "5",
+      "tasks": "5"
+    }
+  },
+  "containers": [
+    {
+      "name": "kerneljson-execution-worker-1",
+      "release": "5a2335b41d8fe525ff940a3bd86912c98dae68af",
+      "health": "healthy",
+      "restarts": 0,
+      "releaseMetadataKeys": [
+        "KERNELJSON_RELEASE_ID"
+      ]
+    },
+    {
+      "name": "kerneljson-admission-door-gateway-1",
+      "release": "5a2335b41d8fe525ff940a3bd86912c98dae68af",
+      "health": "healthy",
+      "restarts": 0,
+      "releaseMetadataKeys": [
+        "KERNELJSON_RELEASE_ID"
+      ]
+    }
+  ]
+}
