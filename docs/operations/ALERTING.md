@@ -148,17 +148,12 @@ was never open, and a second consecutive healthy run is a silent no-op (see the
   store-selection contract itself — see
   `tests/alerting-store-selection.test.ts`).
 
-**The migration itself remains PREPARED, NOT APPLIED to production.** Per the
-KJ-P1.2 authorisation ("do not mutate production during this phase unless
-explicitly authorised later"), `20260915220000_alert_state.sql` has not been run
-against production — exactly like `20260910180000_scheduler.sql` was prepared
-long before S1 schedule enablement happened. This means `kerneljson alerts` run
-against production **today, with the default `postgres` mode, correctly fails
-closed** (`AlertStateStoreUnavailableError`) rather than silently running in
-ephemeral mode — proven live, read-only, against real production (see the
-KJ-P1.2 persistence-fix result doc). Applying the migration — so durable
-production alert-state actually starts accumulating — is a separate, future,
-explicitly-authorised change window.
+**Production migration activated in KJ-P1.2A (2026-09-16).** The table exists and
+durable dedupe across independent production runs was proven in
+`PHASE_KJ_P1.2A_ALERT_STATE_ACTIVATION_RESULT_2026-09-16.md`. Earlier P1.2 result
+files describe the historical pre-activation state. Missing tables or connection
+failures still fail closed on any target. Recurring execution is separately
+prepared in [ALERT_RUNNER.md](ALERT_RUNNER.md); it is not activated by this code.
 
 Cross-process persistence itself (two independent `PgAlertStateStore`
 instances/connections against the same database correctly dedupe, recover, and
@@ -228,13 +223,8 @@ above is applied to whichever database `DATABASE_URL` points at.
 
 ## Known gaps
 
-- **No durable production alert-state yet** — see "Persistence". The wiring and
-  the store are complete and cross-process persistence is proven against a
-  disposable Postgres; what's still pending is applying the migration to
-  production itself (a separate, explicitly-authorised change window). Until
-  then, `kerneljson alerts` run against production correctly fails closed
-  rather than silently running ephemeral — it does not yet run at all in
-  `postgres` mode against production, by design.
+- **Recurring production execution not activated** — durable state is live
+  (P1.2A), but P1.3 runner activation requires a later human-authorised window.
 - **`legacyAuthority.b1FreezeObservable` never notifies, by policy** (`notify:
   false`) — it is still tracked (a state row exists, `occurrenceCount`
   increments), but deliberately never reaches a notifier. This is the same

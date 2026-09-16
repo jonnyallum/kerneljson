@@ -82,6 +82,12 @@ services:
       KJ_ADMISSION_URL: ${KJ_ADMISSION_URL:-}
       KJ_ADMISSION_BEARER: ${KJ_ADMISSION_BEARER:-}
       SCHED_ARM_NEXT: ${SCHED_ARM_NEXT:-}
+      # P1.3 preparation only: off by default; no bootstrap invocation on startup.
+      ALERT_RUNNER_ENABLED: ${ALERT_RUNNER_ENABLED:-false}
+      ALERT_RUNNER_CADENCE_MS: ${ALERT_RUNNER_CADENCE_MS:-300000}
+      ALERT_STATE_STORE: ${ALERT_STATE_STORE:-postgres}
+      RESTATE_ADMIN_URL: ${RESTATE_ADMIN_URL:-http://restate:9070}
+      EXPECTED_RELEASE_ID: ${EXPECTED_RELEASE_ID:-${KERNELJSON_RELEASE_ID}}
       PORT: "9080"
     # Read-only repo mount: the sealed reader resolves KJ_REPO_ROOT and hashes CLAUDE.md.
     volumes: ["/opt/kerneljson/app:/opt/kerneljson/app:ro"]

@@ -7,6 +7,7 @@ import { createKernelWorkflow } from "./executor/workflow.js";
 import { createCapabilityService } from "./capability-service.js";
 import { loadCanaryConfig } from "./scheduler/canary-config.js";
 import { createScheduleDriverService } from "./scheduler/restate-service.js";
+import { productionAlertMonitor } from "./alerting/runner-production.js";
 
 const connectionString = process.env["DATABASE_URL"];
 if (!connectionString)
@@ -98,6 +99,7 @@ const scheduleDriver =
       })
     : undefined;
 
+const alertMonitor = productionAlertMonitor(process.env);
 export const services = [
   createTaskWorkflow(ledger),
   createKernelWorkflow(
@@ -106,6 +108,7 @@ export const services = [
   ),
   ...(capabilityService ? [capabilityService] : []),
   ...(scheduleDriver ? [scheduleDriver] : []),
+  ...(alertMonitor ? [alertMonitor] : []),
 ];
 
 // Serve only when invoked directly (not when imported by the registration test).

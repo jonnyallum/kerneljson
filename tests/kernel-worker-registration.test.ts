@@ -21,6 +21,7 @@ describe("production worker service registration", () => {
   beforeEach(() => {
     vi.resetModules();
     process.env["DATABASE_URL"] = "postgresql://unused@127.0.0.1:1/unused";
+    delete process.env["ALERT_RUNNER_ENABLED"];
   });
   afterEach(() => {
     process.env = { ...saved };
@@ -46,6 +47,18 @@ describe("production worker service registration", () => {
     expect(registered).toContain("KernelWorkflowV1");
     expect(registered).toContain("TaskWorkflow");
     expect(registered).not.toContain("CapabilityServiceV1");
+    expect(registered).not.toContain("ProductionAlertMonitor");
+  });
+
+  it("registers the observational monitor only on explicit opt-in, independent of admission", async () => {
+    delete process.env["KJ_REPO_ROOT"];
+    delete process.env["KJ_ADMISSION_URL"];
+    delete process.env["KJ_ADMISSION_BEARER"];
+    process.env["ALERT_RUNNER_ENABLED"] = "true";
+    process.env["ALERT_STATE_STORE"] = "postgres";
+    const mod = await import("../services/kernel/src/index.js");
+    expect(names(mod.services)).toContain("ProductionAlertMonitor");
+    expect(names(mod.services)).not.toContain("ScheduleDriver");
   });
 
   it("fails closed if the canary is half-configured (root without approved digest)", async () => {
