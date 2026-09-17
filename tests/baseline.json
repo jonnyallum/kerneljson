@@ -1102,6 +1102,50 @@
     {
       "file": "schedule-restate-rearm-live.integration.test.ts",
       "name": "S1B recurring self-rearm (armNext=true, real Restate + real Postgres) R2: an admission failure on the current window does not re-arm the next window; Restate's own retry recovers the SAME invocation, then normal recurrence resumes"
+    },
+    {
+      "file": "outbox-postgres.integration.test.ts",
+      "name": "KJ-P2.1 notification outbox persistence (real Postgres) 1. an intent commits atomically with the state row that produced it"
+    },
+    {
+      "file": "outbox-postgres.integration.test.ts",
+      "name": "KJ-P2.1 notification outbox persistence (real Postgres) 2. replaying the identical decision (same fingerprint/firstSeenAt/kind/occurrenceCount) never enqueues a duplicate intent"
+    },
+    {
+      "file": "outbox-postgres.integration.test.ts",
+      "name": "KJ-P2.1 notification outbox persistence (real Postgres) 3. listDue respects the next_attempt_at gate and status, oldest first, across independent pools"
+    },
+    {
+      "file": "outbox-postgres.integration.test.ts",
+      "name": "KJ-P2.1 notification outbox persistence (real Postgres) 4. markSending/applyOutcome round-trip is durable and visible from a separate pool"
+    },
+    {
+      "file": "outbox-postgres.integration.test.ts",
+      "name": "KJ-P2.1 notification outbox persistence (real Postgres) 5. recoverStaleSending-equivalent: listStaleSending finds an abandoned SENDING row from a prior (dead) run, leaves a fresh one alone"
+    },
+    {
+      "file": "outbox-postgres.integration.test.ts",
+      "name": "KJ-P2.1 notification outbox persistence (real Postgres) 6. runDeliveryWorker end to end: successful delivery marks DELIVERED and logs one DELIVERED event"
+    },
+    {
+      "file": "outbox-postgres.integration.test.ts",
+      "name": "KJ-P2.1 notification outbox persistence (real Postgres) 7. a transient failure retries with backoff and does not touch alert_state or create a second outbox row"
+    },
+    {
+      "file": "outbox-postgres.integration.test.ts",
+      "name": "KJ-P2.1 notification outbox persistence (real Postgres) 8. poison after exhausting the attempt budget becomes queryable operational state"
+    },
+    {
+      "file": "outbox-postgres.integration.test.ts",
+      "name": "KJ-P2.1 notification outbox persistence (real Postgres) 9. process crash after delivery but before acknowledgement: recovered by a later run's stale-SENDING sweep, delivered exactly once MORE — proving AT-LEAST-ONCE, not exactly-once"
+    },
+    {
+      "file": "outbox-postgres.integration.test.ts",
+      "name": "KJ-P2.1 notification outbox persistence (real Postgres) 10. concurrent claim attempts on the same row: markSending's atomic UPDATE lets exactly one caller win, never both"
+    },
+    {
+      "file": "outbox-postgres.integration.test.ts",
+      "name": "KJ-P2.1 notification outbox persistence (real Postgres) 11. the DB itself rejects duration_ms on a non-RECOVERED row (schema-level evidence, not just app-level trust)"
     }
   ]
 }

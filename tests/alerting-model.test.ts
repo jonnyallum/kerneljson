@@ -3,7 +3,9 @@ import { reduceCheck, reduceChecks } from "../services/kernel/src/alerting/reduc
 import { fingerprintFor, resolveEntityId } from "../services/kernel/src/alerting/fingerprint.js";
 import { resolvePolicy } from "../services/kernel/src/alerting/policy.js";
 import { runAlertEngine } from "../services/kernel/src/alerting/engine.js";
+import { runDeliveryWorker } from "../services/kernel/src/alerting/delivery-worker.js";
 import { InMemoryAlertStateStore } from "../services/kernel/src/alerting/state-store.js";
+import { InMemoryNotificationOutboxStore } from "../services/kernel/src/alerting/outbox-store.js";
 import { RecordingNotifier } from "../services/kernel/src/alerting/notifier.js";
 import type { CheckResult, DomainResult, HealthReport } from "../services/kernel/src/health/types.js";
 
@@ -234,58 +236,82 @@ describe("reduceChecks / runAlertEngine end-to-end", () => {
     };
   }
 
-  it("a fully healthy report produces zero decisions and writes zero rows", async () => {
+  /** KJ-P2.1: `runAlertEngine` no longer calls a notifier — it persists state
+   *  AND durable outbox intents atomically (see engine.ts/pg-state-store.ts),
+   *  and delivery is `delivery-worker.ts`'s separate, later job. `pairedStore`
+   *  builds the same paired in-memory setup `select-store.ts` builds for the
+   *  real Postgres/CLI paths, so these tests exercise the FULL intent ->
+   *  outbox -> delivery pipeline, not just the engine in isolation. */
+  function pairedStore() {
+    const outbox = new InMemoryNotificationOutboxStore();
+    const store = new InMemoryAlertStateStore(outbox);
+    return { store, outbox };
+  }
+  async function deliverAll(outbox: InMemoryNotificationOutboxStore, notifier: RecordingNotifier, now: () => Date) {
+    return runDeliveryWorker({ outbox, notifier, transport: "test", now });
+  }
+
+  it("a fully healthy report produces zero decisions, zero rows and zero outbox intents", async () => {
     const report = mkReport({ "scheduler.scheduleEnabled": "HEALTHY" });
-    const store = new InMemoryAlertStateStore();
-    const notifier = new RecordingNotifier();
-    const { decisions } = await runAlertEngine(report, { store, notifier, canonicalScheduleId: SCHEDULE_ID });
+    const { store, outbox } = pairedStore();
+    const { decisions } = await runAlertEngine(report, { store, canonicalScheduleId: SCHEDULE_ID });
     expect(decisions).toHaveLength(0);
-    expect(notifier.sent).toHaveLength(0);
     expect(await store.getAll()).toHaveLength(0);
+    expect(await outbox.getAll()).toHaveLength(0);
   });
 
-  it("runs across two engine invocations dedupe correctly via the persisted store", async () => {
-    const store = new InMemoryAlertStateStore();
-    const notifier = new RecordingNotifier();
+  it("runs across two engine invocations dedupe correctly via the persisted store, and only the first run's intent is ever queued", async () => {
+    const { store, outbox } = pairedStore();
     const failing = mkReport({ "scheduler.noDuplicateFireWindow": "CRITICAL" });
-    await runAlertEngine(failing, { store, notifier, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:00:00Z") });
-    await runAlertEngine(failing, { store, notifier, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:05:00Z") });
-    expect(notifier.sent).toHaveLength(1); // only the first run notified
-    expect(notifier.sent[0]!.kind).toBe("NEW");
+    await runAlertEngine(failing, { store, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:00:00Z") });
+    await runAlertEngine(failing, { store, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:05:00Z") });
+    const queued = await outbox.getAll();
+    expect(queued).toHaveLength(1); // only the first run queued an intent
+    expect(queued[0]!.kind).toBe("NEW");
     const rows = await store.getAll();
     expect(rows).toHaveLength(1);
     expect(rows[0]!.occurrenceCount).toBe(2);
+
+    const notifier = new RecordingNotifier();
+    await deliverAll(outbox, notifier, () => new Date("2026-09-16T10:06:00Z"));
+    expect(notifier.sent).toHaveLength(1);
+    expect(notifier.sent[0]!.kind).toBe("NEW");
   });
 
-  it("recovering across engine invocations emits exactly one RECOVERED via the notifier", async () => {
-    const store = new InMemoryAlertStateStore();
-    const notifier = new RecordingNotifier();
+  it("recovering across engine invocations queues exactly one RECOVERED intent, delivered once", async () => {
+    const { store, outbox } = pairedStore();
     const failing = mkReport({ "scheduler.noDuplicateFireWindow": "CRITICAL" });
     const healthy = mkReport({ "scheduler.noDuplicateFireWindow": "HEALTHY" });
-    await runAlertEngine(failing, { store, notifier, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:00:00Z") });
-    await runAlertEngine(healthy, { store, notifier, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:09:14Z") });
-    await runAlertEngine(healthy, { store, notifier, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:15:00Z") });
-    const kinds = notifier.sent.map((d) => d.kind);
+    await runAlertEngine(failing, { store, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:00:00Z") });
+    await runAlertEngine(healthy, { store, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:09:14Z") });
+    await runAlertEngine(healthy, { store, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:15:00Z") });
+    const kinds = (await outbox.getAll()).map((r) => r.kind).sort();
     expect(kinds).toEqual(["NEW", "RECOVERED"]); // the second healthy run adds nothing
+
+    const notifier = new RecordingNotifier();
+    await deliverAll(outbox, notifier, () => new Date("2026-09-16T10:16:00Z"));
+    expect(notifier.sent.map((d) => d.kind)).toEqual(["NEW", "RECOVERED"]);
   });
 
-  it("mirrors the P1.2 finish-line scenario: P1 scheduler wake alert, then RECOVERED with duration", async () => {
-    const store = new InMemoryAlertStateStore();
-    const notifier = new RecordingNotifier();
+  it("mirrors the P1.2 finish-line scenario end-to-end: P1 scheduler wake alert, then RECOVERED with duration, delivered in order", async () => {
+    const { store, outbox } = pairedStore();
     const failing = mkReport({ "scheduler.nextWakeArmedAndFuture": "CRITICAL" });
     const healthy = mkReport({ "scheduler.nextWakeArmedAndFuture": "HEALTHY" });
-    await runAlertEngine(failing, { store, notifier, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:03:00Z") });
-    await runAlertEngine(failing, { store, notifier, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:08:00Z") });
-    await runAlertEngine(healthy, { store, notifier, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:17:14Z") });
+    await runAlertEngine(failing, { store, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:03:00Z") });
+    await runAlertEngine(failing, { store, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:08:00Z") });
+    await runAlertEngine(healthy, { store, canonicalScheduleId: SCHEDULE_ID, now: () => new Date("2026-09-16T10:17:14Z") });
 
+    const rows = await store.getAll();
+    expect(rows[0]!.occurrenceCount).toBe(2); // 10:03 + 10:08, before recovery
+
+    const notifier = new RecordingNotifier();
+    const summary = await deliverAll(outbox, notifier, () => new Date("2026-09-16T10:18:00Z"));
+    expect(summary.delivered).toBe(2);
     expect(notifier.sent).toHaveLength(2);
     const [firstAlert, recoveredAlert] = notifier.sent;
     expect(firstAlert!.severity).toBe("P1");
     expect(firstAlert!.firstSeenAt).toBe("2026-09-16T10:03:00.000Z");
     expect(recoveredAlert!.kind).toBe("RECOVERED");
     expect(recoveredAlert!.durationMs).toBe(Date.parse("2026-09-16T10:17:14Z") - Date.parse("2026-09-16T10:03:00Z"));
-
-    const rows = await store.getAll();
-    expect(rows[0]!.occurrenceCount).toBe(2); // 10:03 + 10:08, before recovery
   });
 });

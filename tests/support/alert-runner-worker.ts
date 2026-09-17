@@ -19,6 +19,7 @@ restate.serve({
         collect: async () => monitorReport("CRITICAL"),
         exclusive: postgresMonitorExclusive(pool),
         notifier: new ConsoleNotifier(),
+        transport: "console",
         canonicalScheduleId: "live-monitor-test",
       }),
     ),

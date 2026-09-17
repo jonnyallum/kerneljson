@@ -39,6 +39,7 @@ export function productionAlertMonitor(env: NodeJS.ProcessEnv) {
         ),
       exclusive: postgresMonitorExclusive(pool),
       notifier: new ConsoleNotifier(),
+      transport: "console",
       canonicalScheduleId: expectations.scheduleId,
     }),
   );

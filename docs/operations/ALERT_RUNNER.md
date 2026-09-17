@@ -12,9 +12,10 @@ without importing the business scheduler, admission gateway, ledger, or task API
 
 ```
 operator bootstrap -> Restate exclusive tick(production, sequence)
-  -> Postgres session advisory lock + alert_state probe
+  -> Postgres session advisory lock + alert_state/notification_outbox probe
   -> existing collectHealthSnapshot / evaluateHealthSnapshot
-  -> existing runAlertEngine / PgAlertStateStore (atomic state commit)
+  -> runAlertEngine / PgAlertStateStore (atomic state + outbox-intent commit)
+  -> delivery-worker (KJ-P2.1: separate, later, retried, acknowledged step)
   -> existing Notifier interface / ConsoleNotifier
   -> safe run summary -> durable next-sequence + delayed self-send
 ```
@@ -119,23 +120,32 @@ exactly-once samples or exactly-once delivery.**
 | Restate runtime unavailable | No execution/wake until it recovers; persisted continuation resumes. This monitor cannot independently report its own runtime's total outage |
 | Run exceeds cadence | No catch-up or overlap; next delay starts after completion |
 | Worker crashes before state commit | Transaction rolls back; Restate retries same invocation |
-| Crash after state commit, before notification or journal acknowledgement | Persisted episode dedupes on replay; a notification may be lost (existing P1.2 ordering) |
+| Crash after state commit, before notification or journal acknowledgement | **KJ-P2.1: no longer lost.** The notification intent commits atomically with the state row (see `docs/operations/NOTIFICATION_OUTBOX.md`); a later run's delivery-worker phase still delivers it |
 | Crash after journalled attempt, before next send | Restate replays the completed step and continues the same delayed-send chain |
 | Two runner invocations | Restate serialisation + sequence dedupe; independent runner processes additionally excluded by PG lock |
-| Notifier throws | Count failure, continue other decisions, return `NOTIFIER_FAILED`; committed episode remains deduped |
+| Notifier throws | KJ-P2.1: classified transient (retried with bounded backoff) or permanent (`PermanentDeliveryError`, straight to POISON); the episode itself remains deduped regardless — see `NOTIFICATION_OUTBOX.md` |
 
-The current engine commits notification intent (`last_notified_at`) before transport
-delivery. It is **not a delivery receipt**. Failed or interrupted console delivery
-is not retried on subsequent unchanged episodes. This phase deliberately preserves
-the qualified P1.2 semantics; durable outbox/acknowledged delivery is outside scope.
-No claim of guaranteed paging or independent availability monitoring is made.
+**KJ-P1.3 status, superseded by KJ-P2.1 (prep only, not yet activated):** this
+engine used to commit notification intent (`last_notified_at`) before transport
+delivery, with no durable receipt — a crash or transport failure in that gap
+could silently lose a notification, and this section documented that as an
+accepted, out-of-scope gap. **KJ-P2.1 closes it**: a durable
+`kernel_private.notification_outbox` row now commits atomically with the state
+row, and delivery is a separate, later, retried, explicitly-acknowledged step
+(the `runMonitor` summary below reflects this — see
+`docs/operations/NOTIFICATION_OUTBOX.md` for the full design, delivery
+guarantee, and schema). Like the rest of this document, KJ-P2.1 is prepared
+and tested but **not yet activated in production**.
 
 ## Observability and secrets
 
 Each actual attempt logs `alert_monitor_started` and, on completion,
 `alert_monitor_run`. Completion includes `sequence`, `startedAt`, `completedAt`,
 `durationMs`, `overall` (null if not collected), `decisionCounts` by P0/P1/P2/P3,
-`notificationsAttempted`, `notificationsFailed`, and `result`.
+`notificationsQueued` (decisions this run turned into a new durable outbox
+intent), a nested `delivery: {recovered, attempted, delivered, retried,
+poisoned}` (KJ-P2.1 — may include rows a PRIOR run queued but never delivered,
+not only this run's own), and `result`.
 Decision counts include recovery decisions and policy-suppressed decisions, not
 all currently open episodes; a deduped run can have zero decisions while unhealthy.
 Runner `OK` means the pipeline executed, not that production is healthy.
