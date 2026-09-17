@@ -136,7 +136,7 @@ run("KJ-P2.1 notification outbox persistence (real Postgres)", () => {
 
     await outboxA.applyOutcome({ ...claimed!, status: "DELIVERED", deliveredAt: "2026-09-17T10:01:05.000Z" }, "DELIVERED", null, 1, "2026-09-17T10:01:05.000Z", "console");
 
-    const finalRow = (await outboxB.listDue("2026-09-17T99:00:00.000Z", 10)).find((r) => r.notificationId === intent!.notificationId);
+    const finalRow = (await outboxB.listDue("2030-01-01T00:00:00.000Z", 10)).find((r) => r.notificationId === intent!.notificationId);
     expect(finalRow).toBeUndefined(); // DELIVERED is never due again
     const events = await poolB.query("select outcome, transport from kernel_private.notification_delivery_events where notification_id = $1", [intent!.notificationId]);
     expect(events.rows).toEqual([{ outcome: "DELIVERED", transport: "console" }]);
