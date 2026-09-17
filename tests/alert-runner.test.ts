@@ -4,6 +4,7 @@ import {
   type RunnerDeps,
 } from "../services/kernel/src/alerting/runner.js";
 import { InMemoryAlertStateStore } from "../services/kernel/src/alerting/state-store.js";
+import { InMemoryNotificationOutboxStore } from "../services/kernel/src/alerting/outbox-store.js";
 import { RecordingNotifier } from "../services/kernel/src/alerting/notifier.js";
 import { loadMonitorConfig } from "../services/kernel/src/alerting/runner-config.js";
 import {
@@ -13,27 +14,29 @@ import {
 import { monitorReport } from "./support/alert-runner-fixture.js";
 
 function fixture() {
-  const store = new InMemoryAlertStateStore();
+  const outbox = new InMemoryNotificationOutboxStore();
+  const store = new InMemoryAlertStateStore(outbox);
   const notifier = new RecordingNotifier();
   const collect = vi.fn(async () => monitorReport());
   let locked = false;
   const deps: RunnerDeps = {
     collect,
     notifier,
+    transport: "test",
     canonicalScheduleId: "qualification",
     now: () => new Date("2026-09-16T12:00:00Z"),
     exclusive: async (run) => {
       if (locked) return false;
       locked = true;
       try {
-        await run(store);
+        await run(store, outbox);
         return true;
       } finally {
         locked = false;
       }
     },
   };
-  return { deps, store, notifier, collect };
+  return { deps, store, outbox, notifier, collect };
 }
 
 describe("KJ-P1.3 monitor", () => {
@@ -45,30 +48,34 @@ describe("KJ-P1.3 monitor", () => {
       durationMs: 0,
       overall: "HEALTHY",
       decisionCounts: { P0: 0, P1: 0, P2: 0, P3: 0 },
-      notificationsAttempted: 0,
-      notificationsFailed: 0,
+      notificationsQueued: 0,
+      delivery: { recovered: 0, attempted: 0, delivered: 0, retried: 0, poisoned: 0 },
       result: "OK",
     });
   });
-  it("propagates P0/P1, deduplicates later runs, then emits one recovery per episode", async () => {
+  it("propagates P0/P1, deduplicates later runs, then delivers one recovery per episode", async () => {
     const f = fixture();
     f.collect.mockResolvedValue(monitorReport("CRITICAL"));
-    expect((await runMonitor(f.deps)).decisionCounts).toEqual({
-      P0: 1,
-      P1: 1,
-      P2: 0,
-      P3: 0,
-    });
-    expect((await runMonitor(f.deps)).notificationsAttempted).toBe(0);
+    const opened = await runMonitor(f.deps);
+    expect(opened.decisionCounts).toEqual({ P0: 1, P1: 1, P2: 0, P3: 0 });
+    expect(opened.notificationsQueued).toBe(2);
+    expect(opened.delivery.delivered).toBe(2); // queued and delivered in the same run
+    const ongoing = await runMonitor(f.deps);
+    expect(ongoing.notificationsQueued).toBe(0);
+    expect(ongoing.delivery.delivered).toBe(0);
     f.collect.mockResolvedValue(monitorReport());
-    expect((await runMonitor(f.deps)).notificationsAttempted).toBe(2);
+    const recovered = await runMonitor(f.deps);
+    expect(recovered.notificationsQueued).toBe(2);
+    expect(recovered.delivery.delivered).toBe(2);
     expect(f.notifier.sent.map((d) => d.kind)).toEqual([
       "NEW",
       "NEW",
       "RECOVERED",
       "RECOVERED",
     ]);
-    expect((await runMonitor(f.deps)).notificationsAttempted).toBe(0);
+    const idle = await runMonitor(f.deps);
+    expect(idle.notificationsQueued).toBe(0);
+    expect(idle.delivery.attempted).toBe(0);
   });
   it("fails closed on DB unavailability before collecting or notifying", async () => {
     const f = fixture();
@@ -81,7 +88,7 @@ describe("KJ-P1.3 monitor", () => {
     expect(f.notifier.sent).toEqual([]);
     expect(JSON.stringify(result)).not.toContain("secret");
   });
-  it("a failed state write emits nothing; retry evaluates again", async () => {
+  it("a failed state write emits nothing this run; retry evaluates and delivers", async () => {
     const f = fixture();
     f.collect.mockResolvedValue(monitorReport("CRITICAL"));
     const write = vi
@@ -89,7 +96,9 @@ describe("KJ-P1.3 monitor", () => {
       .mockRejectedValueOnce(Error("write failed"));
     expect((await runMonitor(f.deps)).result).toBe("STATE_FAILED");
     expect(f.notifier.sent).toEqual([]);
-    expect((await runMonitor(f.deps)).notificationsAttempted).toBe(2);
+    const retried = await runMonitor(f.deps);
+    expect(retried.notificationsQueued).toBe(2);
+    expect(retried.delivery.delivered).toBe(2);
     expect(write).toHaveBeenCalledTimes(2);
   });
   it("collection failure preserves episodes and never fabricates recovery", async () => {
@@ -102,7 +111,7 @@ describe("KJ-P1.3 monitor", () => {
     expect(await f.store.getAll()).toEqual(before);
     expect(f.notifier.sent).toHaveLength(2);
   });
-  it("isolates notifier failure and strips raw messages and observations", async () => {
+  it("a transient notifier failure retries with backoff instead of failing the whole run, and strips raw messages", async () => {
     const f = fixture();
     f.collect.mockResolvedValue(monitorReport("CRITICAL"));
     const notify = vi
@@ -111,13 +120,17 @@ describe("KJ-P1.3 monitor", () => {
       .mockResolvedValue(undefined);
     f.deps.notifier = { notify };
     const result = await runMonitor(f.deps);
-    expect(result.result).toBe("NOTIFIER_FAILED");
-    expect(result.notificationsAttempted).toBe(2);
-    expect(result.notificationsFailed).toBe(1);
+    expect(result.result).toBe("OK"); // a transient delivery failure is normal, expected retry behaviour
+    expect(result.delivery.attempted).toBe(2);
+    expect(result.delivery.delivered).toBe(1);
+    expect(result.delivery.retried).toBe(1);
     expect(JSON.stringify(notify.mock.calls)).not.toMatch(
       /sensitive|credential-like/,
     );
-    expect((await runMonitor(f.deps)).notificationsAttempted).toBe(0);
+    // The failed one is not due again immediately (bounded backoff) — a
+    // same-instant re-run doesn't attempt it a second time.
+    const again = await runMonitor(f.deps);
+    expect(again.delivery.attempted).toBe(0);
   });
   it("skips concurrent invocation without a second collection", async () => {
     const f = fixture();
@@ -134,18 +147,30 @@ describe("KJ-P1.3 monitor", () => {
     expect((await first).result).toBe("OK");
     expect(f.collect).toHaveBeenCalledTimes(1);
   });
-  it("deduplicates crash-after-commit replay (notification loss is explicit)", async () => {
+  it("a crash immediately after the state+intent commit does not lose the notification — a later run's delivery phase still delivers it exactly once, with no duplicate episode", async () => {
     const f = fixture();
     f.collect.mockResolvedValue(monitorReport("CRITICAL"));
     const real = f.store.putAll.bind(f.store);
-    vi.spyOn(f.store, "putAll").mockImplementationOnce(async (rows) => {
-      await real(rows);
+    vi.spyOn(f.store, "putAll").mockImplementationOnce(async (rows, intents) => {
+      // The real write — including the KJ-P2.1 outbox intent — durably
+      // completes BEFORE the simulated crash below. This is exactly the seam
+      // KJ-P2.1 closes: intent persistence and delivery are decoupled, so a
+      // crash here can no longer leave the notification permanently lost.
+      await real(rows, intents);
       throw Error("lost commit acknowledgement / crash");
     });
-    expect((await runMonitor(f.deps)).result).toBe("STATE_FAILED");
-    expect((await runMonitor(f.deps)).notificationsAttempted).toBe(0);
-    expect(f.notifier.sent).toEqual([]);
-    expect((await f.store.getAll())[0]?.occurrenceCount).toBe(2);
+    const crashed = await runMonitor(f.deps);
+    expect(crashed.result).toBe("STATE_FAILED");
+    expect(f.notifier.sent).toEqual([]); // delivery never got a chance to run this call
+    expect((await f.outbox.getAll())).toHaveLength(2); // ...but both intents (P0 + P1) survived the crash
+
+    const retry = await runMonitor(f.deps);
+    expect(retry.notificationsQueued).toBe(0); // both episodes are already OPEN — correctly deduped, no new decisions
+    expect(retry.delivery.delivered).toBe(2); // ...but the orphaned intents from the crashed run ARE delivered now
+    expect(f.notifier.sent).toHaveLength(2);
+    expect(f.notifier.sent.every((p) => p.kind === "NEW")).toBe(true);
+    // Each episode counted once per run (crashed run's commit + this run's ONGOING bump), not twice.
+    expect((await f.store.getAll()).map((r) => r.occurrenceCount)).toEqual([2, 2]);
   });
   it("retains the B1 gap at P3 without attempting notification", async () => {
     const f = fixture();
@@ -166,7 +191,7 @@ describe("KJ-P1.3 monitor", () => {
     f.collect.mockResolvedValue(report);
     const result = await runMonitor(f.deps);
     expect(result.decisionCounts.P3).toBe(1);
-    expect(result.notificationsAttempted).toBe(0);
+    expect(result.notificationsQueued).toBe(0);
     expect((await runMonitor(f.deps)).decisionCounts.P3).toBe(0);
   });
 });

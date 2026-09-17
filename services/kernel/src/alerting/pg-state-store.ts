@@ -1,5 +1,6 @@
 import type pg from "pg";
 import type { AlertSeverity, AlertStateRow } from "./types.js";
+import type { NotificationIntent } from "./outbox-types.js";
 
 /**
  * Thrown by `probe()` specifically when `kernel_private.alert_state` does not
@@ -61,8 +62,32 @@ export class PgAlertStateStore {
     return res.rows.map(rowToState);
   }
 
-  async putAll(rows: readonly AlertStateRow[]): Promise<void> {
-    if (rows.length === 0) return;
+  /**
+   * `intents` (KJ-P2.1): notification intents derived from THIS SAME batch of
+   * decisions (see engine.ts), inserted into `kernel_private.notification_outbox`
+   * inside the identical transaction as the `alert_state` upsert below. This
+   * is the fix for the seam KJ-P2.1 closes: before this, `lastNotifiedAt` on
+   * the state row was committed with nothing durable recording that a
+   * notification was actually owed, so a crash or transport failure between
+   * that commit and delivery could lose the notification silently (the
+   * reducer's own dedup then refuses to re-emit a decision for the
+   * still-open episode — see reducer.ts). Now the outbox row commits
+   * atomically with the state row: a crash right after this function returns
+   * can never leave "state says notified" without a durable, replayable
+   * intent behind it. Delivery itself is a separate, later, idempotent step
+   * (see delivery-worker.ts) — deliberately NOT part of this transaction,
+   * since that's the exact coupling being removed.
+   *
+   * Defaults to `[]` so every pre-existing call site (`store.putAll(rows)`)
+   * is byte-identical in behaviour — this is an additive capability, not a
+   * changed contract for callers that don't use it.
+   *
+   * Keep the insert below in sync with `pg-outbox-store.ts`'s `insertIntent`
+   * (same statement, duplicated deliberately so this transaction doesn't
+   * need to reach across pool-bound objects — see that file's header).
+   */
+  async putAll(rows: readonly AlertStateRow[], intents: readonly NotificationIntent[] = []): Promise<void> {
+    if (rows.length === 0 && intents.length === 0) return;
     const owned = !("release" in this.pool);
     const client = owned ? await (this.pool as pg.Pool).connect() : this.pool as pg.PoolClient;
     try {
@@ -92,6 +117,30 @@ export class PgAlertStateStore {
             row.lastNotifiedAt,
             row.occurrenceCount,
             row.recoveredAt,
+          ],
+        );
+      }
+      for (const intent of intents) {
+        await client.query(
+          `insert into kernel_private.notification_outbox
+             (notification_id, fingerprint, check_id, entity_id, first_seen_at, last_seen_at,
+              kind, occurrence_count, severity, message, duration_ms,
+              status, attempt_count, created_at, last_attempt_at, next_attempt_at, delivered_at, last_error)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'PENDING',0,$12,null,$12,null,null)
+           on conflict (notification_id) do nothing`,
+          [
+            intent.notificationId,
+            intent.fingerprint,
+            intent.checkId,
+            intent.entityId,
+            intent.firstSeenAt,
+            intent.lastSeenAt,
+            intent.kind,
+            intent.occurrenceCount,
+            intent.severity,
+            intent.message,
+            intent.durationMs,
+            intent.createdAt,
           ],
         );
       }

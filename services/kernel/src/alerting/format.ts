@@ -1,4 +1,5 @@
 import type { AlertDecision } from "./types.js";
+import type { NotificationPayload } from "./outbox-types.js";
 
 const DOMAIN_LABELS: Record<string, string> = {
   authority: "Authority",
@@ -64,4 +65,22 @@ export function formatDecisionHuman(d: AlertDecision): string {
 export function formatDecisionsHuman(decisions: readonly AlertDecision[]): string {
   if (decisions.length === 0) return "No alert-worthy changes.";
   return decisions.map(formatDecisionHuman).join("\n\n");
+}
+
+/**
+ * KJ-P2.1: the delivery worker's formatter, over a durable `NotificationPayload`
+ * (an outbox row snapshot) rather than a live `AlertDecision` — see
+ * outbox-types.ts's header for why those diverge. Same layout as
+ * `formatDecisionHuman`, minus the "Notification sent: yes/no" line (nothing
+ * that isn't notify-worthy ever reaches a transport, so the line would always
+ * read "yes" and add nothing).
+ */
+export function formatPayloadHuman(p: NotificationPayload): string {
+  if (p.kind === "RECOVERED") {
+    const lines = ["RECOVERED", `${domainLabel(p.checkId)}: ${p.message}`];
+    if (p.durationMs !== null) lines.push(`Duration: ${fmtDuration(p.durationMs)}`);
+    return lines.join("\n");
+  }
+  const header = p.kind === "ESCALATED" ? `${p.severity} ${domainLabel(p.checkId)} (escalated)` : `${p.severity} ${domainLabel(p.checkId)}`;
+  return [header, p.message, `First seen: ${fmtTime(p.firstSeenAt)}`, `Last seen: ${fmtTime(p.lastSeenAt)}`, `Occurrences: ${p.occurrenceCount}`].join("\n");
 }

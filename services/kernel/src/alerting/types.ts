@@ -6,8 +6,10 @@ import type { CheckResult, HealthStatus } from "../health/types.js";
  * Architecture mirrors P1.1's collect/evaluate split: a PURE reducer
  * (`reducer.ts`) turns (existing alert state row | null, a fresh CheckResult) into
  * (next state row, an AlertDecision | null) — no I/O, exhaustively unit-testable.
- * `engine.ts` is the thin async shell that reads/writes an `AlertStateStore` and
- * calls a `Notifier` around that pure core.
+ * `engine.ts` is the thin async shell that reads/writes an `AlertStateStore`
+ * around that pure core. (KJ-P2.1: `engine.ts` no longer calls a `Notifier`
+ * directly — see outbox-types.ts/delivery-worker.ts for the durable
+ * outbox/delivery layer that replaced the inline notify call.)
  */
 
 /** P0 (most severe) .. P3 (least). Explicit per-check-id policy, never a blind
@@ -87,6 +89,6 @@ export interface AlertPolicyEntry {
   rationale: string;
 }
 
-export interface Notifier {
-  notify(decision: AlertDecision): Promise<void>;
-}
+// `Notifier` moved to outbox-types.ts (KJ-P2.1) — it's called only by
+// delivery-worker.ts now, against a durable NotificationPayload, not
+// directly against a live AlertDecision. See that file's header.

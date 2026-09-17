@@ -164,6 +164,8 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
     for (const name of created.reverse()) docker("rm", "-f", "-v", name);
   });
   beforeEach(async () => {
+    await pool.query("delete from kernel_private.notification_delivery_events");
+    await pool.query("delete from kernel_private.notification_outbox");
     await pool.query("delete from kernel_private.alert_state");
   });
 
@@ -175,20 +177,21 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
         collect: async () => monitorReport("CRITICAL"),
         exclusive: postgresMonitorExclusive(pool),
         notifier,
+        transport: "test",
         canonicalScheduleId: "pg-monitor",
       };
-      expect((await runMonitor(deps)).notificationsAttempted).toBe(2);
+      expect((await runMonitor(deps)).delivery.attempted).toBe(2);
       expect(
         (
           await runMonitor({
             ...deps,
             exclusive: postgresMonitorExclusive(second),
           })
-        ).notificationsAttempted,
+        ).delivery.attempted,
       ).toBe(0);
       expect(
         (await runMonitor({ ...deps, collect: async () => monitorReport() }))
-          .notificationsAttempted,
+          .delivery.attempted,
       ).toBe(2);
       expect(
         (
@@ -237,11 +240,12 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
           throw Error("must not collect");
         },
         notifier: new RecordingNotifier(),
+        transport: "test",
         canonicalScheduleId: "failure",
       });
       expect(result.result).toBe("STATE_FAILED");
       expect(result.overall).toBeNull();
-      expect(result.notificationsAttempted).toBe(0);
+      expect(result.delivery.attempted).toBe(0);
     } finally {
       await pool.query(
         "alter table kernel_private.alert_state_test_hidden rename to alert_state",
@@ -289,6 +293,7 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
     const result = await runMonitor({
       exclusive: postgresMonitorExclusive(pool),
       notifier,
+      transport: "test",
       canonicalScheduleId: "lost-session",
       collect: async () => {
         const owner = await pool.query(
@@ -317,6 +322,7 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
     const summary = await runMonitor({
       exclusive: postgresMonitorExclusive(pool),
       notifier: new RecordingNotifier(),
+      transport: "test",
       canonicalScheduleId: expectations.scheduleId,
       collect: async () =>
         evaluateHealthSnapshot(
@@ -391,9 +397,9 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
       10000,
     );
     expect(pending.filter((i) => i.status === "scheduled")).toHaveLength(1);
-    expect(logs.join("")).toContain('"notificationsAttempted":2');
-    expect(logs.join("").match(/"notificationsAttempted":2/g)).toHaveLength(1);
-    expect(logs.join("")).toContain('"notificationsAttempted":0');
+    expect(logs.join("")).toContain('"notificationsQueued":2');
+    expect(logs.join("").match(/"notificationsQueued":2/g)).toHaveLength(1);
+    expect(logs.join("")).toContain('"notificationsQueued":0');
     expect(logs.join("")).not.toContain("credential-like-test-marker");
   }, 90000);
 });
