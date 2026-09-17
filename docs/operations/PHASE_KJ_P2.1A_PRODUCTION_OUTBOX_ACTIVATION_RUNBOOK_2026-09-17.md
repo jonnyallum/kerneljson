@@ -1,6 +1,19 @@
 # KJ-P2.1A — production outbox activation runbook
 
-Status: **prepared, not executed.** This is the concrete, executable runbook
+Status: **executed 2026-09-17 — PASS, with one real gap found and fixed live.**
+See `docs/operations/PHASE_KJ_P2.1A_PRODUCTION_OUTBOX_ACTIVATION_RESULT_2026-09-17.md`
+for the full evidence record. **AMENDMENT (post-execution):** this runbook as
+originally written omitted `docs/operations/RELEASE_PROVENANCE.md`'s Step 5
+`activate_release` call from Step 7's worker/door deploy. That omission
+produced two real, correctly-detected P1 alerts the moment the new worker
+started reporting `KERNELJSON_RELEASE_ID=1fbe6b2...` while
+`kernel_private.release_epoch` still pointed at the prior release — resolved
+live by calling `activate_release` (epoch 1→2), per RELEASE_PROVENANCE.md's
+now-mandatory rule. Any future re-execution of Step 7 below must include that
+call as part of the same step, not as an afterthought. Original text below is
+preserved as the reviewed/approved plan; treat Step 7 as amended per this note.
+
+Status (original): **prepared, not executed.** This is the concrete, executable runbook
 for applying `supabase/migrations/20260917120000_notification_outbox.sql` to
 production and putting the KJ-P2.1 durable notification-delivery path live,
 built on KJ-P2.1's already-qualified design

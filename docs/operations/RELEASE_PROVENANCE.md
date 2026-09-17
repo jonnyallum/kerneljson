@@ -1,5 +1,31 @@
 # Canonical release provenance (KJ-P1.3C)
 
+## MANDATORY — every worker/door release change requires this protocol
+
+**Any production runbook that changes the deployed worker or door
+`KERNELJSON_RELEASE_ID` MUST include Step 5 below (`activate_release`) in the
+SAME change window, whether or not that release change was itself
+"about" release provenance.**
+
+This was violated in practice during KJ-P2.1A (2026-09-17): a runbook that
+deployed a new, otherwise-unrelated worker release (KJ-P2.1's notification
+outbox) omitted this step entirely, because it was written without
+cross-referencing this document. The result was two genuine, correctly-
+detected P1 alerts (`authority.bindingReleaseConsistent`,
+`releaseParity.recentBindingsConsistent`) firing in production the moment the
+new worker started reporting a release ID the database's `release_epoch`
+didn't yet know about — resolved live by calling `activate_release` per the
+protocol below, which is exactly what should have been in the runbook from
+the start. See
+`docs/operations/PHASE_KJ_P2.1A_PRODUCTION_OUTBOX_ACTIVATION_RESULT_2026-09-17.md`
+for the full incident record.
+
+**Any future deployment runbook — for any phase, not just release-provenance
+work — must read this file and include the Step 5 activation call as a
+numbered step, before it is treated as ready to execute.** A worker/door
+image or `KERNELJSON_RELEASE_ID` change with no accompanying `activate_release`
+call in the same window is an incomplete runbook, not a smaller/safer one.
+
 ## Authority and ordering
 
 KernelJSON remains the only task authority. This seam records release epochs; it
