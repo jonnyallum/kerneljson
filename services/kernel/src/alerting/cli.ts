@@ -9,8 +9,9 @@ import { evaluateHealthSnapshot } from "../health/run.js";
 import { runAlertEngine } from "./engine.js";
 import { runDeliveryWorker } from "./delivery-worker.js";
 import { formatDecisionsHuman } from "./format.js";
-import { ConsoleNotifier } from "./notifier.js";
 import { InMemoryNotificationOutboxStore } from "./outbox-store.js";
+import { loadTransportConfig } from "./transport-config.js";
+import { selectNotifier } from "./select-notifier.js";
 import { loadAlertStoreMode, selectAlertStateStore } from "./select-store.js";
 import { postgresMonitorExclusive } from "./runner-postgres.js";
 import type { AlertStateStore } from "./state-store.js";
@@ -67,7 +68,8 @@ async function main(): Promise<void> {
       // running this sees the same delivery a recurring run would perform,
       // but durability no longer depends on this happening in one call.
       if (!jsonOnly) {
-        await runDeliveryWorker({ outbox, notifier: new ConsoleNotifier(), transport: "console" });
+        const { notifier, transport } = selectNotifier(loadTransportConfig(process.env));
+        await runDeliveryWorker({ outbox, notifier, transport });
       }
 
       if (jsonOnly) {

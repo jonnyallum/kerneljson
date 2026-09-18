@@ -5,8 +5,9 @@ import {
   loadHealthExpectations,
 } from "../health/config.js";
 import { evaluateHealthSnapshot } from "../health/run.js";
-import { ConsoleNotifier } from "./notifier.js";
 import { loadMonitorConfig } from "./runner-config.js";
+import { loadTransportConfig } from "./transport-config.js";
+import { selectNotifier } from "./select-notifier.js";
 import { postgresMonitorExclusive } from "./runner-postgres.js";
 import { createAlertMonitorService } from "./runner-restate.js";
 import { runMonitor } from "./runner.js";
@@ -16,6 +17,10 @@ export function productionAlertMonitor(env: NodeJS.ProcessEnv) {
   if (!config.enabled) return undefined;
   const connection = loadConnectionConfig(env);
   const expectations = loadHealthExpectations(env);
+  // KJ-P2.2: fails closed at startup (before any DB connection or Restate
+  // registration) if ALERT_TRANSPORT=telegram is set without both required
+  // values — never a silent console fallback for an explicit request.
+  const { notifier, transport } = selectNotifier(loadTransportConfig(env));
   // Separate bounded pool: monitoring cannot consume the task worker's pool.
   const pool = new pg.Pool({
     connectionString: connection.databaseUrl,
@@ -38,8 +43,8 @@ export function productionAlertMonitor(env: NodeJS.ProcessEnv) {
           expectations,
         ),
       exclusive: postgresMonitorExclusive(pool),
-      notifier: new ConsoleNotifier(),
-      transport: "console",
+      notifier,
+      transport,
       canonicalScheduleId: expectations.scheduleId,
     }),
   );

@@ -25,7 +25,7 @@ function fmtTime(iso: string): string {
   return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
 }
 
-function fmtDuration(ms: number): string {
+export function fmtDuration(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -83,4 +83,55 @@ export function formatPayloadHuman(p: NotificationPayload): string {
   }
   const header = p.kind === "ESCALATED" ? `${p.severity} ${domainLabel(p.checkId)} (escalated)` : `${p.severity} ${domainLabel(p.checkId)}`;
   return [header, p.message, `First seen: ${fmtTime(p.firstSeenAt)}`, `Last seen: ${fmtTime(p.lastSeenAt)}`, `Occurrences: ${p.occurrenceCount}`].join("\n");
+}
+
+/**
+ * KJ-P2.2 — Telegram's MarkdownV2 parse mode requires every one of these
+ * characters to be escaped with a preceding backslash outside of an
+ * explicit entity (bold/code/etc), or `sendMessage` rejects the whole
+ * request as a 400 (see Telegram Bot API docs, "MarkdownV2 style"). Applied
+ * to every piece of check-derived text (`checkId`, `message`, timestamps)
+ * before it's embedded in the message — none of those are user-authored,
+ * but check IDs routinely contain `.` (e.g. `authority.bindingReleaseConsistent`)
+ * and the synthetic message contains `(`/`)`, both special — so escaping is
+ * required for correctness, not just defence.
+ */
+const TELEGRAM_MARKDOWN_V2_SPECIAL = /[_*[\]()~`>#+\-=|{}.!\\]/g;
+export function escapeTelegramMarkdownV2(text: string): string {
+  return text.replace(TELEGRAM_MARKDOWN_V2_SPECIAL, (ch) => `\\${ch}`);
+}
+
+const SEVERITY_ICON: Record<NotificationPayload["severity"], string> = {
+  P0: "\u{1F534}", // red circle
+  P1: "\u{1F7E0}", // orange circle
+  P2: "\u{1F7E1}", // yellow circle
+  P3: "\u{26AA}", // white circle
+};
+
+/**
+ * KJ-P2.2 — compact, operational Telegram message. Deliberately minimal for
+ * this first version: severity, kind, check id, the same safe synthetic
+ * message every transport gets (see delivery-worker.ts's `rowToPayload` —
+ * raw collector text never reaches here), occurrence count, a timestamp,
+ * and a shortened notificationId for correlating with
+ * `kernel_private.notification_outbox`/`notification_delivery_events`.
+ * Never includes `observed`, a raw collector message, a URL, or anything
+ * DB-connection-shaped — there is nothing in `NotificationPayload` that
+ * could carry those (see outbox-types.ts's header), so this is a property
+ * of the type, not just this formatter's discipline.
+ */
+export function formatTelegramMessage(p: NotificationPayload): string {
+  const icon = SEVERITY_ICON[p.severity];
+  const lines = [
+    `${icon} *${escapeTelegramMarkdownV2(p.severity)} ${escapeTelegramMarkdownV2(p.kind)}*`,
+    escapeTelegramMarkdownV2(p.checkId),
+    escapeTelegramMarkdownV2(p.message),
+  ];
+  if (p.kind === "RECOVERED" && p.durationMs !== null) {
+    lines.push(escapeTelegramMarkdownV2(`Duration: ${fmtDuration(p.durationMs)}`));
+  }
+  lines.push(`Occurrences: ${p.occurrenceCount}`);
+  lines.push(escapeTelegramMarkdownV2(`At: ${p.lastSeenAt}`));
+  lines.push(`ID: \`${escapeTelegramMarkdownV2(p.notificationId.slice(0, 8))}\``);
+  return lines.join("\n");
 }
