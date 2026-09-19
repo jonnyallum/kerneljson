@@ -1,6 +1,9 @@
 import {
   KernelSubmission,
   Task,
+  MISSION_CRITERION,
+  MISSION_RECIPE,
+  parseMissionObjective,
   type RecipeId,
 } from "../../../../packages/contracts/src/index.js";
 import { digest, CRITERION } from "../deterministic.js";
@@ -13,6 +16,7 @@ export const criteria: Record<RecipeId, string> = {
   // packages/runtimes/src/claude-md-check.ts (a test asserts equality).
   "claude_md_check/v1":
     "repository.read of CLAUDE.md returns content_sha256 == approved digest with mutations_detected=0",
+  [MISSION_RECIPE]: MISSION_CRITERION,
 };
 // A content-derived UUID in a kernel-specific namespace. Pure across processes.
 export function stableId(value: unknown): string {
@@ -25,6 +29,8 @@ export function compileIntent(raw: unknown): {
 } {
   const submission = KernelSubmission.parse(raw);
   const { intent, recipe } = submission;
+  // Rejected at admission, not mid-run: a mission objective is `owner/repo [question]`.
+  if (recipe === MISSION_RECIPE) parseMissionObjective(intent.objective);
   if (intent.attachments.length || intent.contextRefs.length)
     throw new Error(
       "Attachments and context references are not supported by these recipes",

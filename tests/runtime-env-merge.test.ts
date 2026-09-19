@@ -211,4 +211,67 @@ describe("KJ-P2.2B runtime env merge (runner env preserved)", () => {
     expect(r.code).toBe(2);
     expect(r.err).toMatch(/duplicate key/);
   });
+  // KJ-P3: the mission runtime settings go through the same preserving, verified procedure.
+  describe("mission runtime keys (KJ-P3)", () => {
+    const OR_KEY = "sk-or-v1-" + "c".repeat(64);
+    const missionMerge = (d: string, extra: string[]) =>
+      run(["merge", "--base", join(d, "base.env"), "--out", join(d, "new.env"), "--require-keys", REQUIRE,
+        "--set-public", "MISSION_ANALYST_MODEL=anthropic/claude-sonnet-x", "--set-public", "MISSION_REVIEWER_MODEL=x-ai/grok-x", ...extra]);
+
+    it("adds the mission settings while preserving every other line, and prints no value", () => {
+      const d = fixture();
+      writeFileSync(join(d, "orkey.txt"), OR_KEY);
+      const r = missionMerge(d, ["--set-from", `MISSION_OPENROUTER_API_KEY=${join(d, "orkey.txt")}`]);
+      expect(r.code, r.err).toBe(0);
+      expect(readFileSync(join(d, "new.env"), "utf8")).toBe(
+        BASE + `MISSION_ANALYST_MODEL=anthropic/claude-sonnet-x
+MISSION_REVIEWER_MODEL=x-ai/grok-x
+MISSION_OPENROUTER_API_KEY=${OR_KEY}
+`);
+      expect(r.out + r.err).not.toContain(OR_KEY);
+      const v = run(["verify", "--base", join(d, "base.env"), "--new", join(d, "new.env"),
+        "--changed", "MISSION_ANALYST_MODEL,MISSION_REVIEWER_MODEL,MISSION_OPENROUTER_API_KEY"]);
+      expect(v.code, v.err).toBe(0);
+    });
+
+    it("refuses a model outside the recipe's family for either role", () => {
+      const d = fixture();
+      for (const spec of ["MISSION_ANALYST_MODEL=x-ai/grok-x", "MISSION_REVIEWER_MODEL=anthropic/claude-x"]) {
+        const r = run(["merge", "--base", join(d, "base.env"), "--out", join(d, "new.env"), "--set-public", spec]);
+        expect(r.code, spec).toBe(2);
+        expect(r.err).toMatch(/unexpected shape/);
+      }
+    });
+
+    it("never accepts the OpenRouter key or the GitHub token via argv", () => {
+      const d = fixture();
+      for (const spec of [`MISSION_OPENROUTER_API_KEY=${OR_KEY}`, "GITHUB_READ_TOKEN=ghp_" + "d".repeat(36)]) {
+        const r = run(["merge", "--base", join(d, "base.env"), "--out", join(d, "new.env"), "--set-public", spec]);
+        expect(r.code, spec).toBe(2);
+        expect(r.err).toMatch(/never argv/);
+        expect(r.out + r.err).not.toContain(OR_KEY);
+      }
+    });
+
+    it("rejects a malformed OpenRouter key or GitHub token file without echoing it", () => {
+      const d = fixture();
+      writeFileSync(join(d, "bad.txt"), "sk-or-v1-tooshort");
+      for (const key of ["MISSION_OPENROUTER_API_KEY", "GITHUB_READ_TOKEN"]) {
+        const r = run(["merge", "--base", join(d, "base.env"), "--out", join(d, "new.env"), "--set-from", `${key}=${join(d, "bad.txt")}`]);
+        expect(r.code, key).toBe(2);
+        expect(r.out + r.err).not.toContain("tooshort");
+      }
+    });
+
+    it("accepts a fine-grained and a classic GitHub token shape", () => {
+      const d = fixture();
+      for (const tok of ["github_pat_" + "e".repeat(60), "ghp_" + "f".repeat(36)]) {
+        writeFileSync(join(d, "gh.txt"), tok);
+        const out = join(d, `out-${tok.length}.env`);
+        const r = run(["merge", "--base", join(d, "base.env"), "--out", out, "--set-from", `GITHUB_READ_TOKEN=${join(d, "gh.txt")}`]);
+        expect(r.code, r.err).toBe(0);
+        expect(r.out + r.err).not.toContain(tok);
+      }
+    });
+  });
 });

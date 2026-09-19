@@ -61,6 +61,52 @@ describe("production worker service registration", () => {
     expect(names(mod.services)).not.toContain("ScheduleDriver");
   });
 
+  // KJ-P3: the mission runtimes follow the same all-or-nothing rule as the seams above.
+  const MISSION_ENV = {
+    MISSION_OPENROUTER_API_KEY: "sk-or-v1-" + "a".repeat(64),
+    MISSION_ANALYST_MODEL: "anthropic/claude-test",
+    MISSION_REVIEWER_MODEL: "x-ai/grok-test",
+  };
+
+  it("serves no mission, and registers exactly what it did before, when no mission env is set", async () => {
+    process.env["KJ_REPO_ROOT"] = process.cwd();
+    process.env["SCHED_RECIPE"] = "claude_md_check/v1";
+    process.env["SCHED_APPROVED_SHA256"] = DIGEST;
+    for (const k of Object.keys(MISSION_ENV)) delete process.env[k];
+    const mod = await import("../services/kernel/src/index.js");
+    expect(names(mod.services)).toEqual(["TaskWorkflow", "KernelWorkflowV1", "CapabilityServiceV1"]);
+  });
+
+  it("starts with the mission runtimes configured alongside the canary, registering the same services", async () => {
+    process.env["KJ_REPO_ROOT"] = process.cwd();
+    process.env["SCHED_RECIPE"] = "claude_md_check/v1";
+    process.env["SCHED_APPROVED_SHA256"] = DIGEST;
+    Object.assign(process.env, MISSION_ENV);
+    const mod = await import("../services/kernel/src/index.js");
+    expect(names(mod.services)).toEqual(["TaskWorkflow", "KernelWorkflowV1", "CapabilityServiceV1"]);
+  });
+
+  it("refuses to start with mission runtimes but no capability service (no repository root)", async () => {
+    delete process.env["KJ_REPO_ROOT"];
+    delete process.env["SCHED_RECIPE"];
+    delete process.env["SCHED_APPROVED_SHA256"];
+    Object.assign(process.env, MISSION_ENV);
+    await expect(import("../services/kernel/src/index.js")).rejects.toThrow(/Mission runtimes are configured/);
+  });
+
+  it("refuses to start with a partial mission configuration, without printing the key", async () => {
+    process.env["KJ_REPO_ROOT"] = process.cwd();
+    process.env["SCHED_RECIPE"] = "claude_md_check/v1";
+    process.env["SCHED_APPROVED_SHA256"] = DIGEST;
+    process.env["MISSION_OPENROUTER_API_KEY"] = MISSION_ENV.MISSION_OPENROUTER_API_KEY;
+    delete process.env["MISSION_ANALYST_MODEL"];
+    delete process.env["MISSION_REVIEWER_MODEL"];
+    let message = "";
+    try { await import("../services/kernel/src/index.js"); } catch (e) { message = (e as Error).message; }
+    expect(message).toMatch(/all be set or all left unset/);
+    expect(message).not.toContain("sk-or-v1");
+  });
+
   it("fails closed if the canary is half-configured (root without approved digest)", async () => {
     process.env["KJ_REPO_ROOT"] = process.cwd();
     process.env["SCHED_RECIPE"] = "claude_md_check/v1";
@@ -259,6 +305,18 @@ describe("execution.compose.yaml worker env passthrough (S1D2 regression guard)"
 
   it("the transport vars default to empty (console mode, no credential) rather than to a live value", () => {
     for (const v of ["ALERT_TRANSPORT", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"])
+      expect(workerBlock, v).toMatch(new RegExp(`^\\s+${v}: \\$\\{${v}:-\\}\\s*$`, "m"));
+  });
+
+  // KJ-P3: the same silent-drop defect class for the mission runtimes and the GitHub token.
+  it("declares every env var the mission runtime config reads, and the GitHub token index.ts reads", () => {
+    const read = envVarsRead(readFileSync("services/kernel/src/mission/config.ts", "utf8"));
+    expect(read.sort()).toEqual(["MISSION_ANALYST_MODEL", "MISSION_OPENROUTER_API_KEY", "MISSION_REVIEWER_MODEL"]);
+    expect(undeclared([...read, "GITHUB_READ_TOKEN"], workerBlock)).toEqual([]);
+  });
+
+  it("the mission vars default to empty, so an unconfigured deploy serves no mission", () => {
+    for (const v of ["MISSION_OPENROUTER_API_KEY", "MISSION_ANALYST_MODEL", "MISSION_REVIEWER_MODEL", "GITHUB_READ_TOKEN"])
       expect(workerBlock, v).toMatch(new RegExp(`^\\s+${v}: \\$\\{${v}:-\\}\\s*$`, "m"));
   });
 

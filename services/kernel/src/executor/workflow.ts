@@ -14,6 +14,17 @@ import { digest, Signal } from "../deterministic.js";
 import { Ledger, type Write } from "../ledger.js";
 import { verifyClaudeMdCheck } from "../../../../packages/runtimes/src/index.js";
 import type { CapabilityService } from "../capability-service.js";
+import { MISSION_RECIPE } from "../../../../packages/contracts/src/index.js";
+import type { ModelPort } from "../../../../packages/models/src/index.js";
+import { runRepoAnalysisMission, type Emit } from "../mission/run.js";
+import type { MissionNotice } from "../mission/notify.js";
+
+/** KJ-P3 mission wiring: the two runtimes and how to queue the completion notice. */
+export interface MissionWiring {
+  analyst: ModelPort;
+  reviewer: ModelPort;
+  notify: (notice: MissionNotice) => Promise<void>;
+}
 
 /** Optional capability-recipe wiring. Present only on a worker configured to serve the
  *  canary: the registered CapabilityServiceV1 to call, the approved digest to verify
@@ -22,6 +33,7 @@ export interface KernelWorkflowOptions {
   canary?: { recipe: string; approvedContentSha256: string };
   capabilityService?: CapabilityService;
   canaryTargetFile?: string;
+  mission?: MissionWiring;
 }
 
 export function createKernelWorkflow(
@@ -127,6 +139,29 @@ export function createKernelWorkflow(
         );
         await emit("ready", "TASK_READY", "READY");
         await emit("start", "TASK_STARTED", "RUNNING");
+        // KJ-P3 repository-analysis mission. Runtimes return text; only this workflow,
+        // through the ledger, moves the task, and completion is re-verified from evidence.
+        if (plan.recipe === MISSION_RECIPE) {
+          const capability = options?.capabilityService;
+          const mission = options?.mission;
+          if (!capability || !mission)
+            throw new restate.TerminalError(
+              "Mission recipe requires configured mission runtimes and a capability service",
+              { errorCode: 500 },
+            );
+          return runRepoAnalysisMission({
+            ctx,
+            task,
+            plan,
+            emit: emit as Emit,
+            now,
+            uuid: () => ctx.rand.uuidv4(),
+            githubRead: (req) => ctx.serviceClient(capability).githubRead(req),
+            analyst: mission.analyst,
+            reviewer: mission.reviewer,
+            notify: mission.notify,
+          });
+        }
         // Capability recipe (canary): a single REPOSITORY_READ executed by the
         // registered CapabilityServiceV1 (filesystem I/O out of the deterministic
         // executor). The returned receipt is persisted into THIS task's ledger as

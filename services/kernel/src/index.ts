@@ -8,6 +8,9 @@ import { createCapabilityService } from "./capability-service.js";
 import { loadCanaryConfig } from "./scheduler/canary-config.js";
 import { createScheduleDriverService } from "./scheduler/restate-service.js";
 import { productionAlertMonitor } from "./alerting/runner-production.js";
+import { PgNotificationOutboxStore } from "./alerting/pg-outbox-store.js";
+import { loadMissionConfig } from "./mission/config.js";
+import { enqueueMissionNotice } from "./mission/notify.js";
 
 const connectionString = process.env["DATABASE_URL"];
 if (!connectionString)
@@ -28,8 +31,30 @@ const canary = canaryConfig
       approvedContentSha256: canaryConfig.approvedContentSha256,
     }
   : undefined;
+// KJ-P3: optional read-only token for private repositories; public ones need none.
+const githubToken = process.env["GITHUB_READ_TOKEN"] || undefined;
 const capabilityService = repositoryRoot
-  ? createCapabilityService({ repositoryRoot })
+  ? createCapabilityService({
+      repositoryRoot,
+      ...(githubToken ? { github: { token: githubToken } } : {}),
+    })
+  : undefined;
+// KJ-P3 mission runtimes (Claude analyst, Grok reviewer). All-or-nothing, like the seams
+// above: unset serves no mission, a partial configuration refuses to start.
+const missionRuntimes = loadMissionConfig(process.env);
+if (missionRuntimes && !(canary && capabilityService))
+  throw new Error(
+    "Mission runtimes are configured but the canary/capability service (KJ_REPO_ROOT) is not " +
+      "- refusing to start half-configured",
+  );
+const mission = missionRuntimes
+  ? {
+      analyst: missionRuntimes.analyst,
+      reviewer: missionRuntimes.reviewer,
+      notify: async (notice: Parameters<typeof enqueueMissionNotice>[1]) => {
+        await enqueueMissionNotice(new PgNotificationOutboxStore(pool), notice);
+      },
+    }
   : undefined;
 
 const ledger = new Ledger(pool, undefined, undefined, undefined, canary);
@@ -104,7 +129,9 @@ export const services = [
   createTaskWorkflow(ledger),
   createKernelWorkflow(
     ledger,
-    canary && capabilityService ? { canary, capabilityService } : undefined,
+    canary && capabilityService
+      ? { canary, capabilityService, ...(mission ? { mission } : {}) }
+      : undefined,
   ),
   ...(capabilityService ? [capabilityService] : []),
   ...(scheduleDriver ? [scheduleDriver] : []),

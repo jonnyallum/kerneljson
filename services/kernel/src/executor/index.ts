@@ -10,6 +10,8 @@ import {
 import { planTask, orderedSteps, projectStep } from "../planner/index.js";
 import { digest } from "../deterministic.js";
 import { assertClaudeMdReceipt } from "../../../../packages/runtimes/src/index.js";
+import { MISSION_RECIPE } from "../../../../packages/contracts/src/index.js";
+import { verifyMissionCompletion } from "../mission/verify.js";
 
 /** Approved-digest config threaded from the worker so the completion boundary can
  *  independently enforce the canary drift check over the persisted receipt. */
@@ -63,6 +65,11 @@ export function verifyPlanCompletion(
   const steps = storedSteps.map((s) => TaskStep.parse(s));
   if (steps.length !== plan.steps.length)
     throw new Error("Missing or extra persisted steps");
+  // KJ-P3 mission: every check is re-derived from persisted evidence, not from the workflow.
+  if (plan.recipe === MISSION_RECIPE) {
+    verifyMissionCompletion(task, outcome, plan, steps, records);
+    return;
+  }
   // Capability recipe: the deterministic re-derivation below cannot reproduce a
   // filesystem read, so independently re-verify the persisted TOOL_RECEIPT against the
   // approved digest here — the load-bearing drift backstop at the commit boundary.
