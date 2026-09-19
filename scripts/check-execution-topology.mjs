@@ -88,7 +88,16 @@ check((worker?.ports ?? []).length === 0, `execution: worker must not publish po
 // --- Worker must declare every env var the alert transport reads (key names only) ---
 // The environment: block is an explicit allowlist, so an undeclared var in runtime.env is
 // silently dropped and the worker falls back to console with no error (the S1D2 gotcha).
-for (const key of ["ALERT_TRANSPORT", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]) {
+for (const key of [
+  "ALERT_TRANSPORT",
+  "TELEGRAM_BOT_TOKEN",
+  "TELEGRAM_CHAT_ID",
+  // KJ-P3 mission runtimes and read-only GitHub token.
+  "MISSION_OPENROUTER_API_KEY",
+  "MISSION_ANALYST_MODEL",
+  "MISSION_REVIEWER_MODEL",
+  "GITHUB_READ_TOKEN",
+]) {
   check(key in (worker?.environment ?? {}), `execution: worker environment does not declare ${key} (silently dropped from runtime.env)`);
 }
 

@@ -30,3 +30,9 @@ export {
   type LegacyConductorAdapterConfig,
   type LegacyConductorInvokeResult,
 } from "./legacy-conductor-adapter.js";
+export {
+  createGithubReader,
+  GithubReadError,
+  type GithubReadCode,
+  type GithubReaderConfig,
+} from "./github-read.js";

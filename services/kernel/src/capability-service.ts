@@ -9,6 +9,11 @@ import {
   createRuntimeRegistry,
 } from "../../../packages/capabilities/src/index.js";
 import { createSealedRepositoryReader } from "../../../packages/runtimes/src/repository-read-local.js";
+import {
+  createGithubReader,
+  GithubReadError,
+  type GithubReaderConfig,
+} from "../../../packages/runtimes/src/github-read.js";
 
 /**
  * Production capability-execution boundary (Gate 3): `CapabilityServiceV1`.
@@ -32,6 +37,13 @@ export interface CapabilityServiceConfig {
   repositoryRoot: string;
   /** Optional file-size cap (bytes); a larger file fails closed. */
   maxBytes?: number;
+  /** KJ-P3: read-only GitHub evidence. The token is optional (public repositories). */
+  github?: GithubReaderConfig;
+}
+
+/** KJ-P3: which repository to read. Validated as owner/repo by the reader. */
+export interface GithubReadRequest {
+  repo: string;
 }
 
 /** Request from the workflow. The target file is fixed by the caller (the recipe),
@@ -52,9 +64,29 @@ export function createCapabilityService(config: CapabilityServiceConfig) {
       ...(config.maxBytes !== undefined ? { maxBytes: config.maxBytes } : {}),
     }),
   );
+  const githubReader = createGithubReader(config.github);
   return restate.service({
     name: CAPABILITY_SERVICE,
     handlers: {
+      // KJ-P3: read-only GitHub facts for one repository. Transient upstream failures are
+      // retried a bounded number of times; a deterministic failure (not found, no access,
+      // renamed) is terminal so it cannot retry forever.
+      githubRead: async (ctx: restate.Context, req: GithubReadRequest) =>
+        ctx.run(
+          "github.read",
+          async () => {
+            try {
+              return await githubReader({ repo: req.repo });
+            } catch (error) {
+              if (error instanceof GithubReadError && error.retryable) throw error;
+              throw new restate.TerminalError(
+                error instanceof GithubReadError ? error.code : "GITHUB_READ_FAILED",
+                { errorCode: 422 },
+              );
+            }
+          },
+          { maxRetryAttempts: 4, initialRetryInterval: 2_000 },
+        ),
       repositoryRead: async (
         ctx: restate.Context,
         req: RepositoryReadRequest,

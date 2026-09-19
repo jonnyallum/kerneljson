@@ -3,6 +3,8 @@ import {
   Task,
   TaskStep,
   RecipeId,
+  GITHUB_READ_CAPABILITY,
+  MISSION_RECIPE,
   type PlanStep,
 } from "../../../../packages/contracts/src/index.js";
 import { stableId, criteria } from "../compiler/index.js";
@@ -21,6 +23,8 @@ export function planTask(raw: Task, recipe: RecipeId): ExecutionPlan {
   const operations: PlanStep["operation"][] =
     recipe === "uppercase-reverse/v1"
       ? ["UPPERCASE", "WAIT_FOR_EVENT", "REVERSE"]
+      : recipe === MISSION_RECIPE
+        ? ["GITHUB_EVIDENCE", "RUNTIME_ANALYSE", "RUNTIME_REVIEW", "RECONCILE"]
       : recipe === "repository-read/v1" || recipe === "claude_md_check/v1"
         ? // The canary reuses the sealed read-only REPOSITORY_READ capability; the
           // CLAUDE.md drift assertion is applied by verifyClaudeMdCheck, not a new op.
@@ -71,13 +75,20 @@ export function projectStep(step: PlanStep): TaskStep {
         ? "WAIT_FOR_EVENT"
         : step.operation === "REPOSITORY_READ"
           ? "SANDBOX_EXEC"
-          : "DETERMINISTIC_FUNCTION",
+          : step.operation === "GITHUB_EVIDENCE"
+            ? "TOOL_CALL"
+            : step.operation === "RUNTIME_ANALYSE" ||
+                step.operation === "RUNTIME_REVIEW"
+              ? "LLM_CALL"
+              : "DETERMINISTIC_FUNCTION",
     status: "READY",
     dependencies: step.dependencies,
     requiredCapabilities:
       step.operation === "REPOSITORY_READ"
         ? [{ id: "60000000-0000-4000-8000-000000000003", version: "1.0.0" }]
-        : [],
+        : step.operation === "GITHUB_EVIDENCE"
+          ? [{ ...GITHUB_READ_CAPABILITY }]
+          : [],
     riskClass: "LOW",
     retryPolicy: { maxAttempts: 1, backoffMs: 0 },
     input: step.input,

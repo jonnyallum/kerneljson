@@ -2,7 +2,7 @@ import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "node:
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { z } from "zod";
-import { ApprovalAnswer, Id, KernelSubmission, Task, TenantContext, type ExecutionBinding } from "../../../packages/contracts/src/index.js";
+import { ApprovalAnswer, Id, KernelSubmission, MISSION_RECIPE, Task, TenantContext, type ExecutionBinding } from "../../../packages/contracts/src/index.js";
 import { withTenant } from "../../../packages/identity/src/index.js";
 import { compileIntent, stableId } from "../../../services/kernel/src/compiler/index.js";
 import { bindingFor,persistBinding,readBinding,workflowTargets } from "../../../services/kernel/src/execution-binding.js";
@@ -16,7 +16,7 @@ import { Signal } from "../../../services/kernel/src/deterministic.js";
 // S1 canary (Gate 1.5): `claude_md_check/v1` is admitted through the normal task
 // path. The accept-list is an explicit enum — no wildcard — so only these exact
 // recipe ids are admissible; any other/ malformed id is rejected by the parse.
-export const PublicSubmission=z.strictObject({recipe:z.enum(['uppercase/v1','uppercase-reverse/v1','claude_md_check/v1']),objective:z.string().trim().min(1).max(8000)});
+export const PublicSubmission=z.strictObject({recipe:z.enum(['uppercase/v1','uppercase-reverse/v1','claude_md_check/v1',MISSION_RECIPE]),objective:z.string().trim().min(1).max(8000)});
 export type PublicSubmission=z.infer<typeof PublicSubmission>;
 // Recipe -> durable workflow target. Only the golden uppercase recipe routes to the
 // golden workflow; everything else (incl. the read-only canary) uses the kernel workflow.

@@ -8,6 +8,8 @@ export const RecipeId = z.enum([
   // S1 production canary: a read-only CLAUDE.md drift check. Plans to a single
   // REPOSITORY_READ step (the sealed read-only capability); adds no new operation.
   "claude_md_check/v1",
+  // KJ-P3: GitHub evidence -> Claude analysis -> Grok review -> kernel reconciliation.
+  "repo-analysis-mission/v1",
 ]);
 export type RecipeId = z.infer<typeof RecipeId>;
 export const KernelSubmission = z.strictObject({
@@ -18,7 +20,16 @@ export type KernelSubmission = z.infer<typeof KernelSubmission>;
 export const PlanStep = z.strictObject({
   id: Id,
   taskId: Id,
-  operation: z.enum(["UPPERCASE", "REVERSE", "WAIT_FOR_EVENT", "REPOSITORY_READ"]),
+  operation: z.enum([
+    "UPPERCASE",
+    "REVERSE",
+    "WAIT_FOR_EVENT",
+    "REPOSITORY_READ",
+    "GITHUB_EVIDENCE",
+    "RUNTIME_ANALYSE",
+    "RUNTIME_REVIEW",
+    "RECONCILE",
+  ]),
   dependencies: z.array(Id),
   input: z.discriminatedUnion("source", [
     z.strictObject({ source: z.literal("TASK_OBJECTIVE") }),

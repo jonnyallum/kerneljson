@@ -96,6 +96,12 @@ services:
       ALERT_TRANSPORT: ${ALERT_TRANSPORT:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # KJ-P3 mission runtimes and read-only GitHub token. All optional; unset serves no
+      # mission. Same explicit-allowlist gotcha as above: undeclared means silently dropped.
+      MISSION_OPENROUTER_API_KEY: ${MISSION_OPENROUTER_API_KEY:-}
+      MISSION_ANALYST_MODEL: ${MISSION_ANALYST_MODEL:-}
+      MISSION_REVIEWER_MODEL: ${MISSION_REVIEWER_MODEL:-}
+      GITHUB_READ_TOKEN: ${GITHUB_READ_TOKEN:-}
       RESTATE_ADMIN_URL: ${RESTATE_ADMIN_URL:-http://restate:9070}
       EXPECTED_RELEASE_ID: ${EXPECTED_RELEASE_ID:-${KERNELJSON_RELEASE_ID}}
       PORT: "9080"

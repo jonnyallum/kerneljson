@@ -26,10 +26,15 @@ PUBLIC_KEYS = {
     "ALERT_TRANSPORT": re.compile(r"^(console|telegram)$"),
     "KERNELJSON_RELEASE_ID": re.compile(r"^[0-9a-f]{40}$"),
     "EXPECTED_RELEASE_ID": re.compile(r"^[0-9a-f]{40}$"),
+    # KJ-P3 mission runtimes: Claude analyses, Grok reviews. The family is fixed by the recipe.
+    "MISSION_ANALYST_MODEL": re.compile(r"^anthropic/[A-Za-z0-9._:-]{1,80}$"),
+    "MISSION_REVIEWER_MODEL": re.compile(r"^x-ai/[A-Za-z0-9._:-]{1,80}$"),
 }
 SECRET_KEYS = {
     "TELEGRAM_BOT_TOKEN": re.compile(r"^\d{6,12}:[A-Za-z0-9_-]{35}$"),
     "TELEGRAM_CHAT_ID": re.compile(r"^-?\d{5,20}$"),
+    "MISSION_OPENROUTER_API_KEY": re.compile(r"^sk-or-v1-[A-Za-z0-9]{64}$"),
+    "GITHUB_READ_TOKEN": re.compile(r"^(gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{50,255})$"),
 }
 
 
