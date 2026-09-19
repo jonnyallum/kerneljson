@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, "..");
 const GATEWAY_COMPOSE = join(REPO_ROOT, "infrastructure/docker/gateway.compose.yaml");
+const EXEC_COMPOSE = join(REPO_ROOT, "infrastructure/docker/execution.compose.yaml");
 const CHECKER = join(REPO_ROOT, "scripts/check-execution-topology.mjs");
 
 const EXPECTED_IMAGE = "kerneljson-admission-door:125a0bd";
@@ -72,6 +73,25 @@ describe("Gate 3 execution-topology validator — negative proofs", () => {
       });
       expect(code, output).toBe(1);
       expect(output).toContain("must be external in gateway.compose.yaml");
+    } finally {
+      unlinkSync(fixturePath);
+    }
+  });
+
+  it("fails if the worker stops declaring the alert transport env vars (silent drop to console)", () => {
+    const original = readFileSync(EXEC_COMPOSE, "utf8");
+    const dropped = original.replace(/^\s*ALERT_TRANSPORT:.*\r?\n/m, "");
+    expect(dropped, "fixture setup must actually remove ALERT_TRANSPORT").not.toBe(original);
+    const fixturePath = join(REPO_ROOT, "infrastructure/docker/execution.compose.negative-transport.yaml");
+    writeFileSync(fixturePath, dropped);
+    try {
+      const { code, output } = runChecker({
+        ...BASE_ENV,
+        EXEC_COMPOSE_FILE: "infrastructure/docker/execution.compose.negative-transport.yaml",
+        KJ_GATEWAY_IMAGE: EXPECTED_IMAGE,
+      });
+      expect(code, output).toBe(1);
+      expect(output).toContain("does not declare ALERT_TRANSPORT");
     } finally {
       unlinkSync(fixturePath);
     }
