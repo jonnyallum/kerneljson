@@ -9,7 +9,7 @@ const TOKEN = "github_pat_SYNTHETIC_TEST_TOKEN_0000000000";
 // A route is a spec, and every call builds a FRESH Response. Never clone one: a cloned body is a
 // tee, and awaiting cancel() on one branch never resolves while its twin is unread.
 interface Spec { body: string | null; status: number; headers: Record<string, string> }
-type Route = Spec;
+type Route = Spec | ((url: URL) => Spec);
 const raw = (body: string | null, status = 200, headers: Record<string, string> = {}): Spec => ({ body, status, headers });
 const json = (value: unknown, status = 200, headers: Record<string, string> = {}): Spec =>
   raw(JSON.stringify(value), status, { "content-type": "application/json", ...headers });
@@ -26,7 +26,8 @@ function router(routes: Record<string, Route>) {
     const path = new URL(input).pathname;
     const key = Object.keys(routes).sort((x, y) => y.length - x.length).find((k) => path === k || path.startsWith(`${k}/`));
     if (!key) return json({}, 404);
-    const r = routes[key]!;
+    const found = routes[key]!;
+    const r = typeof found === "function" ? found(new URL(input)) : found;
     return new Response(r.body, { status: r.status, headers: r.headers });
   }) as unknown as typeof fetch;
   return { fetchImpl, calls };
@@ -148,5 +149,86 @@ describe("KJ-P3 GitHub evidence reader", () => {
 
   it("refuses a malformed token at construction, without echoing it", () => {
     expect(() => createGithubReader({ token: "has space" })).toThrow("Invalid GitHub read token configuration");
+  });
+  describe("the README is part of the same repository snapshot as the commit and the tree (KJ-P3 blocker)", () => {
+    const A = HEAD;
+    const B = "b".repeat(40);
+    const treeFor = (paths: string[]) => json(tree(paths.map((path) => ({ path, type: "blob" }))));
+
+    /** A repository whose branch tip advances to B immediately after the reader has captured A. */
+    function advancingTip() {
+      let tipReads = 0;
+      const readmeRefs: Array<string | null> = [];
+      const r = router({
+        "/repos/jonnyallum/kerneljson": json(repo),
+        // First read of the branch returns commit A; every later read would return commit B.
+        "/repos/jonnyallum/kerneljson/commits/main": () => json({ ...commit, sha: tipReads++ === 0 ? A : B }),
+        [`/repos/jonnyallum/kerneljson/git/trees/${A}`]: treeFor(["at-A.md"]),
+        [`/repos/jonnyallum/kerneljson/git/trees/${B}`]: treeFor(["at-B.md"]),
+        // A server answers from the tip when no ref is given, and from the ref when one is.
+        "/repos/jonnyallum/kerneljson/readme": (url) => {
+          const ref = url.searchParams.get("ref");
+          readmeRefs.push(ref);
+          return json(readme(ref === A ? "# README at A" : "# README at B (newer)"));
+        },
+      });
+      return { ...r, readmeRefs };
+    }
+
+    it("requests the README at the exact captured commit sha", async () => {
+      const r = advancingTip();
+      await createGithubReader({ fetch: r.fetchImpl })({ repo: SLUG });
+      const readmeCall = r.calls.find((c) => new URL(c.url).pathname.endsWith("/readme"))!;
+      expect(new URL(readmeCall.url).searchParams.get("ref")).toBe(A);
+      expect(readmeCall.url).toContain(`ref=${A}`);
+      expect(r.readmeRefs).toEqual([A]);
+    });
+
+    it("derives the commit, the tree and the README from the same captured sha", async () => {
+      const r = advancingTip();
+      const { facts } = await createGithubReader({ fetch: r.fetchImpl })({ repo: SLUG });
+      const paths = r.calls.map((c) => new URL(c.url).pathname);
+      expect(facts.headSha).toBe(A);
+      expect(paths).toContain(`/repos/jonnyallum/kerneljson/git/trees/${A}`);
+      expect(paths).not.toContain(`/repos/jonnyallum/kerneljson/git/trees/${B}`);
+      expect(r.readmeRefs).toEqual([A]);
+      expect(r.calls.filter((c) => c.url.includes("/commits/"))).toHaveLength(1);
+    });
+
+    it("cannot be given a newer README when the branch tip moves between requests", async () => {
+      const r = advancingTip();
+      const { facts } = await createGithubReader({ fetch: r.fetchImpl })({ repo: SLUG });
+      expect(facts.readme?.excerpt).toBe("# README at A");
+      expect(facts.readme?.excerpt).not.toContain("newer");
+      expect(facts.tree.map((e) => e.path)).toEqual(["at-A.md"]);
+    });
+
+    it("the double really would serve the newer README without a ref (so the test can fail)", async () => {
+      const r = advancingTip();
+      const res = await r.fetchImpl("https://api.github.com/repos/jonnyallum/kerneljson/readme", {});
+      expect(Buffer.from(((await res.json()) as { content: string }).content, "base64").toString()).toBe("# README at B (newer)");
+    });
+
+    it("leaves README 404 behaviour unchanged: still no readme, and the request is still pinned", async () => {
+      const refs: Array<string | null> = [];
+      const r = happy({
+        "/repos/jonnyallum/kerneljson/readme": (url) => {
+          refs.push(url.searchParams.get("ref"));
+          return json({}, 404);
+        },
+      });
+      const { facts } = await createGithubReader({ fetch: r.fetchImpl })({ repo: SLUG });
+      expect(facts.readme).toBeNull();
+      expect(refs).toEqual([HEAD]);
+    });
+
+    it("url-encodes the ref value", async () => {
+      // A sha is hex so encoding is a no-op today; this pins that the value is built with encodeURIComponent
+      // and is never concatenated raw, by checking the query round-trips exactly.
+      const r = happy();
+      await createGithubReader({ fetch: r.fetchImpl })({ repo: SLUG });
+      const readmeCall = r.calls.find((c) => new URL(c.url).pathname.endsWith("/readme"))!;
+      expect(new URL(readmeCall.url).search).toBe(`?ref=${encodeURIComponent(HEAD)}`);
+    });
   });
 });

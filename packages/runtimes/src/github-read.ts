@@ -175,7 +175,9 @@ export function createGithubReader(config: GithubReaderConfig = {}) {
       .sort((a, b) => depth(a.path) - depth(b.path) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
     let readme: GithubFacts["readme"] = null;
-    const readmeRaw = await get(`${base}/readme`, true);
+    // Pinned to the captured commit, like the tree: without a ref GitHub answers from the branch
+    // tip, which can have moved on since the commit was read, giving mixed-state evidence.
+    const readmeRaw = await get(`${base}/readme?ref=${encodeURIComponent(commit.sha)}`, true);
     if (readmeRaw !== null) {
       const parsed = parse(ReadmeResponse, readmeRaw);
       if (parsed.encoding === "base64") {
