@@ -85,6 +85,13 @@ const worker = exec.services?.worker;
 check(!!worker, "execution: worker service missing");
 check((worker?.ports ?? []).length === 0, `execution: worker must not publish ports (found ${(worker?.ports ?? []).length})`);
 
+// --- Worker must declare every env var the alert transport reads (key names only) ---
+// The environment: block is an explicit allowlist, so an undeclared var in runtime.env is
+// silently dropped and the worker falls back to console with no error (the S1D2 gotcha).
+for (const key of ["ALERT_TRANSPORT", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]) {
+  check(key in (worker?.environment ?? {}), `execution: worker environment does not declare ${key} (silently dropped from runtime.env)`);
+}
+
 // --- Restate persistent named-volume storage at /restate-data ---
 const restate = exec.services?.restate;
 check(!!restate, "execution: restate service missing");

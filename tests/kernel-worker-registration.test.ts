@@ -239,4 +239,33 @@ describe("execution.compose.yaml worker env passthrough (S1D2 regression guard)"
   it("SCHED_ARM_NEXT specifically is declared (the exact var that was missing on 2026-09-14)", () => {
     expect(workerBlock).toMatch(/^\s+SCHED_ARM_NEXT:/m);
   });
+
+  // KJ-P2.2B: the same silent-drop defect class, for the Telegram transport. Without
+  // these declarations a value in runtime.env never reaches the container, the worker
+  // stays on console, and nothing errors.
+  const TRANSPORT_SOURCES = ["transport-config.ts", "telegram-notifier.ts", "select-notifier.ts"];
+  const envVarsRead = (src: string): string[] => [
+    ...new Set(
+      [...src.matchAll(/\b(?:process\.)?env\[\s*"([A-Z][A-Z0-9_]+)"\s*\]|\bprocess\.env\.([A-Z][A-Z0-9_]+)/g)].map((m) => (m[1] ?? m[2])!),
+    ),
+  ];
+  const undeclared = (vars: string[], block: string): string[] => vars.filter((v) => !new RegExp(`^\\s+${v}:`, "m").test(block));
+
+  it("declares every env var the Telegram alert transport reads (KJ-P2.2B)", () => {
+    const read = TRANSPORT_SOURCES.flatMap((f) => envVarsRead(readFileSync(`services/kernel/src/alerting/${f}`, "utf8")));
+    expect([...new Set(read)].sort()).toEqual(["ALERT_TRANSPORT", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]);
+    expect(undeclared(read, workerBlock)).toEqual([]);
+  });
+
+  it("the transport vars default to empty (console mode, no credential) rather than to a live value", () => {
+    for (const v of ["ALERT_TRANSPORT", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"])
+      expect(workerBlock, v).toMatch(new RegExp(`^\\s+${v}: \\$\\{${v}:-\\}\\s*$`, "m"));
+  });
+
+  it("negative case: the inventory scan flags a transport var the compose file does not declare", () => {
+    const hypothetical = readFileSync("services/kernel/src/alerting/transport-config.ts", "utf8") + '\nconst x = env["ZZZ_UNDECLARED_TRANSPORT_VAR"];\n';
+    expect(undeclared(envVarsRead(hypothetical), workerBlock)).toEqual(["ZZZ_UNDECLARED_TRANSPORT_VAR"]);
+    const withoutFix = workerBlock.replace(/^\s+ALERT_TRANSPORT:.*\r?\n/m, "");
+    expect(undeclared(["ALERT_TRANSPORT"], withoutFix)).toEqual(["ALERT_TRANSPORT"]);
+  });
 });

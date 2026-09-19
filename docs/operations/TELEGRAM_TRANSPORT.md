@@ -132,8 +132,8 @@ header-based auth).
   real network call at all; `tests/telegram-notifier-http.test.ts` makes
   real HTTP calls, but only to a disposable, loopback-only, in-process Node
   server the test itself starts and stops.
-- **HTTP mocks / URL assertions.** Tests assert against the REQUEST PATH
-  (`/bot<FAKE_TOKEN>/sendMessage`), never a logged/printed full URL — since
+- **HTTP mocks / URL assertions.** Tests assert against the request path
+  of the synthetic test token, never a logged/printed full URL — since
   the token in these assertions is a synthetic test value, not a real
   secret, this is safe; nothing in the production code path ever performs
   the equivalent assertion/print against a REAL token.
@@ -200,6 +200,24 @@ stripped or left to break formatting.
   `alerting-store-selection.test.ts`) re-run unmodified and green, proving
   `ConsoleNotifier` and the outbox/delivery-worker contract are both
   untouched by this phase.
+
+## KJ-P2.2B - activation blockers closed (still not deployed)
+
+An adversarial review of the activation path found five blockers, all closed here without changing the
+transport or the outbox contract:
+
+- Compose declares `ALERT_TRANSPORT`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` (empty defaults). Before
+  this, `execution.compose.yaml`'s explicit allowlist dropped them and the worker stayed on console with no
+  error. Guarded by `scripts/check-execution-topology.mjs` and `tests/kernel-worker-registration.test.ts`.
+- `pnpm telegram:discover-chat --token-file <path>` replaces the old shell command that embedded the credential in a URL for chat discovery.
+  `tests/docs-token-safety.test.ts` fails if any doc carries a token-bearing HTTP example.
+- `scripts/runtime_env_merge.py` is the only sanctioned way to change the production `runtime.env`; it
+  preserves every other line and is verified independently.
+- `pnpm alerts:outbox-gate` is the read-only POISON hard gate for the activation window.
+- `pnpm alerts:test-notification` queues exactly one labelled P3 test intent through `intentsFromDecisions`
+  and the outbox store, and nothing else.
+
+The step-by-step is in `PHASE_KJ_P2.2A_TELEGRAM_PRODUCTION_ACTIVATION_RUNBOOK_2026-09-18.md`.
 
 ## Unresolved / left for a later, explicit change window
 

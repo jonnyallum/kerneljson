@@ -46,6 +46,10 @@
 #              KJ_ADMISSION_BEARER above bit S1D2 in production 2026-09-14: this file's
 #              environment: block is an explicit allowlist, so a new env var index.ts reads
 #              is silently dropped — not an error, no crash — unless ALSO declared here.
+#   Optional (KJ-P2.2 alert transport): ALERT_TRANSPORT (console|telegram; unset = console),
+#              TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID (both required when telegram). Values come
+#              from the mode-600 runtime env file via --env-file, never argv. Declared in the
+#              environment: block below and asserted by scripts/check-execution-topology.mjs.
 #   Mount:     the host repo checkout is bind-mounted READ-ONLY at the same path so the
 #              sealed reader can resolve KJ_REPO_ROOT (realpathSync at startup) and hash
 #              CLAUDE.md. The worker never writes it.
@@ -86,6 +90,12 @@ services:
       ALERT_RUNNER_ENABLED: ${ALERT_RUNNER_ENABLED:-false}
       ALERT_RUNNER_CADENCE_MS: ${ALERT_RUNNER_CADENCE_MS:-300000}
       ALERT_STATE_STORE: ${ALERT_STATE_STORE:-postgres}
+      # KJ-P2.2 notification transport. Unset/empty = console (the safe default). Without
+      # these three lines a value in runtime.env is silently dropped (the allowlist gotcha
+      # above) and the worker stays on console while the operator believes it is paging.
+      ALERT_TRANSPORT: ${ALERT_TRANSPORT:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       RESTATE_ADMIN_URL: ${RESTATE_ADMIN_URL:-http://restate:9070}
       EXPECTED_RELEASE_ID: ${EXPECTED_RELEASE_ID:-${KERNELJSON_RELEASE_ID}}
       PORT: "9080"
