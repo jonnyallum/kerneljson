@@ -86,6 +86,75 @@ describe("production worker service registration", () => {
     expect(names(mod.services)).toEqual(["TaskWorkflow", "KernelWorkflowV1", "CapabilityServiceV1"]);
   });
 
+  // KJ-P4A: the Telegram operator channel follows the same all-or-nothing rule as every seam above.
+  const OPERATOR_ENV = {
+    TELEGRAM_INBOUND_ENABLED: "true",
+    ALERT_TRANSPORT: "telegram",
+    TELEGRAM_BOT_TOKEN: "123456789:" + "A".repeat(35),
+    TELEGRAM_CHAT_ID: "6543210987",
+    KJ_ADMISSION_URL: "http://gateway:8081",
+    KJ_ADMISSION_BEARER: "SYNTHETIC-DOOR-BEARER-0123456789-abcdef",
+  };
+  const withCanary = () => {
+    process.env["KJ_REPO_ROOT"] = process.cwd();
+    process.env["SCHED_RECIPE"] = "claude_md_check/v1";
+    process.env["SCHED_APPROVED_SHA256"] = DIGEST;
+  };
+
+  it("registers the Telegram operator only when explicitly enabled, and nothing else changes", async () => {
+    withCanary();
+    for (const k of Object.keys(OPERATOR_ENV)) delete process.env[k];
+    Object.assign(process.env, { KJ_ADMISSION_URL: OPERATOR_ENV.KJ_ADMISSION_URL, KJ_ADMISSION_BEARER: OPERATOR_ENV.KJ_ADMISSION_BEARER });
+    const off = await import("../services/kernel/src/index.js");
+    const offNames = names(off.services);
+    expect(offNames).not.toContain("TelegramOperator");
+    vi.resetModules();
+    Object.assign(process.env, OPERATOR_ENV);
+    const on = await import("../services/kernel/src/index.js");
+    // Exactly one new service, and every service that was there before is still there.
+    expect(names(on.services)).toEqual([...offNames, "TelegramOperator"]);
+  });
+
+  it("serves no inbound channel for an empty or false switch", async () => {
+    withCanary();
+    Object.assign(process.env, OPERATOR_ENV);
+    for (const off of ["", "false"]) {
+      vi.resetModules();
+      process.env["TELEGRAM_INBOUND_ENABLED"] = off;
+      const mod = await import("../services/kernel/src/index.js");
+      expect(names(mod.services), JSON.stringify(off)).not.toContain("TelegramOperator");
+    }
+  });
+
+  it("refuses to start with the channel enabled but a dependency missing or wrong, without printing a value", async () => {
+    withCanary();
+    const cases: Array<[string, Record<string, string | undefined>]> = [
+      ["no bot token", { TELEGRAM_BOT_TOKEN: undefined }],
+      ["no admission bearer", { KJ_ADMISSION_BEARER: undefined }],
+      ["console transport", { ALERT_TRANSPORT: "console" }],
+      ["a group chat id", { TELEGRAM_CHAT_ID: "-1001234567890" }],
+      ["a guessed switch", { TELEGRAM_INBOUND_ENABLED: "yes" }],
+      ["a bad cap", { TELEGRAM_MISSION_DAILY_CAP: "0" }],
+    ];
+    for (const [label, over] of cases) {
+      vi.resetModules();
+      Object.assign(process.env, OPERATOR_ENV);
+      delete process.env["TELEGRAM_MISSION_DAILY_CAP"];
+      for (const [k, v] of Object.entries(over)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      let message = "";
+      try {
+        await import("../services/kernel/src/index.js");
+      } catch (e) {
+        message = (e as Error).message;
+      }
+      expect(message, label).not.toBe("");
+      for (const secret of [OPERATOR_ENV.TELEGRAM_BOT_TOKEN, OPERATOR_ENV.KJ_ADMISSION_BEARER]) expect(message, label).not.toContain(secret);
+    }
+  });
+
   it("starts with a cross-provider mission pair (DeepSeek analyst, Claude reviewer through OpenRouter) and refuses it once a key is dropped", async () => {
     process.env["KJ_REPO_ROOT"] = process.cwd();
     process.env["SCHED_RECIPE"] = "claude_md_check/v1";
@@ -367,6 +436,27 @@ describe("execution.compose.yaml worker env passthrough (S1D2 regression guard)"
   it("the mission vars default to empty, so an unconfigured deploy serves no mission", () => {
     for (const v of ["MISSION_OPENROUTER_API_KEY", "MISSION_DEEPSEEK_API_KEY", "MISSION_ANALYST_MODEL", "MISSION_REVIEWER_MODEL", "GITHUB_READ_TOKEN"])
       expect(workerBlock, v).toMatch(new RegExp(`^\\s+${v}: \\$\\{${v}:-\\}\\s*$`, "m"));
+  });
+
+  // KJ-P4A: the same silent-drop defect class for the Telegram operator channel. Without these
+  // declarations a value in runtime.env never reaches the container and the channel stays off.
+  it("declares every env var the Telegram operator channel reads (KJ-P4A)", () => {
+    const read = envVarsRead(readFileSync("services/kernel/src/channel/telegram/operator-config.ts", "utf8"));
+    expect(read.sort()).toEqual([
+      "ALERT_TRANSPORT", "DATABASE_URL", "KJ_ADMISSION_BEARER", "KJ_ADMISSION_URL",
+      "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "TELEGRAM_INBOUND_ENABLED", "TELEGRAM_MISSION_DAILY_CAP",
+    ]);
+    expect(undeclared(read, workerBlock)).toEqual([]);
+  });
+
+  it("the channel's own vars default to empty, so an unconfigured deploy serves no inbound channel", () => {
+    for (const v of ["TELEGRAM_INBOUND_ENABLED", "TELEGRAM_MISSION_DAILY_CAP"])
+      expect(workerBlock, v).toMatch(new RegExp(`^\\s+${v}: \\$\\{${v}:-\\}\\s*$`, "m"));
+  });
+
+  it("negative case: without its passthrough lines the inventory flags the channel's vars", () => {
+    const without = workerBlock.replace(/^\s+TELEGRAM_INBOUND_ENABLED:.*\r?\n/m, "").replace(/^\s+TELEGRAM_MISSION_DAILY_CAP:.*\r?\n/m, "");
+    expect(undeclared(["TELEGRAM_INBOUND_ENABLED", "TELEGRAM_MISSION_DAILY_CAP"], without)).toEqual(["TELEGRAM_INBOUND_ENABLED", "TELEGRAM_MISSION_DAILY_CAP"]);
   });
 
   it("negative case: the inventory scan flags a transport var the compose file does not declare", () => {

@@ -98,6 +98,9 @@ for (const key of [
   "MISSION_ANALYST_MODEL",
   "MISSION_REVIEWER_MODEL",
   "GITHUB_READ_TOKEN",
+  // KJ-P4A Telegram operator channel.
+  "TELEGRAM_INBOUND_ENABLED",
+  "TELEGRAM_MISSION_DAILY_CAP",
 ]) {
   check(key in (worker?.environment ?? {}), `execution: worker environment does not declare ${key} (silently dropped from runtime.env)`);
 }

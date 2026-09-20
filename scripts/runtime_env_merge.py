@@ -32,6 +32,9 @@ PUBLIC_KEYS = {
     # Either provider/slug (OpenRouter) or a bare deepseek-... model (DeepSeek direct).
     "MISSION_ANALYST_MODEL": MISSION_MODEL,
     "MISSION_REVIEWER_MODEL": MISSION_MODEL,
+    # KJ-P4A Telegram operator channel: an on/off switch and a small per-day mission ceiling.
+    "TELEGRAM_INBOUND_ENABLED": re.compile(r"^(true|false)$"),
+    "TELEGRAM_MISSION_DAILY_CAP": re.compile(r"^([1-9][0-9]?|100)$"),
 }
 SECRET_KEYS = {
     "TELEGRAM_BOT_TOKEN": re.compile(r"^\d{6,12}:[A-Za-z0-9_-]{35}$"),

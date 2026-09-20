@@ -22,6 +22,16 @@ export type PublicSubmission=z.infer<typeof PublicSubmission>;
 // golden workflow; everything else (incl. the read-only canary) uses the kernel workflow.
 export function recipeTarget(recipe:PublicSubmission['recipe']){return recipe==='uppercase/v1'?workflowTargets.GoldenTaskWorkflowV1:workflowTargets.KernelWorkflowV1;}
 const Key=z.string().regex(/^[A-Za-z0-9._:-]{8,128}$/);
+// KJ-P4A: a channel adapter may attribute its admissions to itself, but ONLY to a label on this
+// allow-list, so `source` on the IntentEnvelope stays a fixed vocabulary and never caller text.
+// The bearer still decides principal and tenant; the header changes nothing about authority.
+export const CHANNEL_SOURCES:Readonly<Record<string,string>>={'telegram/v1':'kerneljson:channel/telegram/v1'};
+export function sourceFor(header:string|string[]|undefined):string{
+ if(header===undefined)return 'kerneljson:gateway/v1';
+ const source=typeof header==='string'?CHANNEL_SOURCES[header]:undefined;
+ if(!source)throw new GatewayError(400,'INVALID_CHANNEL');
+ return source;
+}
 export type Dispatch=(binding:ExecutionBinding,payload:KernelSubmission,context:TenantContext)=>Promise<{status:'ACCEPTED'|'UNRESOLVED';invocationId?:string}>;
 class GatewayError extends Error {constructor(readonly status:number,readonly code:string){super(code);}}
 /** Resolver must validate the credential with the deployment's identity authority. No default or body identity. */
@@ -76,7 +86,7 @@ export function createGateway(options:GatewayOptions){
    let context:TenantContext;try{context=TenantContext.parse(await options.authenticate(req.headers));}catch{throw new GatewayError(401,'UNAUTHENTICATED');}
    const url=new URL(req.url??'/','http://gateway.invalid');
    if(req.method==='POST'&&url.pathname==='/v1/tasks'){
-    const input=PublicSubmission.parse(await body(req)),key=Key.parse(req.headers['idempotency-key']);
+    const input=PublicSubmission.parse(await body(req)),key=Key.parse(req.headers['idempotency-key']),source=sourceFor(req.headers['x-kj-channel']);
     const keyDigest=capabilityDigest(key),requestDigest=capabilityDigest(input);
     const accepted=await withTenant(options.pool,context,async(db,ctx)=>{
      if(!(await options.admit(ctx,'submit')))throw new GatewayError(429,'ADMISSION_DENIED');
@@ -87,7 +97,7 @@ export function createGateway(options:GatewayOptions){
       const binding=await readBinding(db,prior.rows[0].task_id);if(!binding)throw new Error('Missing admission binding');return {binding,payload:KernelSubmission.parse(prior.rows[0].payload)};
      }
      const trace= req.headers['x-correlation-id']===undefined ? correlationId : Id.parse(req.headers['x-correlation-id']);
-     const payload=KernelSubmission.parse({recipe:input.recipe,intent:{id:stableId(['gateway/v1',ctx.tenantId,ctx.principal.id,keyDigest]),principal:ctx.principal,tenant:{id:ctx.tenantId},source:'kerneljson:gateway/v1',objective:input.objective,attachments:[],contextRefs:[],receivedAt:new Date().toISOString(),trace:{traceId:trace,correlationId:trace}}});
+     const payload=KernelSubmission.parse({recipe:input.recipe,intent:{id:stableId(['gateway/v1',ctx.tenantId,ctx.principal.id,keyDigest]),principal:ctx.principal,tenant:{id:ctx.tenantId},source,objective:input.objective,attachments:[],contextRefs:[],receivedAt:new Date().toISOString(),trace:{traceId:trace,correlationId:trace}}});
      const task=compileIntent(payload).task,target=recipeTarget(input.recipe);
      const binding=await persistBinding(db,bindingFor(task,target,options.releaseId));
      await db.query('insert into kernel_private.task_admissions(task_id,tenant_id,principal_id,key_digest,request_digest,payload) values($1,$2,$3,$4,$5,$6)',[task.id,ctx.tenantId,ctx.principal.id,keyDigest,requestDigest,payload]);
