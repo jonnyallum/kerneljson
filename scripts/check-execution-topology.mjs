@@ -94,6 +94,7 @@ for (const key of [
   "TELEGRAM_CHAT_ID",
   // KJ-P3 mission runtimes and read-only GitHub token.
   "MISSION_OPENROUTER_API_KEY",
+  "MISSION_DEEPSEEK_API_KEY",
   "MISSION_ANALYST_MODEL",
   "MISSION_REVIEWER_MODEL",
   "GITHUB_READ_TOKEN",

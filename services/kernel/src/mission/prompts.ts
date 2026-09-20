@@ -39,7 +39,9 @@ const ANALYST_SYSTEM = [
   "Cite only paths that appear in the tree list, exactly as written.",
   "Reply with ONE JSON object and nothing else, in exactly this shape:",
   '{"headSha": "<the head sha from the evidence>", "summary": "<string>", "findings": [{"title": "<string>", "detail": "<string>", "paths": ["<tree path>"]}]}',
-  "Give 1 to 12 findings, each citing 1 to 8 tree paths.",
+  "Hard limits. Output that breaks any of them is rejected outright, so stay well inside them:",
+  "summary at most 1500 characters; AT MOST 8 findings; each title at most 100 characters;",
+  "each detail at most 500 characters; each finding cites 1 to 8 tree paths. Be concise.",
 ].join("\n");
 
 const REVIEWER_SYSTEM = [

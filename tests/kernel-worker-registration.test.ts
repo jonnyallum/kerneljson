@@ -86,6 +86,30 @@ describe("production worker service registration", () => {
     expect(names(mod.services)).toEqual(["TaskWorkflow", "KernelWorkflowV1", "CapabilityServiceV1"]);
   });
 
+  it("starts with DeepSeek mission runtimes, and refuses two provider keys at once", async () => {
+    process.env["KJ_REPO_ROOT"] = process.cwd();
+    process.env["SCHED_RECIPE"] = "claude_md_check/v1";
+    process.env["SCHED_APPROVED_SHA256"] = DIGEST;
+    for (const k of Object.keys(MISSION_ENV)) delete process.env[k];
+    Object.assign(process.env, {
+      MISSION_DEEPSEEK_API_KEY: "sk-" + "a".repeat(32),
+      MISSION_ANALYST_MODEL: "deepseek-v4-flash",
+      MISSION_REVIEWER_MODEL: "deepseek-v4-pro",
+    });
+    const mod = await import("../services/kernel/src/index.js");
+    expect(names(mod.services)).toEqual(["TaskWorkflow", "KernelWorkflowV1", "CapabilityServiceV1"]);
+    vi.resetModules();
+    process.env["MISSION_OPENROUTER_API_KEY"] = MISSION_ENV.MISSION_OPENROUTER_API_KEY;
+    let message = "";
+    try {
+      await import("../services/kernel/src/index.js");
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toMatch(/choose one provider/);
+    expect(message).not.toMatch(/sk-or-v1|sk-a{8}/);
+  });
+
   it("refuses to start with mission runtimes but no capability service (no repository root)", async () => {
     delete process.env["KJ_REPO_ROOT"];
     delete process.env["SCHED_RECIPE"];
@@ -311,12 +335,12 @@ describe("execution.compose.yaml worker env passthrough (S1D2 regression guard)"
   // KJ-P3: the same silent-drop defect class for the mission runtimes and the GitHub token.
   it("declares every env var the mission runtime config reads, and the GitHub token index.ts reads", () => {
     const read = envVarsRead(readFileSync("services/kernel/src/mission/config.ts", "utf8"));
-    expect(read.sort()).toEqual(["MISSION_ANALYST_MODEL", "MISSION_OPENROUTER_API_KEY", "MISSION_REVIEWER_MODEL"]);
+    expect(read.sort()).toEqual(["MISSION_ANALYST_MODEL", "MISSION_DEEPSEEK_API_KEY", "MISSION_OPENROUTER_API_KEY", "MISSION_REVIEWER_MODEL"]);
     expect(undeclared([...read, "GITHUB_READ_TOKEN"], workerBlock)).toEqual([]);
   });
 
   it("the mission vars default to empty, so an unconfigured deploy serves no mission", () => {
-    for (const v of ["MISSION_OPENROUTER_API_KEY", "MISSION_ANALYST_MODEL", "MISSION_REVIEWER_MODEL", "GITHUB_READ_TOKEN"])
+    for (const v of ["MISSION_OPENROUTER_API_KEY", "MISSION_DEEPSEEK_API_KEY", "MISSION_ANALYST_MODEL", "MISSION_REVIEWER_MODEL", "GITHUB_READ_TOKEN"])
       expect(workerBlock, v).toMatch(new RegExp(`^\\s+${v}: \\$\\{${v}:-\\}\\s*$`, "m"));
   });
 

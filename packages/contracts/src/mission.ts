@@ -14,9 +14,20 @@ export const MISSION_RECIPE = "repo-analysis-mission/v1" as const;
 export const MISSION_CRITERION =
   "An independent reviewer accepts an analysis whose head SHA and cited paths match the GitHub evidence, re-derived from persisted evidence";
 
-/** The recipe defines who plays which role. Only the model version is configurable. */
-export const MISSION_ANALYST_FAMILY = "anthropic" as const;
-export const MISSION_REVIEWER_FAMILY = "x-ai" as const;
+/**
+ * Runtime families the mission accepts, for either role. The deployment chooses the models;
+ * the verifier checks the family the provider REPORTS it ran, never the one requested.
+ * Claude plus Grok gives independence across lineages. A single-family pairing (for example
+ * two DeepSeek models) is accepted, but only when the reviewer is a different model from the
+ * analyst; that is weaker independence and the evidence records exactly which models ran.
+ */
+export const MISSION_RUNTIME_FAMILIES = ["anthropic", "x-ai", "deepseek"] as const;
+
+/** `anthropic/claude-x` -> `anthropic`; a bare `deepseek-v4-pro` -> `deepseek`. */
+export function modelFamily(model: string): string {
+  const slash = model.indexOf("/");
+  return (slash > 0 ? model.slice(0, slash) : (model.split("-")[0] ?? "")).toLowerCase();
+}
 
 /** Read-only GitHub capability reference recorded on the evidence step. */
 export const GITHUB_READ_CAPABILITY = {
@@ -108,8 +119,9 @@ export const RECONCILE_CHECKS = [
   "analysis_paths_exist_in_evidence",
   "review_schema_valid",
   "review_binds_to_analysis",
-  "analyst_is_claude_family",
-  "reviewer_is_grok_family",
+  "analyst_runtime_allowed",
+  "reviewer_runtime_allowed",
+  "reviewer_is_independent",
   "review_verdict_acceptable",
   "review_flags_no_unsupported_findings",
 ] as const;
