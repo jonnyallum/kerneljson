@@ -12,7 +12,13 @@ import {
  * that is safe because the kernel never acts on runtime output, it only verifies it.
  */
 export const ANALYST_MAX_TOKENS = 6144;
-export const REVIEWER_MAX_TOKENS = 2048;
+/**
+ * KJ-P3.1.1: raised from 2048. The first live Telegram-originated mission ended FAILED with
+ * REVIEWER_OUTPUT_LIMIT: the Claude reviewer's answer exceeded 2048 tokens. The earlier successful
+ * review had used 1529 of them, so the margin was thin and Claude's answer length varies. 4096 gives
+ * headroom; the prompt below (not the ceiling) is what keeps the review short.
+ */
+export const REVIEWER_MAX_TOKENS = 4096;
 
 export function renderFacts(facts: GithubFacts, factsDigest: string): string {
   const tree = facts.tree.map((e) => `${e.type === "tree" ? "d" : "f"} ${e.sha.slice(0, 12)} ${e.path}`).join("\n");
@@ -62,6 +68,11 @@ const REVIEWER_SYSTEM = [
   "Reply with ONE JSON object and nothing else, in exactly this shape:",
   '{"reviewedAnalysisSha256": "<the analysis digest, copied exactly>", "verdict": "approve" | "approve_with_notes" | "reject", "unsupportedFindings": [<0-based indexes of findings the evidence does not support>], "notes": ["<short string>"]}',
   'Use "approve" only if every finding is supported by the evidence and unsupportedFindings is empty.',
+  // KJ-P3.1.1 prompt economy: concise structured output, well inside the schema's own bounds.
+  "Be concise. The JSON object is the entire answer: no text before or after it, no analysis outside it.",
+  "unsupportedFindings holds indexes only, with no explanation.",
+  "notes: at most 3 notes, each one sentence under 160 characters, saying only what changes or qualifies the verdict.",
+  "Do not restate the findings or repeat the evidence. If every finding is supported, notes may be empty.",
 ].join("\n");
 
 interface Common {

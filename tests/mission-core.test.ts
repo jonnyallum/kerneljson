@@ -3,6 +3,7 @@ import {
   MISSION_OUTPUT_SCHEMA,
   MISSION_RECIPE,
   MissionAnalysis,
+  MissionReview,
   RECONCILE_CHECKS,
   modelFamily,
   parseMissionObjective,
@@ -21,7 +22,7 @@ import {
   reconcileMission,
   sha256Text,
 } from "../services/kernel/src/mission/reconcile.js";
-import { analystRequest, reviewerRequest } from "../services/kernel/src/mission/prompts.js";
+import { REVIEWER_MAX_TOKENS, analystRequest, reviewerRequest } from "../services/kernel/src/mission/prompts.js";
 import { enqueueMissionNotice, missionNoticeDecision } from "../services/kernel/src/mission/notify.js";
 import { loadMissionConfig } from "../services/kernel/src/mission/config.js";
 import { InMemoryNotificationOutboxStore } from "../services/kernel/src/alerting/outbox-store.js";
@@ -451,6 +452,40 @@ describe("KJ-P3 prompts (the runtime contract)", () => {
     const system = analystRequest({ ...common, question: "q", contract }).messages[0]!.content;
     expect(system).toContain('"evidence": [{"path"');
     expect(system).toContain("git object id prefix");
+  });
+
+  it("KJ-P3.1.1 gives the reviewer real headroom: 4096 output tokens, inside the ModelRequest ceiling", () => {
+    const analysisText = analysisJson();
+    const req = reviewerRequest({ ...common, analysisText, analysisDigest: sha256Text(analysisText) });
+    expect(REVIEWER_MAX_TOKENS).toBe(4096);
+    expect(req.maxOutputTokens).toBe(REVIEWER_MAX_TOKENS);
+    // The first live Telegram-originated mission failed on a 2048-token cap that a Claude review exceeded.
+    expect(REVIEWER_MAX_TOKENS).toBeGreaterThan(2048);
+  });
+
+  it("KJ-P3.1.1 asks the reviewer for concise structured output, and states the limits it is held to", () => {
+    const analysisText = analysisJson();
+    const system = reviewerRequest({ ...common, analysisText, analysisDigest: sha256Text(analysisText) }).messages[0]!.content;
+    for (const phrase of ["Be concise", "no text before or after it", "indexes only", "at most 3 notes", "under 160 characters", "Do not restate the findings"]) {
+      expect(system, phrase).toContain(phrase);
+    }
+    // The contract it must still honour is unchanged.
+    expect(system).toContain("copied exactly");
+    expect(system).toContain("ONE JSON object");
+  });
+
+  it("KJ-P3.1.1 the largest review the prompt permits is valid under the schema and small next to the budget", () => {
+    const largest = {
+      reviewedAnalysisSha256: "a".repeat(64),
+      verdict: "approve_with_notes",
+      unsupportedFindings: Array.from({ length: 12 }, (_, i) => i),
+      notes: Array.from({ length: 3 }, () => "n".repeat(159)),
+    };
+    expect(MissionReview.safeParse(largest).success).toBe(true);
+    // Even at one token per character (far worse than real text) the permitted maximum stays under a third
+    // of the budget: the ceiling is headroom against a model that ignores the prompt, not the thing that keeps
+    // the review short. (The regression to the old 2048 cap is pinned by the headroom test above.)
+    expect(JSON.stringify(largest).length * 3).toBeLessThan(REVIEWER_MAX_TOKENS);
   });
 
   it("gives the reviewer the verbatim analysis and the digest to echo", () => {
