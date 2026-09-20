@@ -189,8 +189,9 @@ describe("KJ-P3 repository-analysis mission, end to end", () => {
     ["the analyst cites a file that is not in the GitHub evidence", { analyst: fakeClaude({ paths: [...CITED, "services/kernel/src/imaginary.ts"] }) }, "analysis_paths_exist_in_evidence"],
     ["the analyst reports a different head sha", { analyst: fakeClaude({ headSha: "f".repeat(40) }) }, "analysis_head_sha_matches_evidence"],
     ["the reviewer did not review this analysis (wrong digest)", { reviewer: fakeGrok({ echoDigest: "0".repeat(64) }) }, "review_binds_to_analysis"],
-    ["the reviewer is the same family as the analyst (not independent)", { reviewer: fakeGrok({ responseModel: "anthropic/claude-other" }) }, "reviewer_is_grok_family"],
-    ["the analyst is not a Claude model", { analyst: fakeClaude({ responseModel: "openai/gpt-test" }) }, "analyst_is_claude_family"],
+    ["the reviewer is the same model as the analyst (not independent)", { reviewer: fakeGrok({ responseModel: "anthropic/claude-test" }) }, "reviewer_is_independent"],
+    ["the analyst is not an allowed runtime family", { analyst: fakeClaude({ responseModel: "openai/gpt-test" }) }, "analyst_runtime_allowed"],
+    ["both runtimes are DeepSeek but the reviewer is the same model", { analyst: fakeClaude({ model: "deepseek-v4-pro", responseModel: "deepseek-v4-pro" }), reviewer: fakeGrok({ model: "deepseek-v4-pro", responseModel: "deepseek-v4-pro" }) }, "reviewer_is_independent"],
     ["the analyst answers in prose instead of the required JSON", { analyst: fakeClaude({ reply: "Looks great, ship it!" }) }, "analysis_schema_valid"],
   ];
   for (const [label, scenario, check] of rejected) {
@@ -206,6 +207,18 @@ describe("KJ-P3 repository-analysis mission, end to end", () => {
       expect(await noticesOf(taskId)).toEqual([{ check_id: `MISSION.repoAnalysis.${taskId.slice(0, 8)}.failed`, severity: "P2", status: "PENDING", kind: "NEW" }]);
     });
   }
+
+  it("completes on a DeepSeek pair of two different models, and records exactly which models ran", async () => {
+    const { outcome, taskId } = await runMission({
+      analyst: fakeClaude({ model: "deepseek-v4-flash", responseModel: "deepseek-v4-flash" }),
+      reviewer: fakeGrok({ model: "deepseek-v4-pro", responseModel: "deepseek-v4-pro" }),
+    });
+    expect(outcome.status).toBe("COMPLETED");
+    const ev = await evidenceOf(taskId);
+    expect(ev.find((e) => e.source === "kerneljson:runtime/analyst")!.metadata["response_model"]).toBe("deepseek-v4-flash");
+    expect(ev.find((e) => e.source === "kerneljson:runtime/reviewer")!.metadata["response_model"]).toBe("deepseek-v4-pro");
+    expect(ev.find((e) => e.source === "kerneljson:mission-reconcile/v1")!.metadata).toMatchObject({ decision: "ACCEPTED", analystModel: "deepseek-v4-flash", reviewerModel: "deepseek-v4-pro" });
+  });
 
   it("fails closed and leaves failure evidence when the analyst provider errors, never reaching the reviewer", async () => {
     let reviewerCalled = false;

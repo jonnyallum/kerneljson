@@ -234,13 +234,31 @@ MISSION_OPENROUTER_API_KEY=${OR_KEY}
       expect(v.code, v.err).toBe(0);
     });
 
-    it("refuses a model outside the recipe's family for either role", () => {
+    it("accepts a bare deepseek-... or a provider/slug model, and refuses any other family", () => {
       const d = fixture();
-      for (const spec of ["MISSION_ANALYST_MODEL=x-ai/grok-x", "MISSION_REVIEWER_MODEL=anthropic/claude-x"]) {
-        const r = run(["merge", "--base", join(d, "base.env"), "--out", join(d, "new.env"), "--set-public", spec]);
+      const ok = run(["merge", "--base", join(d, "base.env"), "--out", join(d, "new.env"),
+        "--set-public", "MISSION_ANALYST_MODEL=deepseek-v4-flash", "--set-public", "MISSION_REVIEWER_MODEL=deepseek-v4-pro"]);
+      expect(ok.code, ok.err).toBe(0);
+      for (const spec of ["MISSION_ANALYST_MODEL=openai/gpt-x", "MISSION_REVIEWER_MODEL=gpt-5", "MISSION_ANALYST_MODEL=deepseek-"]) {
+        const r = run(["merge", "--base", join(d, "base.env"), "--out", join(d, `bad-${spec.length}.env`), "--set-public", spec]);
         expect(r.code, spec).toBe(2);
         expect(r.err).toMatch(/unexpected shape/);
       }
+    });
+
+    it("takes the DeepSeek key from a file only, with the right shape", () => {
+      const d = fixture();
+      const DS = "sk-" + "d".repeat(32);
+      writeFileSync(join(d, "ds.txt"), DS);
+      const r = run(["merge", "--base", join(d, "base.env"), "--out", join(d, "new.env"), "--set-from", `MISSION_DEEPSEEK_API_KEY=${join(d, "ds.txt")}`]);
+      expect(r.code, r.err).toBe(0);
+      expect(r.out + r.err).not.toContain(DS);
+      const argv = run(["merge", "--base", join(d, "base.env"), "--out", join(d, "n2.env"), "--set-public", `MISSION_DEEPSEEK_API_KEY=${DS}`]);
+      expect(argv.code).toBe(2);
+      expect(argv.err).toMatch(/never argv/);
+      writeFileSync(join(d, "bad.txt"), "sk-short");
+      const bad = run(["merge", "--base", join(d, "base.env"), "--out", join(d, "n3.env"), "--set-from", `MISSION_DEEPSEEK_API_KEY=${join(d, "bad.txt")}`]);
+      expect(bad.code).toBe(2);
     });
 
     it("never accepts the OpenRouter key or the GitHub token via argv", () => {

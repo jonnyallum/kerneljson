@@ -124,9 +124,9 @@ export function fakeRuntime(config: {
 }
 
 /** Claude-like analyst: reads the head sha and cites tree paths straight from the prompt. */
-export function fakeClaude(over: { headSha?: string; paths?: string[]; responseModel?: string; reply?: FakeReply } = {}) {
+export function fakeClaude(over: { headSha?: string; paths?: string[]; responseModel?: string; reply?: FakeReply; model?: string } = {}) {
   return fakeRuntime({
-    model: "anthropic/claude-test",
+    model: over.model ?? "anthropic/claude-test",
     ...(over.responseModel ? { responseModel: over.responseModel } : {}),
     reply: (prompt) => {
       if (over.reply !== undefined) return over.reply;
@@ -137,9 +137,9 @@ export function fakeClaude(over: { headSha?: string; paths?: string[]; responseM
 }
 
 /** Grok-like reviewer: copies the analysis digest and the verbatim analysis out of the prompt. */
-export function fakeGrok(over: { verdict?: "approve" | "approve_with_notes" | "reject"; unsupported?: number[]; echoDigest?: string; responseModel?: string; reply?: FakeReply } = {}) {
+export function fakeGrok(over: { verdict?: "approve" | "approve_with_notes" | "reject"; unsupported?: number[]; echoDigest?: string; responseModel?: string; reply?: FakeReply; model?: string } = {}) {
   return fakeRuntime({
-    model: "x-ai/grok-test",
+    model: over.model ?? "x-ai/grok-test",
     ...(over.responseModel ? { responseModel: over.responseModel } : {}),
     reply: (prompt) => {
       if (over.reply !== undefined) return over.reply;

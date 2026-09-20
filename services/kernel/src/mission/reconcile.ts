@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import {
   GithubFacts,
-  MISSION_ANALYST_FAMILY,
-  MISSION_REVIEWER_FAMILY,
+  MISSION_RUNTIME_FAMILIES,
   MissionAnalysis,
   MissionReconciliation,
   MissionReview,
   RECONCILE_CHECKS,
+  modelFamily,
 } from "../../../../packages/contracts/src/index.js";
 import { capabilityDigest } from "../../../../packages/capabilities/src/index.js";
 
@@ -41,7 +41,8 @@ export const parseAnalysis = (text: string): MissionAnalysis | null =>
 export const parseReview = (text: string): MissionReview | null =>
   tryParse((v) => MissionReview.parse(v), text);
 
-const inFamily = (model: string, family: string): boolean => model.startsWith(`${family}/`);
+const runtimeAllowed = (model: string): boolean =>
+  (MISSION_RUNTIME_FAMILIES as readonly string[]).includes(modelFamily(model));
 
 export interface ReconcileInput {
   facts: GithubFacts;
@@ -66,8 +67,10 @@ export function reconcileMission(input: ReconcileInput): MissionReconciliation {
       analysis !== null && analysis.findings.every((f) => f.paths.every((p) => treePaths.has(p))),
     review_schema_valid: review !== null,
     review_binds_to_analysis: review !== null && review.reviewedAnalysisSha256 === analysisDigest,
-    analyst_is_claude_family: inFamily(input.analystModel, MISSION_ANALYST_FAMILY),
-    reviewer_is_grok_family: inFamily(input.reviewerModel, MISSION_REVIEWER_FAMILY),
+    analyst_runtime_allowed: runtimeAllowed(input.analystModel),
+    reviewer_runtime_allowed: runtimeAllowed(input.reviewerModel),
+    // The reviewer must be a different model from the analyst, or it is marking its own work.
+    reviewer_is_independent: input.analystModel !== input.reviewerModel,
     review_verdict_acceptable: review !== null && review.verdict !== "reject",
     review_flags_no_unsupported_findings: review !== null && review.unsupportedFindings.length === 0,
   };

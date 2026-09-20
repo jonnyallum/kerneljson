@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   MISSION_RECIPE,
+  MissionAnalysis,
   RECONCILE_CHECKS,
+  modelFamily,
   parseMissionObjective,
   type GithubFacts,
 } from "../packages/contracts/src/index.js";
@@ -134,10 +136,25 @@ describe("KJ-P3 reconciliation (the kernel's judgement, from evidence alone)", (
     expect(reconcileMission({ ...base, reviewText: reviewJson({ analysisText, verdict: "approve_with_notes" }) }).decision).toBe("ACCEPTED");
   });
 
-  it("enforces who played which role, by the model the provider reports it ran", () => {
-    expect(failing({ ...base, analystModel: "openai/gpt-test" })).toEqual(["analyst_is_claude_family"]);
-    expect(failing({ ...base, reviewerModel: "anthropic/claude-test" })).toEqual(["reviewer_is_grok_family"]);
-    expect(failing({ ...base, analystModel: "anthropic/claude-test", reviewerModel: "anthropic/claude-other" })).toEqual(["reviewer_is_grok_family"]);
+  it("accepts any allowed runtime family for either role, judged by the model the provider reports it ran", () => {
+    expect(failing({ ...base, analystModel: "openai/gpt-test" })).toEqual(["analyst_runtime_allowed"]);
+    expect(failing({ ...base, reviewerModel: "mistral/large" })).toEqual(["reviewer_runtime_allowed"]);
+    expect(reconcileMission({ ...base, analystModel: "deepseek-v4-flash", reviewerModel: "deepseek-v4-pro" }).decision).toBe("ACCEPTED");
+    expect(reconcileMission({ ...base, analystModel: "deepseek/deepseek-v4-flash", reviewerModel: "anthropic/claude-test" }).decision).toBe("ACCEPTED");
+    expect(reconcileMission({ ...base, analystModel: "anthropic/claude-test", reviewerModel: "x-ai/grok-test" }).decision).toBe("ACCEPTED");
+  });
+
+  it("rejects a reviewer that is the same model as the analyst (it would be marking its own work)", () => {
+    expect(failing({ ...base, analystModel: "deepseek-v4-pro", reviewerModel: "deepseek-v4-pro" })).toEqual(["reviewer_is_independent"]);
+    expect(failing({ ...base, analystModel: "anthropic/claude-test", reviewerModel: "anthropic/claude-test" })).toEqual(["reviewer_is_independent"]);
+  });
+
+  it("reads the family from both the provider/slug and the bare model forms", () => {
+    expect(modelFamily("anthropic/claude-sonnet-5")).toBe("anthropic");
+    expect(modelFamily("x-ai/grok-4.6")).toBe("x-ai");
+    expect(modelFamily("deepseek/deepseek-v4-pro")).toBe("deepseek");
+    expect(modelFamily("deepseek-v4-flash")).toBe("deepseek");
+    expect(modelFamily("/weird")).not.toBe("anthropic");
   });
 
   it("fails closed on runtime output that is not the required JSON", () => {
@@ -180,6 +197,19 @@ describe("KJ-P3 prompts (the runtime contract)", () => {
     expect(req.maxOutputTokens).toBeLessThanOrEqual(8192);
   });
 
+  it("states the hard output limits, inside the schema's own bounds, so a runtime cannot overshoot by accident", () => {
+    const system = analystRequest({ ...common, question: "q" }).messages[0]!.content;
+    expect(system).toContain("AT MOST 8 findings");
+    expect(system).toContain("summary at most 1500 characters");
+    expect(system).toContain("rejected outright");
+    // The prompt's limits must never exceed what the schema accepts.
+    expect(MissionAnalysis.safeParse({
+      headSha: HEAD,
+      summary: "s".repeat(1500),
+      findings: Array.from({ length: 8 }, () => ({ title: "t".repeat(100), detail: "d".repeat(500), paths: ["README.md"] })),
+    }).success).toBe(true);
+  });
+
   it("gives the reviewer the verbatim analysis and the digest to echo", () => {
     const analysisText = analysisJson();
     const req = reviewerRequest({ ...common, analysisText, analysisDigest: sha256Text(analysisText) });
@@ -213,37 +243,59 @@ describe("KJ-P3 completion notice", () => {
 });
 
 describe("KJ-P3 mission runtime configuration (fail closed)", () => {
-  const full = {
+  const openrouter = {
     MISSION_OPENROUTER_API_KEY: "sk-or-v1-" + "a".repeat(64),
     MISSION_ANALYST_MODEL: "anthropic/claude-test",
     MISSION_REVIEWER_MODEL: "x-ai/grok-test",
   };
+  const deepseek = {
+    MISSION_DEEPSEEK_API_KEY: "sk-" + "a".repeat(32),
+    MISSION_ANALYST_MODEL: "deepseek-v4-flash",
+    MISSION_REVIEWER_MODEL: "deepseek-v4-pro",
+  };
 
   it("serves no mission when nothing is set, exactly as the worker did before", () => {
     expect(loadMissionConfig({})).toBeUndefined();
-    expect(loadMissionConfig({ MISSION_OPENROUTER_API_KEY: "", MISSION_ANALYST_MODEL: "", MISSION_REVIEWER_MODEL: "" })).toBeUndefined();
+    expect(loadMissionConfig({ MISSION_OPENROUTER_API_KEY: "", MISSION_DEEPSEEK_API_KEY: "", MISSION_ANALYST_MODEL: "", MISSION_REVIEWER_MODEL: "" })).toBeUndefined();
   });
 
-  it("refuses to start half-configured, without ever printing the key", () => {
-    for (const drop of Object.keys(full)) {
-      const partial = { ...full } as Record<string, string>;
-      delete partial[drop];
-      let message = "";
-      try { loadMissionConfig(partial); } catch (e) { message = (e as Error).message; }
-      expect(message, drop).toMatch(/all be set or all left unset/);
-      expect(message).not.toContain("sk-or-v1");
+  it("refuses to start half-configured, without ever printing a key", () => {
+    for (const set of [openrouter, deepseek]) {
+      for (const drop of Object.keys(set)) {
+        const partial = { ...set } as Record<string, string>;
+        delete partial[drop];
+        let message = "";
+        try { loadMissionConfig(partial); } catch (e) { message = (e as Error).message; }
+        expect(message, drop).toMatch(/all be set or all left unset/);
+        expect(message).not.toMatch(/sk-or-v1|sk-a{8}/);
+      }
     }
   });
 
-  it("requires the recipe's families: Claude analyses, Grok reviews", () => {
-    expect(() => loadMissionConfig({ ...full, MISSION_ANALYST_MODEL: "x-ai/grok-test" })).toThrow(/anthropic/);
-    expect(() => loadMissionConfig({ ...full, MISSION_REVIEWER_MODEL: "anthropic/claude-test" })).toThrow(/x-ai/);
+  it("refuses two provider keys at once rather than guessing which to use", () => {
+    expect(() => loadMissionConfig({ ...openrouter, MISSION_DEEPSEEK_API_KEY: deepseek.MISSION_DEEPSEEK_API_KEY })).toThrow(/choose one provider/);
   });
 
-  it("builds two ports when fully configured", () => {
-    const c = loadMissionConfig(full)!;
-    expect(c.analystModel).toBe("anthropic/claude-test");
-    expect(c.reviewerModel).toBe("x-ai/grok-test");
+  it("builds a DeepSeek pair from bare deepseek-... models", () => {
+    const c = loadMissionConfig(deepseek)!;
+    expect(c).toMatchObject({ provider: "deepseek", analystModel: "deepseek-v4-flash", reviewerModel: "deepseek-v4-pro" });
     expect(typeof c.analyst.generate).toBe("function");
+  });
+
+  it("builds an OpenRouter pair from provider/slug models, including a Claude and Grok pairing", () => {
+    expect(loadMissionConfig(openrouter)).toMatchObject({ provider: "openrouter", analystModel: "anthropic/claude-test", reviewerModel: "x-ai/grok-test" });
+    expect(loadMissionConfig({ ...openrouter, MISSION_ANALYST_MODEL: "deepseek/deepseek-v4-flash" })).toMatchObject({ provider: "openrouter" });
+  });
+
+  it("requires the two models to differ, so the reviewer is never the analyst", () => {
+    expect(() => loadMissionConfig({ ...deepseek, MISSION_REVIEWER_MODEL: "deepseek-v4-flash" })).toThrow(/must differ/);
+    expect(() => loadMissionConfig({ ...openrouter, MISSION_REVIEWER_MODEL: "anthropic/claude-test" })).toThrow(/must differ/);
+  });
+
+  it("rejects an unknown family, and a model form that does not match the provider", () => {
+    expect(() => loadMissionConfig({ ...deepseek, MISSION_ANALYST_MODEL: "gpt-5" })).toThrow(/must be a model from one of/);
+    expect(() => loadMissionConfig({ ...openrouter, MISSION_ANALYST_MODEL: "openai/gpt-x" })).toThrow(/must be a model from one of/);
+    expect(() => loadMissionConfig({ ...deepseek, MISSION_ANALYST_MODEL: "anthropic/claude-test" })).toThrow(/bare deepseek/);
+    expect(() => loadMissionConfig({ ...openrouter, MISSION_ANALYST_MODEL: "deepseek-v4-flash" })).toThrow(/provider\/slug/);
   });
 });
