@@ -45,6 +45,34 @@ describe("KJ-P3 mission CLI", () => {
     expect(out.join("")).not.toContain(BEARER);
   });
 
+  it("KJ-P3.1 carries the requested finding count into the objective as a structured directive", async () => {
+    const calls: Array<{ init: RequestInit }> = [];
+    const fetchImpl = (async (_url: string, init: RequestInit) => { calls.push({ init }); return ok({ taskId: TASK, status: "RECEIVED", dispatch: "ACCEPTED" }, 202); }) as unknown as typeof fetch;
+    await admitMission({ ...base, repo: "a/b", label: "l", findings: "3", question: "Top improvements?" }, { fetch: fetchImpl, readFile: read });
+    await admitMission({ ...base, repo: "a/b", label: "l", "max-findings": "5" }, { fetch: fetchImpl, readFile: read });
+    const objectives = calls.map((c) => (JSON.parse(c.init.body as string) as { objective: string }).objective);
+    expect(objectives).toEqual(["a/b findings=3 Top improvements?", "a/b max-findings=5"]);
+  });
+
+  it("KJ-P3.1 treats a different requested count as a different request, and leaves an unchanged request's key alone", () => {
+    expect(idempotencyKey("a/b", "q", "one", "findings=3")).not.toBe(idempotencyKey("a/b", "q", "one"));
+    expect(idempotencyKey("a/b", "q", "one", "findings=3")).not.toBe(idempotencyKey("a/b", "q", "one", "findings=4"));
+    expect(idempotencyKey("a/b", "q", "one", "findings=3")).toBe(idempotencyKey("a/b", "q", "one", "findings=3"));
+    // Without a directive the key is exactly what it was before KJ-P3.1, so an existing label still replays.
+    expect(idempotencyKey("a/b", "q", "one", "")).toBe(idempotencyKey("a/b", "q", "one"));
+  });
+
+  it("KJ-P3.1 rejects a bad count before any network call", async () => {
+    let called = false;
+    const fetchImpl = (async () => { called = true; return ok({}); }) as unknown as typeof fetch;
+    for (const bad of ["0", "13", "three", "-1", "2.5"]) {
+      await expect(admitMission({ ...base, repo: "a/b", label: "l", findings: bad }, { fetch: fetchImpl, readFile: read }), bad).rejects.toThrow();
+      await expect(admitMission({ ...base, repo: "a/b", label: "l", "max-findings": bad }, { fetch: fetchImpl, readFile: read }), bad).rejects.toThrow();
+    }
+    await expect(admitMission({ ...base, repo: "a/b", label: "l", findings: "3", "max-findings": "5" }, { fetch: fetchImpl, readFile: read })).rejects.toThrow();
+    expect(called).toBe(false);
+  });
+
   it("uses a different key for a different label, and the same key for the same one", () => {
     expect(idempotencyKey("a/b", "q", "one")).toBe(idempotencyKey("a/b", "q", "one"));
     expect(idempotencyKey("a/b", "q", "one")).not.toBe(idempotencyKey("a/b", "q", "two"));

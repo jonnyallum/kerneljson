@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { createHash } from "node:crypto";
 import { GithubReadError, createGithubReader } from "../packages/runtimes/src/index.js";
 import { capabilityDigest } from "../packages/capabilities/src/index.js";
 
@@ -16,7 +17,12 @@ const json = (value: unknown, status = 200, headers: Record<string, string> = {}
 
 const repo = { full_name: SLUG, private: true, default_branch: "main", language: "TypeScript", size: 4200, pushed_at: "2026-09-19T14:05:00Z", open_issues_count: 2 };
 const commit = { sha: HEAD, commit: { committer: { date: "2026-09-19T14:00:00Z" }, message: "first line\n\nbody that must not leak in" } };
-const tree = (entries: Array<{ path: string; type: string }>, truncated = false) => ({ truncated, tree: entries });
+// GitHub gives every tree entry its git object id. A test entry gets a stable one unless it names its own.
+const objectId = (path: string): string => createHash("sha1").update(path).digest("hex");
+const tree = (entries: Array<{ path: string; type: string; sha?: string }>, truncated = false) => ({
+  truncated,
+  tree: entries.map((e) => ({ ...e, sha: e.sha ?? objectId(e.path) })),
+});
 const readme = (text: string) => ({ path: "README.md", encoding: "base64", content: Buffer.from(text).toString("base64") });
 
 function router(routes: Record<string, Route>) {
@@ -62,6 +68,43 @@ describe("KJ-P3 GitHub evidence reader", () => {
   it("keeps only blobs and trees, shallowest first, and drops submodule entries", async () => {
     const { facts } = await createGithubReader({ fetch: happy().fetchImpl })({ repo: SLUG });
     expect(facts.tree.map((e) => e.path)).toEqual(["README.md", "services", "services/kernel/src/index.ts"]);
+  });
+
+  it("KJ-P3.1 captures each entry's git object id from the same tree response, with no extra request", async () => {
+    const pinned = "c".repeat(40);
+    const r = happy({
+      [`/repos/jonnyallum/kerneljson/git/trees/${HEAD}`]: json(tree([
+        { path: "README.md", type: "blob", sha: pinned },
+        { path: "services", type: "tree" },
+      ])),
+    });
+    const { facts, factsDigest } = await createGithubReader({ fetch: r.fetchImpl })({ repo: SLUG });
+    expect(facts.tree).toEqual([
+      { path: "README.md", type: "blob", sha: pinned },
+      { path: "services", type: "tree", sha: objectId("services") },
+    ]);
+    // The object ids are part of the evidence, so they are part of its digest.
+    expect(factsDigest).toBe(capabilityDigest(facts));
+    expect(r.calls).toHaveLength(4);
+    const other = happy({
+      [`/repos/jonnyallum/kerneljson/git/trees/${HEAD}`]: json(tree([
+        { path: "README.md", type: "blob", sha: "d".repeat(40) },
+        { path: "services", type: "tree" },
+      ])),
+    });
+    expect((await createGithubReader({ fetch: other.fetchImpl })({ repo: SLUG })).factsDigest).not.toBe(factsDigest);
+  });
+
+  it("KJ-P3.1 refuses a tree entry that has no valid object id rather than recording unbound evidence", async () => {
+    const entry = (extra: object) => json({ truncated: false, tree: [{ path: "README.md", type: "blob", ...extra }] });
+    for (const [label, body] of [
+      ["missing", entry({})],
+      ["too short", entry({ sha: "abc123" })],
+      ["not hex", entry({ sha: "z".repeat(40) })],
+    ] as const) {
+      const r = happy({ [`/repos/jonnyallum/kerneljson/git/trees/${HEAD}`]: body });
+      expect((await codeOf(createGithubReader({ fetch: r.fetchImpl })({ repo: SLUG }))).code, label).toBe("MALFORMED");
+    }
   });
 
   it("flags a truncated tree, from GitHub or from its own cap", async () => {

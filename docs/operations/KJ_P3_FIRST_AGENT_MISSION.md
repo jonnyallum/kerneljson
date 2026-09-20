@@ -38,6 +38,11 @@ evidence-bound; the production scheduler and alerting code are untouched.
 5. A way to admit and watch a mission without putting the bearer in a command line.
 6. Deployment plumbing so the new settings are not silently dropped (compose allowlist, env-merge tool).
 
+> **Superseded in part by KJ-P3.1** (`KJ_P3_1_MISSION_QUALITY.md`): the reconciliation now makes thirteen checks (a finding-count
+> contract, uncited findings and evidence binding to the captured commit were added), findings cite `evidence` with git object ids
+> instead of bare `paths`, and the provider is chosen per role so the analyst and reviewer can use different providers. The text
+> below describes the mission as first shipped.
+
 ## Architecture path
 
 ```

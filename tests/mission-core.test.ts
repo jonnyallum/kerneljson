@@ -1,12 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
+  MISSION_OUTPUT_SCHEMA,
   MISSION_RECIPE,
   MissionAnalysis,
   RECONCILE_CHECKS,
   modelFamily,
   parseMissionObjective,
+  sameModel,
   type GithubFacts,
 } from "../packages/contracts/src/index.js";
+import { capabilityDigest } from "../packages/capabilities/src/index.js";
 import { compileIntent, criteria } from "../services/kernel/src/compiler/index.js";
 import { planTask, orderedSteps, projectStep } from "../services/kernel/src/planner/index.js";
 import { digest } from "../services/kernel/src/deterministic.js";
@@ -25,7 +28,7 @@ import { InMemoryNotificationOutboxStore } from "../services/kernel/src/alerting
 import { PublicSubmission } from "../apps/gateway/src/server.js";
 import { kernelSubmission } from "../evals/fixtures/kernel.js";
 import { id, at } from "../evals/fixtures/contracts.js";
-import { CITED, HEAD, REPO, analysisJson, makeFacts, reviewJson } from "./support/mission-fixture.js";
+import { CITED, HEAD, REPO, analysisJson, cite, makeFacts, reviewJson, shaFor } from "./support/mission-fixture.js";
 
 const submission = (objective: string) => ({
   recipe: MISSION_RECIPE,
@@ -36,7 +39,7 @@ describe("KJ-P3 mission objective and admission", () => {
   it("parses owner/repo with and without a question", () => {
     expect(parseMissionObjective(REPO).repo).toBe(REPO);
     expect(parseMissionObjective(REPO).question).toMatch(/architecture/);
-    expect(parseMissionObjective(`${REPO}   What are the risks?`)).toEqual({ repo: REPO, question: "What are the risks?" });
+    expect(parseMissionObjective(`${REPO}   What are the risks?`)).toMatchObject({ repo: REPO, question: "What are the risks?" });
   });
 
   it("rejects anything that is not a plain GitHub slug (traversal, urls, flags, empty)", () => {
@@ -46,7 +49,7 @@ describe("KJ-P3 mission objective and admission", () => {
   });
 
   it("treats text after the slug as a question, never as part of the repository name", () => {
-    expect(parseMissionObjective("o/r\nrm -rf /")).toEqual({ repo: "o/r", question: "rm -rf /" });
+    expect(parseMissionObjective("o/r\nrm -rf /")).toMatchObject({ repo: "o/r", question: "rm -rf /" });
   });
 
   it("is rejected at compile time (admission), not mid-run, when the objective is invalid", () => {
@@ -59,6 +62,45 @@ describe("KJ-P3 mission objective and admission", () => {
   it("is admissible through the public gateway schema, and only by its exact id", () => {
     expect(PublicSubmission.safeParse({ recipe: MISSION_RECIPE, objective: REPO }).success).toBe(true);
     expect(PublicSubmission.safeParse({ recipe: "repo-analysis-mission/v2", objective: REPO }).success).toBe(false);
+  });
+});
+
+describe("KJ-P3.1 mission contract in the objective", () => {
+  const contractOf = (objective: string) => parseMissionObjective(objective).contract;
+
+  it("defaults to between one and eight findings when nothing is asked for", () => {
+    expect(contractOf(REPO)).toEqual({ outputSchema: MISSION_OUTPUT_SCHEMA, requestedFindings: null, minFindings: 1, maxFindings: 8 });
+    expect(contractOf(`${REPO} What are the risks?`)).toMatchObject({ requestedFindings: null, minFindings: 1, maxFindings: 8 });
+  });
+
+  it("findings=N asks for exactly N, and the directive is not part of the question", () => {
+    const p = parseMissionObjective(`${REPO} findings=3 Identify the three highest-value improvements`);
+    expect(p.contract).toEqual({ outputSchema: MISSION_OUTPUT_SCHEMA, requestedFindings: 3, minFindings: 3, maxFindings: 3 });
+    expect(p.question).toBe("Identify the three highest-value improvements");
+    expect(parseMissionObjective(`${REPO} findings=2`).question).toMatch(/architecture/);
+  });
+
+  it("max-findings=N sets a ceiling and no exact count", () => {
+    expect(contractOf(`${REPO} max-findings=5 risks?`)).toEqual({ outputSchema: MISSION_OUTPUT_SCHEMA, requestedFindings: null, minFindings: 1, maxFindings: 5 });
+  });
+
+  it("recognises a directive only straight after the slug, and never reads a number out of the English", () => {
+    expect(contractOf(`${REPO} What is wrong? findings=3`)).toMatchObject({ requestedFindings: null, maxFindings: 8 });
+    expect(contractOf(`${REPO} Give me the three best improvements`)).toMatchObject({ requestedFindings: null, maxFindings: 8 });
+  });
+
+  it("rejects a malformed or contradictory directive at admission instead of leaving it unenforced", () => {
+    for (const bad of ["findings=0", "findings=13", "findings=three", "findings=", "findings=-1", "findings=3 findings=4", "max-findings=0", "max-findings=x", "findings=3 max-findings=5", "findings=1.5"]) {
+      expect(() => parseMissionObjective(`${REPO} ${bad} q`), bad).toThrow();
+      expect(() => compileIntent(submission(`${REPO} ${bad} q`)), bad).toThrow();
+    }
+    expect(compileIntent(submission(`${REPO} findings=3 why?`)).task.riskClass).toBe("LOW");
+  });
+
+  it("leaves the task's acceptance criterion, and so its plan, exactly as it was", () => {
+    const { task } = compileIntent(submission(`${REPO} findings=3 why?`));
+    expect(task.acceptanceCriteria).toEqual([criteria[MISSION_RECIPE]]);
+    expect(() => planTask(task, MISSION_RECIPE)).not.toThrow();
   });
 });
 
@@ -97,12 +139,22 @@ describe("KJ-P3 reconciliation (the kernel's judgement, from evidence alone)", (
   const analysisText = analysisJson();
   const base = {
     facts,
+    contract: parseMissionObjective(REPO).contract,
     analysisText,
     analystModel: "anthropic/claude-test",
+    analystProvider: "openrouter",
     reviewText: reviewJson({ analysisText }),
     reviewerModel: "x-ai/grok-test",
+    reviewerProvider: "openrouter",
   };
   const failing = (input: Parameters<typeof reconcileMission>[0]) => failedCheckNames(reconcileMission(input));
+  /** The same mission judged with a different analysis, the reviewer approving it. */
+  const withAnalysis = (text: string, over: Partial<typeof base> = {}) => ({
+    ...base,
+    ...over,
+    analysisText: text,
+    reviewText: reviewJson({ analysisText: text }),
+  });
 
   it("accepts a well-formed, evidence-matching, independently approved analysis", () => {
     const rec = reconcileMission(base);
@@ -113,12 +165,12 @@ describe("KJ-P3 reconciliation (the kernel's judgement, from evidence alone)", (
 
   it("rejects an analysis about a different commit", () => {
     const text = analysisJson({ headSha: "f".repeat(40) });
-    expect(failing({ ...base, analysisText: text, reviewText: reviewJson({ analysisText: text }) })).toContain("analysis_head_sha_matches_evidence");
+    expect(failing(withAnalysis(text))).toContain("analysis_head_sha_matches_evidence");
   });
 
   it("rejects a finding that cites a file that is not in the evidence (hallucination), even if the reviewer approves", () => {
-    const text = analysisJson({ paths: [...CITED, "services/kernel/src/does-not-exist.ts"] });
-    const rec = reconcileMission({ ...base, analysisText: text, reviewText: reviewJson({ analysisText: text }) });
+    const text = analysisJson({ evidence: [...CITED.map((p) => cite(p)), cite("services/kernel/src/does-not-exist.ts")] });
+    const rec = reconcileMission(withAnalysis(text));
     expect(rec.decision).toBe("REJECTED");
     expect(failedCheckNames(rec)).toEqual(["analysis_paths_exist_in_evidence"]);
   });
@@ -144,11 +196,6 @@ describe("KJ-P3 reconciliation (the kernel's judgement, from evidence alone)", (
     expect(reconcileMission({ ...base, analystModel: "anthropic/claude-test", reviewerModel: "x-ai/grok-test" }).decision).toBe("ACCEPTED");
   });
 
-  it("rejects a reviewer that is the same model as the analyst (it would be marking its own work)", () => {
-    expect(failing({ ...base, analystModel: "deepseek-v4-pro", reviewerModel: "deepseek-v4-pro" })).toEqual(["reviewer_is_independent"]);
-    expect(failing({ ...base, analystModel: "anthropic/claude-test", reviewerModel: "anthropic/claude-test" })).toEqual(["reviewer_is_independent"]);
-  });
-
   it("reads the family from both the provider/slug and the bare model forms", () => {
     expect(modelFamily("anthropic/claude-sonnet-5")).toBe("anthropic");
     expect(modelFamily("x-ai/grok-4.6")).toBe("x-ai");
@@ -158,9 +205,14 @@ describe("KJ-P3 reconciliation (the kernel's judgement, from evidence alone)", (
   });
 
   it("fails closed on runtime output that is not the required JSON", () => {
-    expect(failing({ ...base, analysisText: "Looks great!" })).toEqual(expect.arrayContaining(["analysis_schema_valid", "analysis_head_sha_matches_evidence", "analysis_paths_exist_in_evidence", "review_binds_to_analysis"]));
+    expect(failing({ ...base, analysisText: "Looks great!" })).toEqual(expect.arrayContaining([
+      "analysis_schema_valid", "analysis_head_sha_matches_evidence", "analysis_finding_count_within_contract",
+      "analysis_findings_cited", "analysis_paths_exist_in_evidence", "analysis_evidence_binds_to_commit", "review_binds_to_analysis",
+    ]));
     expect(failing({ ...base, reviewText: '{"verdict":"approve"}' })).toEqual(expect.arrayContaining(["review_schema_valid", "review_verdict_acceptable"]));
     expect(failing({ ...base, analysisText: `${analysisText} trailing junk` })).toContain("analysis_schema_valid");
+    // Unparseable output must not leave a grounding digest behind.
+    expect(reconcileMission({ ...base, analysisText: "Looks great!" }).findingEvidenceDigests).toEqual([]);
   });
 
   it("rejects extra keys, empty findings and out-of-range indexes in runtime output", () => {
@@ -181,33 +233,224 @@ describe("KJ-P3 reconciliation (the kernel's judgement, from evidence alone)", (
     const rec = reconcileMission(base);
     expect(rec.checks.every((c) => c.passed)).toBe(true);
   });
+
+  describe("KJ-P3.1 the requested count is enforced by the kernel, not by prompt wording", () => {
+    const three = parseMissionObjective(`${REPO} findings=3 Identify the three highest-value improvements`).contract;
+
+    it("asks for 3 and receives 8: REJECTED on the count alone, even though the reviewer approved", () => {
+      const rec = reconcileMission(withAnalysis(analysisJson({ findings: 8 }), { contract: three }));
+      expect(rec.decision).toBe("REJECTED");
+      expect(failedCheckNames(rec)).toEqual(["analysis_finding_count_within_contract"]);
+      expect(rec.findingCount).toBe(8);
+      expect(rec.contract).toMatchObject({ requestedFindings: 3, minFindings: 3, maxFindings: 3 });
+    });
+
+    it("asks for 3 and receives exactly 3: eligible, with one grounding digest per finding", () => {
+      const rec = reconcileMission(withAnalysis(analysisJson({ findings: 3 }), { contract: three }));
+      expect(rec.decision).toBe("ACCEPTED");
+      expect(rec.findingCount).toBe(3);
+      expect(rec.findingEvidenceDigests).toHaveLength(3);
+    });
+
+    it("an exact count also rejects too few", () => {
+      expect(failing(withAnalysis(analysisJson({ findings: 2 }), { contract: three }))).toEqual(["analysis_finding_count_within_contract"]);
+      expect(failing(withAnalysis(analysisJson({ findings: 4 }), { contract: three }))).toEqual(["analysis_finding_count_within_contract"]);
+    });
+
+    it("a ceiling accepts fewer findings but never more", () => {
+      const five = parseMissionObjective(`${REPO} max-findings=5`).contract;
+      expect(reconcileMission(withAnalysis(analysisJson({ findings: 2 }), { contract: five })).decision).toBe("ACCEPTED");
+      expect(reconcileMission(withAnalysis(analysisJson({ findings: 5 }), { contract: five })).decision).toBe("ACCEPTED");
+      expect(failing(withAnalysis(analysisJson({ findings: 6 }), { contract: five }))).toEqual(["analysis_finding_count_within_contract"]);
+    });
+
+    it("applies the default ceiling of 8 when nothing was asked for", () => {
+      expect(reconcileMission(withAnalysis(analysisJson({ findings: 8 }))).decision).toBe("ACCEPTED");
+      expect(failing(withAnalysis(analysisJson({ findings: 9 })))).toEqual(["analysis_finding_count_within_contract"]);
+    });
+
+    it("beyond the schema's hard cap the analysis is not even valid", () => {
+      expect(failing(withAnalysis(analysisJson({ findings: 13 })))).toContain("analysis_schema_valid");
+    });
+
+    it("rejects a finding with a required field missing", () => {
+      const parsed = JSON.parse(analysisText) as { findings: Array<Record<string, unknown>> };
+      for (const field of ["title", "detail", "evidence"]) {
+        const broken = structuredClone(parsed);
+        delete broken.findings[0]![field];
+        expect(failing(withAnalysis(JSON.stringify(broken))), field).toContain("analysis_schema_valid");
+      }
+      // The pre-KJ-P3.1 output shape (bare paths, no object ids) is no longer accepted.
+      const legacy = structuredClone(parsed);
+      delete legacy.findings[0]!["evidence"];
+      legacy.findings[0]!["paths"] = CITED;
+      expect(failing(withAnalysis(JSON.stringify(legacy)))).toContain("analysis_schema_valid");
+    });
+
+    it("cannot be relaxed by the analysis: the contract is an input, never read from runtime output", () => {
+      const sneaky = JSON.stringify({ ...JSON.parse(analysisJson({ findings: 8 })), contract: { maxFindings: 12 } });
+      expect(failing(withAnalysis(sneaky, { contract: three }))).toContain("analysis_schema_valid");
+    });
+  });
+
+  describe("KJ-P3.1 claim grounding: each finding is bound to this exact repository evidence", () => {
+    const evidenceDigest = (paths: string[], salt = "") =>
+      capabilityDigest({
+        headSha: HEAD,
+        evidence: [...paths].sort().map((path) => ({ path, sha: shaFor(path, salt) })),
+      });
+
+    it("accepts a valid grounded finding, and issues a digest over the head, each path and its full object id", () => {
+      const rec = reconcileMission(base);
+      expect(rec.decision).toBe("ACCEPTED");
+      expect(rec.findingEvidenceDigests).toEqual([evidenceDigest(CITED)]);
+    });
+
+    it("accepts the full 40 character object id as well as the 12 character prefix the prompt shows", () => {
+      const full = CITED.map((path) => ({ path, blobSha: shaFor(path) }));
+      expect(reconcileMission(withAnalysis(analysisJson({ evidence: full }))).decision).toBe("ACCEPTED");
+      expect(MissionAnalysis.safeParse(JSON.parse(analysisJson({ evidence: [{ path: "README.md", blobSha: shaFor("README.md").slice(0, 11) }] }))).success).toBe(false);
+    });
+
+    it("rejects an uncited finding, by name", () => {
+      const rec = reconcileMission(withAnalysis(analysisJson({ evidence: [] })));
+      expect(failedCheckNames(rec)).toEqual(["analysis_findings_cited"]);
+      expect(rec.findingEvidenceDigests).toEqual([]);
+    });
+
+    it("rejects a finding where the path exists but the evidence digest does not bind", () => {
+      const rec = reconcileMission(withAnalysis(analysisJson({ evidence: [{ path: "README.md", blobSha: "0".repeat(12) }] })));
+      expect(rec.decision).toBe("REJECTED");
+      // The path is in the tree, so the existence check passes: only the binding fails.
+      expect(failedCheckNames(rec)).toEqual(["analysis_evidence_binds_to_commit"]);
+      expect(rec.findingEvidenceDigests).toEqual([]);
+    });
+
+    it("rejects evidence taken from another commit, even when every path still exists", () => {
+      const otherCommit = CITED.map((p) => cite(p, "another-commit"));
+      expect(failing(withAnalysis(analysisJson({ evidence: otherCommit })))).toEqual(["analysis_evidence_binds_to_commit"]);
+    });
+
+    it("rejects evidence when the analysis claims a different head sha", () => {
+      const names = failing(withAnalysis(analysisJson({ headSha: "f".repeat(40) })));
+      expect(names).toEqual(expect.arrayContaining(["analysis_head_sha_matches_evidence", "analysis_evidence_binds_to_commit"]));
+    });
+
+    it("binds a directory by its tree id as well as a file by its blob id", () => {
+      expect(reconcileMission(withAnalysis(analysisJson({ paths: ["services/kernel"] }))).decision).toBe("ACCEPTED");
+      expect(failing(withAnalysis(analysisJson({ evidence: [{ path: "services/kernel", blobSha: shaFor("README.md").slice(0, 12) }] })))).toEqual(["analysis_evidence_binds_to_commit"]);
+    });
+
+    it("one bad citation among good ones is enough to reject the whole analysis", () => {
+      const mixed = [cite("README.md"), { path: "ARCHITECTURE.md", blobSha: "f".repeat(12) }];
+      expect(failing(withAnalysis(analysisJson({ evidence: mixed })))).toEqual(["analysis_evidence_binds_to_commit"]);
+    });
+
+    it("changes the digest when the cited file changes at the same path, so it is bound to content and not to the name", () => {
+      const changed = makeFacts({ tree: makeFacts().tree.map((e) => (e.path === "README.md" ? { ...e, sha: shaFor("README.md", "edited") } : e)) });
+      const text = analysisJson({ evidence: [cite("README.md", "edited")] });
+      const rec = reconcileMission(withAnalysis(text, { facts: changed }));
+      expect(rec.decision).toBe("ACCEPTED");
+      expect(rec.findingEvidenceDigests).toEqual([evidenceDigest(["README.md"], "edited")]);
+      expect(rec.findingEvidenceDigests[0]).not.toBe(evidenceDigest(["README.md"]));
+      // ...and the original citation no longer binds to the edited tree.
+      expect(failing(withAnalysis(analysisJson({ evidence: [cite("README.md")] }), { facts: changed }))).toEqual(["analysis_evidence_binds_to_commit"]);
+    });
+  });
+
+  describe("KJ-P3.1 analyst and reviewer independence", () => {
+    it("rejects a reviewer that is the same model as the analyst (it would be marking its own work)", () => {
+      expect(failing({ ...base, analystModel: "deepseek-v4-pro", reviewerModel: "deepseek-v4-pro" })).toEqual(["reviewer_is_independent"]);
+      expect(failing({ ...base, analystModel: "anthropic/claude-test", reviewerModel: "anthropic/claude-test" })).toEqual(["reviewer_is_independent"]);
+    });
+
+    it("rejects the same model reached by two routes, judged on the slug and not the route", () => {
+      expect(failing({ ...base, analystModel: "deepseek-v4-pro", analystProvider: "deepseek", reviewerModel: "deepseek/deepseek-v4-pro", reviewerProvider: "openrouter" })).toEqual(["reviewer_is_independent"]);
+      expect(sameModel("deepseek-v4-pro", "DeepSeek/deepseek-v4-pro")).toBe(true);
+      expect(sameModel("deepseek-v4-flash", "deepseek/deepseek-v4-pro")).toBe(false);
+    });
+
+    it("accepts a cross-provider, cross-family pair and records both providers as the receipts reported them", () => {
+      const rec = reconcileMission({
+        ...base,
+        analystModel: "deepseek-v4-flash", analystProvider: "deepseek",
+        reviewerModel: "anthropic/claude-sonnet-5", reviewerProvider: "openrouter",
+      });
+      expect(rec.decision).toBe("ACCEPTED");
+      expect(rec.independence).toEqual({
+        analystProvider: "deepseek", reviewerProvider: "openrouter",
+        analystFamily: "deepseek", reviewerFamily: "anthropic",
+        crossProvider: true, crossFamily: true,
+      });
+    });
+
+    it("keeps the same-provider, same-family fallback, and says plainly that it is the weaker configuration", () => {
+      const rec = reconcileMission({
+        ...base,
+        analystModel: "deepseek-flash", analystProvider: "deepseek",
+        reviewerModel: "deepseek-v4-pro", reviewerProvider: "deepseek",
+      });
+      expect(rec.decision).toBe("ACCEPTED");
+      expect(rec.independence).toMatchObject({ crossProvider: false, crossFamily: false });
+    });
+
+    it("does not mistake a different route to the same lineage for cross-family independence", () => {
+      const rec = reconcileMission({
+        ...base,
+        analystModel: "deepseek-v4-flash", analystProvider: "deepseek",
+        reviewerModel: "deepseek/deepseek-v4-pro", reviewerProvider: "openrouter",
+      });
+      expect(rec.decision).toBe("ACCEPTED");
+      expect(rec.independence).toMatchObject({ crossProvider: true, crossFamily: false });
+    });
+  });
 });
 
 describe("KJ-P3 prompts (the runtime contract)", () => {
   const facts: GithubFacts = makeFacts();
+  const contract = parseMissionObjective(REPO).contract;
   const common = { callId: id, taskId: id, stepId: id, trace: { traceId: id, correlationId: id }, facts, factsDigest: "c".repeat(64) };
 
-  it("gives the analyst the head sha, the tree, the readme and the question, and no tools", () => {
-    const req = analystRequest({ ...common, question: "What are the risks?" });
+  it("gives the analyst the head sha, the tree with object ids, the readme and the question, and no tools", () => {
+    const req = analystRequest({ ...common, question: "What are the risks?", contract });
     const text = req.messages.map((m) => m.content).join("\n");
     expect(text).toContain(`head sha: ${HEAD}`);
-    expect(text).toContain("f services/kernel/src/ledger.ts");
+    expect(text).toContain(`f ${shaFor("services/kernel/src/ledger.ts").slice(0, 12)} services/kernel/src/ledger.ts`);
+    expect(text).toContain(`d ${shaFor("services/kernel").slice(0, 12)} services/kernel`);
     expect(text).toContain("KernelJSON is a durable cognitive execution platform.");
     expect(text).toContain("What are the risks?");
     expect(req.maxOutputTokens).toBeLessThanOrEqual(8192);
   });
 
   it("states the hard output limits, inside the schema's own bounds, so a runtime cannot overshoot by accident", () => {
-    const system = analystRequest({ ...common, question: "q" }).messages[0]!.content;
-    expect(system).toContain("AT MOST 8 findings");
+    const system = analystRequest({ ...common, question: "q", contract }).messages[0]!.content;
+    expect(system).toContain("between 1 and 8 findings");
     expect(system).toContain("summary at most 1500 characters");
     expect(system).toContain("rejected outright");
     // The prompt's limits must never exceed what the schema accepts.
     expect(MissionAnalysis.safeParse({
       headSha: HEAD,
       summary: "s".repeat(1500),
-      findings: Array.from({ length: 8 }, () => ({ title: "t".repeat(100), detail: "d".repeat(500), paths: ["README.md"] })),
+      findings: Array.from({ length: 8 }, () => ({ title: "t".repeat(100), detail: "d".repeat(500), evidence: Array.from({ length: 8 }, () => cite("README.md")) })),
     }).success).toBe(true);
+  });
+
+  it("KJ-P3.1 tells the analyst the exact count it will be held to, for every count the objective can ask for", () => {
+    const exact = parseMissionObjective(`${REPO} findings=3 q`).contract;
+    expect(analystRequest({ ...common, question: "q", contract: exact }).messages[0]!.content).toContain("EXACTLY 3 findings");
+    const ceiling = parseMissionObjective(`${REPO} max-findings=5 q`).contract;
+    expect(analystRequest({ ...common, question: "q", contract: ceiling }).messages[0]!.content).toContain("between 1 and 5 findings");
+    for (let n = 1; n <= 12; n += 1) {
+      const c = parseMissionObjective(`${REPO} findings=${n} q`).contract;
+      expect(analystRequest({ ...common, question: "q", contract: c }).messages[0]!.content).toContain(`EXACTLY ${n} findings`);
+      expect(MissionAnalysis.safeParse(JSON.parse(analysisJson({ findings: n }))).success).toBe(true);
+    }
+  });
+
+  it("KJ-P3.1 tells the analyst how to cite, in the same shape the schema demands", () => {
+    const system = analystRequest({ ...common, question: "q", contract }).messages[0]!.content;
+    expect(system).toContain('"evidence": [{"path"');
+    expect(system).toContain("git object id prefix");
   });
 
   it("gives the reviewer the verbatim analysis and the digest to echo", () => {
@@ -219,7 +462,7 @@ describe("KJ-P3 prompts (the runtime contract)", () => {
   });
 
   it("flags a truncated tree so the runtime knows what it cannot cite", () => {
-    const req = analystRequest({ ...common, facts: makeFacts({ treeTruncated: true }), question: "q" });
+    const req = analystRequest({ ...common, facts: makeFacts({ treeTruncated: true }), question: "q", contract });
     expect(req.messages.map((m) => m.content).join("\n")).toContain("TRUNCATED");
   });
 });
@@ -243,15 +486,28 @@ describe("KJ-P3 completion notice", () => {
 });
 
 describe("KJ-P3 mission runtime configuration (fail closed)", () => {
+  const OR_KEY = "sk-or-v1-" + "a".repeat(64);
+  const DS_KEY = "sk-" + "a".repeat(32);
   const openrouter = {
-    MISSION_OPENROUTER_API_KEY: "sk-or-v1-" + "a".repeat(64),
+    MISSION_OPENROUTER_API_KEY: OR_KEY,
     MISSION_ANALYST_MODEL: "anthropic/claude-test",
     MISSION_REVIEWER_MODEL: "x-ai/grok-test",
   };
   const deepseek = {
-    MISSION_DEEPSEEK_API_KEY: "sk-" + "a".repeat(32),
+    MISSION_DEEPSEEK_API_KEY: DS_KEY,
     MISSION_ANALYST_MODEL: "deepseek-v4-flash",
     MISSION_REVIEWER_MODEL: "deepseek-v4-pro",
+  };
+  /** KJ-P3.1: DeepSeek analyst direct, Claude reviewer through OpenRouter. */
+  const cross = {
+    MISSION_DEEPSEEK_API_KEY: DS_KEY,
+    MISSION_OPENROUTER_API_KEY: OR_KEY,
+    MISSION_ANALYST_MODEL: "deepseek-v4-flash",
+    MISSION_REVIEWER_MODEL: "anthropic/claude-sonnet-5",
+  };
+  const messageOf = (env: Record<string, string>): string => {
+    try { loadMissionConfig(env); } catch (e) { return (e as Error).message; }
+    return "";
   };
 
   it("serves no mission when nothing is set, exactly as the worker did before", () => {
@@ -264,38 +520,64 @@ describe("KJ-P3 mission runtime configuration (fail closed)", () => {
       for (const drop of Object.keys(set)) {
         const partial = { ...set } as Record<string, string>;
         delete partial[drop];
-        let message = "";
-        try { loadMissionConfig(partial); } catch (e) { message = (e as Error).message; }
+        const message = messageOf(partial);
         expect(message, drop).toMatch(/all be set or all left unset/);
         expect(message).not.toMatch(/sk-or-v1|sk-a{8}/);
       }
     }
   });
 
-  it("refuses two provider keys at once rather than guessing which to use", () => {
-    expect(() => loadMissionConfig({ ...openrouter, MISSION_DEEPSEEK_API_KEY: deepseek.MISSION_DEEPSEEK_API_KEY })).toThrow(/choose one provider/);
-  });
-
-  it("builds a DeepSeek pair from bare deepseek-... models", () => {
+  it("builds a DeepSeek pair from bare deepseek-... models, both roles on DeepSeek", () => {
     const c = loadMissionConfig(deepseek)!;
-    expect(c).toMatchObject({ provider: "deepseek", analystModel: "deepseek-v4-flash", reviewerModel: "deepseek-v4-pro" });
+    expect(c).toMatchObject({ analystProvider: "deepseek", reviewerProvider: "deepseek", analystModel: "deepseek-v4-flash", reviewerModel: "deepseek-v4-pro" });
     expect(typeof c.analyst.generate).toBe("function");
   });
 
   it("builds an OpenRouter pair from provider/slug models, including a Claude and Grok pairing", () => {
-    expect(loadMissionConfig(openrouter)).toMatchObject({ provider: "openrouter", analystModel: "anthropic/claude-test", reviewerModel: "x-ai/grok-test" });
-    expect(loadMissionConfig({ ...openrouter, MISSION_ANALYST_MODEL: "deepseek/deepseek-v4-flash" })).toMatchObject({ provider: "openrouter" });
+    expect(loadMissionConfig(openrouter)).toMatchObject({ analystProvider: "openrouter", reviewerProvider: "openrouter", analystModel: "anthropic/claude-test", reviewerModel: "x-ai/grok-test" });
+    expect(loadMissionConfig({ ...openrouter, MISSION_ANALYST_MODEL: "deepseek/deepseek-v4-flash" })).toMatchObject({ analystProvider: "openrouter" });
   });
 
-  it("requires the two models to differ, so the reviewer is never the analyst", () => {
+  it("KJ-P3.1 builds a cross-provider pair: DeepSeek analyst direct, Claude or Grok reviewer through OpenRouter", () => {
+    const c = loadMissionConfig(cross)!;
+    expect(c).toMatchObject({ analystProvider: "deepseek", reviewerProvider: "openrouter", analystModel: "deepseek-v4-flash", reviewerModel: "anthropic/claude-sonnet-5" });
+    expect(loadMissionConfig({ ...cross, MISSION_REVIEWER_MODEL: "x-ai/grok-4.6" })).toMatchObject({ reviewerProvider: "openrouter", reviewerModel: "x-ai/grok-4.6" });
+    // The other way round is also representable: an OpenRouter analyst with a DeepSeek reviewer.
+    expect(loadMissionConfig({ ...cross, MISSION_ANALYST_MODEL: "anthropic/claude-sonnet-5", MISSION_REVIEWER_MODEL: "deepseek-v4-pro" })).toMatchObject({ analystProvider: "openrouter", reviewerProvider: "deepseek" });
+  });
+
+  it("KJ-P3.1 refuses a cross-provider configuration that is missing the key one role needs, without printing a key", () => {
+    const noOpenrouter = { ...cross } as Record<string, string>;
+    delete noOpenrouter["MISSION_OPENROUTER_API_KEY"];
+    expect(messageOf(noOpenrouter)).toMatch(/MISSION_OPENROUTER_API_KEY must be set/);
+    const noDeepseek = { ...cross } as Record<string, string>;
+    delete noDeepseek["MISSION_DEEPSEEK_API_KEY"];
+    expect(messageOf(noDeepseek)).toMatch(/MISSION_DEEPSEEK_API_KEY must be set/);
+    for (const m of [messageOf(noOpenrouter), messageOf(noDeepseek)]) expect(m).not.toMatch(/sk-or-v1|sk-a{8}/);
+    for (const drop of ["MISSION_ANALYST_MODEL", "MISSION_REVIEWER_MODEL"]) {
+      const partial = { ...cross } as Record<string, string>;
+      delete partial[drop];
+      expect(messageOf(partial), drop).toMatch(/all be set or all left unset/);
+    }
+  });
+
+  it("KJ-P3.1 refuses a provider key that no configured model uses, rather than holding a credential it never exercises", () => {
+    expect(messageOf({ ...openrouter, MISSION_DEEPSEEK_API_KEY: DS_KEY })).toMatch(/MISSION_DEEPSEEK_API_KEY is set but no mission model uses/);
+    expect(messageOf({ ...deepseek, MISSION_OPENROUTER_API_KEY: OR_KEY })).toMatch(/MISSION_OPENROUTER_API_KEY is set but no mission model uses/);
+    expect(messageOf({ ...openrouter, MISSION_DEEPSEEK_API_KEY: DS_KEY })).not.toMatch(/sk-or-v1|sk-a{8}/);
+  });
+
+  it("requires the two models to differ, so the reviewer is never the analyst, even through two routes", () => {
     expect(() => loadMissionConfig({ ...deepseek, MISSION_REVIEWER_MODEL: "deepseek-v4-flash" })).toThrow(/must differ/);
     expect(() => loadMissionConfig({ ...openrouter, MISSION_REVIEWER_MODEL: "anthropic/claude-test" })).toThrow(/must differ/);
+    expect(() => loadMissionConfig({ ...cross, MISSION_REVIEWER_MODEL: "deepseek/deepseek-v4-flash" })).toThrow(/must differ/);
   });
 
-  it("rejects an unknown family, and a model form that does not match the provider", () => {
+  it("rejects an unknown family, and a bare model name that is not DeepSeek", () => {
     expect(() => loadMissionConfig({ ...deepseek, MISSION_ANALYST_MODEL: "gpt-5" })).toThrow(/must be a model from one of/);
     expect(() => loadMissionConfig({ ...openrouter, MISSION_ANALYST_MODEL: "openai/gpt-x" })).toThrow(/must be a model from one of/);
-    expect(() => loadMissionConfig({ ...deepseek, MISSION_ANALYST_MODEL: "anthropic/claude-test" })).toThrow(/bare deepseek/);
-    expect(() => loadMissionConfig({ ...openrouter, MISSION_ANALYST_MODEL: "deepseek-v4-flash" })).toThrow(/provider\/slug/);
+    expect(() => loadMissionConfig({ ...cross, MISSION_REVIEWER_MODEL: "claude-sonnet-5" })).toThrow(/must be a model from one of/);
+    // A provider/slug model needs the OpenRouter key, so on a DeepSeek-only deployment it is refused by name.
+    expect(() => loadMissionConfig({ ...deepseek, MISSION_ANALYST_MODEL: "anthropic/claude-test" })).toThrow(/MISSION_OPENROUTER_API_KEY must be set/);
   });
 });

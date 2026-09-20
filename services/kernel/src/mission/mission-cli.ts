@@ -8,7 +8,7 @@ import { Id, MISSION_RECIPE, parseMissionObjective } from "../../../../packages/
  * admission door, the same public path every other task uses. KernelJSON stays the only
  * authority: this tool asks the door for a task and reads back what the ledger says.
  *
- *   mission admit  --repo owner/repo --label <id> [--question "..."] --door-url <url> --bearer-file <path>
+ *   mission admit  --repo owner/repo --label <id> [--findings N | --max-findings N] [--question "..."] --door-url <url> --bearer-file <path>
  *   mission status --task-id <uuid> --door-url <url> --bearer-file <path>
  *
  * The bearer comes only from a file (mode 600, from `secretctl get --out`); a flag that
@@ -68,8 +68,10 @@ interface Io {
   readFile?: (p: string) => string;
 }
 
-export function idempotencyKey(repo: string, question: string, label: string): string {
-  return `mission-${createHash("sha256").update(`${repo}\n${question}\n${label}`).digest("hex").slice(0, 32)}`;
+/** `directives` is the structured contract text (`findings=3`), so a different contract is a different request. */
+export function idempotencyKey(repo: string, question: string, label: string, directives = ""): string {
+  const material = directives ? `${repo}\n${question}\n${label}\n${directives}` : `${repo}\n${question}\n${label}`;
+  return `mission-${createHash("sha256").update(material).digest("hex").slice(0, 32)}`;
 }
 
 export async function admitMission(values: Record<string, string>, io: Io = {}): Promise<string[]> {
@@ -77,7 +79,14 @@ export async function admitMission(values: Record<string, string>, io: Io = {}):
   const bearer = readBearer(values["bearer-file"]!, io.readFile);
   const base = doorBase(values["door-url"]!);
   if (!/^[A-Za-z0-9._-]{1,40}$/.test(values["label"]!)) throw new CliError("--label must match [A-Za-z0-9._-]{1,40}");
-  const objective = `${values["repo"]!} ${values["question"] ?? ""}`.trim();
+  const directives = [
+    values["findings"] ? `findings=${values["findings"]}` : "",
+    values["max-findings"] ? `max-findings=${values["max-findings"]}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const objective = [values["repo"]!, directives, values["question"] ?? ""].filter(Boolean).join(" ").trim();
+  // Validated exactly as the kernel will at admission: a bad count never reaches the door.
   const { repo, question } = parseMissionObjective(objective);
   let response: Response;
   try {
@@ -87,7 +96,7 @@ export async function admitMission(values: Record<string, string>, io: Io = {}):
       headers: {
         authorization: `Bearer ${bearer}`,
         "content-type": "application/json",
-        "idempotency-key": idempotencyKey(repo, question, values["label"]!),
+        "idempotency-key": idempotencyKey(repo, question, values["label"]!, directives),
       },
       body: JSON.stringify({ recipe: MISSION_RECIPE, objective }),
     });
