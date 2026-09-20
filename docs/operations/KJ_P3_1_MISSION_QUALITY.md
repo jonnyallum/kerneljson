@@ -156,3 +156,28 @@ compared on raw strings the two-routes test fails; with the ledger verifier igno
 - Grounding proves a claim is bound to repository evidence, not that it is true.
 - No excerpt or symbol-level check: that needs file content captured before analysis and is the natural next hardening.
 - No automatic retry: a mission the kernel rejects ends FAILED with evidence.
+
+## Follow-up KJ-P3.1.1: the reviewer's output budget
+
+**What happened.** The first Telegram-originated mission (2026-09-20, task `974189bd-fcca-8942-a963-ed6e92f58687`) ended
+`FAILED: REVIEWER_OUTPUT_LIMIT`. The DeepSeek analyst finished; the Claude reviewer's answer exceeded its 2048-token output cap, so the kernel
+recorded the failure as evidence, completed nothing and sent its failure notice. The channel that admitted it worked correctly.
+
+**Why.** This is a gap in KJ-P3.1. That change raised the analyst's budget (`ANALYST_MAX_TOKENS` 4096 to 6144) because citations lengthen the
+analysis, but left the reviewer's at 2048. The successful KJ-P3.1 live mission had used 1,529 of those 2,048 tokens, a thin margin, and the
+length of a Claude review varies. It was not flagged when KJ-P3.1 was written. INFERRED: the reviewer's answer, not the input, exceeded the cap;
+the exact overshoot is not recorded because a length-limited response is not stored.
+
+**The change, and only this.**
+
+1. `REVIEWER_MAX_TOKENS` 2048 to 4096 (the `ModelRequest` ceiling is 8192).
+2. A tighter reviewer prompt, so the ceiling is headroom and not the thing that keeps the review short: be concise, the JSON object is the whole
+   answer, `unsupportedFindings` holds indexes only, at most 3 notes of under 160 characters each, no restating the findings, and notes may be
+   empty when everything is supported. These limits sit well inside the schema (which allows 10 notes of 400 characters) and the schema is unchanged.
+
+The largest review the prompt permits is 670 characters (measured), so the 4096 budget covers it more than six times over even at one token per character.
+No other behaviour, contract or check changed: the reconciler, the grounding and the independence rules are untouched, and a longer or more
+verbose review is still valid under the schema.
+
+**Not yet done.** This is code and tests only. It is not deployed. A release, an epoch activation and one `/brief` after deployment are what
+would show a Telegram-originated mission completing; until then the failure above stands as the last live result.
