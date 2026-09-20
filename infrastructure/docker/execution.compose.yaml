@@ -109,13 +109,19 @@ services:
       TELEGRAM_MISSION_DAILY_CAP: ${TELEGRAM_MISSION_DAILY_CAP:-}
       # KJ-P4B approval boundary (the golden workflow behind a real authentication boundary) and its
       # Telegram buttons. Off unless KJ_APPROVAL_ENABLED=true. KJ_ADMISSION_TENANT_ID and
-      # KJ_ADMISSION_PRINCIPAL_ID are the door's own non-secret identity (the named approver);
-      # KJ_CONTROL_TOKEN is a secret shared with the door and is NOT the admission bearer.
+      # KJ_ADMISSION_PRINCIPAL_ID are the door's own non-secret identity (the named approver).
+      # KJ-P4B.1: the door SIGNS each request to the workflow with KJ_CONTROL_SIGNING_KEY (a secret shared
+      # with the door, NOT the admission bearer) and never sends it: Restate journals request headers for
+      # 24 hours. The PREVIOUS pair exists only during a controlled key rotation.
       KJ_APPROVAL_ENABLED: ${KJ_APPROVAL_ENABLED:-}
       KJ_APPROVAL_TTL_SECONDS: ${KJ_APPROVAL_TTL_SECONDS:-}
       KJ_ADMISSION_TENANT_ID: ${KJ_ADMISSION_TENANT_ID:-}
       KJ_ADMISSION_PRINCIPAL_ID: ${KJ_ADMISSION_PRINCIPAL_ID:-}
-      KJ_CONTROL_TOKEN: ${KJ_CONTROL_TOKEN:-}
+      KJ_CONTROL_SIGNING_KEY: ${KJ_CONTROL_SIGNING_KEY:-}
+      KJ_CONTROL_KEY_ID: ${KJ_CONTROL_KEY_ID:-}
+      KJ_CONTROL_SIGNING_KEY_PREVIOUS: ${KJ_CONTROL_SIGNING_KEY_PREVIOUS:-}
+      KJ_CONTROL_KEY_ID_PREVIOUS: ${KJ_CONTROL_KEY_ID_PREVIOUS:-}
+      KJ_CONTROL_FRESHNESS_SECONDS: ${KJ_CONTROL_FRESHNESS_SECONDS:-}
       RESTATE_ADMIN_URL: ${RESTATE_ADMIN_URL:-http://restate:9070}
       EXPECTED_RELEASE_ID: ${EXPECTED_RELEASE_ID:-${KERNELJSON_RELEASE_ID}}
       PORT: "9080"

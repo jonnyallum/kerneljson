@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import pg from "pg";
 import { ADMIN, DATABASE, INGRESS, compose, holdRuntime, migrate, until } from "./support/local.js";
-import { createRestateControls } from "../apps/gateway/src/index.js";
-import { createGateway, createRestateDispatch, bearerAuthenticator } from "../apps/gateway/src/server.js";
 import { buildDoorHandler, loadDoorConfig } from "../apps/gateway/src/main.js";
+import { ControlAuthError, InMemoryReplayStore, createControlSigner, createControlVerifier } from "../services/kernel/src/control-signing.js";
+import { CONTROL_OTHER_KEY, CONTROL_TEST_KEY, CONTROL_TEST_KEY_ID } from "./support/control-test-key.js";
 import { Outcome, type Task } from "../packages/contracts/src/index.js";
 import { compileIntent } from "../services/kernel/src/compiler/index.js";
 import { kernelSubmission } from "../evals/fixtures/kernel.js";
@@ -27,15 +27,29 @@ import { CHAT, FakeSource, LIMITS } from "./support/telegram-fixture.js";
  *
  * The test worker's golden workflow uses the same synthetic identities as the earlier approval tests:
  * `test-owner` owns the task, `test-reviewer` is the named approver, the deadline is 30 seconds. The
- * door here authenticates the approver (its one bearer maps to the reviewer) and presents the
- * reviewer's credential to the workflow, standing in for the production control token. This proves the
- * Telegram interface drives the existing machinery and can do nothing that machinery would not allow.
+ * door here is the PRODUCTION door: it authenticates the approver (its one bearer maps to the reviewer)
+ * and signs every request to the workflow with an HMAC assertion (KJ-P4B.1), which the worker verifies
+ * with the production verifier and Postgres replay store. This proves the Telegram interface drives the
+ * existing machinery and can do nothing that machinery would not allow, and (KJ-P4B.1) that what Restate
+ * journals on that hop is assertions, never the long-lived key.
  */
 const pool = new pg.Pool({ connectionString: DATABASE });
+
 const owner = fixture.principal.id;
 const reviewer = "70000000-0000-4000-8000-000000000002";
 const DOOR_BEARER = `p4b-door-${randomUUID()}${randomUUID()}`;
-const context = { tenantId: fixture.tenant.id, principal: { id: reviewer, kind: "HUMAN" as const } };
+/** The REAL production door configuration, signing every request to the workflow with the synthetic key. */
+const doorConfig = (principal: string, bearer: string) =>
+  loadDoorConfig({
+    DATABASE_URL: DATABASE,
+    KJ_ADMISSION_BEARER: bearer,
+    KJ_ADMISSION_TENANT_ID: fixture.tenant.id,
+    KJ_ADMISSION_PRINCIPAL_ID: principal,
+    KJ_ADMISSION_PRINCIPAL_KIND: "HUMAN",
+    KJ_RESTATE_INGRESS_URL: INGRESS,
+    KJ_CONTROL_SIGNING_KEY: CONTROL_TEST_KEY,
+    KJ_CONTROL_KEY_ID: CONTROL_TEST_KEY_ID,
+  });
 
 let releaseRuntime = () => {};
 let server: Server;
@@ -69,20 +83,10 @@ beforeAll(async () => {
   );
   expect(registration.ok, await registration.text()).toBe(true);
 
-  // The real door, real control route. Its one bearer is the approver's; the workflow hop carries the
-  // approver's credential (production: the shared control token).
-  const controls = createRestateControls(INGRESS, async () => ({ authorization: "Bearer test-reviewer" }), { pool });
-  const dispatch = createRestateDispatch(INGRESS, async () => ({ authorization: "Bearer test-owner" }));
-  server = createServer(
-    createGateway({
-      pool,
-      releaseId: "p4b-test",
-      authenticate: bearerAuthenticator(async (token) => (token === DOOR_BEARER ? context : null)),
-      admit: async () => true,
-      controls,
-      dispatch,
-    }),
-  );
+  // The real production door (buildDoorHandler). Its one bearer is the approver's. Every request it makes to
+  // the workflow is a signed assertion (KJ-P4B.1): nothing else crosses Restate.
+  const handler = buildDoorHandler(pool, doorConfig(reviewer, DOOR_BEARER));
+  server = createServer((req, res) => handler(req, res));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("no address");
@@ -376,59 +380,291 @@ describe("KJ-P4B expiry: an expired approval cannot resume work", () => {
   }, 240000);
 });
 
-describe("KJ-P4B the door's internal hop carries the control token, and only the control token", () => {
-  it("presents `Authorization: Bearer <control token>` to the workflow endpoint, never the admission bearer", async () => {
-    const seen: Array<Record<string, string | string[] | undefined>> = [];
+// ---------------------------------------------------------------------------------------------
+// KJ-P4B.1: signed control assertions against the REAL Restate and the REAL golden workflow. The
+// earlier tests already drive the whole approval path through the production door, which now signs
+// every request to the workflow; these add the attacks and the proof about what Restate stores.
+
+/** Sign a request exactly as the door would, as the approver (the reviewer). */
+const signAs = (principal: string, r: { service?: string; handler: string; key: string; body: string }, o: { key?: string; nonce?: string; nowSeconds?: number } = {}) =>
+  createControlSigner({
+    keyId: CONTROL_TEST_KEY_ID,
+    key: o.key ?? CONTROL_TEST_KEY,
+    ...(o.nonce ? { nonce: () => o.nonce! } : {}),
+    ...(o.nowSeconds !== undefined ? { now: () => o.nowSeconds! * 1000 } : {}),
+  })({ service: r.service ?? "GoldenTaskWorkflowV1", handler: r.handler, key: r.key, body: r.body, tenantId: fixture.tenant.id, principalId: principal });
+
+/** Post a body to a workflow handler through the real ingress with exactly the given headers. */
+const postWith = (path: string, body: string, headers: Record<string, string>) =>
+  fetch(`${INGRESS}${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body, signal: AbortSignal.timeout(15000) });
+
+async function ledgerDigest(task: Task): Promise<string> {
+  return (await q<{ d: string }>("select scope_digest as d from kernel_private.telegram_approval_cards where approval_id=$1", [task.id]))[0]?.d
+    ?? (await q<{ d: string }>("select payload->'evaluation'->>'scopeDigest' as d from task_events where task_id=$1 and event_key=$2", [task.id, `policy-approval:${task.id}`]))[0]!.d;
+}
+const answer = (digest: string, decision = "GRANTED"): string => JSON.stringify({ scopeDigest: digest, decision });
+
+describe("KJ-P4B.1 signed assertions on the real workflow: what verifies and what does not", () => {
+  it("a signed approve from the approver is what resumes the workflow", async () => {
+    const { task } = await startWaiting();
+    const body = answer(await ledgerDigest(task));
+    const res = await postWith(`/GoldenTaskWorkflowV1/${task.id}/approve`, body, signAs(reviewer, { handler: "approve", key: task.id, body }));
+    expect(res.status).toBe(200);
+    await status(task, "COMPLETED");
+    expect(await approvalStatus(task)).toBe("GRANTED");
+  }, 180000);
+
+  it("an identical redelivery of the same signed request is accepted idempotently and resumes nothing twice", async () => {
+    const { task } = await startWaiting();
+    const body = answer(await ledgerDigest(task));
+    const headers = signAs(reviewer, { handler: "approve", key: task.id, body });
+    const first = await postWith(`/GoldenTaskWorkflowV1/${task.id}/approve`, body, headers);
+    const second = await postWith(`/GoldenTaskWorkflowV1/${task.id}/approve`, body, headers);
+    expect([first.status, second.status]).toEqual([200, 200]);
+    await status(task, "COMPLETED");
+    expect(await n("select count(*) n from evidence where task_id=$1 and source='kerneljson:approval/v1'", [task.id])).toBe(1);
+    expect(await capabilityRuns(task)).toBe(1);
+    expect(await n("select count(*) n from kernel_private.control_assertions where nonce=$1", [headers["x-kj-control-nonce"]])).toBe(1);
+  }, 180000);
+
+  it.each([
+    ["no assertion at all", () => ({}) as Record<string, string>],
+    ["a bearer in place of an assertion", () => ({ authorization: "Bearer not-an-assertion" })],
+    // A key-LOOKALIKE, never the key: Restate journals whatever a caller sends, so the real one must not be planted here.
+    ["a key-shaped bearer in Authorization", () => ({ authorization: `Bearer ${"NOT-THE-KEY-".padEnd(64, "x")}` })],
+  ])("refuses %s, and the approval stays pending", async (_label, headers) => {
+    const { task } = await startWaiting();
+    const body = answer(await ledgerDigest(task));
+    expect((await postWith(`/GoldenTaskWorkflowV1/${task.id}/approve`, body, headers())).status).toBe(401);
+    expect(await approvalStatus(task)).toBe("PENDING");
+    await post(`/GoldenTaskWorkflowV1/${task.id}/cancel`, {}, "test-owner");
+  }, 180000);
+
+  it("refuses an assertion tampered with in any way it is bound to, and each attempt leaves the approval pending", async () => {
+    const { task } = await startWaiting();
+    const other = await startWaiting("another task entirely");
+    const digest = await ledgerDigest(task);
+    const body = answer(digest);
+    const good = signAs(reviewer, { handler: "approve", key: task.id, body });
+    const at = `/GoldenTaskWorkflowV1/${task.id}/approve`;
+    const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+    const attempts: Array<[string, Response]> = [];
+    // decision changed after signing, with and without the body-hash header rewritten
+    attempts.push(["decision changed", await postWith(at, answer(digest, "DENIED"), good)]);
+    attempts.push(["decision changed, hash rewritten", await postWith(at, answer(digest, "DENIED"), { ...good, "x-kj-control-body-sha256": sha(answer(digest, "DENIED")) })]);
+    // digest changed
+    attempts.push(["digest changed", await postWith(at, answer("b".repeat(64)), { ...good, "x-kj-control-body-sha256": sha(answer("b".repeat(64))) })]);
+    // the same assertion used against another task, and against another handler
+    attempts.push(["another task", await postWith(`/GoldenTaskWorkflowV1/${other.task.id}/approve`, body, good)]);
+    attempts.push(["another handler", await postWith(`/GoldenTaskWorkflowV1/${task.id}/cancel`, body, good)]);
+    // tenant / principal: an assertion signed for the owner used where the verifier resolves the same key for both
+    // principals still names the principal inside the signature, so a forged principal id in the payload fails
+    attempts.push(["signed with the wrong key", await postWith(at, body, signAs(reviewer, { handler: "approve", key: task.id, body }, { key: CONTROL_OTHER_KEY }))]);
+    attempts.push(["a different tenant", await postWith(at, body, createControlSigner({ keyId: CONTROL_TEST_KEY_ID, key: CONTROL_TEST_KEY })({ service: "GoldenTaskWorkflowV1", handler: "approve", key: task.id, body, tenantId: randomUUID(), principalId: reviewer }))]);
+    attempts.push(["a stranger principal", await postWith(at, body, signAs(randomUUID(), { handler: "approve", key: task.id, body }))]);
+    for (const [label, res] of attempts) expect(res.status, label).toBe(401);
+    expect(await approvalStatus(task)).toBe("PENDING");
+    expect(await approvalStatus(other.task)).toBe("PENDING");
+    expect(await capabilityRuns(task)).toBe(0);
+    for (const t of [task, other.task]) await post(`/GoldenTaskWorkflowV1/${t.id}/cancel`, {}, "test-owner");
+  }, 240000);
+
+  it("refuses a stale first-use assertion, however valid its signature", async () => {
+    const { task } = await startWaiting();
+    const body = answer(await ledgerDigest(task));
+    const stale = signAs(reviewer, { handler: "approve", key: task.id, body }, { nowSeconds: Math.floor(Date.now() / 1000) - 900 });
+    expect((await postWith(`/GoldenTaskWorkflowV1/${task.id}/approve`, body, stale)).status).toBe(401);
+    const future = signAs(reviewer, { handler: "approve", key: task.id, body }, { nowSeconds: Math.floor(Date.now() / 1000) + 900 });
+    expect((await postWith(`/GoldenTaskWorkflowV1/${task.id}/approve`, body, future)).status).toBe(401);
+    expect(await n("select count(*) n from kernel_private.control_assertions where nonce=any($1)", [[stale["x-kj-control-nonce"], future["x-kj-control-nonce"]]])).toBe(0);
+    expect(await approvalStatus(task)).toBe("PENDING");
+    await post(`/GoldenTaskWorkflowV1/${task.id}/cancel`, {}, "test-owner");
+  }, 180000);
+
+  it("a replay store that cannot answer is retried, never turned into a refusal", async () => {
+    const { task } = await startWaiting();
+    const body = answer(await ledgerDigest(task));
+    const headers = signAs(reviewer, { handler: "approve", key: task.id, body });
+    // Make the nonce table unavailable (the ledger itself stays up), as a database fault would.
+    await pool.query("alter table kernel_private.control_assertions rename to control_assertions_offline");
+    try {
+      // Restate accepts the one-way call; the worker then cannot decide and must retry rather than refuse.
+      const sent = await postWith(`/GoldenTaskWorkflowV1/${task.id}/approve/send`, body, headers);
+      expect(sent.status).toBe(202);
+      await new Promise((resolve) => setTimeout(resolve, 6000));
+      expect(await approvalStatus(task)).toBe("PENDING");
+    } finally {
+      await pool.query("alter table kernel_private.control_assertions_offline rename to control_assertions");
+    }
+    // If the fault had been turned into a 401 the invocation would be over and the approval would still be pending.
+    await status(task, "COMPLETED", 120000);
+    expect(await approvalStatus(task)).toBe("GRANTED");
+    expect(await n("select count(*) n from kernel_private.control_assertions where nonce=$1", [headers["x-kj-control-nonce"]])).toBe(1);
+  }, 300000);
+
+  it("refuses the same nonce reused with a changed payload, and the original still stands", async () => {
+    const { task } = await startWaiting();
+    const digest = await ledgerDigest(task);
+    const NONCE = "R".repeat(22);
+    const reject = answer(digest, "DENIED");
+    const approve = answer(digest, "GRANTED");
+    const first = await postWith(`/GoldenTaskWorkflowV1/${task.id}/approve`, reject, signAs(reviewer, { handler: "approve", key: task.id, body: reject }, { nonce: NONCE }));
+    expect(first.status).toBe(200);
+    const reused = await postWith(`/GoldenTaskWorkflowV1/${task.id}/approve`, approve, signAs(reviewer, { handler: "approve", key: task.id, body: approve }, { nonce: NONCE }));
+    expect(reused.status).toBe(401);
+    expect(await approvalStatus(task)).toBe("DENIED");
+    await status(task, "FAILED");
+    expect(await capabilityRuns(task)).toBe(0);
+  }, 180000);
+});
+
+describe("KJ-P4B.1 the whole path through the production door, signed end to end", () => {
+  it("a task admitted through the owner's door runs the golden workflow on a signed dispatch, then a signed approve completes it", async () => {
+    const OWNER_DOOR = `p4b1-owner-${randomUUID()}${randomUUID()}`;
+    const owner = doorConfig(fixture.principal.id, OWNER_DOOR);
+    const handler = buildDoorHandler(pool, owner);
+    const ownerServer = createServer((req, res) => handler(req, res));
+    await new Promise<void>((resolve) => ownerServer.listen(0, "127.0.0.1", resolve));
+    const a = ownerServer.address();
+    if (!a || typeof a === "string") throw new Error("no address");
+    try {
+      const res = await fetch(`http://127.0.0.1:${a.port}/v1/tasks`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${OWNER_DOOR}`, "content-type": "application/json", "idempotency-key": randomUUID() },
+        body: JSON.stringify({ recipe: "uppercase/v1", objective: "signed dispatch check" }),
+      });
+      expect(res.status).toBe(202);
+      const receipt = (await res.json()) as { taskId: string; dispatch: string };
+      expect(receipt.dispatch).toBe("ACCEPTED");
+      const task = { id: receipt.taskId } as Task;
+      await status(task, "APPROVAL_REQUIRED");
+      const shown = await cardFor(task);
+      await press(shown.granted, shown.messageId);
+      await status(task, "COMPLETED");
+      expect(await approvalStatus(task)).toBe("GRANTED");
+      const [row] = await q<{ contract: unknown }>("select contract from outcomes where task_id=$1", [task.id]);
+      expect(Outcome.parse(row!.contract).summary).toBe("SIGNED DISPATCH CHECK");
+      // Both hops, the dispatch and the approval, were signed assertions the worker recorded.
+      expect(await n("select count(*) n from kernel_private.control_assertions where workflow_key=$1", [task.id])).toBeGreaterThanOrEqual(2);
+      expect(await n("select count(*) n from kernel_private.control_assertions where workflow_key=$1 and handler='run'", [task.id])).toBe(1);
+      expect(await n("select count(*) n from kernel_private.control_assertions where workflow_key=$1 and handler='approve'", [task.id])).toBe(1);
+    } finally {
+      ownerServer.closeAllConnections();
+      await new Promise<void>((resolve) => ownerServer.close(() => resolve()));
+    }
+  }, 240000);
+});
+
+describe("KJ-P4B.1 the door's hop, seen from the boundary (a Restate-equivalent that records what it receives)", () => {
+  it("receives a signed assertion that verifies for exactly that request, and never the key or any Authorization", async () => {
+    const seen: Array<{ headers: Record<string, string | string[] | undefined>; body: string; url: string }> = [];
     const fake = createServer((req, res) => {
-      seen.push({ ...req.headers });
-      req.resume();
-      res.statusCode = 202;
-      res.setHeader("content-type", "application/json");
-      res.end("{}");
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        seen.push({ headers: { ...req.headers }, body: Buffer.concat(chunks).toString("utf8"), url: req.url ?? "" });
+        res.statusCode = 202;
+        res.setHeader("content-type", "application/json");
+        res.end("{}");
+      });
     });
     await new Promise<void>((resolve) => fake.listen(0, "127.0.0.1", resolve));
     const address = fake.address();
     if (!address || typeof address === "string") throw new Error("no address");
-    const CONTROL = `p4b-control-${randomUUID()}${randomUUID()}`;
-    const DOOR = `p4b-door-bearer-${randomUUID()}${randomUUID()}`;
-    const env = {
+    const DOOR = `p4b1-door-bearer-${randomUUID()}${randomUUID()}`;
+    const config = loadDoorConfig({
       DATABASE_URL: DATABASE,
       KJ_ADMISSION_BEARER: DOOR,
       KJ_ADMISSION_TENANT_ID: fixture.tenant.id,
       KJ_ADMISSION_PRINCIPAL_ID: owner,
       KJ_ADMISSION_PRINCIPAL_KIND: "HUMAN",
       KJ_RESTATE_INGRESS_URL: `http://127.0.0.1:${address.port}`,
-    };
-    const submit = async (over: Record<string, string>) => {
-      const handler = buildDoorHandler(pool, loadDoorConfig({ ...env, ...over }));
-      const door = createServer((req, res) => handler(req, res));
-      await new Promise<void>((resolve) => door.listen(0, "127.0.0.1", resolve));
-      const a = door.address();
-      if (!a || typeof a === "string") throw new Error("no address");
-      try {
-        return await fetch(`http://127.0.0.1:${a.port}/v1/tasks`, {
-          method: "POST",
-          headers: { authorization: `Bearer ${DOOR}`, "content-type": "application/json", "idempotency-key": randomUUID() },
-          body: JSON.stringify({ recipe: "uppercase/v1", objective: "door hop check" }),
-        });
-      } finally {
-        door.closeAllConnections();
-        await new Promise<void>((resolve) => door.close(() => resolve()));
-      }
-    };
+      KJ_CONTROL_SIGNING_KEY: CONTROL_TEST_KEY,
+      KJ_CONTROL_KEY_ID: CONTROL_TEST_KEY_ID,
+    });
+    const handler = buildDoorHandler(pool, config);
+    const door = createServer((req, res) => handler(req, res));
+    await new Promise<void>((resolve) => door.listen(0, "127.0.0.1", resolve));
+    const a = door.address();
+    if (!a || typeof a === "string") throw new Error("no address");
     try {
-      expect((await submit({ KJ_CONTROL_TOKEN: CONTROL })).status).toBe(202);
-      const withToken = seen.at(-1)!;
-      expect(withToken["authorization"]).toBe(`Bearer ${CONTROL}`);
-      expect(JSON.stringify(withToken)).not.toContain(DOOR);
-      // Negative control: with no control token configured, no credential is sent at all, as before.
-      seen.length = 0;
-      expect((await submit({})).status).toBe(202);
-      expect(seen.at(-1)!["authorization"]).toBeUndefined();
-      expect(JSON.stringify(seen)).not.toContain(DOOR);
+      const res = await fetch(`http://127.0.0.1:${a.port}/v1/tasks`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${DOOR}`, "content-type": "application/json", "idempotency-key": randomUUID() },
+        body: JSON.stringify({ recipe: "uppercase/v1", objective: "boundary check" }),
+      });
+      expect(res.status).toBe(202);
+      expect(seen).toHaveLength(1);
+      const got = seen[0]!;
+      const wire = JSON.stringify(got.headers);
+      // What crossed: assertion headers only.
+      expect(Object.keys(got.headers).filter((k) => k.startsWith("x-kj-control-")).sort()).toEqual([
+        "x-kj-control-body-sha256", "x-kj-control-key-id", "x-kj-control-nonce", "x-kj-control-signature", "x-kj-control-timestamp", "x-kj-control-version",
+      ]);
+      expect(got.headers["authorization"]).toBeUndefined();
+      expect(wire).not.toContain(CONTROL_TEST_KEY);
+      expect(wire).not.toContain(Buffer.from(CONTROL_TEST_KEY).toString("hex"));
+      expect(wire).not.toContain(Buffer.from(CONTROL_TEST_KEY).toString("base64"));
+      expect(wire + got.body).not.toContain(DOOR); // the public admission bearer never leaves the door either
+      // And what crossed verifies, for exactly this request and no other.
+      const m = /^\/([A-Za-z0-9]+)\/([^/]+)\/run\/send$/.exec(got.url);
+      expect(m).not.toBeNull();
+      const verify = createControlVerifier({
+        keys: new Map([[CONTROL_TEST_KEY_ID, CONTROL_TEST_KEY]]),
+        tenantId: fixture.tenant.id,
+        principalId: owner,
+        freshnessSeconds: 300,
+        replay: new InMemoryReplayStore(),
+      });
+      const headers = new Map(Object.entries(got.headers).map(([k, v]) => [k, String(v)] as const));
+      const request = { service: m![1]!, handler: "run", key: m![2]!, body: got.body };
+      expect((await verify(headers, request)).id).toBe(owner);
+      await expect(verify(headers, { ...request, key: randomUUID() })).rejects.toBeInstanceOf(ControlAuthError);
+      await expect(verify(headers, { ...request, body: got.body + " " })).rejects.toBeInstanceOf(ControlAuthError);
     } finally {
+      door.closeAllConnections();
+      await new Promise<void>((resolve) => door.close(() => resolve()));
       fake.closeAllConnections();
       await new Promise<void>((resolve) => fake.close(() => resolve()));
     }
   }, 120000);
+});
+
+describe("KJ-P4B.1 what Restate actually stored: assertions, never the long-lived key", () => {
+  it("has journalled signed assertions for the door's requests, none with an Authorization header, and the key nowhere", async () => {
+    const res = await fetch(`${ADMIN}/query`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        query: "select j.id as id, i.target_handler_name as handler, j.entry_json as ej from sys_journal j join sys_invocation i on i.id = j.id where j.index = 0 and i.target_service_name = 'GoldenTaskWorkflowV1'",
+      }),
+    });
+    expect(res.ok).toBe(true);
+    const rows = ((await res.json()) as { rows: Array<{ id: string; handler: string; ej: string }> }).rows;
+    expect(rows.length).toBeGreaterThan(10);
+    const forms = [CONTROL_TEST_KEY, Buffer.from(CONTROL_TEST_KEY).toString("hex"), Buffer.from(CONTROL_TEST_KEY).toString("base64"), Buffer.from(CONTROL_TEST_KEY).toString("base64url"), CONTROL_OTHER_KEY];
+    // 1. The long-lived key is in no journal entry, in any form.
+    for (const r of rows) for (const f of forms) expect(r.ej.includes(f), `${r.handler} ${r.id.slice(0, 12)}`).toBe(false);
+    // 2. The door's requests are journalled as assertions.
+    const signed = rows.filter((r) => r.ej.includes("x-kj-control-signature"));
+    expect(signed.length).toBeGreaterThan(5);
+    // (`cancel` appears because the tamper test replays an approve assertion at the cancel handler, which is refused.)
+    const handlers = new Set(signed.map((r) => r.handler));
+    expect(handlers.has("approve") && handlers.has("run")).toBe(true);
+    // 3. A request that carries an assertion carries no Authorization header.
+    for (const r of signed) expect(r.ej.toLowerCase().includes("authorization"), r.id).toBe(false);
+    // 4. What the assertion headers hold is exactly the six non-secret fields.
+    for (const r of signed) {
+      const names = [...r.ej.matchAll(/"name":"(x-kj-control-[a-z0-9-]+)"/g)].map((m) => m[1]).sort();
+      expect(names, r.id).toEqual(["x-kj-control-body-sha256", "x-kj-control-key-id", "x-kj-control-nonce", "x-kj-control-signature", "x-kj-control-timestamp", "x-kj-control-version"]);
+    }
+  }, 60000);
+
+  it("appears in neither Restate's logs nor the worker's", () => {
+    for (const service of ["restate", "worker"]) {
+      const logs = compose("logs", "--no-color", service);
+      expect(logs.includes(CONTROL_TEST_KEY), service).toBe(false);
+      expect(logs.includes(CONTROL_OTHER_KEY), service).toBe(false);
+    }
+  }, 60000);
 });

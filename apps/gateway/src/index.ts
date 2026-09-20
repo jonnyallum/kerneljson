@@ -3,6 +3,7 @@ import type pg from "pg";
 import { ApprovalAnswer, ControlResult, Id, Task, ExecutionTarget, type ExecutionBinding, type TenantContext, type ControlAction } from "../../../packages/contracts/src/index.js";
 import { withTenant } from "../../../packages/identity/src/index.js";
 import { readBinding, workflowTargets } from "../../../services/kernel/src/execution-binding.js";
+import type { CredentialsFor } from "./server.js";
 import { Signal } from "../../../services/kernel/src/deterministic.js";
 import type { ControlPort } from "../../mission-control/src/server.js";
 export interface ControlOptions {
@@ -12,7 +13,7 @@ export interface ControlOptions {
  endpointFor?: (binding:ExecutionBinding)=>string;
 }
 /** Internal endpoints and targets are deployment-owned, never selected by request JSON. */
-export function createRestateControls(ingress:string,credentialsFor:(context:TenantContext)=>Promise<Record<string,string>>,options:ControlOptions):ControlPort {
+export function createRestateControls(ingress:string,credentialsFor:CredentialsFor,options:ControlOptions):ControlPort {
  const base=new URL(ingress);if(!['http:','https:'].includes(base.protocol))throw new Error('Invalid Restate URL');
  const targets=(options.targets??Object.values(workflowTargets)).map(t=>ExecutionTarget.parse(t));
  const send=async(context:TenantContext,taskId:string,action:ControlAction,body:unknown):Promise<ControlResult>=>{
@@ -40,7 +41,9 @@ export function createRestateControls(ingress:string,credentialsFor:(context:Ten
    try {
     const endpoint=new URL(options.endpointFor?options.endpointFor(binding):base);
     if(!['http:','https:'].includes(endpoint.protocol))throw new Error('Invalid deployment endpoint');
-    const response=await (options.fetch??fetch)(new URL(`/${binding.service}/${binding.executionKey}/${action}`,endpoint),{method:'POST',headers:{...(await credentialsFor(ctx)),'content-type':'application/json'},body:JSON.stringify(body),redirect:'error',signal:AbortSignal.timeout(15000)});
+    // The credential is made for exactly these bytes, so the string is built once and both signed and sent.
+    const wireBody=JSON.stringify(body);
+    const response=await (options.fetch??fetch)(new URL(`/${binding.service}/${binding.executionKey}/${action}`,endpoint),{method:'POST',headers:{...(await credentialsFor(ctx,{service:binding.service,handler:action,key:binding.executionKey,body:wireBody})),'content-type':'application/json'},body:wireBody,redirect:'error',signal:AbortSignal.timeout(15000)});
     value=result(response.ok?'ACCEPTED':response.status>=500?'UNRESOLVED':'FAILED');
     if(response.ok && (binding.service==='TaskWorkflow'||binding.service==='KernelWorkflowV1')) {
      const answer=await response.json().catch(()=>null) as {decision?:{action?:string}}|null;

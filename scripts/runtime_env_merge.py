@@ -40,14 +40,19 @@ PUBLIC_KEYS = {
     "KJ_APPROVAL_TTL_SECONDS": re.compile(r"^[0-9]{2,5}$"),
     "KJ_ADMISSION_TENANT_ID": re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"),
     "KJ_ADMISSION_PRINCIPAL_ID": re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"),
+    # KJ-P4B.1 signed control requests: key ids and the freshness window are not secret.
+    "KJ_CONTROL_KEY_ID": re.compile(r"^[A-Za-z0-9._-]{1,16}$"),
+    "KJ_CONTROL_KEY_ID_PREVIOUS": re.compile(r"^[A-Za-z0-9._-]{1,16}$"),
+    "KJ_CONTROL_FRESHNESS_SECONDS": re.compile(r"^[0-9]{2,4}$"),
 }
 SECRET_KEYS = {
     "TELEGRAM_BOT_TOKEN": re.compile(r"^\d{6,12}:[A-Za-z0-9_-]{35}$"),
     "TELEGRAM_CHAT_ID": re.compile(r"^-?\d{5,20}$"),
     "MISSION_OPENROUTER_API_KEY": re.compile(r"^sk-or-v1-[A-Za-z0-9]{64}$"),
     "MISSION_DEEPSEEK_API_KEY": re.compile(r"^sk-[A-Za-z0-9]{32}$"),
-    # KJ-P4B: the internal door-to-workflow credential (43 to 128 URL-safe characters). Never argv.
-    "KJ_CONTROL_TOKEN": re.compile(r"^[A-Za-z0-9_-]{43,128}$"),
+    # KJ-P4B.1: the door/worker signing keys (43 to 128 URL-safe characters). Never argv, never transmitted.
+    "KJ_CONTROL_SIGNING_KEY": re.compile(r"^[A-Za-z0-9_-]{43,128}$"),
+    "KJ_CONTROL_SIGNING_KEY_PREVIOUS": re.compile(r"^[A-Za-z0-9_-]{43,128}$"),
     "GITHUB_READ_TOKEN": re.compile(r"^(gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{50,255})$"),
 }
 
