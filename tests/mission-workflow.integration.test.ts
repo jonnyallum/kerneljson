@@ -20,7 +20,7 @@ import { PgNotificationOutboxStore } from "../services/kernel/src/alerting/pg-ou
 import type { ModelPort } from "../packages/models/src/index.js";
 import { id as fixtureId, principal } from "../evals/fixtures/contracts.js";
 import {
-  CITED, REPO, analysisJson, fakeClaude, fakeGrok, githubResult, makeFacts, reviewJson,
+  CITED, REPO, analysisJson, cite, fakeClaude, fakeGrok, githubResult, makeFacts, reviewJson, shaFor,
 } from "./support/mission-fixture.js";
 
 /**
@@ -82,6 +82,11 @@ function deterministic(seed: string, startMs: number) {
 
 interface Scenario {
   objective?: string;
+  /**
+   * Run the workflow against a DIFFERENT objective than the one the ledger admitted, to model a
+   * workflow that got the contract wrong. The ledger backstop must still hold the admitted one.
+   */
+  workflowObjective?: string;
   github?: () => Promise<{ facts: unknown; factsDigest: string }>;
   analyst?: ModelPort;
   reviewer?: ModelPort;
@@ -138,8 +143,9 @@ async function runMission(s: Scenario = {}): Promise<{ outcome: Outcome; taskId:
   await emit("start", "TASK_STARTED", "RUNNING");
 
   const ctx = { run: async (_n: string, action: () => unknown) => action() } as unknown as Pick<Context, "run">;
+  const workflowTask = s.workflowObjective ? Task.parse({ ...task, objective: s.workflowObjective }) : task;
   const outcome = await runRepoAnalysisMission({
-    ctx, task, plan, emit, now: det.now, uuid: det.uuid,
+    ctx, task: workflowTask, plan, emit, now: det.now, uuid: det.uuid,
     githubRead: s.github ?? (async () => githubResult()),
     analyst: s.analyst ?? fakeClaude(),
     reviewer: s.reviewer ?? fakeGrok(),
@@ -169,8 +175,10 @@ describe("KJ-P3 repository-analysis mission, end to end", () => {
     expect(outcome.evidenceRefs).toHaveLength(4);
     const rec = ev.find((e) => e.source === "kerneljson:mission-reconcile/v1")!;
     expect(rec.metadata["decision"]).toBe("ACCEPTED");
+    expect(rec.metadata).toMatchObject({ contract: { requestedFindings: null, minFindings: 1, maxFindings: 8 }, findingCount: 1 });
+    expect(rec.metadata["findingEvidenceDigests"]).toHaveLength(1);
     const analyst = ev.find((e) => e.source === "kerneljson:runtime/analyst")!;
-    expect(analyst.metadata).toMatchObject({ role: "analyst", provider: "openrouter", response_model: "anthropic/claude-test" });
+    expect(analyst.metadata).toMatchObject({ role: "analyst", provider: "openrouter", model: "anthropic/claude-test", response_model: "anthropic/claude-test" });
     expect(analyst.digest).toBe(createHash("sha256").update(String(analyst.metadata["text"])).digest("hex"));
     expect(JSON.stringify(ev)).not.toMatch(/sk-or-v1|Bearer /);
 
@@ -187,6 +195,12 @@ describe("KJ-P3 repository-analysis mission, end to end", () => {
     ["the reviewer rejects", { reviewer: fakeGrok({ verdict: "reject" }) }, "review_verdict_acceptable"],
     ["the reviewer flags an unsupported finding", { reviewer: fakeGrok({ unsupported: [0] }) }, "review_flags_no_unsupported_findings"],
     ["the analyst cites a file that is not in the GitHub evidence", { analyst: fakeClaude({ paths: [...CITED, "services/kernel/src/imaginary.ts"] }) }, "analysis_paths_exist_in_evidence"],
+    ["the analyst cites a real path with an object id that does not match the captured commit", { analyst: fakeClaude({ evidence: [{ path: "README.md", blobSha: "0".repeat(12) }] }) }, "analysis_evidence_binds_to_commit"],
+    ["the analyst cites another commit's version of the same files", { analyst: fakeClaude({ evidence: CITED.map((p) => cite(p, "another-commit")) }) }, "analysis_evidence_binds_to_commit"],
+    ["a finding cites nothing", { analyst: fakeClaude({ evidence: [] }) }, "analysis_findings_cited"],
+    ["the question asked for three findings and the analyst returned eight", { objective: `${REPO} findings=3 Identify the three highest-value improvements`, analyst: fakeClaude({ findings: 8 }) }, "analysis_finding_count_within_contract"],
+    ["the question asked for three findings and the analyst returned two", { objective: `${REPO} findings=3 Identify the three highest-value improvements`, analyst: fakeClaude({ findings: 2 }) }, "analysis_finding_count_within_contract"],
+    ["nothing was asked for and the analyst returned nine (over the default ceiling of eight)", { analyst: fakeClaude({ findings: 9 }) }, "analysis_finding_count_within_contract"],
     ["the analyst reports a different head sha", { analyst: fakeClaude({ headSha: "f".repeat(40) }) }, "analysis_head_sha_matches_evidence"],
     ["the reviewer did not review this analysis (wrong digest)", { reviewer: fakeGrok({ echoDigest: "0".repeat(64) }) }, "review_binds_to_analysis"],
     ["the reviewer is the same model as the analyst (not independent)", { reviewer: fakeGrok({ responseModel: "anthropic/claude-test" }) }, "reviewer_is_independent"],
@@ -208,16 +222,55 @@ describe("KJ-P3 repository-analysis mission, end to end", () => {
     });
   }
 
-  it("completes on a DeepSeek pair of two different models, and records exactly which models ran", async () => {
+  it("completes on a DeepSeek pair of two different models, and records that it is the weaker same-lineage pairing", async () => {
     const { outcome, taskId } = await runMission({
-      analyst: fakeClaude({ model: "deepseek-v4-flash", responseModel: "deepseek-v4-flash" }),
-      reviewer: fakeGrok({ model: "deepseek-v4-pro", responseModel: "deepseek-v4-pro" }),
+      analyst: fakeClaude({ model: "deepseek-v4-flash", responseModel: "deepseek-v4-flash", provider: "deepseek" }),
+      reviewer: fakeGrok({ model: "deepseek-v4-pro", responseModel: "deepseek-v4-pro", provider: "deepseek" }),
     });
     expect(outcome.status).toBe("COMPLETED");
     const ev = await evidenceOf(taskId);
     expect(ev.find((e) => e.source === "kerneljson:runtime/analyst")!.metadata["response_model"]).toBe("deepseek-v4-flash");
     expect(ev.find((e) => e.source === "kerneljson:runtime/reviewer")!.metadata["response_model"]).toBe("deepseek-v4-pro");
-    expect(ev.find((e) => e.source === "kerneljson:mission-reconcile/v1")!.metadata).toMatchObject({ decision: "ACCEPTED", analystModel: "deepseek-v4-flash", reviewerModel: "deepseek-v4-pro" });
+    expect(ev.find((e) => e.source === "kerneljson:mission-reconcile/v1")!.metadata).toMatchObject({
+      decision: "ACCEPTED", analystModel: "deepseek-v4-flash", reviewerModel: "deepseek-v4-pro",
+      independence: { analystProvider: "deepseek", reviewerProvider: "deepseek", crossProvider: false, crossFamily: false },
+    });
+  });
+
+  it("KJ-P3.1 completes on a cross-provider pair and records requested model, reported model, provider and artifact digest for each role", async () => {
+    const { outcome, taskId } = await runMission({
+      analyst: fakeClaude({ model: "deepseek-v4-flash", responseModel: "deepseek-v4-flash", provider: "deepseek" }),
+      reviewer: fakeGrok({ model: "anthropic/claude-sonnet-5", responseModel: "anthropic/claude-sonnet-5-20260901", provider: "openrouter" }),
+    });
+    expect(outcome.status).toBe("COMPLETED");
+    const ev = await evidenceOf(taskId);
+    const analyst = ev.find((e) => e.source === "kerneljson:runtime/analyst")!;
+    const reviewer = ev.find((e) => e.source === "kerneljson:runtime/reviewer")!;
+    expect(analyst.metadata).toMatchObject({ provider: "deepseek", model: "deepseek-v4-flash", response_model: "deepseek-v4-flash" });
+    // What was asked for and what the router says answered are recorded separately, as reported by the provider.
+    expect(reviewer.metadata).toMatchObject({ provider: "openrouter", model: "anthropic/claude-sonnet-5", response_model: "anthropic/claude-sonnet-5-20260901" });
+    for (const e of [analyst, reviewer]) {
+      expect(e.digest).toBe(createHash("sha256").update(String(e.metadata["text"])).digest("hex"));
+      expect(e.metadata["output_digest"]).toEqual(expect.stringMatching(/^[a-f0-9]{64}$/));
+    }
+    expect(ev.find((e) => e.source === "kerneljson:mission-reconcile/v1")!.metadata).toMatchObject({
+      decision: "ACCEPTED",
+      independence: { analystProvider: "deepseek", reviewerProvider: "openrouter", analystFamily: "deepseek", reviewerFamily: "anthropic", crossProvider: true, crossFamily: true },
+    });
+  });
+
+  it("KJ-P3.1 completes a mission that asked for exactly three findings and got three, and tells the analyst so", async () => {
+    const seen: string[] = [];
+    const inner = fakeClaude({ findings: 3 });
+    const analyst: ModelPort = { generate: async (r) => { seen.push(r.messages.map((m) => m.content).join("\n")); return inner.generate(r); } };
+    const { outcome, taskId } = await runMission({ objective: `${REPO} findings=3 Identify the three highest-value improvements`, analyst });
+    expect(outcome.status).toBe("COMPLETED");
+    expect(seen[0]).toContain("EXACTLY 3 findings");
+    expect(seen[0]).toContain("Identify the three highest-value improvements");
+    expect(seen[0]).not.toContain("findings=3");
+    const rec = (await evidenceOf(taskId)).find((e) => e.source === "kerneljson:mission-reconcile/v1")!;
+    expect(rec.metadata).toMatchObject({ decision: "ACCEPTED", findingCount: 3, contract: { requestedFindings: 3, minFindings: 3, maxFindings: 3 } });
+    expect(rec.metadata["findingEvidenceDigests"]).toHaveLength(3);
   });
 
   it("fails closed and leaves failure evidence when the analyst provider errors, never reaching the reviewer", async () => {
@@ -238,7 +291,10 @@ describe("KJ-P3 repository-analysis mission, end to end", () => {
   it("fails with evidence, without calling a runtime or throwing, when the prompt cannot fit the port limit", async () => {
     // 1000 paths of 250 characters is far beyond the 128k prompt limit but valid GitHub evidence.
     const huge = makeFacts({
-      tree: Array.from({ length: 1000 }, (_, i) => ({ path: `${String(i).padStart(4, "0")}/${"x".repeat(244)}`, type: "blob" as const })),
+      tree: Array.from({ length: 1000 }, (_, i) => {
+        const path = `${String(i).padStart(4, "0")}/${"x".repeat(244)}`;
+        return { path, type: "blob" as const, sha: shaFor(path) };
+      }),
     });
     let called = false;
     const spy = { generate: async () => { called = true; throw new Error("must not be called"); } } as ModelPort;
@@ -273,6 +329,28 @@ describe("KJ-P3 repository-analysis mission, end to end", () => {
       expect(outcome.status).toBe("FAILED");
       expect(outcome.summary).toBe("Persisted completion verification failed");
       expect(await taskStatus(taskId)).toBe("FAILED");
+    });
+
+    it("KJ-P3.1 refuses a workflow that accepted eight findings when the admitted objective asked for three", async () => {
+      // The workflow is handed a relaxed objective, so it accepts. The ledger re-derives the contract
+      // from the immutable task it admitted, so its recomputed reconciliation rejects.
+      const { outcome, taskId } = await runMission({
+        objective: `${REPO} findings=3 Identify the three highest-value improvements`,
+        workflowObjective: `${REPO} Identify the three highest-value improvements`,
+        analyst: fakeClaude({ findings: 8 }),
+      });
+      expect(outcome.status).toBe("FAILED");
+      expect(outcome.summary).toBe("Persisted completion verification failed");
+      expect(await taskStatus(taskId)).toBe("FAILED");
+    });
+
+    it("KJ-P3.1 the control for that test: the same eight findings complete when the admitted objective allows them", async () => {
+      const { outcome } = await runMission({
+        objective: `${REPO} Identify the highest-value improvements`,
+        workflowObjective: `${REPO} Identify the highest-value improvements`,
+        analyst: fakeClaude({ findings: 8 }),
+      });
+      expect(outcome.status).toBe("COMPLETED");
     });
 
     it("refuses when a persisted step no longer matches its evidence", async () => {

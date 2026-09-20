@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import {
   GithubFacts,
   ModelCallResult,
   ModelRequest,
+  type FindingEvidence,
   type ModelErrorCode,
 } from "../../packages/contracts/src/index.js";
 import { capabilityDigest } from "../../packages/capabilities/src/index.js";
@@ -16,6 +18,12 @@ import { sha256Text } from "../../services/kernel/src/mission/reconcile.js";
 export const HEAD = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
 export const REPO = "jonnyallum/kerneljson";
 
+/** A stable, distinct git object id per path. `salt` yields the ids another commit would hold. */
+export const shaFor = (path: string, salt = ""): string => createHash("sha1").update(`${salt}${path}`).digest("hex");
+
+/** A citation as the analyst must write it: the path and the 12 character object id prefix. */
+export const cite = (path: string, salt = ""): FindingEvidence => ({ path, blobSha: shaFor(path, salt).slice(0, 12) });
+
 export function makeFacts(overrides: Partial<GithubFacts> = {}): GithubFacts {
   return GithubFacts.parse({
     repo: REPO,
@@ -29,14 +37,14 @@ export function makeFacts(overrides: Partial<GithubFacts> = {}): GithubFacts {
     pushedAt: "2026-09-19T14:05:00Z",
     openIssues: 0,
     tree: [
-      { path: "README.md", type: "blob" },
-      { path: "ARCHITECTURE.md", type: "blob" },
-      { path: "services", type: "tree" },
-      { path: "services/kernel", type: "tree" },
-      { path: "services/kernel/src/index.ts", type: "blob" },
-      { path: "services/kernel/src/ledger.ts", type: "blob" },
-      { path: "docs/operations/TELEGRAM_TRANSPORT.md", type: "blob" },
-    ],
+      { path: "README.md", type: "blob" as const },
+      { path: "ARCHITECTURE.md", type: "blob" as const },
+      { path: "services", type: "tree" as const },
+      { path: "services/kernel", type: "tree" as const },
+      { path: "services/kernel/src/index.ts", type: "blob" as const },
+      { path: "services/kernel/src/ledger.ts", type: "blob" as const },
+      { path: "docs/operations/TELEGRAM_TRANSPORT.md", type: "blob" as const },
+    ].map((e) => ({ ...e, sha: shaFor(e.path) })),
     treeTruncated: false,
     readme: { path: "README.md", sha256: "b".repeat(64), excerpt: "KernelJSON is a durable cognitive execution platform." },
     ...overrides,
@@ -49,17 +57,19 @@ export function githubResult(facts: GithubFacts = makeFacts()) {
 
 export const CITED = ["services/kernel/src/ledger.ts", "README.md"];
 
-export function analysisJson(opts: { headSha?: string; paths?: string[] } = {}): string {
+export function analysisJson(
+  opts: { headSha?: string; paths?: string[]; evidence?: FindingEvidence[]; findings?: number } = {},
+): string {
+  const evidence = opts.evidence ?? (opts.paths ?? CITED).map((p) => cite(p));
+  const count = opts.findings ?? 1;
   return JSON.stringify({
     headSha: opts.headSha ?? HEAD,
     summary: "KernelJSON is a durable task kernel: a Restate workflow drives a ledger that only completes on verified evidence.",
-    findings: [
-      {
-        title: "Completion is evidence-bound",
-        detail: "The ledger re-verifies the plan, steps and evidence inside the transaction that commits COMPLETED.",
-        paths: opts.paths ?? CITED,
-      },
-    ],
+    findings: Array.from({ length: count }, (_, i) => ({
+      title: `Completion is evidence-bound${count > 1 ? ` (${i + 1})` : ""}`,
+      detail: "The ledger re-verifies the plan, steps and evidence inside the transaction that commits COMPLETED.",
+      evidence,
+    })),
   });
 }
 
@@ -83,9 +93,11 @@ export type FakeReply = string | { fail: ModelErrorCode };
 export function fakeRuntime(config: {
   model: string;
   responseModel?: string;
+  /** The port label on the receipt, for example `deepseek` or `openrouter` (the default). */
+  provider?: string;
   reply: (prompt: string) => FakeReply;
 }): ModelPort {
-  const provider = "openrouter";
+  const provider = config.provider ?? "openrouter";
   return {
     async generate(raw) {
       const request = ModelRequest.parse(raw);
@@ -123,24 +135,44 @@ export function fakeRuntime(config: {
   };
 }
 
-/** Claude-like analyst: reads the head sha and cites tree paths straight from the prompt. */
-export function fakeClaude(over: { headSha?: string; paths?: string[]; responseModel?: string; reply?: FakeReply; model?: string } = {}) {
+/**
+ * Claude-like analyst: reads the head sha and, for each path it cites, the path and the object id
+ * prefix straight from the prompt's tree list, exactly as the prompt tells a real model to.
+ * A path missing from the prompt gets an all-zero prefix.
+ */
+export function fakeClaude(
+  over: {
+    headSha?: string;
+    paths?: string[];
+    evidence?: FindingEvidence[];
+    findings?: number;
+    responseModel?: string;
+    reply?: FakeReply;
+    model?: string;
+    provider?: string;
+  } = {},
+) {
   return fakeRuntime({
     model: over.model ?? "anthropic/claude-test",
     ...(over.responseModel ? { responseModel: over.responseModel } : {}),
+    ...(over.provider ? { provider: over.provider } : {}),
     reply: (prompt) => {
       if (over.reply !== undefined) return over.reply;
       const head = /head sha: ([0-9a-f]{40})/.exec(prompt)?.[1] ?? "";
-      return analysisJson({ headSha: over.headSha ?? head, ...(over.paths ? { paths: over.paths } : {}) });
+      const prefixes = new Map([...prompt.matchAll(/^[fd] ([0-9a-f]{12}) (.+)$/gm)].map((m) => [m[2]!, m[1]!] as const));
+      const evidence =
+        over.evidence ?? (over.paths ?? CITED).map((path) => ({ path, blobSha: prefixes.get(path) ?? "0".repeat(12) }));
+      return analysisJson({ headSha: over.headSha ?? head, evidence, ...(over.findings ? { findings: over.findings } : {}) });
     },
   });
 }
 
 /** Grok-like reviewer: copies the analysis digest and the verbatim analysis out of the prompt. */
-export function fakeGrok(over: { verdict?: "approve" | "approve_with_notes" | "reject"; unsupported?: number[]; echoDigest?: string; responseModel?: string; reply?: FakeReply; model?: string } = {}) {
+export function fakeGrok(over: { verdict?: "approve" | "approve_with_notes" | "reject"; unsupported?: number[]; echoDigest?: string; responseModel?: string; reply?: FakeReply; model?: string; provider?: string } = {}) {
   return fakeRuntime({
     model: over.model ?? "x-ai/grok-test",
     ...(over.responseModel ? { responseModel: over.responseModel } : {}),
+    ...(over.provider ? { provider: over.provider } : {}),
     reply: (prompt) => {
       if (over.reply !== undefined) return over.reply;
       const analysisText = /ANALYSIS \(verbatim\):\n([\s\S]*?)\n\nEVIDENCE/.exec(prompt)?.[1] ?? "";

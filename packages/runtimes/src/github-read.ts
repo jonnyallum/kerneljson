@@ -58,6 +58,8 @@ const TreeResponse = z.object({
     z.object({
       path: z.string().min(1).max(300),
       type: z.string(),
+      // The git object id from the same recursive-tree response: no extra request.
+      sha: z.string().regex(/^[0-9a-f]{40}$/),
     }),
   ),
 });
@@ -171,7 +173,7 @@ export function createGithubReader(config: GithubReaderConfig = {}) {
     );
     const entries = treeRaw.tree
       .filter((e) => e.type === "blob" || e.type === "tree")
-      .map((e) => ({ path: e.path, type: e.type as "blob" | "tree" }))
+      .map((e) => ({ path: e.path, type: e.type as "blob" | "tree", sha: e.sha }))
       .sort((a, b) => depth(a.path) - depth(b.path) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
     let readme: GithubFacts["readme"] = null;

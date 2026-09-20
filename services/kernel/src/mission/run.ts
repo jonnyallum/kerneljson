@@ -66,7 +66,7 @@ export interface MissionDeps {
 
 export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome> {
   const { task, plan, emit } = deps;
-  const { repo, question } = parseMissionObjective(task.objective);
+  const { repo, question, contract } = parseMissionObjective(task.objective);
   const [github, analyst, reviewer, reconcile] = orderedSteps(plan) as [PlanStep, PlanStep, PlanStep, PlanStep];
   const trace = { traceId: task.traceId, correlationId: task.id };
   const evidenceIds: string[] = [];
@@ -204,7 +204,7 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
     analyst,
     "analyst",
     deps.analyst,
-    () => analystRequest({ callId: analystId, taskId: task.id, stepId: analyst.id, trace, facts, factsDigest, question }),
+    () => analystRequest({ callId: analystId, taskId: task.id, stepId: analyst.id, trace, facts, factsDigest, question, contract }),
   );
   if ("failed" in a) return a.failed!;
   const analysisDigest = sha256Text(a.text);
@@ -242,10 +242,13 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
   await begin(reconcile);
   const rec = reconcileMission({
     facts,
+    contract,
     analysisText: a.text,
     analystModel: a.receipt.responseModel,
+    analystProvider: a.receipt.provider,
     reviewText: r.text,
     reviewerModel: r.receipt.responseModel,
+    reviewerProvider: r.receipt.provider,
   });
   await complete(
     reconcile,

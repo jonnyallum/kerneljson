@@ -85,14 +85,22 @@ export function verifyMissionCompletion(
     const m = md(e)["response_model"];
     return typeof m === "string" ? m : fail("missing response model");
   };
+  const provider = (e: Evidence): string => {
+    const p = md(e)["provider"];
+    return typeof p === "string" && p.length > 0 ? p : fail("missing provider");
+  };
 
   // Independently recompute the reconciliation and require the persisted one to match.
+  // The contract is re-derived from the immutable task objective, never from anything the workflow stored.
   const recomputed = reconcileMission({
     facts,
+    contract: parseMissionObjective(task.objective).contract,
     analysisText,
     analystModel: model(e2),
+    analystProvider: provider(e2),
     reviewText,
     reviewerModel: model(e3),
+    reviewerProvider: provider(e3),
   });
   const persisted = MissionReconciliation.parse(e4.metadata);
   if (capabilityDigest(persisted) !== capabilityDigest(recomputed) || e4.digest !== capabilityDigest(recomputed))
