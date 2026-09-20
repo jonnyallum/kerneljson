@@ -22,16 +22,35 @@ const Message = z.looseObject({
   via_bot: z.unknown().optional(),
 });
 
+const CallbackQuery = z.looseObject({
+  id: z.string().min(1).max(128),
+  from: z.looseObject({ id: z.number().int(), is_bot: z.boolean().optional() }),
+  // Absent when the button's message is too old for Telegram to hand back. The handler refuses those.
+  message: z.looseObject({ message_id: z.number().int(), chat: z.looseObject({ id: z.number().int(), type: z.string() }) }).optional(),
+  data: z.string().max(64).optional(),
+});
+
 export type Classified =
   /** A fresh text message from the allow-listed private chat. `date` is Telegram's own unix seconds. */
   | { kind: "COMMAND"; text: string; date: number }
+  /**
+   * KJ-P4B: an inline-button press by the allow-listed user, on a message in the allow-listed private
+   * chat. It is only ever a request to look a handle up: nothing in `data` is trusted as a decision.
+   */
+  | { kind: "CALLBACK"; queryId: string; data: string | null; messageId: number | null }
   /** Authorised sender, but not something this channel acts on. Consumed silently. */
   | { kind: "IGNORED" }
   /** Anyone or anything else. Never answered, never admitted, only counted. */
   | { kind: "UNAUTHORISED" };
 
-export function classifyUpdate(update: RawUpdate, chatId: string): Classified {
+export interface ClassifyOptions {
+  /** KJ-P4B: recognise button presses. Off, a callback query is ignored exactly as in KJ-P4A. */
+  callbacks?: boolean;
+}
+
+export function classifyUpdate(update: RawUpdate, chatId: string, options: ClassifyOptions = {}): Classified {
   const raw = update as Record<string, unknown>;
+  if (options.callbacks === true && raw["callback_query"] !== undefined) return classifyCallback(raw["callback_query"], chatId);
   // Edits, callback queries, channel posts and every other update kind are not messages.
   if (raw["message"] === undefined) return { kind: "IGNORED" };
   const parsed = Message.safeParse(raw["message"]);
@@ -48,6 +67,19 @@ export function classifyUpdate(update: RawUpdate, chatId: string): Classified {
   if (m.forward_origin !== undefined || m.forward_date !== undefined || m.via_bot !== undefined) return { kind: "IGNORED" };
   if (m.text === undefined) return { kind: "IGNORED" };
   return { kind: "COMMAND", text: m.text, date: m.date };
+}
+
+/** The same allow-list as a command: the configured private chat is both the only sender and the only chat. */
+function classifyCallback(value: unknown, chatId: string): Classified {
+  const parsed = CallbackQuery.safeParse(value);
+  if (!parsed.success) return { kind: "IGNORED" };
+  const q = parsed.data;
+  const authorised =
+    String(q.from.id) === chatId &&
+    q.from.is_bot !== true &&
+    (q.message === undefined || (q.message.chat.type === "private" && String(q.message.chat.id) === chatId));
+  if (!authorised) return { kind: "UNAUTHORISED" };
+  return { kind: "CALLBACK", queryId: q.id, data: q.data ?? null, messageId: q.message?.message_id ?? null };
 }
 
 /** Where updates come from. Injected so the adapter is testable without a network. */
@@ -85,6 +117,8 @@ const MAX_BATCH = 100;
 
 export interface HttpUpdateSourceConfig {
   botToken: string;
+  /** KJ-P4B: also ask Telegram for inline-button presses. Off by default: KJ-P4A asks for messages only. */
+  callbackQueries?: boolean;
 }
 
 /**
@@ -94,10 +128,12 @@ export interface HttpUpdateSourceConfig {
  */
 export class HttpUpdateSource implements UpdateSource {
   readonly #botToken: string;
+  readonly #allowed: string[];
   readonly #fetch: typeof fetch;
 
   constructor(config: HttpUpdateSourceConfig, fetchImpl: typeof fetch = fetch) {
     this.#botToken = config.botToken;
+    this.#allowed = config.callbackQueries === true ? ["message", "callback_query"] : ["message"];
     this.#fetch = fetchImpl;
   }
 
@@ -108,8 +144,8 @@ export class HttpUpdateSource implements UpdateSource {
       response = await this.#fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        // Only fresh messages; everything else is never even delivered to us.
-        body: JSON.stringify({ offset, timeout: timeoutSec, limit: MAX_BATCH, allowed_updates: ["message"] }),
+        // Only fresh messages (and, when approvals are on, button presses); nothing else is delivered.
+        body: JSON.stringify({ offset, timeout: timeoutSec, limit: MAX_BATCH, allowed_updates: this.#allowed }),
         signal: AbortSignal.timeout((timeoutSec + 10) * 1000),
       });
     } catch {
