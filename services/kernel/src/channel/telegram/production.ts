@@ -4,6 +4,10 @@ import { isOperatorReplyCheckId } from "../../alerting/operator-reply.js";
 import { PgNotificationOutboxStore } from "../../alerting/pg-outbox-store.js";
 import { selectNotifier } from "../../alerting/select-notifier.js";
 import { loadTransportConfig } from "../../alerting/transport-config.js";
+import { loadApprovalBoundaryConfig } from "../../approval-boundary.js";
+import { createApprovalsPort } from "./approvals.js";
+import { HttpBotApi } from "./bot-api.js";
+import { PgCardStore } from "./pg-card-store.js";
 import { HttpDoorClient } from "./door-client.js";
 import { PgInboxStore } from "./pg-inbox-store.js";
 import { pollOnce } from "./operator.js";
@@ -32,11 +36,26 @@ export function productionTelegramOperator(env: NodeJS.ProcessEnv) {
   pool.on("error", () => console.error("telegram_operator_pool_error"));
   const outbox = new PgNotificationOutboxStore(pool);
   const delivery = { outbox, notifier, transport };
+  const door = new HttpDoorClient(config.admissionUrl, config.authorization);
+  // KJ-P4B: approval cards and buttons, only when the approval boundary is configured too. The channel
+  // shows approvals for the door's one principal in the door's tenant, and asks the door to answer them.
+  const boundary = loadApprovalBoundaryConfig(env);
+  const approvals = boundary
+    ? createApprovalsPort({
+        tenantId: boundary.tenantId,
+        approverId: boundary.principalId,
+        cards: new PgCardStore(pool),
+        bot: new HttpBotApi({ botToken: config.botToken, chatId: config.chatId }),
+        door,
+        now: () => new Date(),
+      })
+    : undefined;
   const deps = {
     limits: config.limits,
-    source: new HttpUpdateSource({ botToken: config.botToken }),
+    source: new HttpUpdateSource({ botToken: config.botToken, callbackQueries: approvals !== undefined }),
     inbox: new PgInboxStore(pool),
-    door: new HttpDoorClient(config.admissionUrl, config.authorization),
+    door,
+    ...(approvals ? { approvals } : {}),
     status: new PgStatusReader(pool),
     outbox,
     deliver: async (ids: readonly string[]) => {

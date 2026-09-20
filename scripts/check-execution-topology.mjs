@@ -101,6 +101,12 @@ for (const key of [
   // KJ-P4A Telegram operator channel.
   "TELEGRAM_INBOUND_ENABLED",
   "TELEGRAM_MISSION_DAILY_CAP",
+  // KJ-P4B approval boundary.
+  "KJ_APPROVAL_ENABLED",
+  "KJ_APPROVAL_TTL_SECONDS",
+  "KJ_ADMISSION_TENANT_ID",
+  "KJ_ADMISSION_PRINCIPAL_ID",
+  "KJ_CONTROL_TOKEN",
 ]) {
   check(key in (worker?.environment ?? {}), `execution: worker environment does not declare ${key} (silently dropped from runtime.env)`);
 }

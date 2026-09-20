@@ -52,7 +52,16 @@ export interface DoorConfig {
   port: number;
   releaseId: string;
   restateIngressUrl: string | null; // null => admission-only mode (no execution dispatch)
+  /**
+   * SENSITIVE - never logged, never returned to a printer. KJ-P4B: the internal credential the door
+   * presents to the workflow endpoint (`Authorization: Bearer ...`) so the approval workflow can
+   * authenticate the hop. null => no credential is sent, exactly as before. It is a separate secret
+   * from `bearer`, so the public admission bearer never travels to the workflow.
+   */
+  controlToken: string | null;
 }
+
+export const MIN_CONTROL_TOKEN_LENGTH = 32;
 
 /** ONLY the non-secret fields — safe to log/return. Never includes bearer or DATABASE_URL. */
 export interface DoorConfigSummary {
@@ -129,6 +138,10 @@ export function loadDoorConfig(env: Record<string, string | undefined>): DoorCon
   if (!RELEASE_ID_RE.test(releaseId))
     throw new DoorConfigError("RELEASE_ID_INVALID", "KERNELJSON_RELEASE_ID has an invalid shape");
 
+  const controlToken = env["KJ_CONTROL_TOKEN"] === undefined || env["KJ_CONTROL_TOKEN"] === "" ? null : env["KJ_CONTROL_TOKEN"];
+  if (controlToken !== null && controlToken.length < MIN_CONTROL_TOKEN_LENGTH)
+    throw new DoorConfigError("KJ_CONTROL_TOKEN_TOO_SHORT", "KJ_CONTROL_TOKEN is too short");
+
   return {
     databaseUrl,
     bearer,
@@ -136,6 +149,7 @@ export function loadDoorConfig(env: Record<string, string | undefined>): DoorCon
     port,
     releaseId,
     restateIngressUrl: normaliseIngress(env["KJ_RESTATE_INGRESS_URL"]),
+    controlToken,
   };
 }
 
@@ -184,11 +198,15 @@ export function buildDoorHandler(
   config: DoorConfig,
 ): (req: IncomingMessage, res: ServerResponse) => void {
   const authenticate = bearerAuthenticator(createBearerResolver(config.bearer, config.context));
+  // KJ-P4B: the internal hop to the workflow carries the control token when one is configured, so the
+  // approval workflow can authenticate it. Absent, the headers are empty, as before.
+  const credentialsFor = async (): Promise<Record<string, string>> =>
+    config.controlToken === null ? {} : { authorization: `Bearer ${config.controlToken}` };
   const dispatch: Dispatch = config.restateIngressUrl
-    ? createRestateDispatch(config.restateIngressUrl, async () => ({}))
+    ? createRestateDispatch(config.restateIngressUrl, credentialsFor)
     : admissionOnlyDispatch;
   const controls: ControlPort = config.restateIngressUrl
-    ? createRestateControls(config.restateIngressUrl, async () => ({}), { pool })
+    ? createRestateControls(config.restateIngressUrl, credentialsFor, { pool })
     : admissionOnlyControls;
   const gateway = createGateway({
     pool,

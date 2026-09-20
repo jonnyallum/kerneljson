@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { NotificationOutboxStore } from "../../alerting/outbox-store.js";
 import { admissionRequest, parseCommand, type Command } from "./commands.js";
+import type { ApprovalsPort } from "./approvals.js";
 import type { CommandKind, Disposition, InboxStore } from "./inbox-store.js";
 import type { DoorClient } from "./door-client.js";
 import { enqueueReply } from "./reply-outbox.js";
@@ -43,6 +44,12 @@ export interface OperatorDeps {
   /** Retry replies an earlier attempt could not send (Telegram outage, restart). */
   deliverDue: () => Promise<void>;
   now: () => Date;
+  /**
+   * KJ-P4B: approval cards and their buttons. Absent, the channel behaves exactly as in KJ-P4A and a
+   * button press is ignored. Present, cards are shown and settled at the start of every poll, and a
+   * press from the allow-listed chat is handed to it. It has no authority: see `approvals.ts`.
+   */
+  approvals?: ApprovalsPort;
 }
 
 export interface PollSummary {
@@ -56,6 +63,10 @@ export interface PollSummary {
   admitted: number;
   answered: number;
   refused: number;
+  /** KJ-P4B: button presses handled (not counting redeliveries, which are `duplicates`). */
+  callbacks: number;
+  /** KJ-P4B: approval cards sent this poll. */
+  cardsSent: number;
   nextOffset: number;
 }
 
@@ -77,9 +88,12 @@ export async function pollOnce(deps: OperatorDeps): Promise<PollSummary> {
     admitted: 0,
     answered: 0,
     refused: 0,
+    callbacks: 0,
+    cardsSent: 0,
     nextOffset: 0,
   };
   await deps.deliverDue();
+  if (deps.approvals) summary.cardsSent = (await deps.approvals.service()).sent;
   const offset = await deps.inbox.offset();
   summary.nextOffset = offset;
 
@@ -97,6 +111,7 @@ export async function pollOnce(deps: OperatorDeps): Promise<PollSummary> {
 
   let maxId = offset - 1;
   const replyIds: string[] = [];
+  let pressed = false;
   for (const update of updates) {
     maxId = Math.max(maxId, update.update_id);
     // Telegram never sends below the offset we asked for; if it ever did, it is already handled.
@@ -104,13 +119,26 @@ export async function pollOnce(deps: OperatorDeps): Promise<PollSummary> {
       summary.duplicates++;
       continue;
     }
-    const classified = classifyUpdate(update, deps.limits.chatId);
+    const classified = classifyUpdate(update, deps.limits.chatId, { callbacks: deps.approvals !== undefined });
     if (classified.kind === "UNAUTHORISED") {
       summary.unauthorised++;
       continue;
     }
     if (classified.kind === "IGNORED") {
       summary.ignored++;
+      continue;
+    }
+    if (classified.kind === "CALLBACK") {
+      // Only reachable with approvals wired: `classifyUpdate` ignores button presses otherwise.
+      const result = await deps.approvals!.handle({
+        updateId: update.update_id,
+        queryId: classified.queryId,
+        data: classified.data,
+        messageId: classified.messageId,
+      });
+      if (result === "DUPLICATE") summary.duplicates++;
+      else summary.callbacks++;
+      pressed = true;
       continue;
     }
     const outcome = await handleCommand(deps, update.update_id, classified.text, classified.date, summary);
@@ -122,6 +150,8 @@ export async function pollOnce(deps: OperatorDeps): Promise<PollSummary> {
     summary.nextOffset = maxId + 1;
   }
   if (replyIds.length > 0) await deps.deliver(replyIds);
+  // A press just settled an approval: take its buttons off now rather than at the next poll.
+  if (pressed && deps.approvals) await deps.approvals.service();
   return summary;
 }
 

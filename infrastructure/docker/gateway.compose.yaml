@@ -43,6 +43,9 @@ services:
       KERNELJSON_RELEASE_ID: ${KERNELJSON_RELEASE_ID:-unreleased-development}
       PORT: ${PORT:-8081}
       KJ_RESTATE_INGRESS_URL: ${KJ_RESTATE_INGRESS_URL:-}
+      # KJ-P4B: the internal credential presented to the workflow endpoint so the approval workflow can
+      # authenticate the hop. Optional; unset sends no credential. Not the admission bearer.
+      KJ_CONTROL_TOKEN: ${KJ_CONTROL_TOKEN:-}
     ports: ["127.0.0.1:${PORT:-8081}:${PORT:-8081}"]
     healthcheck:
       test:
