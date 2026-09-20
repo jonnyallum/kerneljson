@@ -1,4 +1,5 @@
 import { decideNextOutboxState, recoverIfStaleSending } from "./outbox.js";
+import { isOperatorReplyCheckId } from "./operator-reply.js";
 import type { NotificationOutboxStore } from "./outbox-store.js";
 import {
   DEFAULT_DELIVERY_CONFIG,
@@ -122,7 +123,57 @@ function rowToPayload(row: NotificationOutboxRow): NotificationPayload {
     lastError: _lastError,
     ...payload
   } = row;
+  // KJ-P4A: the single exception. An operator reply IS its text (see operator-reply.ts for why that is
+  // safe); every other row keeps the synthetic summary above.
+  if (isOperatorReplyCheckId(row.checkId)) return payload;
   return { ...payload, message: `${row.checkId}: ${row.kind} (${row.severity})` };
+}
+
+/**
+ * KJ-P4A - deliver specific rows NOW, without waiting for the monitor's tick.
+ *
+ * A chat reply that takes up to five minutes is not a conversation. This claims each named row
+ * atomically (`markSending` returns null for anything not PENDING and due, so a row the monitor
+ * already owns is skipped, never sent twice) and records the outcome exactly as the worker does.
+ * It deliberately does NOT recover stale SENDING rows: that step relies on being the only caller
+ * under the monitor's exclusive lock, and this path is not. A failed send stays PENDING with the
+ * outbox's own backoff, and the monitor's tick remains the backstop.
+ */
+export async function deliverRows(deps: DeliveryWorkerDeps, notificationIds: readonly string[]): Promise<DeliverySummary> {
+  const now = deps.now ?? (() => new Date());
+  const start = now();
+  const nowIso = start.toISOString();
+  const config = deps.config ?? DEFAULT_DELIVERY_CONFIG;
+  const summary: DeliverySummary = {
+    startedAt: nowIso,
+    completedAt: nowIso,
+    durationMs: 0,
+    recovered: 0,
+    attempted: 0,
+    delivered: 0,
+    retried: 0,
+    poisoned: 0,
+    result: "OK",
+  };
+  try {
+    for (const id of notificationIds) {
+      const claimed = await deps.outbox.markSending(id, nowIso);
+      if (!claimed) continue;
+      summary.attempted++;
+      const attempt = await attemptDelivery(deps.notifier, claimed);
+      const decision = decideNextOutboxState(claimed, attempt, nowIso, config);
+      await deps.outbox.applyOutcome(decision.row, decision.eventOutcome, decision.errorClass, claimed.attemptCount, nowIso, deps.transport);
+      if (decision.row.status === "DELIVERED") summary.delivered++;
+      else if (decision.row.status === "POISON") summary.poisoned++;
+      else summary.retried++;
+    }
+  } catch {
+    summary.result = "OUTBOX_FAILED";
+  }
+  const end = now();
+  summary.completedAt = end.toISOString();
+  summary.durationMs = Math.max(0, end.getTime() - start.getTime());
+  return summary;
 }
 
 async function attemptDelivery(notifier: Notifier, row: NotificationOutboxRow): Promise<DeliveryAttemptResult> {

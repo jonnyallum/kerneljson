@@ -103,6 +103,10 @@ services:
       MISSION_ANALYST_MODEL: ${MISSION_ANALYST_MODEL:-}
       MISSION_REVIEWER_MODEL: ${MISSION_REVIEWER_MODEL:-}
       GITHUB_READ_TOKEN: ${GITHUB_READ_TOKEN:-}
+      # KJ-P4A Telegram operator channel. Off unless TELEGRAM_INBOUND_ENABLED=true (unset or empty
+      # both mean off). Undeclared means silently dropped, like every var above.
+      TELEGRAM_INBOUND_ENABLED: ${TELEGRAM_INBOUND_ENABLED:-}
+      TELEGRAM_MISSION_DAILY_CAP: ${TELEGRAM_MISSION_DAILY_CAP:-}
       RESTATE_ADMIN_URL: ${RESTATE_ADMIN_URL:-http://restate:9070}
       EXPECTED_RELEASE_ID: ${EXPECTED_RELEASE_ID:-${KERNELJSON_RELEASE_ID}}
       PORT: "9080"

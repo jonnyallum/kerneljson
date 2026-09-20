@@ -8,6 +8,7 @@ import { createCapabilityService } from "./capability-service.js";
 import { loadCanaryConfig } from "./scheduler/canary-config.js";
 import { createScheduleDriverService } from "./scheduler/restate-service.js";
 import { productionAlertMonitor } from "./alerting/runner-production.js";
+import { productionTelegramOperator } from "./channel/telegram/production.js";
 import { PgNotificationOutboxStore } from "./alerting/pg-outbox-store.js";
 import { loadMissionConfig } from "./mission/config.js";
 import { enqueueMissionNotice } from "./mission/notify.js";
@@ -125,6 +126,9 @@ const scheduleDriver =
     : undefined;
 
 const alertMonitor = productionAlertMonitor(process.env);
+// KJ-P4A: the Telegram operator channel. Off unless TELEGRAM_INBOUND_ENABLED=true; a partial or
+// ambiguous configuration refuses to start, exactly like the seams above.
+const telegramOperator = productionTelegramOperator(process.env);
 export const services = [
   createTaskWorkflow(ledger),
   createKernelWorkflow(
@@ -136,6 +140,7 @@ export const services = [
   ...(capabilityService ? [capabilityService] : []),
   ...(scheduleDriver ? [scheduleDriver] : []),
   ...(alertMonitor ? [alertMonitor] : []),
+  ...(telegramOperator ? [telegramOperator] : []),
 ];
 
 // Serve only when invoked directly (not when imported by the registration test).

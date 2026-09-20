@@ -211,6 +211,37 @@ describe("KJ-P2.2B runtime env merge (runner env preserved)", () => {
     expect(r.code).toBe(2);
     expect(r.err).toMatch(/duplicate key/);
   });
+  // KJ-P4A: the Telegram operator channel is switched on and capped through the same procedure.
+  describe("Telegram operator channel keys (KJ-P4A)", () => {
+    const channelMerge = (d: string, extra: string[]) =>
+      run(["merge", "--base", join(d, "base.env"), "--out", join(d, "new.env"), "--require-keys", REQUIRE, ...extra]);
+
+    it("adds the switch and the cap, preserves every other line, and verifies exactly those two changed", () => {
+      const d = fixture();
+      const r = channelMerge(d, ["--set-public", "TELEGRAM_INBOUND_ENABLED=true", "--set-public", "TELEGRAM_MISSION_DAILY_CAP=5"]);
+      expect(r.code, r.err).toBe(0);
+      expect(readFileSync(join(d, "new.env"), "utf8")).toBe(BASE + "TELEGRAM_INBOUND_ENABLED=true\nTELEGRAM_MISSION_DAILY_CAP=5\n");
+      const v = run(["verify", "--base", join(d, "base.env"), "--new", join(d, "new.env"), "--changed", "TELEGRAM_INBOUND_ENABLED,TELEGRAM_MISSION_DAILY_CAP"]);
+      expect(v.code, v.err).toBe(0);
+    });
+
+    it("refuses anything that is not exactly true or false, and a cap outside 1 to 100", () => {
+      const d = fixture();
+      const bad = [
+        "TELEGRAM_INBOUND_ENABLED=yes", "TELEGRAM_INBOUND_ENABLED=TRUE", "TELEGRAM_INBOUND_ENABLED=1", "TELEGRAM_INBOUND_ENABLED=",
+        "TELEGRAM_MISSION_DAILY_CAP=0", "TELEGRAM_MISSION_DAILY_CAP=101", "TELEGRAM_MISSION_DAILY_CAP=abc", "TELEGRAM_MISSION_DAILY_CAP=2.5", "TELEGRAM_MISSION_DAILY_CAP=-1",
+      ];
+      bad.forEach((spec, i) => {
+        const r = run(["merge", "--base", join(d, "base.env"), "--out", join(d, `bad-${i}.env`), "--set-public", spec]);
+        expect(r.code, spec).toBe(2);
+        expect(r.err, spec).toMatch(/unexpected shape/);
+      });
+      ["TELEGRAM_INBOUND_ENABLED=false", "TELEGRAM_MISSION_DAILY_CAP=1", "TELEGRAM_MISSION_DAILY_CAP=100", "TELEGRAM_MISSION_DAILY_CAP=37"].forEach((good, i) => {
+        const r = run(["merge", "--base", join(d, "base.env"), "--out", join(d, `ok-${i}.env`), "--set-public", good]);
+        expect(r.code, good + r.err).toBe(0);
+      });
+    });
+  });
   // KJ-P3: the mission runtime settings go through the same preserving, verified procedure.
   describe("mission runtime keys (KJ-P3)", () => {
     const OR_KEY = "sk-or-v1-" + "c".repeat(64);
