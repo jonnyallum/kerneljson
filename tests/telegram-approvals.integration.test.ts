@@ -46,6 +46,9 @@ const doorConfig = (principal: string, bearer: string) =>
     KJ_ADMISSION_TENANT_ID: fixture.tenant.id,
     KJ_ADMISSION_PRINCIPAL_ID: principal,
     KJ_ADMISSION_PRINCIPAL_KIND: "HUMAN",
+    // A task must run on the release it is bound to, so the door binds the release the test worker runs (CI sets
+    // KERNELJSON_RELEASE_ID to the commit; locally the compose default applies), as the gateway recovery test does.
+    KERNELJSON_RELEASE_ID: process.env["KERNELJSON_RELEASE_ID"] ?? "unreleased-development",
     KJ_RESTATE_INGRESS_URL: INGRESS,
     KJ_CONTROL_SIGNING_KEY: CONTROL_TEST_KEY,
     KJ_CONTROL_KEY_ID: CONTROL_TEST_KEY_ID,
