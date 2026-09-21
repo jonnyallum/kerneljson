@@ -19,7 +19,7 @@ let member: TenantContext;
 let service: TenantContext;
 let other: TenantContext;
 let approver: PrincipalRef;
-let clock = new Date();
+const clock = new Date();
 
 const key = () => `test-key-${randomUUID()}`;
 const evidence = (ref: string = randomUUID()) => [{ type: "TELEGRAM_UPDATE" as const, ref: `update:${ref}` }];
@@ -188,14 +188,42 @@ describe("models and the Shared Brain can only ever submit candidates", () => {
   });
 
   it("refuses, in the database, a version whose trust class is not the one its origin earns", async () => {
-    const r = await memory.submitOperatorInstruction(owner, submission());
-    const promotion = await db.pool.query("select id from memory_promotions where candidate_id=$1", [r.candidateId]);
-    // A second version by the same promotion is impossible (unique promotion), so forge a fresh promotion for the same candidate.
-    const err = await rejects(
-      "insert into memory_versions(memory_id,version,tenant_id,class,kind,content,content_digest,subject_kind,subject_ref,trust_class,confidence,provenance,evidence,policy,candidate_id,promotion_id,supersedes_version,created_at) select memory_id,2,tenant_id,class,'ASSERT','forged',$2,subject_kind,subject_ref,'INTERNAL_DERIVED',confidence,provenance,evidence,policy,candidate_id,$1,1,created_at from memory_versions where memory_id=$3 and version=1",
-      [promotion.rows[0].id, "b".repeat(64), r.memoryId],
-    );
-    expect(err).not.toBeNull();
+    // A legal chain (candidate, promotion, version) that differs from the accepted one ONLY in the trust class, run
+    // in a transaction that is always rolled back. The positive control proves the chain itself is otherwise valid.
+    const attempt = async (trust: string): Promise<{ code?: string; message: string } | null> => {
+      const c = await db.pool.connect();
+      const candidateId = randomUUID();
+      const promotionId = randomUUID();
+      const memoryId = randomUUID();
+      const evidenceJson = JSON.stringify([{ type: "TELEGRAM_UPDATE", ref: "update:trust" }]);
+      try {
+        await c.query("begin");
+        await c.query(
+          "insert into memory_candidates(id,tenant_id,origin,submitted_by,idempotency_key,proposed_class,intent,content,content_digest,subject_kind,subject_ref,evidence,reason,request_digest,state,state_reason) values($1,$2,'OPERATOR_INSTRUCTION',$3,$4,'FACT','NEW','x',$5,'TENANT','tenant',$6::jsonb,'r',$5,'PROMOTED','test')",
+          [candidateId, tenantId, owner.principal.id, key(), "a".repeat(64), evidenceJson],
+        );
+        await c.query(
+          "insert into memory_promotions(id,tenant_id,candidate_id,decision,rule_id,policy_version,reason,promoted_by_kind,evidence,result_memory_id,result_version) values($1,$2,$3,'ALLOW','r','v','r','POLICY_ENGINE',$4::jsonb,$5,1)",
+          [promotionId, tenantId, candidateId, evidenceJson, memoryId],
+        );
+        await c.query(
+          "insert into memory_versions(memory_id,version,tenant_id,class,kind,content,content_digest,subject_kind,subject_ref,trust_class,confidence,provenance,evidence,policy,candidate_id,promotion_id,created_at) values($1,1,$2,'FACT','ASSERT','x',$3,'TENANT','tenant',$4,'STATED','{}'::jsonb,$5::jsonb,'{}'::jsonb,$6,$7,now())",
+          [memoryId, tenantId, "a".repeat(64), trust, evidenceJson, candidateId, promotionId],
+        );
+        return null;
+      } catch (error) {
+        return error as { code?: string; message: string };
+      } finally {
+        await c.query("rollback");
+        c.release();
+      }
+    };
+    expect(await attempt("USER_AUTHORED")).toBeNull();
+    for (const wrong of ["INTERNAL_DERIVED", "MODEL_DERIVED", "UNTRUSTED_EXTERNAL"]) {
+      const err = await attempt(wrong);
+      expect(err?.code, wrong).toBe("23514");
+      expect(err?.message, wrong).toContain("trust class");
+    }
   });
 });
 
