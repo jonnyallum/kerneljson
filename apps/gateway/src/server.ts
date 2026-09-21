@@ -42,12 +42,19 @@ export function bearerAuthenticator(resolve:(token:string)=>Promise<TenantContex
   const context=await resolve(value.slice(7));if(!context)throw new GatewayError(401,'UNAUTHENTICATED');return TenantContext.parse(context);
  };
 }
-export function createRestateDispatch(ingress:string,credentialsFor:(context:TenantContext)=>Promise<Record<string,string>>):Dispatch{
+/**
+ * What the door is about to send to the workflow endpoint, so a credential bound to the request (KJ-P4B.1 signed
+ * assertions) can be made for exactly these bytes. `body` is the exact string that is put on the wire.
+ */
+export interface OutboundRequest{service:string;handler:string;key:string;body:string;}
+export type CredentialsFor=(context:TenantContext,request:OutboundRequest)=>Promise<Record<string,string>>;
+export function createRestateDispatch(ingress:string,credentialsFor:CredentialsFor):Dispatch{
  const base=new URL(ingress);if(!['http:','https:'].includes(base.protocol))throw new Error('Invalid internal endpoint');
  return async(binding,payload,context)=>{
   const known=Object.values(workflowTargets).some(t=>t.service===binding.service&&t.version===binding.version&&t.routingId===binding.routingId);
   if(!known)throw new Error('Unsupported deployment binding');
-  const response=await fetch(new URL(`/${binding.service}/${binding.executionKey}/run/send`,base),{method:'POST',headers:{...(await credentialsFor(context)),'content-type':'application/json'},body:JSON.stringify(payload),redirect:'error',signal:AbortSignal.timeout(15000)});
+  const body=JSON.stringify(payload);
+  const response=await fetch(new URL(`/${binding.service}/${binding.executionKey}/run/send`,base),{method:'POST',headers:{...(await credentialsFor(context,{service:binding.service,handler:'run',key:binding.executionKey,body})),'content-type':'application/json'},body,redirect:'error',signal:AbortSignal.timeout(15000)});
   const id=response.headers.get('x-restate-invocation-id');
   return {status:response.ok||response.status===409?'ACCEPTED':'UNRESOLVED',...(id&&/^[A-Za-z0-9_-]{1,160}$/.test(id)?{invocationId:id}:{})};
  };

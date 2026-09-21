@@ -7,9 +7,11 @@ import {
   createGateway,
   createRestateDispatch,
   bearerAuthenticator,
+  type CredentialsFor,
   type Dispatch,
 } from "./server.js";
 import { createRestateControls } from "./index.js";
+import { createControlSigner, isKeyId, MIN_SIGNING_KEY_LENGTH, type ControlSigner } from "../../../services/kernel/src/control-signing.js";
 import type { ControlPort } from "../../mission-control/src/server.js";
 
 /**
@@ -53,15 +55,13 @@ export interface DoorConfig {
   releaseId: string;
   restateIngressUrl: string | null; // null => admission-only mode (no execution dispatch)
   /**
-   * SENSITIVE - never logged, never returned to a printer. KJ-P4B: the internal credential the door
-   * presents to the workflow endpoint (`Authorization: Bearer ...`) so the approval workflow can
-   * authenticate the hop. null => no credential is sent, exactly as before. It is a separate secret
-   * from `bearer`, so the public admission bearer never travels to the workflow.
+   * KJ-P4B.1. SENSITIVE (`key`) - never logged, never returned to a printer, and NEVER transmitted:
+   * Restate journals every request header for 24 hours, so the door signs each request to the workflow
+   * with this key (HMAC assertion in `X-KJ-Control-*` headers) instead of sending a credential.
+   * null => nothing is signed, exactly as before. Distinct from `bearer`, which never leaves the door.
    */
-  controlToken: string | null;
+  controlSigning: { keyId: string; key: string } | null;
 }
-
-export const MIN_CONTROL_TOKEN_LENGTH = 32;
 
 /** ONLY the non-secret fields — safe to log/return. Never includes bearer or DATABASE_URL. */
 export interface DoorConfigSummary {
@@ -138,9 +138,11 @@ export function loadDoorConfig(env: Record<string, string | undefined>): DoorCon
   if (!RELEASE_ID_RE.test(releaseId))
     throw new DoorConfigError("RELEASE_ID_INVALID", "KERNELJSON_RELEASE_ID has an invalid shape");
 
-  const controlToken = env["KJ_CONTROL_TOKEN"] === undefined || env["KJ_CONTROL_TOKEN"] === "" ? null : env["KJ_CONTROL_TOKEN"];
-  if (controlToken !== null && controlToken.length < MIN_CONTROL_TOKEN_LENGTH)
-    throw new DoorConfigError("KJ_CONTROL_TOKEN_TOO_SHORT", "KJ_CONTROL_TOKEN is too short");
+  const signingKey = env["KJ_CONTROL_SIGNING_KEY"] === undefined || env["KJ_CONTROL_SIGNING_KEY"] === "" ? null : env["KJ_CONTROL_SIGNING_KEY"];
+  if (signingKey !== null && signingKey.length < MIN_SIGNING_KEY_LENGTH)
+    throw new DoorConfigError("KJ_CONTROL_SIGNING_KEY_TOO_SHORT", "KJ_CONTROL_SIGNING_KEY is too short");
+  const keyId = env["KJ_CONTROL_KEY_ID"] === undefined || env["KJ_CONTROL_KEY_ID"] === "" ? "v1" : env["KJ_CONTROL_KEY_ID"];
+  if (!isKeyId(keyId)) throw new DoorConfigError("KJ_CONTROL_KEY_ID_INVALID", "KJ_CONTROL_KEY_ID has an invalid shape");
 
   return {
     databaseUrl,
@@ -149,7 +151,7 @@ export function loadDoorConfig(env: Record<string, string | undefined>): DoorCon
     port,
     releaseId,
     restateIngressUrl: normaliseIngress(env["KJ_RESTATE_INGRESS_URL"]),
-    controlToken,
+    controlSigning: signingKey === null ? null : { keyId, key: signingKey },
   };
 }
 
@@ -198,10 +200,12 @@ export function buildDoorHandler(
   config: DoorConfig,
 ): (req: IncomingMessage, res: ServerResponse) => void {
   const authenticate = bearerAuthenticator(createBearerResolver(config.bearer, config.context));
-  // KJ-P4B: the internal hop to the workflow carries the control token when one is configured, so the
-  // approval workflow can authenticate it. Absent, the headers are empty, as before.
-  const credentialsFor = async (): Promise<Record<string, string>> =>
-    config.controlToken === null ? {} : { authorization: `Bearer ${config.controlToken}` };
+  // KJ-P4B.1: the internal hop to the workflow carries a signed assertion for each exact request when a
+  // signing key is configured, so the approval workflow can authenticate it without the key ever
+  // crossing Restate. Absent, the headers are empty, as before. It never sends `Authorization`.
+  const signer: ControlSigner | null = config.controlSigning ? createControlSigner(config.controlSigning) : null;
+  const credentialsFor: CredentialsFor = async (context, request) =>
+    signer === null ? {} : signer({ ...request, tenantId: context.tenantId, principalId: context.principal.id });
   const dispatch: Dispatch = config.restateIngressUrl
     ? createRestateDispatch(config.restateIngressUrl, credentialsFor)
     : admissionOnlyDispatch;

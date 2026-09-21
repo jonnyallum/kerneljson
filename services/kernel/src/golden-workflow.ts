@@ -22,12 +22,26 @@ import {
 } from "../../../packages/capabilities/src/index.js";
 import { PolicyRules, evaluatePolicy } from "./policy.js";
 import { ApprovalError, ApprovalStore } from "./approval-store.js";
+import { AuthenticatorUnavailableError } from "./control-signing.js";
 import { CapabilityStore } from "./capability-store.js";
 import { callCapability } from "./capabilities.js";
 import type { Ledger } from "./ledger.js";
 
+/**
+ * What the workflow tells its authenticator about the request, beyond the headers: which service and
+ * handler is running, the workflow key (the task id) and the raw request body. A credential that is
+ * bound to a request (KJ-P4B.1 signed assertions) needs all of these to verify what was actually
+ * received. Authenticators that only read headers may ignore the second argument.
+ */
+export interface AuthenticatedRequest {
+  service: string;
+  handler: string;
+  key: string;
+  body: Uint8Array;
+}
 export type Authenticator = (
   headers: ReadonlyMap<string, string>,
+  request: AuthenticatedRequest,
 ) => Promise<PrincipalRef>;
 /** No default authenticator: deployment must supply a real trusted identity boundary. */
 export function createGoldenWorkflow(
@@ -37,17 +51,30 @@ export function createGoldenWorkflow(
   afterOutcomeCommit: () => Promise<void> = async () => {},
   mode: "GOLDEN" | "SCHEDULED_CHILD" = "GOLDEN",
 ) {
-  ledger = ledger.forWorkflow(mode === "GOLDEN" ? "GoldenTaskWorkflowV1" : "AutonomousChildTaskWorkflowV1");
+  const serviceName = mode === "GOLDEN" ? "GoldenTaskWorkflowV1" : "AutonomousChildTaskWorkflowV1";
+  ledger = ledger.forWorkflow(serviceName);
   const rules = PolicyRules.parse(configuredRules),
     registry = createBuiltinRegistry();
   const approvals = new ApprovalStore(ledger.pool),
     receipts = new CapabilityStore(ledger.pool, registry);
   async function identity(
     ctx: restate.Context | restate.WorkflowSharedContext,
+    handler: "run" | "approve" | "cancel",
   ) {
     try {
-      return PrincipalRef.parse(await authenticate(ctx.request().headers));
-    } catch {
+      const request = ctx.request();
+      return PrincipalRef.parse(
+        await authenticate(request.headers, {
+          service: serviceName,
+          handler,
+          key: (ctx as { key: string }).key,
+          body: request.body,
+        }),
+      );
+    } catch (error) {
+      // "Could not decide" (for example the database is down) is not "unauthenticated": let Restate
+      // retry rather than permanently failing durable work because of an outage.
+      if (error instanceof AuthenticatorUnavailableError) throw error;
       throw new restate.TerminalError("Unauthenticated", { errorCode: 401 });
     }
   }
@@ -66,14 +93,11 @@ export function createGoldenWorkflow(
     return resolution;
   };
   return restate.workflow({
-    name:
-      mode === "GOLDEN"
-        ? "GoldenTaskWorkflowV1"
-        : "AutonomousChildTaskWorkflowV1",
+    name: serviceName,
     handlers: {
       run: async (ctx: restate.WorkflowContext, raw: unknown) => {
         const actor = await ctx.run("authenticate-submission", () =>
-          identity(ctx),
+          identity(ctx, "run"),
         );
         let compiled: ReturnType<typeof compileIntent>;
         let parentTaskId: string | undefined;
@@ -278,7 +302,7 @@ export function createGoldenWorkflow(
       },
       approve: restate.handlers.workflow.shared(
         async (ctx: restate.WorkflowSharedContext, raw: unknown) => {
-          const actor = await identity(ctx),
+          const actor = await identity(ctx, "approve"),
             answer = ApprovalAnswer.safeParse(raw);
           if (!answer.success)
             throw new restate.TerminalError("Invalid approval answer", {
@@ -308,7 +332,7 @@ export function createGoldenWorkflow(
       ),
       cancel: restate.handlers.workflow.shared(
         async (ctx: restate.WorkflowSharedContext) => {
-          const actor = await identity(ctx),
+          const actor = await identity(ctx, "cancel"),
             evidenceId = ctx.rand.uuidv4(),
             eventId = ctx.rand.uuidv4();
           const resolution = await ctx.run("cancel", async () => {

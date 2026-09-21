@@ -106,7 +106,12 @@ for (const key of [
   "KJ_APPROVAL_TTL_SECONDS",
   "KJ_ADMISSION_TENANT_ID",
   "KJ_ADMISSION_PRINCIPAL_ID",
-  "KJ_CONTROL_TOKEN",
+  // KJ-P4B.1 signed control requests (the key itself is never transmitted).
+  "KJ_CONTROL_SIGNING_KEY",
+  "KJ_CONTROL_KEY_ID",
+  "KJ_CONTROL_SIGNING_KEY_PREVIOUS",
+  "KJ_CONTROL_KEY_ID_PREVIOUS",
+  "KJ_CONTROL_FRESHNESS_SECONDS",
 ]) {
   check(key in (worker?.environment ?? {}), `execution: worker environment does not declare ${key} (silently dropped from runtime.env)`);
 }
