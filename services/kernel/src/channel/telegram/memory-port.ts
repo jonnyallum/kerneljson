@@ -9,7 +9,7 @@ import { MemoryError, type CanonicalMemory, type MemoryView, type SubmissionResu
  * instruction candidate and the kernel's policy decides; `forget` submits a retraction candidate, which appends a
  * version and leaves every earlier version in place (real deletion is a separate capability that does not exist here).
  *
- * The port is the ONLY memory surface the channel sees. It has no promote, no approve, no assemble.
+ * The port is the ONLY memory surface the channel sees. It has no way to promote, sign off or build context.
  */
 export type MemoryOutcomeState = "PROMOTED" | "AWAITING_APPROVAL" | "HELD" | "REFUSED" | "REJECTED";
 

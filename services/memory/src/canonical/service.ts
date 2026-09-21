@@ -104,6 +104,8 @@ interface CandidateRow {
   created_at: Date;
 }
 
+/** What a refused credential is stored as. The digest of the original is kept; the value itself never is. */
+export const REDACTED_CONTENT = "[redacted: this looked like a credential]";
 const sha256 = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
 const normalise = (text: string): string => text.normalize("NFC").trim();
 const iso = (d: Date): string => d.toISOString();
@@ -214,7 +216,7 @@ export class CanonicalMemory {
             prepared.sub.class,
             prepared.sub.intent,
             prepared.sub.targetMemoryId ?? null,
-            prepared.sub.content,
+            verdict.ruleId === "no-secrets" ? REDACTED_CONTENT : prepared.sub.content,
             prepared.contentDigest,
             prepared.sub.subject.kind,
             prepared.sub.subject.ref,

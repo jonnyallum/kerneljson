@@ -35,9 +35,14 @@ export const tokenEstimate = (text: string): number => Math.max(1, Math.ceil(tex
 const sha256 = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
 export const purposeDigest = (purpose: string): string => sha256(purpose.normalize("NFC").trim());
 
-/** Distinct lower-case words of three or more letters or digits. */
+/** Words that say nothing about what a memory is for. Small and fixed, so relevance stays explainable. */
+const STOPWORDS: ReadonlySet<string> = new Set(
+  "the and for with that this from are was were you your what when how why who can will not but all any our out has had have its into about then than them they there these those which would could should please".split(" "),
+);
+
+/** Distinct lower-case words of three or more letters or digits, without stopwords. */
 export function terms(purpose: string): string[] {
-  const words = purpose.toLowerCase().match(/[a-z0-9]{3,}/g) ?? [];
+  const words = (purpose.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((w) => !STOPWORDS.has(w));
   return [...new Set(words)].sort();
 }
 
