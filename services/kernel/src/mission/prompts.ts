@@ -84,7 +84,15 @@ interface Common {
   factsDigest: string;
 }
 
-export function analystRequest(input: Common & { question: string; contract: MissionContract }): ModelRequest {
+export function analystRequest(
+  input: Common & {
+    question: string;
+    contract: MissionContract;
+    /** KJ-P5: rendered memory context. Absent or empty leaves the prompt exactly as it was. */
+    memory?: string;
+  },
+): ModelRequest {
+  const memory = input.memory && input.memory.length > 0 ? `${input.memory}\n\n` : "";
   return ModelRequest.parse({
     callId: input.callId,
     taskId: input.taskId,
@@ -95,7 +103,7 @@ export function analystRequest(input: Common & { question: string; contract: Mis
       { role: "system", content: analystSystem(input.contract) },
       {
         role: "user",
-        content: `Question: ${input.question}\n\n${renderFacts(input.facts, input.factsDigest)}`,
+        content: `Question: ${input.question}\n\n${memory}${renderFacts(input.facts, input.factsDigest)}`,
       },
     ],
   });

@@ -62,6 +62,8 @@ export function runtimeEvidence(
     receipt: Extract<ModelCallReceipt, { status: "SUCCEEDED" }>;
     /** What this output was produced from: the GitHub digest, or the analysis digest. */
     subjectDigest: string;
+    /** KJ-P5: the memory context this call was given. Added only when memory was in play. */
+    memoryContext?: Record<string, unknown>;
   },
 ): Evidence {
   const r = args.receipt;
@@ -85,6 +87,7 @@ export function runtimeEvidence(
       usage: { ...r.usage },
       subject_digest: args.subjectDigest,
       text: args.text,
+      ...(args.memoryContext ? { memory_context: args.memoryContext } : {}),
     },
   });
 }

@@ -18,15 +18,26 @@ import {
  *   /brief  owner/repo [findings=N]     repository brief (architecture summary), optional exact count
  *   /review owner/repo [findings=N]     N highest-value improvements (default 3), every finding cited
  *   /task <task id>
+ *   /remember <text>    KJ-P5: submit an explicit memory instruction (a candidate the kernel decides on)
+ *   /memories           KJ-P5: list current memories
+ *   /memory <id>        KJ-P5: show one memory with its history and provenance
+ *   /forget <id>        KJ-P5: retract a memory (history is kept; nothing is erased)
  */
 export type Command =
   | { kind: "STATUS" }
   | { kind: "MISSION"; command: "BRIEF" | "REVIEW"; repo: string; findings: number | null }
   | { kind: "TASK"; taskId: string }
+  | { kind: "REMEMBER"; text: string }
+  | { kind: "MEMORIES" }
+  | { kind: "MEMORY"; ref: string }
+  | { kind: "FORGET"; ref: string }
   | { kind: "MALFORMED" };
 
 export const DEFAULT_REVIEW_FINDINGS = 3;
 const MAX_COMMAND_CHARS = 200;
+/** A remembered sentence is longer than a command: up to 1000 characters after `/remember`. */
+export const MAX_REMEMBER_CHARS = 1000;
+const MEMORY_REF = /^[0-9a-f-]{6,36}$/i;
 
 const MALFORMED: Command = { kind: "MALFORMED" };
 
@@ -39,10 +50,24 @@ function parseFindings(token: string): number | null {
 
 export function parseCommand(text: string): Command {
   const trimmed = text.trim();
-  if (trimmed.length === 0 || trimmed.length > MAX_COMMAND_CHARS || !trimmed.startsWith("/")) return MALFORMED;
+  if (trimmed.length === 0 || trimmed.length > MAX_COMMAND_CHARS + MAX_REMEMBER_CHARS || !trimmed.startsWith("/")) return MALFORMED;
   const [head, ...args] = trimmed.split(/\s+/) as [string, ...string[]];
   // `/status@KernelJsonBot` is how Telegram addresses a bot in a group; accept and strip it.
   const name = head.slice(1).split("@")[0]!.toLowerCase();
+
+  // KJ-P5: `/remember` is the one command that carries free text, and it carries it only as DATA for the memory
+  // policy to decide on. It is never interpreted here.
+  if (name === "remember") {
+    const body = trimmed.slice(head.length).trim();
+    return body.length >= 1 && body.length <= MAX_REMEMBER_CHARS ? { kind: "REMEMBER", text: body } : MALFORMED;
+  }
+  if (trimmed.length > MAX_COMMAND_CHARS) return MALFORMED;
+  if (name === "memories") return args.length === 0 ? { kind: "MEMORIES" } : MALFORMED;
+  if (name === "memory" || name === "forget") {
+    if (args.length !== 1 || !MEMORY_REF.test(args[0]!)) return MALFORMED;
+    const ref = args[0]!.toLowerCase();
+    return name === "memory" ? { kind: "MEMORY", ref } : { kind: "FORGET", ref };
+  }
 
   if (name === "status") return args.length === 0 ? { kind: "STATUS" } : MALFORMED;
 

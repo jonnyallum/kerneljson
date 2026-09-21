@@ -13,6 +13,8 @@ import { productionApprovalWorkflow } from "./approval-boundary.js";
 import { PgNotificationOutboxStore } from "./alerting/pg-outbox-store.js";
 import { loadMissionConfig } from "./mission/config.js";
 import { enqueueMissionNotice } from "./mission/notify.js";
+import { createConfiguredMemory, loadMemoryConfig } from "../../memory/src/canonical/config.js";
+import { createMissionMemoryPort } from "../../memory/src/canonical/mission-port.js";
 
 const connectionString = process.env["DATABASE_URL"];
 if (!connectionString)
@@ -49,10 +51,15 @@ if (missionRuntimes && !(canary && capabilityService))
     "Mission runtimes are configured but the canary/capability service (KJ_REPO_ROOT) is not " +
       "- refusing to start half-configured",
   );
+// KJ-P5 canonical memory. Off unless KJ_MEMORY_ENABLED=true; a partial configuration refuses to start. Missions only
+// ever get the read-only port: they can be given a bounded memory context, and nothing else.
+const memoryConfig = loadMemoryConfig(process.env);
+const missionMemory = memoryConfig ? createMissionMemoryPort(createConfiguredMemory(pool, memoryConfig).memory) : undefined;
 const mission = missionRuntimes
   ? {
       analyst: missionRuntimes.analyst,
       reviewer: missionRuntimes.reviewer,
+      ...(missionMemory ? { memory: missionMemory } : {}),
       notify: async (notice: Parameters<typeof enqueueMissionNotice>[1]) => {
         await enqueueMissionNotice(new PgNotificationOutboxStore(pool), notice);
       },

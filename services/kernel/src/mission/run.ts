@@ -29,6 +29,7 @@ import {
 import { analystRequest, reviewerRequest } from "./prompts.js";
 import { failedCheckNames, missionSummary, parseAnalysis, reconcileMission, sha256Text } from "./reconcile.js";
 import type { MissionNotice } from "./notify.js";
+import { memoryEvidence, type MissionMemoryContext, type MissionMemoryPort } from "./memory-port.js";
 
 /**
  * KJ-P3 - the repository-analysis mission, as a sequence the kernel drives:
@@ -60,6 +61,8 @@ export interface MissionDeps {
   githubRead: (req: { repo: string }) => Promise<{ facts: unknown; factsDigest: string }>;
   analyst: ModelPort;
   reviewer: ModelPort;
+  /** KJ-P5: optional canonical memory. Read-only; absent means the mission runs exactly as before. */
+  memory?: MissionMemoryPort;
   /** Queue the notice. Best effort: a failure here never changes the task outcome. */
   notify: (notice: MissionNotice) => Promise<void>;
 }
@@ -200,11 +203,32 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
   };
 
   const analystId = deps.uuid();
+  // KJ-P5: assemble the bounded memory context once (journaled, so a replay sees the same context). Memory only
+  // informs the analyst; if it is unavailable the mission still runs and the evidence says so.
+  let memoryContext: MissionMemoryContext | null = null;
+  if (deps.memory) {
+    const port = deps.memory;
+    memoryContext = await deps.ctx.run("mission-memory-context", async (): Promise<MissionMemoryContext> => {
+      try {
+        return await port.assemble({
+          tenantId: task.tenant.id,
+          principal: task.principal,
+          taskId: task.id,
+          stepId: analyst.id,
+          callId: analystId,
+          purpose: question,
+          project: repo,
+        });
+      } catch {
+        return { status: "UNAVAILABLE", assemblyId: null, digest: null, text: "", memories: [], externalCount: 0, usedTokens: 0 };
+      }
+    });
+  }
   const a = await runRuntime(
     analyst,
     "analyst",
     deps.analyst,
-    () => analystRequest({ callId: analystId, taskId: task.id, stepId: analyst.id, trace, facts, factsDigest, question, contract }),
+    () => analystRequest({ callId: analystId, taskId: task.id, stepId: analyst.id, trace, facts, factsDigest, question, contract, memory: memoryContext?.text ?? "" }),
   );
   if ("failed" in a) return a.failed!;
   const analysisDigest = sha256Text(a.text);
@@ -214,6 +238,7 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
     runtimeEvidence({
       id: deps.uuid(), taskId: task.id, stepId: analyst.id, role: "analyst",
       text: a.text, receipt: a.receipt, subjectDigest: factsDigest, capturedAt: await deps.now(),
+      ...(memoryContext ? { memoryContext: memoryEvidence(memoryContext) } : {}),
     }),
   );
 
