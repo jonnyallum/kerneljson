@@ -44,6 +44,10 @@ PUBLIC_KEYS = {
     "KJ_CONTROL_KEY_ID": re.compile(r"^[A-Za-z0-9._-]{1,16}$"),
     "KJ_CONTROL_KEY_ID_PREVIOUS": re.compile(r"^[A-Za-z0-9._-]{1,16}$"),
     "KJ_CONTROL_FRESHNESS_SECONDS": re.compile(r"^[0-9]{2,4}$"),
+    # KJ-P5 canonical memory: an on/off switch, an optional approver identity and an optional deadline. None is secret.
+    "KJ_MEMORY_ENABLED": re.compile(r"^(true|false)$"),
+    "KJ_MEMORY_APPROVER_ID": re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"),
+    "KJ_MEMORY_APPROVAL_TTL_SECONDS": re.compile(r"^[0-9]{2,6}$"),
 }
 SECRET_KEYS = {
     "TELEGRAM_BOT_TOKEN": re.compile(r"^\d{6,12}:[A-Za-z0-9_-]{35}$"),

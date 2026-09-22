@@ -122,6 +122,12 @@ services:
       KJ_CONTROL_SIGNING_KEY_PREVIOUS: ${KJ_CONTROL_SIGNING_KEY_PREVIOUS:-}
       KJ_CONTROL_KEY_ID_PREVIOUS: ${KJ_CONTROL_KEY_ID_PREVIOUS:-}
       KJ_CONTROL_FRESHNESS_SECONDS: ${KJ_CONTROL_FRESHNESS_SECONDS:-}
+      # KJ-P5 canonical memory. Off unless KJ_MEMORY_ENABLED=true (unset or empty both mean off). The operator's
+      # identity is KJ_ADMISSION_TENANT_ID / KJ_ADMISSION_PRINCIPAL_ID above. The approver is optional: without one,
+      # protected promotions stay held candidates. None of these is a secret.
+      KJ_MEMORY_ENABLED: ${KJ_MEMORY_ENABLED:-}
+      KJ_MEMORY_APPROVER_ID: ${KJ_MEMORY_APPROVER_ID:-}
+      KJ_MEMORY_APPROVAL_TTL_SECONDS: ${KJ_MEMORY_APPROVAL_TTL_SECONDS:-}
       RESTATE_ADMIN_URL: ${RESTATE_ADMIN_URL:-http://restate:9070}
       EXPECTED_RELEASE_ID: ${EXPECTED_RELEASE_ID:-${KERNELJSON_RELEASE_ID}}
       PORT: "9080"

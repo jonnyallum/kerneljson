@@ -112,6 +112,10 @@ for (const key of [
   "KJ_CONTROL_SIGNING_KEY_PREVIOUS",
   "KJ_CONTROL_KEY_ID_PREVIOUS",
   "KJ_CONTROL_FRESHNESS_SECONDS",
+  // KJ-P5 canonical memory.
+  "KJ_MEMORY_ENABLED",
+  "KJ_MEMORY_APPROVER_ID",
+  "KJ_MEMORY_APPROVAL_TTL_SECONDS",
 ]) {
   check(key in (worker?.environment ?? {}), `execution: worker environment does not declare ${key} (silently dropped from runtime.env)`);
 }

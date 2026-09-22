@@ -494,7 +494,9 @@ it("applies all four migration groups with RLS and no public API grants", async 
   const r = await pool.query<{ tablename: string; rowsecurity: boolean }>(
     "select tablename,rowsecurity from pg_tables where schemaname='public'",
   );
-  expect(r.rows).toHaveLength(25);
+  // 25 before KJ-P5; the canonical memory fabric adds five (candidates, promotions, versions, relations, assemblies).
+  expect(r.rows).toHaveLength(30);
+  expect(r.rows.map((t) => t.tablename)).toEqual(expect.arrayContaining(["memory_candidates", "memory_promotions", "memory_versions", "memory_relations", "memory_context_assemblies"]));
   expect(r.rows.every((t) => t.rowsecurity)).toBe(true);
   // S1 scheduler authority tables must be RLS-protected exactly like every other
   // kernel table (regression guard for the RLS omission fixed on the S1 branch).

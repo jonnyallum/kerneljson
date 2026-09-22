@@ -18,12 +18,15 @@ import { MISSION_RECIPE } from "../../../../packages/contracts/src/index.js";
 import type { ModelPort } from "../../../../packages/models/src/index.js";
 import { runRepoAnalysisMission, type Emit } from "../mission/run.js";
 import type { MissionNotice } from "../mission/notify.js";
+import type { MissionMemoryPort } from "../mission/memory-port.js";
 
 /** KJ-P3 mission wiring: the two runtimes and how to queue the completion notice. */
 export interface MissionWiring {
   analyst: ModelPort;
   reviewer: ModelPort;
   notify: (notice: MissionNotice) => Promise<void>;
+  /** KJ-P5: read-only canonical memory for the analyst. Absent unless KJ_MEMORY_ENABLED. */
+  memory?: MissionMemoryPort;
 }
 
 /** Optional capability-recipe wiring. Present only on a worker configured to serve the
@@ -159,6 +162,7 @@ export function createKernelWorkflow(
             githubRead: (req) => ctx.serviceClient(capability).githubRead(req),
             analyst: mission.analyst,
             reviewer: mission.reviewer,
+            ...(mission.memory ? { memory: mission.memory } : {}),
             notify: mission.notify,
           });
         }

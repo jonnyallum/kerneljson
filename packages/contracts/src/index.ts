@@ -21,3 +21,4 @@ export * from "./routing.js";
 export * from "./schedule.js";
 export * from "./execution.js";
 export * from "./mission.js";
+export * from "./canonical-memory.js";

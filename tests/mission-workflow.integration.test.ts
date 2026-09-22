@@ -18,6 +18,10 @@ import { runRepoAnalysisMission, type Emit } from "../services/kernel/src/missio
 import { enqueueMissionNotice, type MissionNotice } from "../services/kernel/src/mission/notify.js";
 import { PgNotificationOutboxStore } from "../services/kernel/src/alerting/pg-outbox-store.js";
 import type { ModelPort } from "../packages/models/src/index.js";
+import type { MissionMemoryPort } from "../services/kernel/src/mission/memory-port.js";
+import { CanonicalMemory } from "../services/memory/src/canonical/service.js";
+import { createMissionMemoryPort } from "../services/memory/src/canonical/mission-port.js";
+import { analystRequest } from "../services/kernel/src/mission/prompts.js";
 import { id as fixtureId, principal } from "../evals/fixtures/contracts.js";
 import {
   CITED, REPO, analysisJson, cite, fakeClaude, fakeGrok, githubResult, makeFacts, reviewJson, shaFor,
@@ -90,6 +94,8 @@ interface Scenario {
   github?: () => Promise<{ facts: unknown; factsDigest: string }>;
   analyst?: ModelPort;
   reviewer?: ModelPort;
+  /** KJ-P5: read-only canonical memory for the analyst. */
+  memory?: MissionMemoryPort;
   notify?: (n: MissionNotice) => Promise<void>;
   afterVerify?: (taskId: string) => Promise<void>;
   intentId?: string;
@@ -149,6 +155,7 @@ async function runMission(s: Scenario = {}): Promise<{ outcome: Outcome; taskId:
     githubRead: s.github ?? (async () => githubResult()),
     analyst: s.analyst ?? fakeClaude(),
     reviewer: s.reviewer ?? fakeGrok(),
+    ...(s.memory ? { memory: s.memory } : {}),
     notify: async (n) => { notices.push(n); await (s.notify ?? ((x) => enqueueMissionNotice(outbox, x).then(() => undefined)))(n); },
   });
   return { outcome, taskId: task.id, notices };
@@ -175,7 +182,7 @@ describe("KJ-P3 repository-analysis mission, end to end", () => {
     expect(outcome.evidenceRefs).toHaveLength(4);
     const rec = ev.find((e) => e.source === "kerneljson:mission-reconcile/v1")!;
     expect(rec.metadata["decision"]).toBe("ACCEPTED");
-    expect(rec.metadata).toMatchObject({ contract: { requestedFindings: null, minFindings: 1, maxFindings: 8 }, findingCount: 1 });
+    expect(rec.metadata).toMatchObject({ contract: { outputSchema: "repo-analysis-findings/v2" as const, requestedFindings: null, minFindings: 1, maxFindings: 8 }, findingCount: 1 });
     expect(rec.metadata["findingEvidenceDigests"]).toHaveLength(1);
     const analyst = ev.find((e) => e.source === "kerneljson:runtime/analyst")!;
     expect(analyst.metadata).toMatchObject({ role: "analyst", provider: "openrouter", model: "anthropic/claude-test", response_model: "anthropic/claude-test" });
@@ -405,5 +412,146 @@ describe("KJ-P3 repository-analysis mission, end to end", () => {
     const before = await Promise.all(tables.map(count));
     await runMission();
     expect(await Promise.all(tables.map(count))).toEqual(before);
+  });
+});
+
+describe("KJ-P5 canonical memory in the mission", () => {
+  let canonical: CanonicalMemory;
+  const owner = { tenantId: fixtureId, principal };
+  beforeAll(() => {
+    canonical = new CanonicalMemory(pool);
+  });
+  const remember = (content: string, over: Record<string, unknown> = {}) =>
+    canonical.submitOperatorInstruction(owner, {
+      idempotencyKey: `mission-mem-${randomUUID()}`,
+      class: "PREFERENCE",
+      content,
+      subject: { kind: "PRINCIPAL", ref: principal.id },
+      evidence: [{ type: "TELEGRAM_UPDATE", ref: `update:${randomUUID()}` }],
+      reason: "test instruction",
+      ...over,
+    });
+  const spy = (inner: ModelPort, seen: string[]): ModelPort => ({
+    generate: async (r) => {
+      seen.push(r.messages.map((m) => m.content).join("\n"));
+      return inner.generate(r);
+    },
+  });
+  const analystEvidence = async (taskId: string) => (await evidenceOf(taskId)).find((e) => e.source === "kerneljson:runtime/analyst")!;
+  type MemoryContext = { status: string; assembly_id: string; context_digest: string; memories: Array<{ memory_id: string; version: number }> };
+
+  it("gives the analyst the operator's memory and records memory ids, versions and the context digest in its evidence", async () => {
+    const m = await remember("I prefer concise deployment summaries unless I explicitly ask for detail");
+    const seen: string[] = [];
+    const port = createMissionMemoryPort(canonical);
+    const { outcome, taskId } = await runMission({ memory: port, analyst: spy(fakeClaude(), seen) });
+    expect(outcome.status).toBe("COMPLETED");
+    expect(seen[0]).toContain("OPERATOR MEMORY");
+    expect(seen[0]).toContain("I prefer concise deployment summaries unless I explicitly ask for detail");
+    expect(seen[0]).toContain(`v1 ${m.memoryId!.slice(0, 8)}`);
+    const ev = await analystEvidence(taskId);
+    const ctx = ev.metadata["memory_context"] as MemoryContext;
+    expect(ctx.status).toBe("ASSEMBLED");
+    expect(ctx.memories).toContainEqual({ memory_id: m.memoryId, version: 1 });
+    expect(ctx.context_digest).toMatch(/^[a-f0-9]{64}$/);
+    // The assembly is on record, tied to this task and to the model call that used it, with the same digest.
+    const rows = await q<{ digest: string; task_id: string; call_id: string; items: Array<{ memoryId: string; version: number }> }>(
+      "select digest, task_id, call_id, items from public.memory_context_assemblies where id=$1",
+      [ctx.assembly_id],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ digest: ctx.context_digest, task_id: taskId, call_id: ev.metadata["call_id"] });
+    expect(rows[0]!.items).toContainEqual(expect.objectContaining({ memoryId: m.memoryId, version: 1 }));
+    // Nothing else about the mission changed: still four evidence rows and an accepted reconciliation.
+    expect(await evidenceOf(taskId)).toHaveLength(4);
+  });
+
+  it("gives the reviewer no memory", async () => {
+    await remember("I prefer reviewer-visible words like zanzibar");
+    const seen: string[] = [];
+    await runMission({ memory: createMissionMemoryPort(canonical), reviewer: spy(fakeGrok(), seen) });
+    expect(seen[0]).not.toContain("OPERATOR MEMORY");
+    expect(seen[0]).not.toContain("zanzibar");
+  });
+
+  it("does not select a superseded or retracted memory, and the corrected one is selected at its new version", async () => {
+    const a = await remember("I prefer verbose reports with every detail");
+    const fixed = await remember("I now prefer terse reports", { intent: "CORRECT", targetMemoryId: a.memoryId });
+    expect(fixed.version).toBe(2);
+    const gone = await remember("I prefer pineapple in commit messages");
+    await remember("", { intent: "RETRACT", targetMemoryId: gone.memoryId, reason: "operator asked to forget" });
+    const seen: string[] = [];
+    const { taskId } = await runMission({ memory: createMissionMemoryPort(canonical), analyst: spy(fakeClaude(), seen) });
+    expect(seen[0]).toContain("I now prefer terse reports");
+    expect(seen[0]).not.toContain("I prefer verbose reports");
+    expect(seen[0]).not.toContain("pineapple");
+    const ctx = (await analystEvidence(taskId)).metadata["memory_context"] as MemoryContext;
+    expect(ctx.memories).toContainEqual({ memory_id: a.memoryId, version: 2 });
+    expect(ctx.memories.map((x) => x.memory_id)).not.toContain(gone.memoryId);
+  });
+
+  it("leaves the prompt and the evidence exactly as before when no memory is wired", async () => {
+    const seen: string[] = [];
+    const { outcome, taskId } = await runMission({ analyst: spy(fakeClaude(), seen) });
+    expect(outcome.status).toBe("COMPLETED");
+    expect(seen[0]).not.toContain("OPERATOR MEMORY");
+    expect((await analystEvidence(taskId)).metadata).not.toHaveProperty("memory_context");
+    const common = {
+      callId: randomUUID(),
+      taskId: randomUUID(),
+      stepId: randomUUID(),
+      trace: { traceId: randomUUID(), correlationId: randomUUID() },
+      facts: makeFacts(),
+      factsDigest: "a".repeat(64),
+      question: "q",
+      contract: { outputSchema: "repo-analysis-findings/v2" as const, requestedFindings: null, minFindings: 1, maxFindings: 8 },
+    };
+    expect(analystRequest({ ...common, memory: "" })).toEqual(analystRequest(common));
+    expect(analystRequest({ ...common, memory: "MEMORY BLOCK" }).messages[1]!.content).toContain("MEMORY BLOCK");
+  });
+
+  it("still runs, and says so in the evidence, when the memory service is unavailable", async () => {
+    const broken: MissionMemoryPort = {
+      assemble: async () => {
+        throw new Error("memory database exploded");
+      },
+    };
+    const seen: string[] = [];
+    const { outcome, taskId } = await runMission({ memory: broken, analyst: spy(fakeClaude(), seen) });
+    expect(outcome.status).toBe("COMPLETED");
+    expect(seen[0]).not.toContain("OPERATOR MEMORY");
+    const ctx = (await analystEvidence(taskId)).metadata["memory_context"] as Record<string, unknown>;
+    expect(ctx).toMatchObject({ status: "UNAVAILABLE", assembly_id: null, context_digest: null, memories: [] });
+    expect(JSON.stringify(await evidenceOf(taskId))).not.toContain("exploded");
+  });
+
+  it("creates no candidate, promotion or canonical memory by running a mission", async () => {
+    const counts = async () =>
+      (await q<{ c: number; v: number; p: number }>("select (select count(*) from memory_candidates)::int c, (select count(*) from memory_versions)::int v, (select count(*) from memory_promotions)::int p"))[0];
+    const before = await counts();
+    await runMission({ memory: createMissionMemoryPort(canonical) });
+    expect(await counts()).toEqual(before);
+  });
+
+  it("does not put another tenant's or another principal's memory in the context", async () => {
+    const otherTenant = randomUUID();
+    const otherPrincipal = { id: randomUUID(), kind: "HUMAN" as const };
+    await pool.query("insert into tenants(id,name) values($1,'p5-other')", [otherTenant]);
+    await pool.query("insert into principals(id,kind) values($1,'HUMAN')", [otherPrincipal.id]);
+    await pool.query("insert into tenant_memberships(tenant_id,principal_id,role) values($1,$2,'owner')", [otherTenant, otherPrincipal.id]);
+    await canonical.submitOperatorInstruction(
+      { tenantId: otherTenant, principal: otherPrincipal },
+      {
+        idempotencyKey: `other-${randomUUID()}`,
+        class: "PREFERENCE",
+        content: "I prefer the marker quokka",
+        subject: { kind: "PRINCIPAL", ref: otherPrincipal.id },
+        evidence: [{ type: "TELEGRAM_UPDATE", ref: "update:other" }],
+        reason: "other tenant",
+      },
+    );
+    const seen: string[] = [];
+    await runMission({ memory: createMissionMemoryPort(canonical), analyst: spy(fakeClaude(), seen) });
+    expect(seen[0]).not.toContain("quokka");
   });
 });

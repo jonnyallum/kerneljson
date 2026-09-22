@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { NotificationOutboxStore } from "../../alerting/outbox-store.js";
 import { admissionRequest, parseCommand, type Command } from "./commands.js";
 import type { ApprovalsPort } from "./approvals.js";
+import type { MemoryPort } from "./memory-port.js";
 import type { CommandKind, Disposition, InboxStore } from "./inbox-store.js";
 import type { DoorClient } from "./door-client.js";
 import { enqueueReply } from "./reply-outbox.js";
@@ -50,6 +51,12 @@ export interface OperatorDeps {
    * press from the allow-listed chat is handed to it. It has no authority: see `approvals.ts`.
    */
   approvals?: ApprovalsPort;
+  /**
+   * KJ-P5: the memory commands. Absent, they are answered "not switched on" and change nothing. Present, the channel
+   * carries `/remember` and `/forget` to the kernel and the answer back. It has no authority over memory: the kernel's
+   * policy decides, and nothing here can promote, approve or assemble.
+   */
+  memory?: MemoryPort;
 }
 
 export interface PollSummary {
@@ -222,6 +229,24 @@ async function handleCommand(
       if (read.found === "ERROR") return finish({ kind: "TASK_UNAVAILABLE" }, { disposition: "ANSWERED" });
       const view = summariseTask(read.status, read.evidence);
       return finish(view ? { kind: "TASK", view } : { kind: "TASK_UNAVAILABLE" }, { disposition: "ANSWERED" });
+    }
+
+    case "REMEMBER":
+    case "MEMORIES":
+    case "MEMORY":
+    case "FORGET": {
+      const memory = deps.memory;
+      if (!memory) return finish({ kind: "MEMORY_OFF" }, { disposition: "ANSWERED" });
+      try {
+        if (command.kind === "REMEMBER")
+          return finish({ kind: "REMEMBERED", outcome: await memory.remember({ updateId, text: command.text }) }, { disposition: "ANSWERED" });
+        if (command.kind === "MEMORIES") return finish({ kind: "MEMORY_LIST", items: await memory.list() }, { disposition: "ANSWERED" });
+        if (command.kind === "MEMORY") return finish({ kind: "MEMORY_VIEW", outcome: await memory.show(command.ref) }, { disposition: "ANSWERED" });
+        return finish({ kind: "FORGOTTEN", outcome: await memory.forget({ updateId, ref: command.ref }) }, { disposition: "ANSWERED" });
+      } catch {
+        // Nothing here echoes the error: it can carry SQL or a value. The reply is fixed and says nothing changed.
+        return finish({ kind: "MEMORY_UNAVAILABLE" }, { disposition: "ANSWERED" });
+      }
     }
 
     case "MISSION": {

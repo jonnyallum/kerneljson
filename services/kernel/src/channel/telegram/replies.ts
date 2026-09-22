@@ -1,4 +1,5 @@
 import type { SystemStatus, TaskView } from "./views.js";
+import type { ForgetOutcome, MemoryDetail, MemoryLine, RememberOutcome, ShowOutcome } from "./memory-port.js";
 
 /**
  * KJ-P4A - every word KernelJSON says back over Telegram, from fixed templates.
@@ -19,7 +20,13 @@ export type ReplyInput =
   | { kind: "STATUS"; status: SystemStatus; missionsToday: number; cap: number; asOf: string }
   | { kind: "TASK"; view: TaskView }
   | { kind: "TASK_NOT_FOUND"; taskId: string }
-  | { kind: "TASK_UNAVAILABLE" };
+  | { kind: "TASK_UNAVAILABLE" }
+  | { kind: "REMEMBERED"; outcome: RememberOutcome }
+  | { kind: "MEMORY_LIST"; items: MemoryLine[] }
+  | { kind: "MEMORY_VIEW"; outcome: ShowOutcome }
+  | { kind: "FORGOTTEN"; outcome: ForgetOutcome }
+  | { kind: "MEMORY_OFF" }
+  | { kind: "MEMORY_UNAVAILABLE" };
 
 const MAX_CHARS = 3000;
 const REPO = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
@@ -49,7 +56,33 @@ export const USAGE_LINES = [
   "/brief owner/repo [findings=N]",
   "/review owner/repo [findings=N]",
   "/task <task id>",
+  "/remember <text>",
+  "/memories",
+  "/memory <id>",
+  "/forget <id>",
 ];
+
+const RULE = /^[a-z][a-z0-9-]{1,60}$/;
+const HEX_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const CLASS = /^[A-Z_]{4,20}$/;
+const short = (id: string): string => (HEX_ID.test(id) ? id.slice(0, 8) : "?");
+/** Memory text the operator wrote themselves, made safe for a chat line: single line, no controls, bounded. */
+const own = (text: string | null): string => (text === null ? "(not shown: not written by you)" : stripControls(text).replace(/[\r\n]+/g, " ").slice(0, 200));
+
+function memoryLine(m: MemoryLine): string {
+  return `${short(m.memoryId)} ${q(m.class, CLASS)} v${n(m.version)} ${own(m.text)}`;
+}
+
+function memoryDetail(d: MemoryDetail): string[] {
+  const lines = [`Memory ${short(d.memoryId)} ${q(d.class, CLASS)}, ${q(d.status, /^[A-Z]{6,10}$/)}`];
+  if (d.supersededBy) lines.push(`Superseded by ${short(d.supersededBy)}`);
+  if (d.conflictsWith.length > 0) lines.push(`Flagged as conflicting with ${d.conflictsWith.slice(0, 3).map(short).join(", ")}`);
+  for (const v of d.versions.slice(-5)) {
+    lines.push(`v${n(v.version)} ${v.kind === "RETRACT" ? "retracted" : "asserted"} ${q(v.promotedAt.slice(0, 10), /^[0-9-]{10}$/)} ${q(v.origin, /^[A-Z_]{4,24}$/)}: ${own(v.text)}`);
+    for (const e of v.evidence.slice(0, 2)) lines.push(`  from ${q(e, SAFE)}`);
+  }
+  return lines;
+}
 
 export function renderReply(input: ReplyInput): ReplyText {
   switch (input.kind) {
@@ -111,5 +144,52 @@ export function renderReply(input: ReplyInput): ReplyText {
       return mint([`No task ${q(input.taskId, UUID)} that I can see.`]);
     case "TASK_UNAVAILABLE":
       return mint(["I could not read that task just now. Try again in a moment."]);
+    case "REMEMBERED": {
+      const o = input.outcome;
+      const id = o.memoryId ? `${short(o.memoryId)} v${n(o.version ?? -1)}` : "";
+      switch (o.state) {
+        case "PROMOTED":
+          return mint([`${o.replayed ? "Already remembered" : "Remembered"} as ${q(o.class, CLASS)}: memory ${id}.`, "See /memory <id> for its provenance."]);
+        case "AWAITING_APPROVAL":
+          return mint([`That needs an approval before it becomes memory (${q(o.class, CLASS)}). Nothing is remembered yet.`]);
+        case "HELD":
+          return mint([`Kept as a candidate only, not memory (${q(o.ruleId, RULE)}).`]);
+        case "REFUSED":
+          return mint([`Not remembered (${q(o.ruleId, RULE)}).`]);
+        case "REJECTED":
+          return mint([`Not remembered: the approval was not granted (${q(o.ruleId, RULE)}).`]);
+      }
+      return mint(["Not remembered."]);
+    }
+    case "MEMORY_LIST":
+      return input.items.length === 0
+        ? mint(["No current memories."])
+        : mint([`Current memories (${n(input.items.length)}):`, ...input.items.slice(0, 10).map(memoryLine), "Use /memory <id> for one memory's history."]);
+    case "MEMORY_VIEW":
+      if (input.outcome.result === "AMBIGUOUS") return mint(["That id matches more than one memory. Send more of it."]);
+      if (input.outcome.result === "NOT_FOUND") return mint(["No memory with that id that I can show you."]);
+      return mint(memoryDetail(input.outcome.detail));
+    case "FORGOTTEN": {
+      const o = input.outcome;
+      switch (o.result) {
+        case "RETRACTED":
+          return mint([`Forgotten: memory ${short(o.memoryId)} is retracted at v${n(o.version)}.`, "It no longer appears in memory or context. Its history is kept."]);
+        case "ALREADY_RETRACTED":
+          return mint([`Memory ${short(o.memoryId)} was already retracted.`]);
+        case "NOT_FOUND":
+          return mint(["No memory with that id that I can change."]);
+        case "AMBIGUOUS":
+          return mint(["That id matches more than one memory. Send more of it."]);
+        case "REFUSED":
+          return mint([`Not forgotten (${q(o.ruleId, RULE)}).`]);
+        case "HELD":
+          return mint([`The retraction is held, not applied (${q(o.ruleId, RULE)}).`]);
+      }
+      return mint(["Not forgotten."]);
+    }
+    case "MEMORY_OFF":
+      return mint(["Memory is not switched on for this deployment."]);
+    case "MEMORY_UNAVAILABLE":
+      return mint(["I could not reach memory just now. Nothing was changed. Try again in a moment."]);
   }
 }
