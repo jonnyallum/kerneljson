@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { createHash } from "node:crypto";
 import pg from "pg";
 export const DATABASE = "postgresql://postgres@127.0.0.1:55432/kerneljson";
 export const INGRESS = "http://127.0.0.1:18080";
@@ -74,8 +75,28 @@ export async function migrate(pool: pg.Pool): Promise<void> {
     .sort()) {
     const db = await pool.connect();
     try {
+      const sql = await readFile(`supabase/migrations/${file}`, "utf8");
+      {
+        const digest = createHash("sha256").update(sql, "utf8").digest("hex");
+        console.error(
+          `[migrate-diagnostic] file=${file} bytes=${Buffer.byteLength(sql, "utf8")} chars=${sql.length} sha256=${digest} tail=${JSON.stringify(sql.slice(-40))}`,
+        );
+      }
       await db.query("begin");
-      await db.query(await readFile(`supabase/migrations/${file}`, "utf8"));
+      try {
+        await db.query(sql);
+      } catch (error) {
+        console.error(
+          `[migrate-diagnostic] FAILED on file=${file} error=${JSON.stringify({
+            message: (error as { message?: string }).message,
+            position: (error as { position?: string }).position,
+            detail: (error as { detail?: string }).detail,
+            hint: (error as { hint?: string }).hint,
+            code: (error as { code?: string }).code,
+          })}`,
+        );
+        throw error;
+      }
       await db.query("commit");
     } catch (error) {
       await db.query("rollback");
