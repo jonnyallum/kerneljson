@@ -30,6 +30,10 @@ import { analystRequest, reviewerRequest } from "./prompts.js";
 import { failedCheckNames, missionSummary, parseAnalysis, reconcileMission, sha256Text } from "./reconcile.js";
 import type { MissionNotice } from "./notify.js";
 import { memoryEvidence, type MissionMemoryContext, type MissionMemoryPort } from "./memory-port.js";
+import type { MissionFacultyPort } from "../faculty/registry.js";
+import type { FacultyPin } from "../../../../packages/contracts/src/faculty.js";
+import { projectFacultyRequest, facultyEvidence, FacultyRefusal } from "../faculty/policy.js";
+import { modelDigest } from "../../../../packages/models/src/digest.js";
 
 /**
  * KJ-P3 - the repository-analysis mission, as a sequence the kernel drives:
@@ -63,6 +67,7 @@ export interface MissionDeps {
   reviewer: ModelPort;
   /** KJ-P5: optional canonical memory. Read-only; absent means the mission runs exactly as before. */
   memory?: MissionMemoryPort;
+  faculties?: MissionFacultyPort;
   /** Queue the notice. Best effort: a failure here never changes the task outcome. */
   notify: (notice: MissionNotice) => Promise<void>;
 }
@@ -106,7 +111,7 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
   const abort = async (
     node: PlanStep,
     source: string,
-    metadata: Record<string, string | number | boolean | null>,
+    metadata: Record<string, unknown>,
     reason: string,
   ): Promise<Outcome> => {
     const evidence = failureEvidence({
@@ -159,7 +164,7 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
   );
 
   // 2 and 3. The two runtimes. Each call is journaled once; a failed call is a failed mission.
-  const runRuntime = async (node: PlanStep, role: RuntimeRole, port: ModelPort, build: () => ModelRequest) => {
+  const runRuntime = async (node: PlanStep, role: RuntimeRole, port: ModelPort, build: () => ModelRequest, pin?: FacultyPin) => {
     await begin(node);
     // A repository with very many long paths can exceed the port's prompt limit. That is a
     // deterministic failure of this mission, so it must end FAILED with evidence, never throw
@@ -167,17 +172,36 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
     let request: ModelRequest;
     try {
       request = build();
-    } catch {
+      if (pin) request = projectFacultyRequest(pin, request);
+    } catch (error) {
+      const code = error instanceof FacultyRefusal ? error.code : "PROMPT_TOO_LARGE";
       return {
         failed: await abort(
           node,
           SOURCES[role],
-          { role, error: "PROMPT_TOO_LARGE" },
-          `${role.toUpperCase()}_PROMPT_TOO_LARGE`,
+          { role, error: code, ...(pin ? { faculty: facultyEvidence(pin) } : {}) },
+          `${role.toUpperCase()}_${code}`,
         ),
       };
     }
-    const result = await callModel(deps.ctx, port, request, async () => {});
+    const guarded: ModelPort = pin && deps.faculties ? {
+      generate: async (req) => {
+        try { await deps.faculties!.authorize(pin, req); }
+        catch (error) {
+          return { status: "FAILED", receipt: { status: "FAILED", callId: req.callId, taskId: req.taskId, stepId: req.stepId,
+            trace: req.trace, provider: pin.provider, model: pin.model, requestDigest: modelDigest({ provider: pin.provider, model: pin.model, request: req }),
+            finishedAt: new Date().toISOString(), durationMs: 0, error: { code: error instanceof FacultyRefusal ? "REQUEST_REJECTED" : "PROVIDER_UNAVAILABLE", retryable: !(error instanceof FacultyRefusal), mayHaveRun: false } } };
+        }
+        const result = await port.generate(req);
+        if (result.receipt.provider !== pin.provider || result.receipt.model !== pin.model) return {
+          status: "FAILED", receipt: { status: "FAILED", callId: req.callId, taskId: req.taskId, stepId: req.stepId,
+            trace: req.trace, provider: pin.provider, model: pin.model, requestDigest: modelDigest({ provider: pin.provider, model: pin.model, request: req }),
+            finishedAt: new Date().toISOString(), durationMs: 0, error: { code: "UNSUPPORTED_RESPONSE", retryable: false, mayHaveRun: true } },
+        };
+        return result;
+      },
+    } : port;
+    const result = await callModel(deps.ctx, guarded, request, async () => {});
     if (result.status === "FAILED") {
       const e = result.receipt.error;
       return {
@@ -194,6 +218,7 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
             retryable: e.retryable,
             may_have_run: e.mayHaveRun,
             http_status: e.httpStatus ?? null,
+            ...(pin ? { faculty: facultyEvidence(pin) } : {}),
           },
           `${role.toUpperCase()}_${e.code}`,
         ),
@@ -202,11 +227,29 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
     return { text: result.text, receipt: result.receipt };
   };
 
+  const pins: Partial<Record<RuntimeRole, FacultyPin>> = {};
+  if (deps.faculties) {
+    const faculties = deps.faculties;
+    for (const [role, node] of [["analyst", analyst], ["reviewer", reviewer]] as const) {
+      const selected = await deps.ctx.run(`faculty:${node.id}:pin`, async () => {
+        try { return { pin: await faculties.pin({ tenantId: task.tenant.id, taskId: task.id, stepId: node.id }), error: null }; }
+        catch (error) {
+          if (!(error instanceof FacultyRefusal)) throw error;
+          return { pin: null, error: error.code };
+        }
+      });
+      if (!selected.pin) {
+        await begin(node);
+        return abort(node, SOURCES[role], { role, error: selected.error }, selected.error!);
+      }
+      pins[role] = selected.pin;
+    }
+  }
   const analystId = deps.uuid();
   // KJ-P5: assemble the bounded memory context once (journaled, so a replay sees the same context). Memory only
   // informs the analyst; if it is unavailable the mission still runs and the evidence says so.
   let memoryContext: MissionMemoryContext | null = null;
-  if (deps.memory) {
+  if (deps.memory && (!pins.analyst || (pins.analyst.faculty.permittedMemoryClasses.length > 0 && pins.analyst.faculty.contextBudget.maxMemoryTokens > 0))) {
     const port = deps.memory;
     memoryContext = await deps.ctx.run("mission-memory-context", async (): Promise<MissionMemoryContext> => {
       try {
@@ -218,6 +261,7 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
           callId: analystId,
           purpose: question,
           project: repo,
+          ...(pins.analyst ? { allowedClasses: pins.analyst.faculty.permittedMemoryClasses, maxTokens: pins.analyst.faculty.contextBudget.maxMemoryTokens } : {}),
         });
       } catch {
         return { status: "UNAVAILABLE", assemblyId: null, digest: null, text: "", memories: [], externalCount: 0, usedTokens: 0 };
@@ -229,6 +273,7 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
     "analyst",
     deps.analyst,
     () => analystRequest({ callId: analystId, taskId: task.id, stepId: analyst.id, trace, facts, factsDigest, question, contract, memory: memoryContext?.text ?? "" }),
+    pins.analyst,
   );
   if ("failed" in a) return a.failed!;
   const analysisDigest = sha256Text(a.text);
@@ -239,6 +284,7 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
       id: deps.uuid(), taskId: task.id, stepId: analyst.id, role: "analyst",
       text: a.text, receipt: a.receipt, subjectDigest: factsDigest, capturedAt: await deps.now(),
       ...(memoryContext ? { memoryContext: memoryEvidence(memoryContext) } : {}),
+      ...(pins.analyst ? { faculty: facultyEvidence(pins.analyst) } : {}),
     }),
   );
 
@@ -251,6 +297,7 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
         callId: deps.uuid(), taskId: task.id, stepId: reviewer.id, trace, facts, factsDigest,
         analysisText: a.text, analysisDigest,
       }),
+    pins.reviewer,
   );
   if ("failed" in r) return r.failed!;
   const reviewDigest = sha256Text(r.text);
@@ -260,6 +307,7 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
     runtimeEvidence({
       id: deps.uuid(), taskId: task.id, stepId: reviewer.id, role: "reviewer",
       text: r.text, receipt: r.receipt, subjectDigest: analysisDigest, capturedAt: await deps.now(),
+      ...(pins.reviewer ? { faculty: facultyEvidence(pins.reviewer) } : {}),
     }),
   );
 

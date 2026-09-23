@@ -16,6 +16,9 @@ export interface MissionMemoryRequest {
   purpose: string;
   /** The repository the mission is about, so project knowledge for it can be selected. */
   project: string;
+  /** Optional narrowing from the pinned faculty; never expands mission defaults. */
+  allowedClasses?: MemoryClass[];
+  maxTokens?: number;
 }
 
 /** Plain JSON on purpose: the workflow journals it, so a replay sees exactly what the first run saw. */

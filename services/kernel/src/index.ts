@@ -15,6 +15,7 @@ import { loadMissionConfig } from "./mission/config.js";
 import { enqueueMissionNotice } from "./mission/notify.js";
 import { createConfiguredMemory, loadMemoryConfig } from "../../memory/src/canonical/config.js";
 import { createMissionMemoryPort } from "../../memory/src/canonical/mission-port.js";
+import { PgFacultyRegistry } from "./faculty/registry.js";
 
 const connectionString = process.env["DATABASE_URL"];
 if (!connectionString)
@@ -59,6 +60,10 @@ const mission = missionRuntimes
   ? {
       analyst: missionRuntimes.analyst,
       reviewer: missionRuntimes.reviewer,
+      faculties: new PgFacultyRegistry(pool, {
+        analyst: { provider: missionRuntimes.analystProvider, model: missionRuntimes.analystModel },
+        reviewer: { provider: missionRuntimes.reviewerProvider, model: missionRuntimes.reviewerModel },
+      }),
       ...(missionMemory ? { memory: missionMemory } : {}),
       notify: async (notice: Parameters<typeof enqueueMissionNotice>[1]) => {
         await enqueueMissionNotice(new PgNotificationOutboxStore(pool), notice);

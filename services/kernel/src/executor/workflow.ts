@@ -19,6 +19,7 @@ import type { ModelPort } from "../../../../packages/models/src/index.js";
 import { runRepoAnalysisMission, type Emit } from "../mission/run.js";
 import type { MissionNotice } from "../mission/notify.js";
 import type { MissionMemoryPort } from "../mission/memory-port.js";
+import type { MissionFacultyPort } from "../faculty/registry.js";
 
 /** KJ-P3 mission wiring: the two runtimes and how to queue the completion notice. */
 export interface MissionWiring {
@@ -27,6 +28,7 @@ export interface MissionWiring {
   notify: (notice: MissionNotice) => Promise<void>;
   /** KJ-P5: read-only canonical memory for the analyst. Absent unless KJ_MEMORY_ENABLED. */
   memory?: MissionMemoryPort;
+  faculties?: MissionFacultyPort;
 }
 
 /** Optional capability-recipe wiring. Present only on a worker configured to serve the
@@ -163,6 +165,7 @@ export function createKernelWorkflow(
             analyst: mission.analyst,
             reviewer: mission.reviewer,
             ...(mission.memory ? { memory: mission.memory } : {}),
+            ...(mission.faculties ? { faculties: mission.faculties } : {}),
             notify: mission.notify,
           });
         }
