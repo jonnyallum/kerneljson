@@ -1,0 +1,236 @@
+{
+  "containers": [
+    {
+      "name": "kerneljson-execution-worker-1",
+      "image": "kerneljson-worker:a577e74",
+      "health": "healthy",
+      "restarts": 0,
+      "release": "a577e7439f830a1fbc795a0dddd331d7d7edca78",
+      "memoryEnabled": "true",
+      "memoryApproverConfigured": false,
+      "controlTokenPresent": false,
+      "startedAt": "2026-09-23T10:44:30.133314153Z"
+    },
+    {
+      "name": "kerneljson-admission-door-gateway-1",
+      "image": "kerneljson-admission-door:a577e74",
+      "health": "healthy",
+      "restarts": 0,
+      "release": "a577e7439f830a1fbc795a0dddd331d7d7edca78",
+      "memoryEnabled": null,
+      "memoryApproverConfigured": false,
+      "controlTokenPresent": false,
+      "startedAt": "2026-09-23T10:44:31.941313493Z"
+    },
+    {
+      "name": "kerneljson-execution-restate-1",
+      "image": "docker.restate.dev/restatedev/restate:1.7.9",
+      "health": "healthy",
+      "restarts": 0,
+      "release": null,
+      "memoryEnabled": null,
+      "memoryApproverConfigured": false,
+      "controlTokenPresent": false,
+      "startedAt": "2026-09-12T18:10:24.870538339Z"
+    }
+  ],
+  "sourceDigests": {
+    "kerneljson-execution-worker-1:services/kernel/src/index.ts": "35a5361c523a08fa36148fbe817762c1cb7084a64c3773f6aab6a8807b8c8115",
+    "kerneljson-execution-worker-1:services/memory/src/canonical/config.ts": "4eb2972602b35dd8dfff2455aa7964f0d084080852957e559a9fbae781b72d53",
+    "kerneljson-execution-worker-1:services/memory/src/canonical/service.ts": "fb54db88a71f9410cff522780ac18e69ad5ca5698da0e97f1c34c6e2ced65ae2",
+    "kerneljson-admission-door-gateway-1:apps/gateway/src/main.ts": "5f7d90a701994d1f1ca4870ad5ae9375f37653cbfe89f404f65b7a64171dd851"
+  },
+  "literalCredentialLogHits": {
+    "kerneljson-execution-worker-1": 0,
+    "kerneljson-admission-door-gateway-1": 0,
+    "kerneljson-execution-restate-1": 0
+  },
+  "services": [
+    {
+      "name": "ProductionAlertMonitor",
+      "revision": 8
+    },
+    {
+      "name": "GoldenTaskWorkflowV1",
+      "revision": 2
+    },
+    {
+      "name": "KernelWorkflowV1",
+      "revision": 19
+    },
+    {
+      "name": "TelegramOperator",
+      "revision": 4
+    },
+    {
+      "name": "ScheduleDriver",
+      "revision": 16
+    },
+    {
+      "name": "TaskWorkflow",
+      "revision": 19
+    },
+    {
+      "name": "CapabilityServiceV1",
+      "revision": 19
+    }
+  ],
+  "chains": [
+    {
+      "target_service_name": "ScheduleDriver",
+      "status": "scheduled",
+      "scheduled_start_at": "2026-09-24T08:00:00.012Z",
+      "id": "inv_10gzREX5HBAt0K6ADNM5hoZ2McQIhhbX69"
+    },
+    {
+      "target_service_name": "ProductionAlertMonitor",
+      "status": "scheduled",
+      "scheduled_start_at": "2026-09-23T10:49:49.22Z",
+      "id": "inv_18BewE5hSqPf0AS9jBKUjSBivK3EZ1fSMh"
+    },
+    {
+      "target_service_name": "TelegramOperator",
+      "status": "running",
+      "scheduled_start_at": "2026-09-23T10:45:20.996Z",
+      "id": "inv_1dHllGlMYmZC6DzQC5cPybWSxPixYhNK8h"
+    }
+  ],
+  "recentChains": [
+    {
+      "service": "TelegramOperator",
+      "lastCompleted": "2026-09-23T10:45:19.998Z"
+    },
+    {
+      "service": "ProductionAlertMonitor",
+      "lastCompleted": "2026-09-23T10:44:49.226Z"
+    }
+  ],
+  "database": {
+    "release": [
+      {
+        "epoch": "9",
+        "release_id": "a577e7439f830a1fbc795a0dddd331d7d7edca78",
+        "previous_release_id": "a4078cf96b063db4d8885cf9b2a2f2fedebdd60f",
+        "activated_at": "2026-09-23T10:44:43.787Z"
+      }
+    ],
+    "counts": {
+      "tasks": 0,
+      "approvals": 0,
+      "poison": 0
+    },
+    "memory": {
+      "memory_candidates": 0,
+      "memory_promotions": 0,
+      "memory_versions": 0,
+      "memory_relations": 0,
+      "memory_context_assemblies": 0,
+      "memory_current": 0
+    },
+    "legacy": {
+      "count": 0,
+      "digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "rls": [
+      {
+        "relname": "memory_candidates",
+        "relrowsecurity": true,
+        "reloptions": null
+      },
+      {
+        "relname": "memory_context_assemblies",
+        "relrowsecurity": true,
+        "reloptions": null
+      },
+      {
+        "relname": "memory_current",
+        "relrowsecurity": false,
+        "reloptions": [
+          "security_invoker=true"
+        ]
+      },
+      {
+        "relname": "memory_promotions",
+        "relrowsecurity": true,
+        "reloptions": null
+      },
+      {
+        "relname": "memory_relations",
+        "relrowsecurity": true,
+        "reloptions": null
+      },
+      {
+        "relname": "memory_versions",
+        "relrowsecurity": true,
+        "reloptions": null
+      }
+    ],
+    "publicGrants": [],
+    "alerts": [
+      {
+        "severity": "P3",
+        "current_state": "OPEN",
+        "count": 2
+      },
+      {
+        "severity": "P1",
+        "current_state": "RECOVERED",
+        "count": 1
+      }
+    ],
+    "outbox": [
+      {
+        "status": "DELIVERED",
+        "count": 20
+      }
+    ]
+  },
+  "health": {
+    "overall": "UNKNOWN",
+    "checkedAt": "2026-09-23T10:45:26.848Z",
+    "criticalIssues": 0,
+    "degradedIssues": 0,
+    "unknownChecks": 3,
+    "lastFireAtUtc": "2026-09-23T08:00:00Z",
+    "nextWakeAtUtc": "2026-09-24T08:00:00.012Z",
+    "nonHealthyChecks": [
+      {
+        "id": "authority.bindingReleaseConsistent",
+        "status": "UNKNOWN",
+        "evidence": "database release epochs",
+        "message": "NO_OBSERVATION: no bindings in the active release epoch",
+        "checkedAt": "2026-09-23T10:45:26.848Z",
+        "observed": {
+          "activeEpoch": "9",
+          "activeReleaseId": "a577e7439f830a1fbc795a0dddd331d7d7edca78",
+          "currentBindingCount": 0,
+          "mismatchedBindingCount": 0,
+          "missingProvenanceCount": 0,
+          "legacyBindingCount": 25
+        }
+      },
+      {
+        "id": "releaseParity.recentBindingsConsistent",
+        "status": "UNKNOWN",
+        "evidence": "database release epochs",
+        "message": "NO_OBSERVATION: no bindings in the active release epoch",
+        "checkedAt": "2026-09-23T10:45:26.848Z",
+        "observed": {
+          "activeEpoch": "9",
+          "activeReleaseId": "a577e7439f830a1fbc795a0dddd331d7d7edca78",
+          "currentBindingCount": 0,
+          "mismatchedBindingCount": 0,
+          "missingProvenanceCount": 0,
+          "legacyBindingCount": 25
+        }
+      },
+      {
+        "id": "legacyAuthority.b1FreezeObservable",
+        "status": "UNKNOWN",
+        "evidence": "Shared Brain (cross-system, out of scope for this module)",
+        "message": "evidence unavailable: Shared Brain cross-system check not wired into this module (KJ-P1.1 scope decision)",
+        "checkedAt": "2026-09-23T10:45:26.848Z"
+      }
+    ]
+  }
+}
