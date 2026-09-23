@@ -34,8 +34,8 @@ export function createMissionMemoryPort(memory: Pick<CanonicalMemory, "assemble"
         {
           purpose: input.purpose,
           project: input.project,
-          allowedClasses: MISSION_MEMORY_CLASSES,
-          budget: { maxItems: MISSION_MEMORY_BUDGET.maxItems, maxTokens: MISSION_MEMORY_BUDGET.maxTokens },
+          allowedClasses: MISSION_MEMORY_CLASSES.filter(c => !input.allowedClasses || input.allowedClasses.includes(c)),
+          budget: { maxItems: MISSION_MEMORY_BUDGET.maxItems, maxTokens: Math.min(input.maxTokens ?? MISSION_MEMORY_BUDGET.maxTokens, MISSION_MEMORY_BUDGET.maxTokens) },
         },
         { consumer: { taskId: input.taskId, stepId: input.stepId, callId: input.callId }, external },
       );

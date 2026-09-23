@@ -2,6 +2,7 @@ import { authorize } from "../../../packages/identity/src/index.js";
 import { assertResolvedEffects, readOutcome } from "./terminal.js";
 import { bindingFor, persistBinding, workflowTargets, type WorkflowName } from "./execution-binding.js";
 import pg from "pg";
+import { verifyFacultyEvidence } from "./faculty/verify.js";
 import {
   Task,
   TaskEvent,
@@ -150,6 +151,10 @@ export class Ledger {
             [task.id],
           );
           const plan = planEvent.rows[0]?.payload.plan;
+          const facultyPins = await db.query<{ pin: unknown }>("select pin from public.faculty_pins where task_id=$1", [task.id]);
+          const configuredFaculties = await db.query("select 1 from public.faculty_versions where tenant_id=$1 limit 1", [task.tenant.id]);
+          const facultyRequired = (plan as { recipe?: string } | undefined)?.recipe === "repo-analysis-mission/v1" && configuredFaculties.rows.length > 0;
+          verifyCompletion(() => verifyFacultyEvidence(facultyPins.rows.map(r => r.pin), rows.rows.map(r => r.record), facultyRequired));
           verifyCompletion(()=>{if (rows.rows.some(r => {
             const captured = Date.parse(Evidence.parse(r.record).capturedAt);
             return captured < Date.parse(task.createdAt) || captured > Date.parse(event.occurredAt);

@@ -22,6 +22,11 @@ import type { MissionMemoryPort } from "../services/kernel/src/mission/memory-po
 import { CanonicalMemory } from "../services/memory/src/canonical/service.js";
 import { createMissionMemoryPort } from "../services/memory/src/canonical/mission-port.js";
 import { analystRequest } from "../services/kernel/src/mission/prompts.js";
+import { PgFacultyRegistry, type MissionFacultyPort } from "../services/kernel/src/faculty/registry.js";
+import { coreTeamTemplates } from "../services/kernel/src/faculty/templates.js";
+import { FacultyPin, FacultyVersion } from "../packages/contracts/src/faculty.js";
+import { capabilityDigest } from "../packages/capabilities/src/index.js";
+import { boundFacultyRequest } from "../services/kernel/src/faculty/policy.js";
 import { id as fixtureId, principal } from "../evals/fixtures/contracts.js";
 import {
   CITED, REPO, analysisJson, cite, fakeClaude, fakeGrok, githubResult, makeFacts, reviewJson, shaFor,
@@ -96,6 +101,9 @@ interface Scenario {
   reviewer?: ModelPort;
   /** KJ-P5: read-only canonical memory for the analyst. */
   memory?: MissionMemoryPort;
+  faculties?: MissionFacultyPort;
+  journal?: Map<string, unknown>;
+  mutateFacultyEvidence?: boolean;
   notify?: (n: MissionNotice) => Promise<void>;
   afterVerify?: (taskId: string) => Promise<void>;
   intentId?: string;
@@ -127,6 +135,9 @@ async function runMission(s: Scenario = {}): Promise<{ outcome: Outcome; taskId:
 
   // Mirrors KernelWorkflowV1's emit: same event shape, and COMPLETED goes through ledger.finish.
   const emit: Emit = async (key, type, status, extra = {}, payload = {}) => {
+    if (s.mutateFacultyEvidence && extra.evidence?.metadata["faculty"]) {
+      extra.evidence = { ...extra.evidence, metadata: { ...extra.evidence.metadata, faculty: { ...(extra.evidence.metadata["faculty"] as Record<string, unknown>), faculty_version: 999 } } };
+    }
     const occurredAt = await det.now();
     task = Task.parse({
       ...task, status,
@@ -148,7 +159,12 @@ async function runMission(s: Scenario = {}): Promise<{ outcome: Outcome; taskId:
   await emit("ready", "TASK_READY", "READY");
   await emit("start", "TASK_STARTED", "RUNNING");
 
-  const ctx = { run: async (_n: string, action: () => unknown) => action() } as unknown as Pick<Context, "run">;
+  const ctx = { run: async (n: string, action: () => unknown) => {
+    if (s.journal?.has(n)) return structuredClone(s.journal.get(n));
+    const result = await action();
+    s.journal?.set(n, structuredClone(result));
+    return result;
+  } } as unknown as Pick<Context, "run">;
   const workflowTask = s.workflowObjective ? Task.parse({ ...task, objective: s.workflowObjective }) : task;
   const outcome = await runRepoAnalysisMission({
     ctx, task: workflowTask, plan, emit, now: det.now, uuid: det.uuid,
@@ -156,6 +172,7 @@ async function runMission(s: Scenario = {}): Promise<{ outcome: Outcome; taskId:
     analyst: s.analyst ?? fakeClaude(),
     reviewer: s.reviewer ?? fakeGrok(),
     ...(s.memory ? { memory: s.memory } : {}),
+    ...(s.faculties ? { faculties: s.faculties } : {}),
     notify: async (n) => { notices.push(n); await (s.notify ?? ((x) => enqueueMissionNotice(outbox, x).then(() => undefined)))(n); },
   });
   return { outcome, taskId: task.id, notices };
@@ -553,5 +570,116 @@ describe("KJ-P5 canonical memory in the mission", () => {
     const seen: string[] = [];
     await runMission({ memory: createMissionMemoryPort(canonical), analyst: spy(fakeClaude(), seen) });
     expect(seen[0]).not.toContain("quokka");
+  });
+});
+
+describe("KJ-P6 faculties against the real ledger and Postgres", () => {
+  const routes = { analyst: { provider: "openrouter" as const, model: "anthropic/claude-test" }, reviewer: { provider: "openrouter" as const, model: "x-ai/grok-test" } };
+  let faculties: PgFacultyRegistry;
+  const pinsOf = async (taskId: string) => (await pool.query("select pin from faculty_pins where task_id=$1 order by faculty_id", [taskId])).rows.map(r => FacultyPin.parse(r.pin));
+  const current = async () => FacultyVersion.parse((await pool.query("select definition from faculty_current where tenant_id=$1 and faculty_id='intelligence'", [fixtureId])).rows[0].definition);
+  const append = async (over: Partial<FacultyVersion>) => {
+    const old = await current();
+    const f = FacultyVersion.parse({ ...old, ...over, version: old.version + 1 });
+    await pool.query("insert into faculty_versions(tenant_id,faculty_id,version,definition,digest) values($1,$2,$3,$4,$5)", [fixtureId, f.id, f.version, f, capabilityDigest(f)]);
+    return f;
+  };
+  beforeAll(async () => {
+    for (const f of coreTeamTemplates(fixtureId, "test:reviewed-deployment"))
+      await pool.query("insert into faculty_versions(tenant_id,faculty_id,version,definition,digest) values($1,$2,$3,$4,$5)", [fixtureId, f.id, f.version, f, capabilityDigest(f)]);
+    faculties = new PgFacultyRegistry(pool, routes);
+  });
+  it("pins admitted operations, binds evidence, and completes independently", async () => {
+    const r = await runMission({ faculties });
+    expect(r.outcome.status).toBe("COMPLETED");
+    const pins = await pinsOf(r.taskId);
+    expect(pins.map(p => p.faculty.id)).toEqual(["intelligence", "verifier"]);
+    expect(pins.every(p => p.faculty.version === 1 && p.tenantId === fixtureId)).toBe(true);
+    for (const p of pins) {
+      const ev = (await evidenceOf(r.taskId)).find(e => e.metadata["role"] === (p.operation === "RUNTIME_ANALYSE" ? "analyst" : "reviewer"))!;
+      expect(ev.metadata["faculty"]).toMatchObject({ faculty_id: p.faculty.id, faculty_digest: p.facultyDigest, policy_version: "faculty-routing/v1" });
+      expect(ev.metadata["response_model"]).toBe(p.model);
+    }
+  });
+  it("replays journaled calls without rerouting after a newer role version", async () => {
+    let calls = 0;
+    const inner = fakeClaude();
+    const s: Scenario = { faculties, journal: new Map(), seed: randomUUID(), intentId: randomUUID(), createdMs: Date.now() - 120000,
+      analyst: { generate: async r => { calls++; return inner.generate(r); } } };
+    const first = await runMission(s);
+    const old = await pinsOf(first.taskId);
+    await append({ purpose: "Updated reviewed research purpose" });
+    const replay = await runMission(s);
+    expect(replay.outcome).toEqual(first.outcome);
+    expect(calls).toBe(1);
+    expect(await pinsOf(first.taskId)).toEqual(old);
+    const concurrent = await Promise.all(Array.from({ length: 4 }, () => faculties.pin({ tenantId: fixtureId, taskId: first.taskId, stepId: old[0]!.stepId })));
+    expect(concurrent.every(p => capabilityDigest(p) === capabilityDigest(old[0]))).toBe(true);
+  });
+  it("refuses disabled faculties before any model call and retains the failure evidence", async () => {
+    const old = await current();
+    await append({ enabled: false });
+    try {
+      let calls = 0;
+      const r = await runMission({ faculties, analyst: { generate: async () => { calls++; throw new Error("must not run"); } } });
+      expect(r.outcome.status).toBe("FAILED");
+      expect(r.outcome.summary).toContain("FACULTY_DISABLED");
+      expect(calls).toBe(0);
+    } finally { await append({ ...old }); }
+  });
+  it("refuses capability expansion and wrong-tenant requests", async () => {
+    const old = await current();
+    await append({ permittedCapabilityClasses: [] });
+    try {
+      const r = await runMission({ faculties });
+      expect(r.outcome.summary).toContain("FACULTY_CAPABILITY_REFUSED");
+      await expect(faculties.pin({ tenantId: randomUUID(), taskId: r.taskId, stepId: randomUUID() })).rejects.toThrow("TASK_REFUSED");
+    } finally { await append({ ...old }); }
+  });
+  it("substitutes an explicitly configured provider for new tasks, never an existing pin", async () => {
+    const changed = new PgFacultyRegistry(pool, { ...routes, analyst: { provider: "deepseek", model: "deepseek-test" } });
+    const r = await runMission({ faculties: changed, analyst: fakeClaude({ provider: "deepseek", model: "deepseek-test" }) });
+    expect(r.outcome.status).toBe("COMPLETED");
+    const p = (await pinsOf(r.taskId))[0]!;
+    expect(p.provider).toBe("deepseek");
+    expect(await faculties.pin({ tenantId: fixtureId, taskId: r.taskId, stepId: p.stepId })).toEqual(p);
+    const req = boundFacultyRequest(p, { taskId: p.taskId, stepId: p.stepId, callId: randomUUID(), trace: { traceId: randomUUID(), correlationId: p.taskId }, messages: [{ role: "user", content: "safe" }], maxOutputTokens: 100 });
+    await expect(faculties.authorize(p, req)).rejects.toThrow("PINNED_ROUTE_UNAVAILABLE");
+  });
+  it("retains a failed provider attempt on replay instead of issuing an unapproved retry", async () => {
+    let calls = 0;
+    const inner = fakeClaude({ reply: { fail: "RATE_LIMIT" } });
+    const s: Scenario = { faculties, journal: new Map(), seed: randomUUID(), intentId: randomUUID(), createdMs: Date.now() - 120000,
+      analyst: { generate: async r => { calls++; return inner.generate(r); } } };
+    const a = await runMission(s), b = await runMission(s);
+    expect(a.outcome.status).toBe("FAILED");
+    expect(b.outcome).toEqual(a.outcome);
+    expect(calls).toBe(1);
+    expect((await evidenceOf(a.taskId)).find(e => e.metadata["role"] === "analyst")?.metadata).toMatchObject({ error: "RATE_LIMIT", faculty: { faculty_id: "intelligence" } });
+  });
+  it("fails canonical completion on mutated or absent faculty evidence", async () => {
+    for (const s of [{ faculties, mutateFacultyEvidence: true }, {}]) {
+      const r = await runMission(s);
+      expect(r.outcome.status).toBe("FAILED");
+      expect(r.outcome.summary).toBe("Persisted completion verification failed");
+    }
+  });
+  it("database guards reject edits, deletes, truncation, cross-tenant pins and anonymous writes", async () => {
+    const r = await runMission({ faculties });
+    const p = (await pinsOf(r.taskId))[0]!;
+    const rejects = async (sql: string, params: unknown[] = []) => {
+      const c = await pool.connect();
+      try { await c.query("begin"); await expect(c.query(sql, params)).rejects.toBeTruthy(); }
+      finally { await c.query("rollback"); c.release(); }
+    };
+    for (const table of ["faculty_versions", "faculty_pins"]) {
+      await rejects(`update ${table} set tenant_id=tenant_id`);
+      await rejects(`delete from ${table}`);
+      await rejects(`truncate ${table} cascade`);
+    }
+    await rejects("insert into faculty_pins(tenant_id,task_id,step_id,faculty_id,faculty_version,pin) values($1,$2,$3,$4,$5,$6)", [randomUUID(), p.taskId, p.stepId, p.faculty.id, p.faculty.version, p]);
+    await rejects("set local role anon; select * from faculty_versions");
+    const old = await current();
+    await rejects("insert into faculty_versions(tenant_id,faculty_id,version,definition,digest) values($1,$2,$3,$4,$5)", [fixtureId, old.id, old.version+2, { ...old, version: old.version+2 }, capabilityDigest(old)]);
   });
 });

@@ -64,6 +64,7 @@ export function runtimeEvidence(
     subjectDigest: string;
     /** KJ-P5: the memory context this call was given. Added only when memory was in play. */
     memoryContext?: Record<string, unknown>;
+    faculty?: Record<string, unknown>;
   },
 ): Evidence {
   const r = args.receipt;
@@ -88,13 +89,14 @@ export function runtimeEvidence(
       subject_digest: args.subjectDigest,
       text: args.text,
       ...(args.memoryContext ? { memory_context: args.memoryContext } : {}),
+      ...(args.faculty ? { faculty: args.faculty } : {}),
     },
   });
 }
 
 /** A failed step still leaves evidence: what failed, never the provider's error body. */
 export function failureEvidence(
-  args: Base & { source: string; metadata: Record<string, string | number | boolean | null> },
+  args: Base & { source: string; metadata: Record<string, unknown> },
 ): Evidence {
   return Evidence.parse({
     id: args.id,
