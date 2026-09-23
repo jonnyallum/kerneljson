@@ -56,14 +56,14 @@ begin
   if task_state <> 'RUNNING' then raise exception 'faculty requires running admitted task' using errcode='23514'; end if;
   select payload->'plan' into strict plan from public.task_events where task_id=new.task_id and type='PLAN_COMPILED';
   select s->>'operation' into strict op from jsonb_array_elements(plan->'steps') s where s->>'id'=new.step_id::text;
-  if plan->>'recipe' <> 'repo-analysis-mission/v1' or op not in ('RUNTIME_ANALYSE','RUNTIME_REVIEW')
+  if (plan->>'recipe' <> 'repo-analysis-mission/v1' or op not in ('RUNTIME_ANALYSE','RUNTIME_REVIEW')
      or new.pin->>'operation' is distinct from op
      or new.faculty_id <> case op when 'RUNTIME_ANALYSE' then 'intelligence' else 'verifier' end
      or new.pin->>'routingReason' <> case op when 'RUNTIME_ANALYSE' then 'repo-analysis/analyst' else 'repo-analysis/independent-reviewer' end
      or not (f.definition->'permittedRecipes' ? 'repo-analysis-mission/v1')
      or not (f.definition->'permittedOperations' ? op)
      or not (f.definition->'permittedCapabilityClasses' ? 'MODEL_TEXT')
-     or not (f.definition->'providerPreferences' ? (new.pin->>'provider')) then
+     or not (f.definition->'providerPreferences' ? (new.pin->>'provider'))) then
     raise exception 'faculty cannot expand admitted plan' using errcode='23514';
   end if;
   return new;
