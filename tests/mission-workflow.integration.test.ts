@@ -657,6 +657,40 @@ describe("KJ-P6 faculties against the real ledger and Postgres", () => {
     expect(calls).toBe(1);
     expect((await evidenceOf(a.taskId)).find(e => e.metadata["role"] === "analyst")?.metadata).toMatchObject({ error: "RATE_LIMIT", faculty: { faculty_id: "intelligence" } });
   });
+  it("refuses revocation between selection and execution without calling the provider", async () => {
+    const old = await current();
+    let called = false;
+    try {
+      const r = await runMission({
+        faculties: { pin: input => faculties.pin(input), authorize: async (pin, req) => { await append({ enabled: false }); await faculties.authorize(pin, req); } },
+        analyst: { generate: async () => { called = true; throw new Error("revoked"); } },
+      });
+      expect(r.outcome.status).toBe("FAILED");
+      expect(r.outcome.summary).toContain("REQUEST_REJECTED");
+      expect(called).toBe(false);
+    } finally { await append(old); }
+  });
+  it("refuses a provider receipt that differs from the pinned route as a terminal task failure", async () => {
+    const r = await runMission({ faculties, analyst: fakeClaude({ provider: "deepseek", model: "deepseek-test" }) });
+    expect(r.outcome.status).toBe("FAILED");
+    expect(r.outcome.summary).toContain("UNSUPPORTED_RESPONSE");
+  });
+  it("narrows the memory port and projects the exact faculty into the analyst prompt", async () => {
+    const old = await current();
+    const configured = await append({ permittedMemoryClasses: ["PREFERENCE"], contextBudget: { ...old.contextBudget, maxMemoryTokens: 32 } });
+    const requests: unknown[] = [], prompts: string[] = [];
+    const inner = fakeClaude();
+    try {
+      const r = await runMission({ faculties,
+        analyst: { generate: async req => { prompts.push(req.messages[0]!.content); return inner.generate(req); } },
+        memory: { assemble: async req => { requests.push(req); return { status: "ASSEMBLED", assemblyId: null, digest: null, text: "", memories: [], externalCount: 0, usedTokens: 0 }; } },
+      });
+      expect(r.outcome.status).toBe("COMPLETED");
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({ allowedClasses: ["PREFERENCE"], maxTokens: 32 });
+      expect(prompts[0]).toContain(`Kernel faculty: Intelligence v${configured.version}`);
+    } finally { await append(old); }
+  });
   it("fails canonical completion on mutated or absent faculty evidence", async () => {
     for (const s of [{ faculties, mutateFacultyEvidence: true }, {}]) {
       const r = await runMission(s);

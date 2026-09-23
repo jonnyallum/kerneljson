@@ -32,7 +32,7 @@ import type { MissionNotice } from "./notify.js";
 import { memoryEvidence, type MissionMemoryContext, type MissionMemoryPort } from "./memory-port.js";
 import type { MissionFacultyPort } from "../faculty/registry.js";
 import type { FacultyPin } from "../../../../packages/contracts/src/faculty.js";
-import { boundFacultyRequest, facultyEvidence, FacultyRefusal } from "../faculty/policy.js";
+import { projectFacultyRequest, facultyEvidence, FacultyRefusal } from "../faculty/policy.js";
 import { modelDigest } from "../../../../packages/models/src/digest.js";
 
 /**
@@ -172,7 +172,7 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
     let request: ModelRequest;
     try {
       request = build();
-      if (pin) request = boundFacultyRequest(pin, request);
+      if (pin) request = projectFacultyRequest(pin, request);
     } catch (error) {
       const code = error instanceof FacultyRefusal ? error.code : "PROMPT_TOO_LARGE";
       return {
@@ -193,7 +193,11 @@ export async function runRepoAnalysisMission(deps: MissionDeps): Promise<Outcome
             finishedAt: new Date().toISOString(), durationMs: 0, error: { code: error instanceof FacultyRefusal ? "REQUEST_REJECTED" : "PROVIDER_UNAVAILABLE", retryable: !(error instanceof FacultyRefusal), mayHaveRun: false } } };
         }
         const result = await port.generate(req);
-        if (result.receipt.provider !== pin.provider || result.receipt.model !== pin.model) throw new Error("Provider violated pinned faculty route");
+        if (result.receipt.provider !== pin.provider || result.receipt.model !== pin.model) return {
+          status: "FAILED", receipt: { status: "FAILED", callId: req.callId, taskId: req.taskId, stepId: req.stepId,
+            trace: req.trace, provider: pin.provider, model: pin.model, requestDigest: modelDigest({ provider: pin.provider, model: pin.model, request: req }),
+            finishedAt: new Date().toISOString(), durationMs: 0, error: { code: "UNSUPPORTED_RESPONSE", retryable: false, mayHaveRun: true } },
+        };
         return result;
       },
     } : port;

@@ -30,6 +30,13 @@ export function boundFacultyRequest(raw: FacultyPin, request: ModelRequest): Mod
     throw new FacultyRefusal("FACULTY_CONTEXT_BUDGET_REFUSED");
   return { ...request, maxOutputTokens: Math.min(request.maxOutputTokens, p.faculty.budget.maxOutputTokens) };
 }
+/** A bounded advisory role projection, never credentials, mutable identity, tools or authority. */
+export function projectFacultyRequest(raw: FacultyPin, request: ModelRequest): ModelRequest {
+  const p = validateFacultyPin(raw);
+  const role = `Kernel faculty: ${p.faculty.name} v${p.faculty.version}.\nPurpose: ${p.faculty.purpose}\nAuthority: advisory text only; KernelJSON owns decisions and execution.\n`;
+  const messages = request.messages.map((m, i) => i === 0 && m.role === "system" ? { ...m, content: role + m.content } : m);
+  return boundFacultyRequest(p, { ...request, messages });
+}
 export function facultyEvidence(p: FacultyPin): Record<string, unknown> {
   validateFacultyPin(p);
   return { faculty_id: p.faculty.id, faculty_version: p.faculty.version, faculty_digest: p.facultyDigest,
