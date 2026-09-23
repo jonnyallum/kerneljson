@@ -34,6 +34,10 @@ jobs:
           pnpm test --reporter=default --reporter=json --outputFile=artifacts/local/tests.json
           pnpm test:baseline
       - run: pnpm build
+      - name: Production worker image startup
+        run: |
+          docker build -f infrastructure/docker/worker.Dockerfile -t kerneljson-worker:qualification .
+          bash scripts/check-worker-image.sh kerneljson-worker:qualification
       - name: Retain test evidence
         if: always()
         uses: actions/upload-artifact@v4

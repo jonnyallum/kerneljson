@@ -6,6 +6,7 @@ RUN pnpm install --frozen-lockfile
 COPY tsconfig*.json ./
 COPY packages ./packages
 COPY services/kernel ./services/kernel
+COPY services/memory ./services/memory
 COPY tests/support/worker.ts ./tests/support/worker.ts
 COPY tests/support/model-probe.ts ./tests/support/model-probe.ts
 COPY tests/support/capability-probe.ts ./tests/support/capability-probe.ts
