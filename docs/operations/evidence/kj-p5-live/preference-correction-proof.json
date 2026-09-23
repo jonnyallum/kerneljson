@@ -1,0 +1,70 @@
+{
+  "authorization": "operator authorized correction in Codex; not a new Telegram update",
+  "safety": {
+    "tasks": 0,
+    "approvals": 0,
+    "poison": 0
+  },
+  "result": {
+    "candidateId": "551533cd-3ef8-8e60-a9d5-9342e83e6e0f",
+    "origin": "OPERATOR_INSTRUCTION",
+    "state": "PROMOTED",
+    "decision": "ALLOW",
+    "ruleId": "operator-instruction",
+    "reason": "an explicit instruction from the authenticated operator",
+    "memoryId": "e369f848-7be4-8d43-a998-228be7ea2884",
+    "version": 2,
+    "approvalId": null,
+    "replayed": false
+  },
+  "current": [
+    {
+      "memory_id": "e369f848-7be4-8d43-a998-228be7ea2884",
+      "version": 2,
+      "class": "PREFERENCE",
+      "content": "I prefer concise deployment summaries unless I explicitly ask for detail",
+      "trust_class": "USER_AUTHORED"
+    }
+  ],
+  "originalVersionPreserved": true,
+  "originalRowDigest": "89d827d69b53e51b084393a83b8e083b45f405a83ff19f8c167a0e1ab6770c73",
+  "version2": {
+    "evidence": [
+      {
+        "ref": "e369f848-7be4-8d43-a998-228be7ea2884:v1",
+        "type": "MEMORY_VERSION",
+        "digest": "c9d117157f4fe9773460c9106ac71e8e539607e661a9fa76db9128d092eb84ca"
+      }
+    ],
+    "policy": {
+      "ruleId": "operator-instruction",
+      "decision": "ALLOW",
+      "protected": false,
+      "approvalId": null,
+      "policyVersion": "kj-memory-policy/1"
+    },
+    "provenance": {
+      "origin": "OPERATOR_INSTRUCTION",
+      "reason": "Jonny authorized correction in Codex with \"your choice\" after being told the pasted follow-up sentence would be removed and v1 preserved; keep only the intended preference.",
+      "candidateId": "551533cd-3ef8-8e60-a9d5-9342e83e6e0f",
+      "submittedBy": "da5c6dfc-38c5-4773-bd47-5c80ed908d75"
+    }
+  },
+  "correctionReplay": {
+    "candidateId": "551533cd-3ef8-8e60-a9d5-9342e83e6e0f",
+    "origin": "OPERATOR_INSTRUCTION",
+    "state": "PROMOTED",
+    "decision": "ALLOW",
+    "ruleId": "operator-instruction",
+    "reason": "an explicit instruction from the authenticated operator",
+    "memoryId": "e369f848-7be4-8d43-a998-228be7ea2884",
+    "version": 2,
+    "approvalId": null,
+    "replayed": true
+  },
+  "counts": {
+    "candidates": 2,
+    "promotions": 2,
+    "versions": 2
+  }
+}

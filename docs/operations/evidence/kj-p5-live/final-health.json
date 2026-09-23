@@ -1,0 +1,211 @@
+{
+  "containers": [
+    {
+      "name": "kerneljson-execution-worker-1",
+      "image": "kerneljson-worker:a577e74",
+      "health": "healthy",
+      "restarts": 0,
+      "release": "a577e7439f830a1fbc795a0dddd331d7d7edca78",
+      "memoryEnabled": "true",
+      "memoryApproverConfigured": false,
+      "controlTokenPresent": false,
+      "startedAt": "2026-09-23T10:44:30.133314153Z"
+    },
+    {
+      "name": "kerneljson-admission-door-gateway-1",
+      "image": "kerneljson-admission-door:a577e74",
+      "health": "healthy",
+      "restarts": 0,
+      "release": "a577e7439f830a1fbc795a0dddd331d7d7edca78",
+      "memoryEnabled": null,
+      "memoryApproverConfigured": false,
+      "controlTokenPresent": false,
+      "startedAt": "2026-09-23T10:44:31.941313493Z"
+    },
+    {
+      "name": "kerneljson-execution-restate-1",
+      "image": "docker.restate.dev/restatedev/restate:1.7.9",
+      "health": "healthy",
+      "restarts": 0,
+      "release": null,
+      "memoryEnabled": null,
+      "memoryApproverConfigured": false,
+      "controlTokenPresent": false,
+      "startedAt": "2026-09-12T18:10:24.870538339Z"
+    }
+  ],
+  "sourceDigests": {
+    "kerneljson-execution-worker-1:services/kernel/src/index.ts": "35a5361c523a08fa36148fbe817762c1cb7084a64c3773f6aab6a8807b8c8115",
+    "kerneljson-execution-worker-1:services/memory/src/canonical/config.ts": "4eb2972602b35dd8dfff2455aa7964f0d084080852957e559a9fbae781b72d53",
+    "kerneljson-execution-worker-1:services/memory/src/canonical/service.ts": "fb54db88a71f9410cff522780ac18e69ad5ca5698da0e97f1c34c6e2ced65ae2",
+    "kerneljson-admission-door-gateway-1:apps/gateway/src/main.ts": "5f7d90a701994d1f1ca4870ad5ae9375f37653cbfe89f404f65b7a64171dd851"
+  },
+  "literalCredentialLogHits": {
+    "kerneljson-execution-worker-1": 0,
+    "kerneljson-admission-door-gateway-1": 0,
+    "kerneljson-execution-restate-1": 0
+  },
+  "services": [
+    {
+      "name": "ProductionAlertMonitor",
+      "revision": 8
+    },
+    {
+      "name": "GoldenTaskWorkflowV1",
+      "revision": 2
+    },
+    {
+      "name": "KernelWorkflowV1",
+      "revision": 19
+    },
+    {
+      "name": "TelegramOperator",
+      "revision": 4
+    },
+    {
+      "name": "ScheduleDriver",
+      "revision": 16
+    },
+    {
+      "name": "TaskWorkflow",
+      "revision": 19
+    },
+    {
+      "name": "CapabilityServiceV1",
+      "revision": 19
+    }
+  ],
+  "chains": [
+    {
+      "target_service_name": "ScheduleDriver",
+      "status": "scheduled",
+      "scheduled_start_at": "2026-09-24T08:00:00.012Z",
+      "id": "inv_10gzREX5HBAt0K6ADNM5hoZ2McQIhhbX69"
+    },
+    {
+      "target_service_name": "ProductionAlertMonitor",
+      "status": "scheduled",
+      "scheduled_start_at": "2026-09-23T14:04:59.99Z",
+      "id": "inv_18BewE5hSqPf1zmdivzyo44dBWc6pwUnVT"
+    },
+    {
+      "target_service_name": "TelegramOperator",
+      "status": "running",
+      "scheduled_start_at": "2026-09-23T14:04:50.026Z",
+      "id": "inv_1dHllGlMYmZC1Zqe7ntW66kRHXxhlLyZW1"
+    }
+  ],
+  "recentChains": [
+    {
+      "service": "TelegramOperator",
+      "lastCompleted": "2026-09-23T14:04:49.027Z"
+    },
+    {
+      "service": "ProductionAlertMonitor",
+      "lastCompleted": "2026-09-23T13:59:59.99Z"
+    }
+  ],
+  "database": {
+    "release": [
+      {
+        "epoch": "9",
+        "release_id": "a577e7439f830a1fbc795a0dddd331d7d7edca78",
+        "previous_release_id": "a4078cf96b063db4d8885cf9b2a2f2fedebdd60f",
+        "activated_at": "2026-09-23T10:44:43.787Z"
+      }
+    ],
+    "counts": {
+      "tasks": 0,
+      "approvals": 0,
+      "poison": 0
+    },
+    "memory": {
+      "memory_candidates": 2,
+      "memory_promotions": 2,
+      "memory_versions": 2,
+      "memory_relations": 0,
+      "memory_context_assemblies": 1,
+      "memory_current": 1
+    },
+    "legacy": {
+      "count": 0,
+      "digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "rls": [
+      {
+        "relname": "memory_candidates",
+        "relrowsecurity": true,
+        "reloptions": null
+      },
+      {
+        "relname": "memory_context_assemblies",
+        "relrowsecurity": true,
+        "reloptions": null
+      },
+      {
+        "relname": "memory_current",
+        "relrowsecurity": false,
+        "reloptions": [
+          "security_invoker=true"
+        ]
+      },
+      {
+        "relname": "memory_promotions",
+        "relrowsecurity": true,
+        "reloptions": null
+      },
+      {
+        "relname": "memory_relations",
+        "relrowsecurity": true,
+        "reloptions": null
+      },
+      {
+        "relname": "memory_versions",
+        "relrowsecurity": true,
+        "reloptions": null
+      }
+    ],
+    "publicGrants": [],
+    "alerts": [
+      {
+        "severity": "P3",
+        "current_state": "OPEN",
+        "count": 1
+      },
+      {
+        "severity": "P1",
+        "current_state": "RECOVERED",
+        "count": 1
+      },
+      {
+        "severity": "P3",
+        "current_state": "RECOVERED",
+        "count": 1
+      }
+    ],
+    "outbox": [
+      {
+        "status": "DELIVERED",
+        "count": 29
+      }
+    ]
+  },
+  "health": {
+    "overall": "UNKNOWN",
+    "checkedAt": "2026-09-23T14:04:54.218Z",
+    "criticalIssues": 0,
+    "degradedIssues": 0,
+    "unknownChecks": 1,
+    "lastFireAtUtc": "2026-09-23T08:00:00Z",
+    "nextWakeAtUtc": "2026-09-24T08:00:00.012Z",
+    "nonHealthyChecks": [
+      {
+        "id": "legacyAuthority.b1FreezeObservable",
+        "status": "UNKNOWN",
+        "evidence": "Shared Brain (cross-system, out of scope for this module)",
+        "message": "evidence unavailable: Shared Brain cross-system check not wired into this module (KJ-P1.1 scope decision)",
+        "checkedAt": "2026-09-23T14:04:54.218Z"
+      }
+    ]
+  }
+}

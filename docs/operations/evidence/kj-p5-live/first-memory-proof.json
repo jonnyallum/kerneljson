@@ -1,0 +1,126 @@
+{
+  "verified": true,
+  "release": "a577e7439f830a1fbc795a0dddd331d7d7edca78",
+  "safety": {
+    "tasks": 0,
+    "approvals": 0,
+    "poison": 0
+  },
+  "counts": {
+    "candidates": 1,
+    "promotions": 1,
+    "versions": 1
+  },
+  "inbox": [
+    {
+      "update_id": "461282861",
+      "received_at": "2026-09-23T12:34:24.725Z",
+      "completed_at": "2026-09-23T12:34:24.725Z",
+      "state": "DONE",
+      "command": "REMEMBER",
+      "disposition": "ANSWERED",
+      "text_sha256": "9344908763a1ae4f68534b0a7f6ae00d954c1e50a584aef074605810275cb007",
+      "reply_notification_id": "e3c75c8ee430e840d92ea6367ff8336d"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "868066b8-7bf7-8f05-a3d9-7b685240b132",
+      "tenant_id": "5f970749-7507-894b-a2e4-872ce20a94b7",
+      "origin": "OPERATOR_INSTRUCTION",
+      "submitted_by": "da5c6dfc-38c5-4773-bd47-5c80ed908d75",
+      "idempotency_key": "telegram:upd:461282861",
+      "proposed_class": "PREFERENCE",
+      "intent": "NEW",
+      "target_memory_id": null,
+      "content": "I prefer concise deployment summaries unless I explicitly ask for detail\nThen tell me the reply so I can verify the saved memory.",
+      "content_digest": "c9d117157f4fe9773460c9106ac71e8e539607e661a9fa76db9128d092eb84ca",
+      "subject_kind": "PRINCIPAL",
+      "subject_ref": "da5c6dfc-38c5-4773-bd47-5c80ed908d75",
+      "evidence": [
+        {
+          "ref": "update:461282861",
+          "type": "TELEGRAM_UPDATE",
+          "digest": "c9d117157f4fe9773460c9106ac71e8e539607e661a9fa76db9128d092eb84ca"
+        }
+      ],
+      "reason": "explicit /remember instruction from the operator",
+      "request_digest": "3858d5a98e1167ac3da092f26181c22e36d0c9a86030c53f051f6f9ccc962d2e",
+      "state": "PROMOTED",
+      "state_reason": "an explicit instruction from the authenticated operator",
+      "approval_id": null,
+      "created_at": "2026-09-23T12:34:24.82Z",
+      "decided_at": "2026-09-23T12:34:24.82Z"
+    }
+  ],
+  "promotions": [
+    {
+      "id": "50d52427-214f-8c92-aa48-df838fd9a9a5",
+      "tenant_id": "5f970749-7507-894b-a2e4-872ce20a94b7",
+      "candidate_id": "868066b8-7bf7-8f05-a3d9-7b685240b132",
+      "decision": "ALLOW",
+      "rule_id": "operator-instruction",
+      "policy_version": "kj-memory-policy/1",
+      "reason": "an explicit instruction from the authenticated operator",
+      "promoted_by_kind": "POLICY_ENGINE",
+      "promoted_by_principal": "da5c6dfc-38c5-4773-bd47-5c80ed908d75",
+      "approval_id": null,
+      "evidence": [
+        {
+          "ref": "update:461282861",
+          "type": "TELEGRAM_UPDATE",
+          "digest": "c9d117157f4fe9773460c9106ac71e8e539607e661a9fa76db9128d092eb84ca"
+        }
+      ],
+      "result_memory_id": "e369f848-7be4-8d43-a998-228be7ea2884",
+      "result_version": 1,
+      "created_at": "2026-09-23T12:34:24.82Z"
+    }
+  ],
+  "versions": [
+    {
+      "memory_id": "e369f848-7be4-8d43-a998-228be7ea2884",
+      "version": 1,
+      "tenant_id": "5f970749-7507-894b-a2e4-872ce20a94b7",
+      "class": "PREFERENCE",
+      "kind": "ASSERT",
+      "content": "I prefer concise deployment summaries unless I explicitly ask for detail\nThen tell me the reply so I can verify the saved memory.",
+      "content_digest": "c9d117157f4fe9773460c9106ac71e8e539607e661a9fa76db9128d092eb84ca",
+      "subject_kind": "PRINCIPAL",
+      "subject_ref": "da5c6dfc-38c5-4773-bd47-5c80ed908d75",
+      "trust_class": "USER_AUTHORED",
+      "confidence": "STATED",
+      "provenance": {
+        "origin": "OPERATOR_INSTRUCTION",
+        "reason": "explicit /remember instruction from the operator",
+        "candidateId": "868066b8-7bf7-8f05-a3d9-7b685240b132",
+        "submittedBy": "da5c6dfc-38c5-4773-bd47-5c80ed908d75"
+      },
+      "evidence": [
+        {
+          "ref": "update:461282861",
+          "type": "TELEGRAM_UPDATE",
+          "digest": "c9d117157f4fe9773460c9106ac71e8e539607e661a9fa76db9128d092eb84ca"
+        }
+      ],
+      "policy": {
+        "ruleId": "operator-instruction",
+        "decision": "ALLOW",
+        "protected": false,
+        "approvalId": null,
+        "policyVersion": "kj-memory-policy/1"
+      },
+      "candidate_id": "868066b8-7bf7-8f05-a3d9-7b685240b132",
+      "promotion_id": "50d52427-214f-8c92-aa48-df838fd9a9a5",
+      "supersedes_version": null,
+      "created_at": "2026-09-23T12:34:24.82Z",
+      "promoted_at": "2026-09-23T12:34:24.82Z"
+    }
+  ],
+  "current": [
+    {
+      "memory_id": "e369f848-7be4-8d43-a998-228be7ea2884",
+      "version": 1
+    }
+  ]
+}

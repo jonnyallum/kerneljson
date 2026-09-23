@@ -1,0 +1,219 @@
+{
+  "verified": true,
+  "taskId": "386c31d6-451d-8961-a634-87ccbb8fbb54",
+  "status": "COMPLETED",
+  "findings": 3,
+  "inbox": [
+    {
+      "update_id": "461282864",
+      "command": "MISSION",
+      "state": "DONE",
+      "disposition": "ADMITTED",
+      "task_id": "386c31d6-451d-8961-a634-87ccbb8fbb54"
+    }
+  ],
+  "retrieval": [
+    {
+      "update_id": "461282863",
+      "command": "MEMORY",
+      "state": "DONE",
+      "disposition": "ANSWERED",
+      "reply_notification_id": "c69dbe089a36c622697d3853c42f0120"
+    },
+    {
+      "update_id": "461282862",
+      "command": "MEMORIES",
+      "state": "DONE",
+      "disposition": "ANSWERED",
+      "reply_notification_id": "6bceca2b58c0d1ca9c819634cb941f11"
+    }
+  ],
+  "binding": [
+    {
+      "release_epoch": "9",
+      "release_id": "a577e7439f830a1fbc795a0dddd331d7d7edca78"
+    }
+  ],
+  "memoryContext": {
+    "status": "ASSEMBLED",
+    "memories": [
+      {
+        "version": 2,
+        "memory_id": "e369f848-7be4-8d43-a998-228be7ea2884"
+      }
+    ],
+    "assembly_id": "7a7eeabf-ff52-8a2b-acbe-0fbecf9d4a9b",
+    "used_tokens": 29,
+    "context_digest": "d51a9bd93638ad900fcdf85081a65888cad702bb5dcbf210449ac98fd02760d2",
+    "external_count": 0
+  },
+  "assembly": {
+    "id": "7a7eeabf-ff52-8a2b-acbe-0fbecf9d4a9b",
+    "tenant_id": "5f970749-7507-894b-a2e4-872ce20a94b7",
+    "principal_id": "da5c6dfc-38c5-4773-bd47-5c80ed908d75",
+    "digest": "d51a9bd93638ad900fcdf85081a65888cad702bb5dcbf210449ac98fd02760d2",
+    "purpose_digest": "71ada0cb87aa34d623bc08ef690d48957cda5c37781695d0586c8f95deb87a03",
+    "request": {
+      "budget": {
+        "maxItems": 12,
+        "maxTokens": 1500
+      },
+      "project": "jonnyallum/kerneljson",
+      "purpose": "Summarise the architecture, the main components, the biggest risks and the most important gaps.",
+      "allowedClasses": [
+        "PREFERENCE",
+        "COMMITMENT",
+        "DECISION",
+        "FACT",
+        "LESSON",
+        "PROJECT_KNOWLEDGE"
+      ]
+    },
+    "items": [
+      {
+        "class": "PREFERENCE",
+        "reason": "PREFERENCE applies whatever the task; promoted 2026-09-23",
+        "tokens": 29,
+        "content": "I prefer concise deployment summaries unless I explicitly ask for detail",
+        "version": 2,
+        "memoryId": "e369f848-7be4-8d43-a998-228be7ea2884",
+        "provenance": {
+          "origin": "OPERATOR_INSTRUCTION",
+          "evidence": [
+            {
+              "ref": "e369f848-7be4-8d43-a998-228be7ea2884:v1",
+              "type": "MEMORY_VERSION",
+              "digest": "c9d117157f4fe9773460c9106ac71e8e539607e661a9fa76db9128d092eb84ca"
+            }
+          ]
+        },
+        "trustClass": "USER_AUTHORED",
+        "conflictsWith": [],
+        "contentDigest": "49d04fb659cc275f6c258b701ce38cff21310400f48dc599bec243a0a0443be3"
+      }
+    ],
+    "external": [],
+    "excluded": [],
+    "budget_max_tokens": 1500,
+    "budget_used_tokens": 29,
+    "task_id": "386c31d6-451d-8961-a634-87ccbb8fbb54",
+    "step_id": "4485450c-b293-8883-afcf-7a198e667b6c",
+    "call_id": "cec4fca9-e34d-46a1-b8bf-4e4a62e0d2b5",
+    "created_at": "2026-09-23T13:58:31.291Z"
+  },
+  "analyst": {
+    "evidenceId": "fbd0cf30-1dcd-4344-834b-340c164e04e1",
+    "provider": "deepseek",
+    "model": "deepseek-flash",
+    "providerReportedModel": "deepseek-flash",
+    "requestDigest": "c152b92a5544ccba39c2f036c9bc18a070115a906a4a3c3fdc40ae5df5f0f765",
+    "reconstructedRequestDigestMatches": true,
+    "containsCanonicalPreference": true
+  },
+  "reviewer": {
+    "evidenceId": "aacff1a8-d0f3-4e74-b19c-d8ed09e749c4",
+    "provider": "openrouter",
+    "model": "anthropic/claude-sonnet-5",
+    "providerReportedModel": "anthropic/claude-sonnet-5",
+    "requestDigest": "b4a9bd446a57b3f7330dcddbd243bf1e93660d5f21feedebed798356f315ba9f",
+    "reconstructedRequestDigestMatches": true,
+    "hasMemoryContext": false,
+    "containsMemoryBlockOrPreference": false
+  },
+  "reconciliation": {
+    "checks": [
+      {
+        "name": "analysis_schema_valid",
+        "passed": true
+      },
+      {
+        "name": "analysis_head_sha_matches_evidence",
+        "passed": true
+      },
+      {
+        "name": "analysis_finding_count_within_contract",
+        "passed": true
+      },
+      {
+        "name": "analysis_findings_cited",
+        "passed": true
+      },
+      {
+        "name": "analysis_paths_exist_in_evidence",
+        "passed": true
+      },
+      {
+        "name": "analysis_evidence_binds_to_commit",
+        "passed": true
+      },
+      {
+        "name": "review_schema_valid",
+        "passed": true
+      },
+      {
+        "name": "review_binds_to_analysis",
+        "passed": true
+      },
+      {
+        "name": "analyst_runtime_allowed",
+        "passed": true
+      },
+      {
+        "name": "reviewer_runtime_allowed",
+        "passed": true
+      },
+      {
+        "name": "reviewer_is_independent",
+        "passed": true
+      },
+      {
+        "name": "review_verdict_acceptable",
+        "passed": true
+      },
+      {
+        "name": "review_flags_no_unsupported_findings",
+        "passed": true
+      }
+    ],
+    "contract": {
+      "maxFindings": 3,
+      "minFindings": 3,
+      "outputSchema": "repo-analysis-findings/v2",
+      "requestedFindings": 3
+    },
+    "decision": "ACCEPTED",
+    "analystModel": "deepseek-flash",
+    "findingCount": 3,
+    "githubDigest": "2dec6c159e88eeb1ac18cc9efce7c1aec9f3ba79cd343339f86803b58047c949",
+    "independence": {
+      "crossFamily": true,
+      "analystFamily": "deepseek",
+      "crossProvider": true,
+      "reviewerFamily": "anthropic",
+      "analystProvider": "deepseek",
+      "reviewerProvider": "openrouter"
+    },
+    "reviewDigest": "f41e48d07401a9e2ee7abb97230f5aa83789d5235e76bf2d9afc46a238a870e2",
+    "reviewerModel": "anthropic/claude-sonnet-5",
+    "analysisDigest": "a9902cbf0138651598393293f1bbcd7ddbbc0d13adfeb848126c53a90aafb1d5",
+    "findingEvidenceDigests": [
+      "b2e2e27123d4b5fc00febdb2da967aeb8fc95f5d937d7909774a2aea417f2d4d",
+      "ce8bb7c1182f615bbc7a3e6fb154ac23995b2ffeb03c1bd78cae4d08b6c8acfd",
+      "cafb33932afaa986668a8bdc5b99fc0da10ce2144cdf87d0762f9e58655c6322"
+    ]
+  },
+  "notice": [
+    {
+      "notification_id": "6cf89160b023f268ea692f8b72de8395",
+      "check_id": "MISSION.repoAnalysis.386c31d6.completed",
+      "status": "DELIVERED",
+      "attempt_count": 1,
+      "delivered_at": "2026-09-23T13:59:59.759Z"
+    }
+  ],
+  "safety": {
+    "tasks": 0,
+    "approvals": 0,
+    "poison": 0
+  }
+}

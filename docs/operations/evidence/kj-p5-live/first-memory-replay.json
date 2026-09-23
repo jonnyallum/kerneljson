@@ -1,0 +1,35 @@
+{
+  "proof": "persisted update id and digest-verified exact command-body replay; no Telegram transport redelivery",
+  "updateId": 461282861,
+  "inboxReplayState": "DONE",
+  "result": {
+    "state": "PROMOTED",
+    "ruleId": "operator-instruction",
+    "memoryId": "e369f848-7be4-8d43-a998-228be7ea2884",
+    "version": 1,
+    "class": "PREFERENCE",
+    "replayed": true
+  },
+  "before": {
+    "counts": {
+      "memory_candidates": 1,
+      "memory_promotions": 1,
+      "memory_versions": 1
+    },
+    "digest": "f28badddd5fcb706fb46358b9ca28b5570e554508b2ced40885244234923cf35"
+  },
+  "after": {
+    "counts": {
+      "memory_candidates": 1,
+      "memory_promotions": 1,
+      "memory_versions": 1
+    },
+    "digest": "f28badddd5fcb706fb46358b9ca28b5570e554508b2ced40885244234923cf35"
+  },
+  "inboxUnchanged": true,
+  "safety": {
+    "tasks": 0,
+    "approvals": 0,
+    "poison": 0
+  }
+}
