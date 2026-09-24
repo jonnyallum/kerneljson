@@ -49,8 +49,13 @@ export const ALERT_POLICY: readonly AlertPolicyEntry[] = [
   simple(
     "authority.admittedFiresHaveCanonicalTasks",
     { CRITICAL: "P0" },
-    'An admitted schedule fire whose child task does not exist in the canonical tasks table means the scheduler minted without KernelJSON — a direct breach of "KernelJSON is the sole task authority". Authority corruption, P0.',
-    { alertMessage: () => "An admitted schedule fire has no corresponding canonical task — the scheduler may have minted outside KernelJSON's authority" },
+    'An admitted schedule fire whose child task has NO kernel_private.task_admissions row at all means the scheduler minted without KernelJSON ever recording an admission — a direct breach of "KernelJSON is the sole task authority". Authority corruption, P0. (A materialised admission whose public.tasks row is merely missing is a separate, lower-severity check — see authority.admittedFiresMaterialised.)',
+    { alertMessage: () => "An admitted schedule fire has no corresponding KernelJSON admission record — the scheduler may have minted outside KernelJSON's authority" },
+  ),
+  simple(
+    "authority.admittedFiresMaterialised",
+    { DEGRADED: "P2" },
+    "A real kernel_private.task_admissions row means KernelJSON's own admission authority already succeeded (see scheduler/persistence.ts's ADMITTED semantics); a missing public.tasks row after that is a downstream execution/materialisation failure — e.g. a worker correctly refusing to write because it does not hold the task's bound release (KJ-P6 incident, 2026-09-24). Real and worth attention, not authority corruption. P2.",
   ),
   simple(
     "authority.noReleaseMismatchIncidents",

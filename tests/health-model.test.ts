@@ -77,7 +77,8 @@ function healthySnapshot(): HealthSnapshot {
     authority: {
       dbReachable: true,
       bindingProvenance: healthyProvenance(),
-      admittedFireTaskIdsMissingFromTasks: [],
+      admittedFireTaskIdsMissingAdmission: [],
+      admittedFireTaskIdsUnmaterialised: [],
       boundReleaseRejectionSeen: false,
     },
     admission: { dbReachable: true, doorHealthy: true, humanOperatorPresent: true },
@@ -188,6 +189,54 @@ describe("release mismatch", () => {
     expect(report.domains.authority.status).toBe("CRITICAL");
     expect(report.domains.releaseParity.status).toBe("CRITICAL");
     expect(report.overall).toBe("CRITICAL");
+  });
+});
+
+describe("admitted-fire materialisation vs authority corruption (KJ-P6 incident, 2026-09-24)", () => {
+  // Reproduces the exact shape of the real incident: a schedule fire ADMITTED, a real
+  // kernel_private.task_admissions row (KernelJSON's own admission authority succeeded),
+  // but no public.tasks row because the worker holding a different release correctly
+  // refused to write it (services/kernel/src/ledger.ts's "Task requires its bound worker
+  // release" fail-closed guard). This must NEVER be classified the same as a fire with no
+  // admission record at all — see scheduler/persistence.ts's ADMITTED doc-comment.
+  const ORPHAN_TASK_ID = "71a00a16-24d9-8193-a64f-ec9c47c41ea0";
+
+  it("a materialisation failure (admission record exists, task never created) is DEGRADED, not the P0 authority check", () => {
+    const snapshot = healthySnapshot();
+    snapshot.authority.admittedFireTaskIdsUnmaterialised = [ORPHAN_TASK_ID];
+    const report = evaluateHealthSnapshot(snapshot, baseExpectations());
+    const authorityCheck = report.domains.authority.checks.find((c) => c.id === "authority.admittedFiresHaveCanonicalTasks")!;
+    const materialisedCheck = report.domains.authority.checks.find((c) => c.id === "authority.admittedFiresMaterialised")!;
+    expect(authorityCheck.status).toBe("HEALTHY");
+    expect(materialisedCheck.status).toBe("DEGRADED");
+    expect(materialisedCheck.observed).toEqual([ORPHAN_TASK_ID]);
+    expect(report.domains.authority.status).toBe("DEGRADED");
+    expect(report.overall).toBe("DEGRADED");
+  });
+
+  it("a genuinely missing admission record (no task_admissions row) is still CRITICAL — the real P0 path", () => {
+    const snapshot = healthySnapshot();
+    snapshot.authority.admittedFireTaskIdsMissingAdmission = [ORPHAN_TASK_ID];
+    const report = evaluateHealthSnapshot(snapshot, baseExpectations());
+    const authorityCheck = report.domains.authority.checks.find((c) => c.id === "authority.admittedFiresHaveCanonicalTasks")!;
+    const materialisedCheck = report.domains.authority.checks.find((c) => c.id === "authority.admittedFiresMaterialised")!;
+    expect(authorityCheck.status).toBe("CRITICAL");
+    expect(authorityCheck.observed).toEqual([ORPHAN_TASK_ID]);
+    expect(materialisedCheck.status).toBe("HEALTHY"); // a future legitimate authority breach cannot hide behind this check
+    expect(report.domains.authority.status).toBe("CRITICAL");
+    expect(report.overall).toBe("CRITICAL");
+  });
+
+  it("both conditions can be observed independently at the same time, on different fires", () => {
+    const snapshot = healthySnapshot();
+    snapshot.authority.admittedFireTaskIdsMissingAdmission = ["11111111-1111-1111-1111-111111111111"];
+    snapshot.authority.admittedFireTaskIdsUnmaterialised = [ORPHAN_TASK_ID];
+    const report = evaluateHealthSnapshot(snapshot, baseExpectations());
+    const authorityCheck = report.domains.authority.checks.find((c) => c.id === "authority.admittedFiresHaveCanonicalTasks")!;
+    const materialisedCheck = report.domains.authority.checks.find((c) => c.id === "authority.admittedFiresMaterialised")!;
+    expect(authorityCheck.status).toBe("CRITICAL");
+    expect(materialisedCheck.status).toBe("DEGRADED");
+    expect(report.overall).toBe("CRITICAL"); // the worse of the two still wins overall
   });
 });
 
