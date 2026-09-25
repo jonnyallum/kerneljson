@@ -175,6 +175,11 @@ describe("known permanent UNKNOWN like B1 observability does not page repeatedly
     expect(policy.notify).toBe(false);
     expect(policy.severityFor("UNKNOWN")).toBe("P3");
   });
+
+  it("KJ-P6: a materialisation failure alerts at P2, never the P0 reserved for real authority corruption", () => {
+    expect(resolvePolicy("authority.admittedFiresMaterialised").severityFor("DEGRADED")).toBe("P2");
+    expect(resolvePolicy("authority.admittedFiresHaveCanonicalTasks").severityFor("CRITICAL")).toBe("P0");
+  });
 });
 
 describe("reduceChecks batches multiple checks against a lookup of existing rows", () => {

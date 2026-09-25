@@ -85,7 +85,14 @@ export interface SchedulerSnapshot {
 export interface AuthoritySnapshot {
   dbReachable: boolean;
   bindingProvenance: BindingProvenance | null;
-  admittedFireTaskIdsMissingFromTasks: string[];
+  /** ADMITTED fires with NO kernel_private.task_admissions row at all — the scheduler
+   *  minted without KernelJSON ever recording an admission. Genuine authority corruption. */
+  admittedFireTaskIdsMissingAdmission: string[];
+  /** ADMITTED fires WITH a real task_admissions row (KernelJSON's admission succeeded,
+   *  per scheduler/persistence.ts's documented ADMITTED semantics) whose public.tasks
+   *  row never materialised — a downstream execution/materialisation failure, not an
+   *  authority breach. Distinct from admittedFireTaskIdsMissingAdmission on purpose. */
+  admittedFireTaskIdsUnmaterialised: string[];
   boundReleaseRejectionSeen: boolean;
 }
 

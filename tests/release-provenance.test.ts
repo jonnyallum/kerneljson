@@ -11,7 +11,8 @@ const healthy = (): BindingProvenance => ({ activeEpoch: "3", activeReleaseId: "
   currentBindingCount: 1, mismatchedBindingCount: 0, missingProvenanceCount: 0, legacyBindingCount: 2 });
 function checks(p: BindingProvenance | null, running = "new", rejected = false) {
   return [...evaluateAuthority({ dbReachable: true, bindingProvenance: p,
-    admittedFireTaskIdsMissingFromTasks: [], boundReleaseRejectionSeen: rejected }, at, exp.releaseId).checks,
+    admittedFireTaskIdsMissingAdmission: [], admittedFireTaskIdsUnmaterialised: [],
+    boundReleaseRejectionSeen: rejected }, at, exp.releaseId).checks,
   ...evaluateReleaseParity({ dbReachable: true, bindingProvenance: p,
     selfReportedReleaseId: running, boundReleaseRejectionSeen: rejected }, exp, at).checks];
 }

@@ -57,14 +57,35 @@ async function fetchFires(pool: pg.Pool, scheduleId: string): Promise<ScheduleFi
   }));
 }
 
-async function fetchAdmittedFiresMissingTasks(pool: pg.Pool, scheduleId: string): Promise<string[]> {
+/** Classifies EVERY admitted fire (not merely ones missing from public.tasks — a
+ *  fire whose task_id happens to exist in public.tasks despite having no
+ *  kernel_private.task_admissions row is exactly as much of a genuine authority
+ *  breach as one whose task_id is absent everywhere, and must not be filtered out
+ *  before classification) by whether KernelJSON's own admission record exists —
+ *  see AuthoritySnapshot's field comments for why this distinction is load-bearing
+ *  for the correct severity. */
+export async function fetchAdmittedFiresMissingTasks(
+  pool: pg.Pool,
+  scheduleId: string,
+): Promise<{ missingAdmission: string[]; unmaterialised: string[] }> {
   const res = await pool.query(
-    `select f.admitted_child_task_id as task_id
-     from schedule_fires f left join public.tasks t on t.id = f.admitted_child_task_id
-     where f.schedule_id=$1 and f.admitted_child_task_id is not null and t.id is null`,
+    `select f.admitted_child_task_id as task_id,
+            (a.task_id is not null) as has_admission,
+            (t.id is not null) as has_task
+     from schedule_fires f
+     left join public.tasks t on t.id = f.admitted_child_task_id
+     left join kernel_private.task_admissions a on a.task_id = f.admitted_child_task_id
+     where f.schedule_id=$1 and f.admitted_child_task_id is not null`,
     [scheduleId],
   );
-  return res.rows.map((r: Record<string, unknown>) => String(r["task_id"]));
+  const missingAdmission: string[] = [];
+  const unmaterialised: string[] = [];
+  for (const r of res.rows as Record<string, unknown>[]) {
+    const taskId = String(r["task_id"]);
+    if (!r["has_admission"]) missingAdmission.push(taskId);
+    else if (!r["has_task"]) unmaterialised.push(taskId);
+  }
+  return { missingAdmission, unmaterialised };
 }
 
 async function fetchBoundReleaseRejectionSeen(pool: pg.Pool): Promise<boolean> {
@@ -187,7 +208,7 @@ export async function collectHealthSnapshot(deps: CollectDeps): Promise<HealthSn
   const bindingProvenance = dbReachable ? await collectBindingProvenance(pool) : null;
   const admittedMissing = dbReachable
     ? await fetchAdmittedFiresMissingTasks(pool, expectations.scheduleId)
-    : [];
+    : { missingAdmission: [], unmaterialised: [] };
   const boundReleaseRejectionSeen = dbReachable ? await fetchBoundReleaseRejectionSeen(pool) : false;
   const humanOperatorPresent = dbReachable ? await fetchHumanOperatorPresent(pool) : false;
 
@@ -223,7 +244,8 @@ export async function collectHealthSnapshot(deps: CollectDeps): Promise<HealthSn
     authority: {
       dbReachable,
       bindingProvenance,
-      admittedFireTaskIdsMissingFromTasks: admittedMissing,
+      admittedFireTaskIdsMissingAdmission: admittedMissing.missingAdmission,
+      admittedFireTaskIdsUnmaterialised: admittedMissing.unmaterialised,
       boundReleaseRejectionSeen,
     },
     admission: {

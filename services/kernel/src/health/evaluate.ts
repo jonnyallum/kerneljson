@@ -302,7 +302,16 @@ export function evaluateAuthority(s: AuthoritySnapshot, checkedAt: string, expec
       check(id, "UNKNOWN", evidence, "database unreachable — see the database domain", checkedAt);
     checks.push(dbUnknown("authority.bindingReleaseConsistent", "kernel_private.execution_bindings"));
     checks.push(
-      dbUnknown("authority.admittedFiresHaveCanonicalTasks", "schedule_fires.admitted_child_task_id vs tasks.id"),
+      dbUnknown(
+        "authority.admittedFiresHaveCanonicalTasks",
+        "schedule_fires.admitted_child_task_id vs kernel_private.task_admissions",
+      ),
+    );
+    checks.push(
+      dbUnknown(
+        "authority.admittedFiresMaterialised",
+        "schedule_fires.admitted_child_task_id vs tasks.id (where task_admissions exists)",
+      ),
     );
     checks.push(
       dbUnknown(
@@ -320,13 +329,32 @@ export function evaluateAuthority(s: AuthoritySnapshot, checkedAt: string, expec
   checks.push(
     check(
       "authority.admittedFiresHaveCanonicalTasks",
-      s.admittedFireTaskIdsMissingFromTasks.length === 0 ? "HEALTHY" : "CRITICAL",
-      "schedule_fires.admitted_child_task_id vs tasks.id",
-      s.admittedFireTaskIdsMissingFromTasks.length === 0
-        ? "every admitted fire's child task exists in the canonical tasks table"
-        : `${s.admittedFireTaskIdsMissingFromTasks.length} admitted fire(s) reference a task id absent from tasks — the scheduler admitted without KernelJSON minting a canonical task`,
+      s.admittedFireTaskIdsMissingAdmission.length === 0 ? "HEALTHY" : "CRITICAL",
+      "schedule_fires.admitted_child_task_id vs kernel_private.task_admissions",
+      s.admittedFireTaskIdsMissingAdmission.length === 0
+        ? "every admitted fire has a real KernelJSON admission record"
+        : `${s.admittedFireTaskIdsMissingAdmission.length} admitted fire(s) reference a task id with NO kernel_private.task_admissions row — the scheduler minted without KernelJSON ever recording an admission`,
       checkedAt,
-      { observed: s.admittedFireTaskIdsMissingFromTasks },
+      { observed: s.admittedFireTaskIdsMissingAdmission },
+    ),
+  );
+
+  // Distinct from the check above on purpose (see scheduler/persistence.ts's ADMITTED
+  // doc-comment): a real task_admissions row means KernelJSON's own admission authority
+  // decision already happened and is intact. A missing public.tasks row after that is a
+  // downstream execution/materialisation failure (e.g. a worker refusing to write because
+  // it doesn't hold the task's bound release) — real and worth surfacing, but not the
+  // "scheduler minted outside KernelJSON" authority breach the check above guards against.
+  checks.push(
+    check(
+      "authority.admittedFiresMaterialised",
+      s.admittedFireTaskIdsUnmaterialised.length === 0 ? "HEALTHY" : "DEGRADED",
+      "schedule_fires.admitted_child_task_id vs tasks.id (where task_admissions exists)",
+      s.admittedFireTaskIdsUnmaterialised.length === 0
+        ? "every admitted fire with a KernelJSON admission record has a materialised canonical task"
+        : `${s.admittedFireTaskIdsUnmaterialised.length} admitted fire(s) have a real admission record but never materialised a canonical task — an execution/materialisation failure downstream of a successful admission, not an authority breach`,
+      checkedAt,
+      { observed: s.admittedFireTaskIdsUnmaterialised },
     ),
   );
 
