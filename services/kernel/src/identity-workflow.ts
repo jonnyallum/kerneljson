@@ -264,9 +264,15 @@ export function createIdentityChangeWorkflow(
             eventId = ctx.rand.uuidv4();
           const resolution = await ctx.run("resolve-deadline", () => approvals.expire(approvalId, evidenceId, eventId));
           if (resolution.status !== "GRANTED") {
+            // ctx.date.now() (itself a journaled Restate operation) must never be called from inside
+            // a ctx.run() callback: on replay the callback body does not re-execute (the journaled
+            // result is returned directly), so an inner context call made only on the first attempt
+            // desyncs the replay and the SDK refuses with "await could not be replayed" - caught live
+            // against a real Restate server 2026-09-25. Resolve it here, outside ctx.run, instead.
+            const rejectedAt = new Date(await ctx.date.now()).toISOString();
             await ctx.run("reject-candidate", async () => {
               try {
-                await identityStore.resolveCandidate(candidate.id, "REJECTED", new Date(await ctx.date.now()).toISOString());
+                await identityStore.resolveCandidate(candidate.id, "REJECTED", rejectedAt);
               } catch (error) {
                 // Replay safety: a prior attempt's DB write may have committed even though Restate's
                 // own journal entry for this step did not, in which case a replay hits "already
@@ -279,9 +285,10 @@ export function createIdentityChangeWorkflow(
             await emit("approval-rejected", resolution.reason === "CANCELLED" ? "TASK_CANCELLED" : "TASK_FAILED", resolution.reason === "CANCELLED" ? "CANCELLED" : "FAILED");
             return { authorization: resolution.status };
           }
+          const approvedAt = new Date(await ctx.date.now()).toISOString();
           await ctx.run("approve-candidate", async () => {
             try {
-              await identityStore.resolveCandidate(candidate.id, "APPROVED", new Date(await ctx.date.now()).toISOString());
+              await identityStore.resolveCandidate(candidate.id, "APPROVED", approvedAt);
             } catch (error) {
               const current = await identityStore.readCandidate(candidate.id);
               if (current?.state !== "APPROVED") throw error;
@@ -299,21 +306,31 @@ export function createIdentityChangeWorkflow(
         await emit("verify", "TASK_VERIFYING", "VERIFYING");
 
         const completedAt = new Date(await ctx.date.now()).toISOString();
+        const proofMetadata = { candidateId: candidate.id, governanceClass, proposedDigest };
+        // ctx.rand.uuidv4()/ctx.date.now() must be resolved OUTSIDE any ctx.run() callback (see the
+        // comment above reject-candidate/approve-candidate) - hoisted here, before entering ctx.run.
+        const completionEvidenceId = ctx.rand.uuidv4(),
+          completionEventId = ctx.rand.uuidv4();
         await ctx.run("complete-task", () =>
-          completeIdentityTask(ledger.pool, task.id, `Identity ${governanceClass} change applied for ${identityId}`, {
-            eventId: ctx.rand.uuidv4(),
-            at: completedAt,
-          }),
+          completeIdentityTask(
+            ledger.pool,
+            task.id,
+            `Identity ${governanceClass} change applied for ${identityId}`,
+            { evidenceId: completionEvidenceId, digest: capabilityDigest(proofMetadata), metadata: proofMetadata },
+            { eventId: completionEventId, at: completedAt },
+          ),
         );
 
         // D8: only now, with the task durably COMPLETED, may the version/activation exist.
+        const versionId = ctx.rand.uuidv4(),
+          activationId = ctx.rand.uuidv4();
         return ctx.run("activate-identity", async () => {
           const head = await identityStore.readHead(identityId);
           const version = head ? head.version + 1 : 1;
           const fullDocument = IdentityDocument.parse({ ...draftDocument, version });
           try {
             const { activation } = await identityStore.activate({
-              versionId: ctx.rand.uuidv4(),
+              versionId,
               identityId,
               tenantId: task.tenant.id,
               version,
@@ -322,7 +339,7 @@ export function createIdentityChangeWorkflow(
               classADigest: classADigest(fullDocument.sections.classA),
               candidateId: candidate.id,
               createdByTask: task.id,
-              activationId: ctx.rand.uuidv4(),
+              activationId,
               approvalId: needsApproval ? approvalId : null,
               requestTaskId: task.id,
             });

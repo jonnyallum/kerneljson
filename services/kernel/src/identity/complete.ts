@@ -1,6 +1,6 @@
 import type pg from "pg";
 import { z } from "zod";
-import { Id, Outcome, Task, Timestamp } from "../../../../packages/contracts/src/index.js";
+import { Id, Json, Outcome, Task, Timestamp } from "../../../../packages/contracts/src/index.js";
 import { capabilityDigest } from "../../../../packages/capabilities/src/index.js";
 import { assertResolvedEffects } from "../terminal.js";
 
@@ -16,19 +16,30 @@ import { assertResolvedEffects } from "../terminal.js";
  * existing outcome, assertResolvedEffects, one TASK_COMPLETED event, one outcomes row, one tasks
  * status update) with acceptance proven by IDENTITY_CHANGE_CRITERION instead.
  *
+ * The `proof` evidence row is NOT optional decoration: both Outcome's own zod superRefine and the
+ * base schema's check_task_completion() trigger (20260905153704_intelligence_metadata.sql) refuse a
+ * COMPLETED outcome with an empty evidenceRefs array, or an evidenceRef that doesn't correspond to a
+ * real `evidence` row bound to this exact task - caught live against real Postgres 2026-09-25, this
+ * function originally shipped with `evidenceRefs: []` and would have failed closed on every call. The
+ * candidate's own DB-derived governance_class (read back from identity_candidates, never re-asserted)
+ * is exactly the deterministic fact this task's work actually produced, so it is the evidence.
+ *
  * ADR-0021 D8: this MUST run, and the task MUST reach COMPLETED, strictly before
  * IdentityStore.activate() is called - identity_version_guard() refuses a version whose
  * created_by_task is not already COMPLETED. The workflow calls this first, then activates.
  */
 const Audit = z.strictObject({ eventId: Id, at: Timestamp });
+const Proof = z.strictObject({ evidenceId: Id, digest: z.string().regex(/^[a-f0-9]{64}$/), metadata: z.record(z.string(), Json) });
 
 export async function completeIdentityTask(
   pool: pg.Pool,
   taskId: string,
   summary: string,
+  rawProof: z.infer<typeof Proof>,
   rawAudit: z.infer<typeof Audit>,
 ): Promise<Outcome> {
   Id.parse(taskId);
+  const proof = Proof.parse(rawProof);
   const audit = Audit.parse(rawAudit);
   const db = await pool.connect();
   try {
@@ -44,11 +55,15 @@ export async function completeIdentityTask(
     const task = Task.parse(tasks.rows[0]?.contract);
     await assertResolvedEffects(db, taskId);
     if (task.status !== "VERIFYING") throw new Error("Identity-change task must be VERIFYING before completion");
+    await db.query(
+      "insert into evidence(id,task_id,type,source,digest,captured_at,metadata) values($1,$2,'DETERMINISTIC_RESULT','kerneljson:identity-candidate/v1',$3,$4,$5)",
+      [proof.evidenceId, taskId, proof.digest, audit.at, JSON.stringify(proof.metadata)],
+    );
     const outcome = Outcome.parse({
       taskId,
       status: "COMPLETED",
-      acceptanceResults: task.acceptanceCriteria.map((criterion) => ({ criterion, passed: true, evidenceRefs: [] })),
-      evidenceRefs: [],
+      acceptanceResults: task.acceptanceCriteria.map((criterion) => ({ criterion, passed: true, evidenceRefs: [proof.evidenceId] })),
+      evidenceRefs: [proof.evidenceId],
       summary,
       completedAt: audit.at,
     });

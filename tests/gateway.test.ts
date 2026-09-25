@@ -52,7 +52,8 @@ it('enforces authentication, role, admission, content size and idempotency heade
  expect((await post('/v1/tasks',input,'unknown')).status).toBe(401);
  expect((await post('/v1/tasks',input,'reader')).status).toBe(403);
  admit=false;expect((await post('/v1/tasks',input)).status).toBe(429);admit=true;
- expect((await post('/v1/tasks',{...input,objective:'x'.repeat(18000)})).status).toBe(413);
+ // KJ-P7A raised MAX_BODY_BYTES 16384->65536 for identity-change/v1's larger worst-case document.
+ expect((await post('/v1/tasks',{...input,objective:'x'.repeat(70000)})).status).toBe(413);
  expect((await fetch(url+'/v1/tasks',{method:'POST',headers:headers(),body:JSON.stringify(input)})).status).toBe(400);
  expect(dispatches).toBe(before);
 });
