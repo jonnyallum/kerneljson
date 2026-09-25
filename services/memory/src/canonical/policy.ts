@@ -79,7 +79,22 @@ export function decidePromotion(input: PolicyInput): PolicyDecisionResult {
   }
 
   // OPERATOR_INSTRUCTION: an explicit instruction from an authenticated human channel.
+  //
+  // KJ-P7A fence (ADR-0021, "P5 protected-promotion fence"): RELATIONSHIP was previously routed to
+  // REQUIRE_APPROVAL, which PgPromotionApprovals (approval-binding.ts) serves through a task that is
+  // never admitted past COMPILED and an approval nothing schedules a settlement for - a known latent
+  // bug where the candidate is stuck pending forever (see approval-binding.ts's own module comment
+  // and ADR-0020). Now that Primary Identity exists as the correct, governed, admitted channel for
+  // identity-adjacent change, this carrier is refused outright rather than silently handed to that
+  // broken no-admission flow. This is a policy-decision change only, not a P5 architecture rewrite;
+  // the broken flow itself is unchanged and tracked as its own follow-up (see ADR-0021 D-follow-up).
   if (isProtected)
-    return { decision: "REQUIRE_APPROVAL", ruleId: "relationship-approval", reason: "relationship memory is identity-adjacent and needs approval", protected: true };
+    return {
+      decision: "REFUSE",
+      ruleId: "relationship-promotion-disabled",
+      reason:
+        "RELATIONSHIP-class memory promotion is disabled: it would use a known-broken no-admission approval flow (ADR-0021 P5 fence). Submit identity-adjacent changes through identity-change/v1 instead.",
+      protected: true,
+    };
   return { decision: "ALLOW", ruleId: "operator-instruction", reason: "an explicit instruction from the authenticated operator", protected: false };
 }

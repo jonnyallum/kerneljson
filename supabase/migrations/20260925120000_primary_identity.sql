@@ -78,7 +78,7 @@ create table public.identity_candidates (
   proposed_digest text not null check (proposed_digest ~ '^[a-f0-9]{64}$'),
   origin text not null check (origin in ('OPERATOR_INSTRUCTION','MODEL_PROPOSAL','SHARED_BRAIN')),
   governance_class text not null check (governance_class in ('BOOTSTRAP','A','C','D','ROLLBACK')),
-  proposed_by_task uuid,
+  proposed_by_task uuid references public.tasks(id),
   state text not null default 'HELD' check (state in ('HELD','APPROVED','REJECTED','APPLIED')),
   created_at timestamptz not null default now(),
   resolved_at timestamptz,
@@ -105,7 +105,10 @@ begin
     return new;
   end if;
   if new.governance_class = 'ROLLBACK' then
-    if not exists (select 1 from public.identity_versions where identity_id = new.identity_id and document = new.document) then
+    -- A candidate document never embeds 'version' (see identity_version_guard's own comment); a
+    -- persisted identity_versions.document always does. Strip it before comparing, or this can never
+    -- match anything.
+    if not exists (select 1 from public.identity_versions where identity_id = new.identity_id and (document - 'version') = new.document) then
       raise exception 'a ROLLBACK candidate must reproduce an existing version''s document exactly' using errcode='23514';
     end if;
     return new;
@@ -223,8 +226,15 @@ begin
   if new.governance_class in ('A','ROLLBACK') and new.approval_id is null then
     raise exception 'Class A and ROLLBACK activations require a granted approval' using errcode='23514';
   end if;
-  if candidate.state is distinct from 'APPROVED' and not (candidate.state = 'HELD' and new.governance_class in ('C','D','BOOTSTRAP')) then
-    raise exception 'activation requires an APPROVED candidate, or a HELD Class C/D/BOOTSTRAP candidate within cap' using errcode='23514';
+  -- The HELD-without-approval exception is for Class C/D/BOOTSTRAP AND only ever for an
+  -- OPERATOR_INSTRUCTION candidate: without the origin check, a MODEL_PROPOSAL or SHARED_BRAIN
+  -- candidate classified BOOTSTRAP (identity_candidate_classify only checks governance_class, not
+  -- origin, for the no-existing-head case) could otherwise self-activate with no human ever
+  -- involved. A non-OPERATOR_INSTRUCTION candidate can never reach state='APPROVED' (see
+  -- identity_candidates' own check), so this closes the only other route to activation.
+  if candidate.state is distinct from 'APPROVED'
+     and not (candidate.state = 'HELD' and candidate.origin = 'OPERATOR_INSTRUCTION' and new.governance_class in ('C','D','BOOTSTRAP')) then
+    raise exception 'activation requires an APPROVED candidate, or a HELD OPERATOR_INSTRUCTION Class C/D/BOOTSTRAP candidate within cap' using errcode='23514';
   end if;
   if new.approval_id is not null then
     select task_id into approval_task from public.approvals where id = new.approval_id;

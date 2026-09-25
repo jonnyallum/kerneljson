@@ -232,6 +232,7 @@ describe("reduceChecks / runAlertEngine end-to-end", () => {
         releaseParity: empty,
         productionConfig: empty,
         legacyAuthority: empty,
+        identity: empty,
       },
       criticalIssues: 0,
       degradedIssues: 0,

@@ -2,9 +2,11 @@ import { collectBindingProvenance } from "./release-provenance.js";
 import type pg from "pg";
 import { createRestateAdminClient, type RestateAdminClient } from "./restate-client.js";
 import type { HealthConnectionConfig } from "./config.js";
+import { IDENTITY_CHANGE_CRITERION } from "../../../../packages/contracts/src/index.js";
 import type {
   HealthExpectations,
   HealthSnapshot,
+  IdentityOrphanRow,
   RestateInvocationRow,
   ScheduleFireRow,
   ScheduleStateRow,
@@ -109,6 +111,25 @@ async function fetchHumanOperatorPresent(pool: pg.Pool): Promise<boolean> {
   return (res.rowCount ?? 0) > 0;
 }
 
+/** KJ-P7A - ADR-0021 D8's orphan detector. See IdentityOrphanRow's doc comment: evaluate.ts applies
+ *  the grace period, this function only reports raw age so a genuinely-just-completed task (still
+ *  mid-flight between IdentityChangeWorkflowV1's "complete-task" and "activate-identity" steps) is
+ *  never conflated with a real, stuck materialisation failure at the collection layer. */
+async function fetchIdentityOrphans(pool: pg.Pool, now: Date): Promise<IdentityOrphanRow[]> {
+  const res = await pool.query(
+    `select t.id as task_id, t.updated_at
+     from public.tasks t
+     where t.status = 'COMPLETED'
+       and t.contract->'acceptanceCriteria'->>0 = $1
+       and not exists (select 1 from public.identity_activations a where a.request_task_id = t.id)`,
+    [IDENTITY_CHANGE_CRITERION],
+  );
+  return res.rows.map((r: Record<string, unknown>) => ({
+    taskId: String(r["task_id"]),
+    ageMs: now.getTime() - new Date(iso(r["updated_at"])).getTime(),
+  }));
+}
+
 async function fetchEvidenceForTask(
   pool: pg.Pool,
   taskId: string,
@@ -211,6 +232,7 @@ export async function collectHealthSnapshot(deps: CollectDeps): Promise<HealthSn
     : { missingAdmission: [], unmaterialised: [] };
   const boundReleaseRejectionSeen = dbReachable ? await fetchBoundReleaseRejectionSeen(pool) : false;
   const humanOperatorPresent = dbReachable ? await fetchHumanOperatorPresent(pool) : false;
+  const identityOrphans = dbReachable ? await fetchIdentityOrphans(pool, deps.now?.() ?? new Date()) : [];
 
   const mostRecentAdmittedFire =
     [...fires].filter((f) => f.admittedChildTaskId).sort((a, b) => Date.parse(b.fireAtUtc) - Date.parse(a.fireAtUtc))[0] ??
@@ -293,6 +315,10 @@ export async function collectHealthSnapshot(deps: CollectDeps): Promise<HealthSn
       b1FreezeObservable: unavailable(
         "Shared Brain cross-system check not wired into this module (KJ-P1.1 scope decision)",
       ),
+    },
+    identity: {
+      dbReachable,
+      completedTasksMissingActivation: identityOrphans,
     },
   };
 }

@@ -258,20 +258,25 @@ describe("KJ-P4B worker registration", () => {
     process.env = { ...saved };
   });
 
-  it("registers GoldenTaskWorkflowV1 only when the boundary is enabled, and every other service is unchanged", async () => {
+  it("registers GoldenTaskWorkflowV1 and IdentityChangeWorkflowV1 only when the boundary is enabled, and every other service is unchanged", async () => {
     const off = names((await import("../services/kernel/src/index.js")).services);
     expect(off).not.toContain("GoldenTaskWorkflowV1");
+    expect(off).not.toContain("IdentityChangeWorkflowV1");
     vi.resetModules();
     Object.assign(process.env, ENV);
     const on = names((await import("../services/kernel/src/index.js")).services);
-    expect(on).toEqual([...off, "GoldenTaskWorkflowV1"]);
+    // KJ-P7A: IdentityChangeWorkflowV1 shares this exact boundary (ADR-0021 D5 - no second
+    // approval system, no new env surface), so it registers alongside the golden workflow.
+    expect(on).toEqual([...off, "GoldenTaskWorkflowV1", "IdentityChangeWorkflowV1"]);
   });
 
-  it("serves no approval workflow for an empty or false switch", async () => {
+  it("serves no approval workflow, and no identity-change workflow, for an empty or false switch", async () => {
     for (const flag of ["", "false"]) {
       vi.resetModules();
       Object.assign(process.env, ENV, { KJ_APPROVAL_ENABLED: flag });
-      expect(names((await import("../services/kernel/src/index.js")).services), JSON.stringify(flag)).not.toContain("GoldenTaskWorkflowV1");
+      const registered = names((await import("../services/kernel/src/index.js")).services);
+      expect(registered, JSON.stringify(flag)).not.toContain("GoldenTaskWorkflowV1");
+      expect(registered, JSON.stringify(flag)).not.toContain("IdentityChangeWorkflowV1");
     }
   });
 

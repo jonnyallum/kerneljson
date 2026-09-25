@@ -8,12 +8,18 @@ import type {
   EvidenceSnapshot,
   ExecutionSnapshot,
   HealthExpectations,
+  IdentitySnapshot,
   LegacyAuthoritySnapshot,
   ProductionConfigSnapshot,
   ReleaseParitySnapshot,
   RestateSnapshot,
   SchedulerSnapshot,
 } from "./snapshot.js";
+
+/** KJ-P7A: how long a completed identity-change task may sit without a matching
+ *  identity_activations row before this is a materialisation failure rather than the ordinary,
+ *  brief gap between IdentityChangeWorkflowV1's "complete-task" and "activate-identity" steps. */
+const DEFAULT_IDENTITY_ACTIVATION_GRACE_MS = 5 * 60_000; // 5min
 
 const DEFAULT_FIRE_STALENESS_GRACE_MS = 25 * 3_600_000; // 25h — covers a dailyAt cadence + jitter
 const DEFAULT_PLANNED_FIRE_GRACE_MS = 10 * 60_000; // 10min
@@ -886,6 +892,33 @@ export function evaluateProductionConfig(
     ),
   );
 
+  return aggregateDomain(checks);
+}
+
+// ---------------------------------------------------------------------------
+// identity — KJ-P7A / ADR-0021 D8's orphan detector
+// ---------------------------------------------------------------------------
+
+export function evaluateIdentity(s: IdentitySnapshot, exp: HealthExpectations, checkedAt: string): DomainResult {
+  const checks: CheckResult[] = [];
+  const grace = exp.stuckWakeGraceMs ?? DEFAULT_IDENTITY_ACTIVATION_GRACE_MS;
+  if (!s.dbReachable) {
+    checks.push(check("identity.completedTasksHaveActivation", "UNKNOWN", "public.tasks vs public.identity_activations", "database unreachable — see the database domain", checkedAt));
+    return aggregateDomain(checks);
+  }
+  const stuck = s.completedTasksMissingActivation.filter((r) => r.ageMs >= grace);
+  checks.push(
+    check(
+      "identity.completedTasksHaveActivation",
+      stuck.length === 0 ? "HEALTHY" : "CRITICAL",
+      "public.tasks (COMPLETED, identity-change/v1) vs public.identity_activations.request_task_id",
+      stuck.length === 0
+        ? "every completed identity-change task past the grace period has a matching activation"
+        : `${stuck.length} completed identity-change task(s) have no matching identity_activations row — ADR-0021 D8 orphan: the task claims success but the identity change never took effect`,
+      checkedAt,
+      { observed: stuck.map((r) => r.taskId), expected: [] },
+    ),
+  );
   return aggregateDomain(checks);
 }
 

@@ -4,6 +4,7 @@ import {
   evaluateDatabase,
   evaluateEvidence,
   evaluateExecution,
+  evaluateIdentity,
   evaluateLegacyAuthority,
   evaluateProductionConfig,
   evaluateReleaseParity,
@@ -34,6 +35,7 @@ export function evaluateHealthSnapshot(
     releaseParity: evaluateReleaseParity(snapshot.releaseParity, expectations, checkedAt),
     productionConfig: evaluateProductionConfig(snapshot.productionConfig, expectations, checkedAt),
     legacyAuthority: evaluateLegacyAuthority(snapshot.legacyAuthority, checkedAt),
+    identity: evaluateIdentity(snapshot.identity, expectations, checkedAt),
   } as const;
 
   const sortedFires = [...snapshot.scheduler.fires].sort(

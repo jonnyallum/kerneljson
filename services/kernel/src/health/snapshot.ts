@@ -144,6 +144,21 @@ export interface LegacyAuthoritySnapshot {
   b1FreezeObservable: boolean | Unavailable;
 }
 
+/** KJ-P7A - ADR-0021 D8's orphan detector. A completed identity-change task with no matching
+ *  identity_activations row is a materialisation failure: the task claims success but the identity
+ *  change it promised never took effect. `ageMs` lets evaluate.ts apply a grace period, since a very
+ *  recent completion may simply be mid-flight between IdentityChangeWorkflowV1's own "complete-task"
+ *  and "activate-identity" steps (see identity/complete.ts's doc comment). */
+export interface IdentityOrphanRow {
+  taskId: string;
+  ageMs: number;
+}
+
+export interface IdentitySnapshot {
+  dbReachable: boolean;
+  completedTasksMissingActivation: IdentityOrphanRow[];
+}
+
 export interface HealthSnapshot {
   checkedAt: string;
   scheduler: SchedulerSnapshot;
@@ -156,4 +171,5 @@ export interface HealthSnapshot {
   releaseParity: ReleaseParitySnapshot;
   productionConfig: ProductionConfigSnapshot;
   legacyAuthority: LegacyAuthoritySnapshot;
+  identity: IdentitySnapshot;
 }

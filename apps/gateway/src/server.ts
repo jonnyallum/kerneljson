@@ -2,7 +2,7 @@ import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "node:
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { z } from "zod";
-import { ApprovalAnswer, Id, KernelSubmission, MISSION_RECIPE, Task, TenantContext, type ExecutionBinding } from "../../../packages/contracts/src/index.js";
+import { ApprovalAnswer, Id, IDENTITY_CHANGE_RECIPE, KernelSubmission, MISSION_RECIPE, Task, TenantContext, type ExecutionBinding } from "../../../packages/contracts/src/index.js";
 import { withTenant } from "../../../packages/identity/src/index.js";
 import { compileIntent, stableId } from "../../../services/kernel/src/compiler/index.js";
 import { bindingFor,persistBinding,readBinding,workflowTargets } from "../../../services/kernel/src/execution-binding.js";
@@ -16,11 +16,17 @@ import { Signal } from "../../../services/kernel/src/deterministic.js";
 // S1 canary (Gate 1.5): `claude_md_check/v1` is admitted through the normal task
 // path. The accept-list is an explicit enum — no wildcard — so only these exact
 // recipe ids are admissible; any other/ malformed id is rejected by the parse.
-export const PublicSubmission=z.strictObject({recipe:z.enum(['uppercase/v1','uppercase-reverse/v1','claude_md_check/v1',MISSION_RECIPE]),objective:z.string().trim().min(1).max(8000)});
+// KJ-P7A: identity-change/v1's JSON-encoded document (packages/contracts/src/primary-identity.ts)
+// can run to tens of thousands of characters at its schema's own worst case, well past the other
+// recipes' short objectives — hence MAX_BODY_BYTES below and this field's matching max, not 8000.
+export const MAX_BODY_BYTES=65536;
+export const PublicSubmission=z.strictObject({recipe:z.enum(['uppercase/v1','uppercase-reverse/v1','claude_md_check/v1',MISSION_RECIPE,IDENTITY_CHANGE_RECIPE]),objective:z.string().trim().min(1).max(MAX_BODY_BYTES)});
 export type PublicSubmission=z.infer<typeof PublicSubmission>;
-// Recipe -> durable workflow target. Only the golden uppercase recipe routes to the
-// golden workflow; everything else (incl. the read-only canary) uses the kernel workflow.
-export function recipeTarget(recipe:PublicSubmission['recipe']){return recipe==='uppercase/v1'?workflowTargets.GoldenTaskWorkflowV1:workflowTargets.KernelWorkflowV1;}
+// Recipe -> durable workflow target. Only the golden uppercase recipe routes to the golden
+// workflow, identity-change/v1 routes to its own dedicated workflow (never through the generic
+// kernel executor - identity governance is not a capability, see ADR-0021 D1); everything else
+// (incl. the read-only canary) uses the kernel workflow.
+export function recipeTarget(recipe:PublicSubmission['recipe']){return recipe==='uppercase/v1'?workflowTargets.GoldenTaskWorkflowV1:recipe===IDENTITY_CHANGE_RECIPE?workflowTargets.IdentityChangeWorkflowV1:workflowTargets.KernelWorkflowV1;}
 const Key=z.string().regex(/^[A-Za-z0-9._:-]{8,128}$/);
 // KJ-P4A: a channel adapter may attribute its admissions to itself, but ONLY to a label on this
 // allow-list, so `source` on the IntentEnvelope stays a fixed vocabulary and never caller text.
@@ -67,9 +73,9 @@ export interface GatewayOptions {
 }
 async function body(req:IncomingMessage){
  if(req.headers['content-type']?.split(';')[0]!=='application/json')throw new GatewayError(415,'JSON_REQUIRED');
- if(Number(req.headers['content-length']??0)>16384){req.resume();throw new GatewayError(413,'PAYLOAD_TOO_LARGE');}
+ if(Number(req.headers['content-length']??0)>MAX_BODY_BYTES){req.resume();throw new GatewayError(413,'PAYLOAD_TOO_LARGE');}
  const chunks:Buffer[]=[];let size=0;
- for await(const part of req){const b=Buffer.isBuffer(part)?part:Buffer.from(String(part));size+=b.length;if(size>16384)throw new GatewayError(413,'PAYLOAD_TOO_LARGE');chunks.push(b);}
+ for await(const part of req){const b=Buffer.isBuffer(part)?part:Buffer.from(String(part));size+=b.length;if(size>MAX_BODY_BYTES)throw new GatewayError(413,'PAYLOAD_TOO_LARGE');chunks.push(b);}
  try{return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;}catch{throw new GatewayError(400,'INVALID_JSON');}
 }
 export function createGateway(options:GatewayOptions){

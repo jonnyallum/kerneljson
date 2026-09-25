@@ -1,4 +1,4 @@
-import { UPPERCASE } from "../../../packages/capabilities/src/index.js";
+import { IDENTITY_APPLY_A, IDENTITY_APPLY_ROLLBACK, UPPERCASE } from "../../../packages/capabilities/src/index.js";
 import {
   DEFAULT_FRESHNESS_SECONDS,
   MIN_SIGNING_KEY_LENGTH,
@@ -8,6 +8,7 @@ import {
   type ReplayStore,
 } from "./control-signing.js";
 import { createGoldenWorkflow, type Authenticator } from "./golden-workflow.js";
+import { createIdentityChangeWorkflow } from "./identity-workflow.js";
 import type { Ledger } from "./ledger.js";
 import { PolicyRules } from "./policy.js";
 
@@ -152,4 +153,33 @@ export function productionApprovalWorkflow(ledger: Ledger, env: NodeJS.ProcessEn
   const config = loadApprovalBoundaryConfig(env);
   if (!config) return undefined;
   return createGoldenWorkflow(ledger, approvalPolicyRules(config), createControlAuthenticator(config, new PgControlReplayStore(ledger.pool)));
+}
+
+/** KJ-P7A - the two identity-approval rules (Class A, ROLLBACK), same shape as approvalPolicyRules
+ *  above, same door principal as the sole named approver. Reuses the exact same
+ *  ApprovalBoundaryConfig/KJ_APPROVAL_ENABLED surface as the golden workflow (ADR-0021 D5: no second
+ *  approval system, no new env surface for identity specifically). */
+export function identityApprovalPolicyRules(config: ApprovalBoundaryConfig): PolicyRules {
+  const rule = (capability: { id: string; version: string }) => ({
+    tenantId: config.tenantId,
+    principalId: config.principalId,
+    capability,
+    effect: "APPROVAL_REQUIRED" as const,
+    approver: { id: config.principalId, kind: "HUMAN" as const },
+    ttlMs: config.ttlMs,
+  });
+  return PolicyRules.parse({
+    version: APPROVAL_POLICY_VERSION,
+    rules: [rule(IDENTITY_APPLY_A), rule(IDENTITY_APPLY_ROLLBACK)],
+  });
+}
+
+/** IdentityChangeWorkflowV1, wired to the same production boundary as the golden workflow. Undefined
+ *  unless KJ_APPROVAL_ENABLED=true - identity change needs a real, named HUMAN approver exactly as
+ *  much as the golden workflow's approval-gated capability does, and there is no separate identity
+ *  approval env surface to configure. */
+export function productionIdentityWorkflow(ledger: Ledger, env: NodeJS.ProcessEnv) {
+  const config = loadApprovalBoundaryConfig(env);
+  if (!config) return undefined;
+  return createIdentityChangeWorkflow(ledger, identityApprovalPolicyRules(config), createControlAuthenticator(config, new PgControlReplayStore(ledger.pool)));
 }

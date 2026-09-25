@@ -15,6 +15,10 @@ describe("gateway admission accept-list — claude_md_check/v1 (Gate 1.5)", () =
     expect(ok("uppercase-reverse/v1")).toBe(true);
   });
 
+  it("admits identity-change/v1 (KJ-P7A)", () => {
+    expect(ok("identity-change/v1")).toBe(true);
+  });
+
   it("rejects unrelated, malformed and version-mismatched recipe ids (no wildcard)", () => {
     for (const bad of [
       "claude_md_check", // no version
@@ -39,5 +43,9 @@ describe("gateway admission accept-list — claude_md_check/v1 (Gate 1.5)", () =
     expect(recipeTarget("claude_md_check/v1")).toEqual(workflowTargets.KernelWorkflowV1);
     expect(recipeTarget("uppercase/v1")).toEqual(workflowTargets.GoldenTaskWorkflowV1);
     expect(recipeTarget("uppercase-reverse/v1")).toEqual(workflowTargets.KernelWorkflowV1);
+  });
+
+  it("routes identity-change/v1 to its own dedicated workflow, never through the generic kernel executor (KJ-P7A, ADR-0021 D1)", () => {
+    expect(recipeTarget("identity-change/v1")).toEqual(workflowTargets.IdentityChangeWorkflowV1);
   });
 });

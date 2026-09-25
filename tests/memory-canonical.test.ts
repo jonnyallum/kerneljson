@@ -45,14 +45,21 @@ describe("KJ-P5 the promotion policy is a fixed table of origin, class and inten
         }
   });
 
-  it("lets an explicit operator instruction through, except identity-adjacent RELATIONSHIP which needs approval", () => {
+  it("lets an explicit operator instruction through, except identity-adjacent RELATIONSHIP which is refused (KJ-P7A P5 fence)", () => {
     for (const cls of MEMORY_CLASSES) {
       const r = decide("OPERATOR_INSTRUCTION", cls);
-      expect(r.decision, cls).toBe(cls === "RELATIONSHIP" ? "REQUIRE_APPROVAL" : "ALLOW");
+      expect(r.decision, cls).toBe(cls === "RELATIONSHIP" ? "REFUSE" : "ALLOW");
     }
     // Changing or retracting a relationship memory is protected too, whatever class the request names.
+    // ADR-0021 P5 fence: RELATIONSHIP no longer reaches REQUIRE_APPROVAL (PgPromotionApprovals's
+    // no-admission carrier); it is refused outright, pointing at identity-change/v1 instead.
     for (const intent of ["CORRECT", "RETRACT", "SUPERSEDE"] as const)
-      expect(decide("OPERATOR_INSTRUCTION", "FACT", intent, "x", "RELATIONSHIP")).toMatchObject({ decision: "REQUIRE_APPROVAL", protected: true });
+      expect(decide("OPERATOR_INSTRUCTION", "FACT", intent, "x", "RELATIONSHIP")).toMatchObject({
+        decision: "REFUSE",
+        ruleId: "relationship-promotion-disabled",
+        protected: true,
+      });
+    expect(decide("OPERATOR_INSTRUCTION", "RELATIONSHIP").reason).toContain("identity-change/v1");
   });
 
   it("lets a verified outcome record an EPISODE, propose a LESSON or DECISION for approval, and nothing else", () => {

@@ -9,6 +9,7 @@ export const workflowTargets = {
  GoldenTaskWorkflowV1: {service:"GoldenTaskWorkflowV1",version:"1",routingId:"kernel",controls:["cancel","approve"]},
  AutonomousChildTaskWorkflowV1: {service:"AutonomousChildTaskWorkflowV1",version:"1",routingId:"kernel",controls:["cancel","approve"]},
  BoundedScheduleWorkflowV1: {service:"BoundedScheduleWorkflowV1",version:"1",routingId:"kernel",controls:["cancel"]},
+ IdentityChangeWorkflowV1: {service:"IdentityChangeWorkflowV1",version:"1",routingId:"kernel",controls:["cancel","approve"]},
 } satisfies Record<string, ExecutionTarget>;
 export type WorkflowName = keyof typeof workflowTargets;
 export function bindingFor(task: Task, target: ExecutionTarget, releaseId: string): ExecutionBinding {

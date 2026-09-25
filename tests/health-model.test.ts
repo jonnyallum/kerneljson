@@ -130,6 +130,7 @@ function healthySnapshot(): HealthSnapshot {
       recipeConfigured: "claude_md_check/v1",
     },
     legacyAuthority: { b1FreezeObservable: { unavailable: true, reason: "cross-system, out of scope" } },
+    identity: { dbReachable: true, completedTasksMissingActivation: [] },
   };
 }
 
@@ -526,5 +527,39 @@ describe("aggregation rules", () => {
     // masquerade as an execution failure.
     expect(report.overall).toBe("UNKNOWN");
     expect(report.criticalIssues).toBe(0);
+  });
+});
+
+describe("KJ-P7A identity orphan detector (ADR-0021 D8)", () => {
+  const ORPHAN_TASK_ID = "9c3d1a2e-4f5b-4a6c-8d7e-1234567890ab";
+
+  it("a completed identity-change task with no matching activation, past the grace period, is CRITICAL", () => {
+    const snapshot = healthySnapshot();
+    snapshot.identity.completedTasksMissingActivation = [{ taskId: ORPHAN_TASK_ID, ageMs: 10 * 60_000 }];
+    const report = evaluateHealthSnapshot(snapshot, baseExpectations());
+    expect(report.domains.identity.status).toBe("CRITICAL");
+    expect(report.overall).toBe("CRITICAL");
+    const failing = report.domains.identity.checks.find((c) => c.id === "identity.completedTasksHaveActivation");
+    expect(failing?.status).toBe("CRITICAL");
+    expect(failing?.observed).toEqual([ORPHAN_TASK_ID]);
+  });
+
+  it("does NOT flag a task still inside the grace period - the ordinary gap between the workflow's own complete-task and activate-identity steps", () => {
+    const snapshot = healthySnapshot();
+    snapshot.identity.completedTasksMissingActivation = [{ taskId: ORPHAN_TASK_ID, ageMs: 1000 }];
+    const report = evaluateHealthSnapshot(snapshot, baseExpectations());
+    expect(report.domains.identity.status).toBe("HEALTHY");
+  });
+
+  it("is UNKNOWN, not a false HEALTHY, when the database was unreachable", () => {
+    const snapshot = healthySnapshot();
+    snapshot.identity = { dbReachable: false, completedTasksMissingActivation: [] };
+    const report = evaluateHealthSnapshot(snapshot, baseExpectations());
+    expect(report.domains.identity.status).toBe("UNKNOWN");
+  });
+
+  it("selftest: the healthy fixture itself proves the check can fail - an empty list is never trivially CRITICAL", () => {
+    const report = evaluateHealthSnapshot(healthySnapshot(), baseExpectations());
+    expect(report.domains.identity.status).toBe("HEALTHY");
   });
 });
