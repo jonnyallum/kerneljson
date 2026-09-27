@@ -282,6 +282,31 @@ it("only the identity's owner may change it: a second ACTIVE HUMAN member is ref
   expect(await versionsOf(identityId)).toBe(priorVersions + 1);
 }, 90000);
 
+it("a Class A change approved AFTER a Class C change landed underneath it is refused STALE: task FAILED, the newer identity is not reverted", async () => {
+  const head = await pool.query<{ version: number; document: { sections: { classA: Record<string, unknown> } } & Record<string, unknown> }>("select version, document from identity_current where identity_id=$1", [identityId]);
+  const { version: baseVersion, document } = head.rows[0]!;
+  const { version: _drop, ...current } = document;
+  const constitutional = { ...current, sections: { ...current.sections, classA: { ...current.sections.classA, constitution: "A constitutional change that waited while the identity moved on." } } };
+  const waiting = await submit({ kind: "PROPOSE", document: constitutional, reason: "waits for approval" });
+  await status(waiting.id, "APPROVAL_REQUIRED");
+
+  const underneath = await ownerChange(identityId, "landed underneath the pending Class A");
+  expect(underneath.result.ok, underneath.result.body).toBe(true);
+  expect(await currentVersion(identityId)).toBe(baseVersion + 1);
+
+  const events = await pool.query<{ payload: { evaluation: { scopeDigest: string } } }>("select payload from task_events where task_id=$1 and event_key=$2", [waiting.id, `policy-approval:${waiting.id}`]);
+  const approved = await send(waiting.id, "approve", { scopeDigest: events.rows[0]!.payload.evaluation.scopeDigest, decision: "GRANTED" }, "test-reviewer");
+  expect(approved.ok, await approved.text()).toBe(true);
+  const result = await finished(waiting.id);
+  expect(result.ok, result.body).toBe(true);
+  expect(result.body).toContain("IDENTITY_CANDIDATE_STALE");
+  expect(await taskStatus(waiting.id)).toBe("FAILED");
+  expect(await count("select count(*)::int as n from identity_activations where request_task_id=$1", [waiting.id])).toBe(0);
+  const now = await pool.query<{ version: number; document: { sections: { classC: { persona: string } } } }>("select version, document from identity_current where identity_id=$1", [identityId]);
+  expect(now.rows[0]!.version).toBe(baseVersion + 1);
+  expect(now.rows[0]!.document.sections.classC.persona).toBe("landed underneath the pending Class A");
+}, 120000);
+
 it("a frozen Class C/D change ends FAILED with no version and no COMPLETED-without-activation (findings 1, 2)", async () => {
   const priorVersions = await versionsOf(identityId);
   await pool.query("select kernel_private.set_identity_freeze($1,true,'P7A: frozen pending P7B')", [identityId]);

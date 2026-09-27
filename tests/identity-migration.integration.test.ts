@@ -4,7 +4,7 @@ import { knowledgeDatabase } from "./support/knowledge-db.js";
 import { completeAndActivateIdentity, completeIdentityTaskTx, type IdentityApply } from "../services/kernel/src/identity/complete.js";
 import { IdentityRefusal } from "../services/kernel/src/identity/store.js";
 import { fetchIdentityOrphans, fetchIncompleteBootstraps } from "../services/kernel/src/health/collect.js";
-import { capabilityDigest } from "../packages/capabilities/src/index.js";
+import { IDENTITY_APPLY_A, IDENTITY_APPLY_ROLLBACK, capabilityDigest } from "../packages/capabilities/src/index.js";
 
 /**
  * KJ-P7A - the primary identity migration (ADR-0021) against real Postgres. Exercises the DB
@@ -133,6 +133,24 @@ async function mkApproval(taskId: string, approverId: string, status: "PENDING" 
   );
   return id;
 }
+/** Writes the immutable POLICY_CHECKED event ApprovalStore.record() writes for an identity approval:
+ *  it is what binds the approval to one candidate and one proposed document (ADR-0021 D5), and
+ *  identity_activation_guard() requires it. `overrides` forges one field, to prove each is checked. */
+async function bindApproval(taskId: string, approvalId: string, candidateId: string, overrides: { candidateId?: string; digest?: string; capabilityId?: string } = {}) {
+  const task = await db.pool.query<{ principal_id: string; trace_id: string }>("select principal_id, trace_id from tasks where id=$1", [taskId]);
+  const candidate = await db.pool.query<{ proposed_digest: string }>("select proposed_digest from identity_candidates where id=$1", [candidateId]);
+  const payload = {
+    approvalId,
+    invocation: {
+      capability: { id: overrides.capabilityId ?? IDENTITY_APPLY_A.id, version: IDENTITY_APPLY_A.version },
+      input: { candidateId: overrides.candidateId ?? candidateId, identityCoreDigest: overrides.digest ?? candidate.rows[0]!.proposed_digest },
+    },
+  };
+  await db.pool.query(
+    "insert into task_events(id,task_id,event_key,request_digest,type,occurred_at,actor_id,trace_id,payload) values($1,$2,$3,$4,'POLICY_CHECKED',$5,$6,$7,$8)",
+    [randomUUID(), taskId, `policy-approval:${approvalId}`, capabilityDigest(payload), new Date().toISOString(), task.rows[0]!.principal_id, task.rows[0]!.trace_id, JSON.stringify(payload)],
+  );
+}
 
 function doc(identityId: string, tenantId: string, sections: Record<string, unknown> = {}) {
   return {
@@ -215,6 +233,7 @@ async function change(
   let approvalId: string | null = null;
   if (opts.approverId) {
     approvalId = await mkApproval(taskId, opts.approverId, "GRANTED");
+    await bindApproval(taskId, approvalId, candidateId);
     await db.pool.query("update identity_candidates set state='APPROVED', resolved_at=now() where id=$1", [candidateId]);
   }
   await completeExistingTask(taskId);
@@ -893,5 +912,136 @@ describe("an interrupted bootstrap (profile without an activated identity) is de
     const profiles = await db.pool.query("select count(*)::int as n from identity_profiles where tenant_id=$1", [tenantId]);
     expect(profiles.rows[0].n).toBe(1);
     expect((await fetchIncompleteBootstraps(db.pool, later)).map((r) => r.identityId)).not.toContain(identityId);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// KJ-P7A delta review (1df2d52): stale candidates (compare-and-swap) and approval binding.
+// ---------------------------------------------------------------------------------------------------
+
+async function currentDocument(identityId: string) {
+  const r = await db.pool.query<{ version: number; document: ReturnType<typeof fullDoc> }>("select version, document from identity_current where identity_id=$1", [identityId]);
+  return r.rows[0]!;
+}
+
+describe("a candidate may only apply onto the exact head it was proposed against (compare-and-swap)", () => {
+  it("two candidates proposed against the same head: the first applies, the second is refused STALE and changes nothing", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const identityId = await bootstrapAtomically(tenantId, ownerId);
+    const first = await proposeAndApply(tenantId, ownerId, identityId, fullDoc(identityId, tenantId, "persona A"), "C");
+    const second = await proposeAndApply(tenantId, ownerId, identityId, fullDoc(identityId, tenantId, "persona B"), "C");
+    const bases = await db.pool.query("select base_version from identity_candidates where id = any($1::uuid[])", [[first.candidateId, second.candidateId]]);
+    expect(bases.rows.map((r) => r.base_version)).toEqual([1, 1]);
+
+    await first.apply();
+    const refused = await second.apply().catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(IdentityRefusal);
+    expect(String((refused as Error).message)).toContain("IDENTITY_CANDIDATE_STALE");
+    expect(await footprint(second.taskId)).toEqual(NOTHING_COMMITTED);
+    const current = await currentDocument(identityId);
+    expect(current.version).toBe(2);
+    expect(current.document.sections.classC.persona).toBe("persona A"); // A was not silently reverted
+  });
+
+  it("an approved Class A candidate is refused STALE if a Class C/D change landed underneath it while it waited for approval", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN"),
+      approverId = await mkPrincipal(tenantId, "HUMAN");
+    const identityId = await bootstrapAtomically(tenantId, ownerId);
+    const constitutional = fullDoc(identityId, tenantId);
+    constitutional.sections.classA.constitution = "A constitutional change that waited for approval.";
+    const waiting = await proposeAndApply(tenantId, ownerId, identityId, constitutional, "A");
+    const approvalId = await mkApproval(waiting.taskId, approverId, "GRANTED");
+    await bindApproval(waiting.taskId, approvalId, waiting.candidateId);
+    await db.pool.query("update identity_candidates set state='APPROVED', resolved_at=now() where id=$1", [waiting.candidateId]);
+
+    await (await proposeAndApply(tenantId, ownerId, identityId, fullDoc(identityId, tenantId, "landed underneath"), "C")).apply();
+
+    // The approval's own HUMAN_DECISION evidence already exists; the refused apply must add nothing.
+    const before = await footprint(waiting.taskId);
+    expect(before).toEqual({ ...NOTHING_COMMITTED, evidence: 1 });
+    const refused = await completeAndActivateIdentity(db.pool, { ...waiting.input, approvalId }).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(IdentityRefusal);
+    expect(String((refused as Error).message)).toContain("IDENTITY_CANDIDATE_STALE");
+    expect(await footprint(waiting.taskId)).toEqual(before);
+    expect((await currentDocument(identityId)).document.sections.classC.persona).toBe("landed underneath");
+  });
+
+  it("the base token is derived by the database, never taken from the caller, and cannot be changed afterwards", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const identityId = await bootstrapAtomically(tenantId, ownerId);
+    const head = await db.pool.query<{ identity_core_digest: string }>("select identity_core_digest from identity_head where identity_id=$1", [identityId]);
+    const taskId = await mkVerifyingTask(tenantId, ownerId);
+    const candidateId = randomUUID();
+    await db.pool.query(
+      `insert into identity_candidates(id,identity_id,tenant_id,document,proposed_digest,origin,governance_class,proposed_by_task,base_version,base_identity_core_digest)
+       values($1,$2,$3,$4,$5,'OPERATOR_INSTRUCTION','C',$6,99,$7)`,
+      [candidateId, identityId, tenantId, fullDoc(identityId, tenantId, "forged base"), H(), taskId, "b".repeat(64)],
+    );
+    const stored = await db.pool.query("select base_version, base_identity_core_digest from identity_candidates where id=$1", [candidateId]);
+    expect(stored.rows[0]).toEqual({ base_version: 1, base_identity_core_digest: head.rows[0]!.identity_core_digest });
+    await expect(db.pool.query("update identity_candidates set base_version=2 where id=$1", [candidateId])).rejects.toMatchObject({ code: "23514" });
+    await expect(db.pool.query("update identity_candidates set base_identity_core_digest=$2 where id=$1", [candidateId, "c".repeat(64)])).rejects.toMatchObject({ code: "23514" });
+  });
+});
+
+describe("a Class A/ROLLBACK activation requires a GRANTED approval bound to this exact candidate and document (ADR-0021 D5)", () => {
+  /** An APPROVED Class A candidate with its version already written - only the activation remains. */
+  async function classAReadyToActivate() {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN"),
+      approverId = await mkPrincipal(tenantId, "HUMAN");
+    const { identityId } = await bootstrap(tenantId, ownerId);
+    const taskId = await mkVerifyingTask(tenantId, ownerId);
+    const changedA = doc(identityId, tenantId, { classA: { name: "approval-bound constitutional change" } });
+    const candidateId = await proposeOn(tenantId, identityId, taskId, changedA, "A");
+    await db.pool.query("update identity_candidates set state='APPROVED', resolved_at=now() where id=$1", [candidateId]);
+    await completeExistingTask(taskId);
+    await insertVersion(tenantId, identityId, 2, withVersion(changedA, 2), candidateId, taskId);
+    return { tenantId, ownerId, approverId, identityId, taskId, candidateId };
+  }
+  const activate = (s: Awaited<ReturnType<typeof classAReadyToActivate>>, approvalId: string) => insertActivation(s.tenantId, s.identityId, 2, s.candidateId, approvalId, s.taskId);
+
+  it("PENDING same-task approval -> refused", async () => {
+    const s = await classAReadyToActivate();
+    const approvalId = await mkApproval(s.taskId, s.approverId, "PENDING");
+    await bindApproval(s.taskId, approvalId, s.candidateId);
+    await expect(activate(s, approvalId)).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("GRANTED approval") });
+  });
+
+  it("DENIED same-task approval -> refused", async () => {
+    const s = await classAReadyToActivate();
+    const approvalId = await mkApproval(s.taskId, s.approverId, "DENIED");
+    await bindApproval(s.taskId, approvalId, s.candidateId);
+    await expect(activate(s, approvalId)).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("GRANTED approval") });
+  });
+
+  it("GRANTED approval belonging to a different task -> refused", async () => {
+    const s = await classAReadyToActivate();
+    const otherTask = await mkVerifyingTask(s.tenantId, s.ownerId);
+    const approvalId = await mkApproval(otherTask, s.approverId, "GRANTED");
+    await expect(activate(s, approvalId)).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("request task") });
+  });
+
+  it("GRANTED same-task approval with no binding, or bound to another candidate, another document or the wrong gate -> refused", async () => {
+    const s = await classAReadyToActivate();
+    const unbound = await mkApproval(s.taskId, s.approverId, "GRANTED");
+    await expect(activate(s, unbound)).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("not bound") });
+    for (const forged of [{ candidateId: randomUUID() }, { digest: "d".repeat(64) }, { capabilityId: IDENTITY_APPLY_ROLLBACK.id }]) {
+      const approvalId = await mkApproval(s.taskId, s.approverId, "GRANTED");
+      await bindApproval(s.taskId, approvalId, s.candidateId, forged);
+      await expect(activate(s, approvalId)).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("not bound") });
+    }
+  });
+
+  it("GRANTED same-task approval bound to this candidate and document -> accepted", async () => {
+    const s = await classAReadyToActivate();
+    const approvalId = await mkApproval(s.taskId, s.approverId, "GRANTED");
+    await bindApproval(s.taskId, approvalId, s.candidateId);
+    await expect(activate(s, approvalId)).resolves.toBeTruthy();
+    const current = await db.pool.query("select version from identity_current where identity_id=$1", [s.identityId]);
+    expect(current.rows[0].version).toBe(2);
   });
 });

@@ -88,6 +88,13 @@ create table public.identity_candidates (
   state text not null default 'HELD' check (state in ('HELD','APPROVED','REJECTED','APPLIED')),
   created_at timestamptz not null default now(),
   resolved_at timestamptz,
+  -- Compare-and-swap token: the head this candidate was proposed (and classified) against. Set by
+  -- identity_candidate_classify(), never taken from the caller; NULL only for BOOTSTRAP (no head).
+  -- identity_version_guard() refuses to apply the candidate unless the head is still exactly this.
+  base_version integer check (base_version > 0),
+  base_identity_core_digest text check (base_identity_core_digest ~ '^[a-f0-9]{64}$'),
+  check ((base_version is null) = (base_identity_core_digest is null)),
+  check ((governance_class = 'BOOTSTRAP') = (base_version is null)),
   foreign key (identity_id, tenant_id) references public.identity_profiles(id, tenant_id),
   check (document->>'id' = identity_id::text and document->>'tenantId' = tenant_id::text),
   check (origin = 'OPERATOR_INSTRUCTION' or state in ('HELD','REJECTED')),
@@ -117,6 +124,9 @@ begin
     end if;
   end if;
   select * into head from public.identity_head where identity_id = new.identity_id;
+  -- The CAS token is always derived here, overwriting anything the caller sent.
+  new.base_version := head.version;
+  new.base_identity_core_digest := head.identity_core_digest;
   if head is null then
     if new.governance_class <> 'BOOTSTRAP' then
       raise exception 'the first candidate for an identity must be governance_class BOOTSTRAP' using errcode='23514';
@@ -154,7 +164,8 @@ begin
   if new.id <> old.id or new.identity_id <> old.identity_id or new.tenant_id <> old.tenant_id
      or new.document is distinct from old.document or new.proposed_digest <> old.proposed_digest
      or new.origin <> old.origin or new.governance_class <> old.governance_class
-     or new.proposed_by_task is distinct from old.proposed_by_task or new.created_at <> old.created_at then
+     or new.proposed_by_task is distinct from old.proposed_by_task or new.created_at <> old.created_at
+     or new.base_version is distinct from old.base_version or new.base_identity_core_digest is distinct from old.base_identity_core_digest then
     raise exception 'only state and resolved_at may change on a candidate' using errcode='23514';
   end if;
   if old.state <> 'HELD' then
@@ -193,6 +204,15 @@ begin
   end if;
   select * into prior from public.identity_versions
     where identity_id = new.identity_id order by version desc limit 1;
+  -- Compare-and-swap, under this trigger's identity-version advisory lock: a candidate may only be
+  -- applied onto the exact head it was proposed and classified against. A candidate proposed against
+  -- v7 whose identity has since moved to v8 carries a full document built from v7 - applying it would
+  -- silently revert v8, and its governance class was derived from the wrong diff. Refused, never
+  -- merged: the operator re-proposes against the current identity.
+  if prior.version is distinct from candidate.base_version
+     or prior.identity_core_digest is distinct from candidate.base_identity_core_digest then
+    raise exception 'IDENTITY_CANDIDATE_STALE: candidate was proposed against version % but the identity is now at version %', candidate.base_version, prior.version using errcode='23514';
+  end if;
   if prior is null then
     if new.version <> 1 or new.governance_class <> 'BOOTSTRAP' then
       raise exception 'the first identity version must be version 1 with governance_class BOOTSTRAP' using errcode='23514';
@@ -245,7 +265,7 @@ create table public.identity_activations (
   check (governance_class not in ('A','ROLLBACK') or approval_id is not null)
 );
 create function public.identity_activation_guard() returns trigger language plpgsql set search_path = '' as $$
-declare recent_cd integer; is_frozen boolean; approval_task uuid; candidate public.identity_candidates; version_row public.identity_versions;
+declare recent_cd integer; is_frozen boolean; approval_task uuid; approval_status text; candidate public.identity_candidates; version_row public.identity_versions;
 begin
   perform pg_advisory_xact_lock(hashtextextended(new.identity_id::text || ':identity-activation', 0));
   select * into strict candidate from public.identity_candidates where id = new.candidate_id and identity_id = new.identity_id;
@@ -271,9 +291,30 @@ begin
     raise exception 'activation requires an APPROVED candidate, or a HELD OPERATOR_INSTRUCTION Class C/D/BOOTSTRAP candidate within cap' using errcode='23514';
   end if;
   if new.approval_id is not null then
-    select task_id into approval_task from public.approvals where id = new.approval_id;
+    select task_id, status into approval_task, approval_status from public.approvals where id = new.approval_id;
     if approval_task is distinct from new.request_task_id then
       raise exception 'approval does not belong to this activation''s request task' using errcode='23514';
+    end if;
+    -- A PENDING, DENIED or EXPIRED approval is not an approval.
+    if approval_status is distinct from 'GRANTED' then
+      raise exception 'activation requires a GRANTED approval (this one is %)', approval_status using errcode='23514';
+    end if;
+    -- ADR-0021 D5: the approval binds THIS candidate and THIS proposed document, not merely the task.
+    -- ApprovalStore.record() writes the immutable POLICY_CHECKED event that scoped this approval; its
+    -- invocation input is exactly {candidateId, identityCoreDigest} and its capability is the gate for
+    -- this governance class.
+    if not exists (
+      select 1 from public.task_events e
+      where e.task_id = new.request_task_id and e.type = 'POLICY_CHECKED'
+        and e.event_key = 'policy-approval:' || new.approval_id::text
+        and e.payload->>'approvalId' = new.approval_id::text
+        and e.payload->'invocation'->'input'->>'candidateId' = candidate.id::text
+        and e.payload->'invocation'->'input'->>'identityCoreDigest' = candidate.proposed_digest
+        and e.payload->'invocation'->'capability'->>'id' = case new.governance_class
+              when 'A' then '70000000-0000-4000-8000-000000000001'
+              when 'ROLLBACK' then '70000000-0000-4000-8000-000000000002' end
+    ) then
+      raise exception 'approval is not bound to this candidate and proposed document' using errcode='23514';
     end if;
   end if;
   select frozen into is_frozen from kernel_private.identity_governance_state where identity_id = new.identity_id;

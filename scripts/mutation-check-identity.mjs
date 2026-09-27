@@ -77,8 +77,8 @@ const MUTATIONS = [
     "M14",
     "a candidate's tenant_id no longer has to actually own the identity it names",
     MIGRATION,
-    "resolved_at timestamptz,\n  foreign key (identity_id, tenant_id) references public.identity_profiles(id, tenant_id),",
-    "resolved_at timestamptz,",
+    "check ((governance_class = 'BOOTSTRAP') = (base_version is null)),\n  foreign key (identity_id, tenant_id) references public.identity_profiles(id, tenant_id),",
+    "check ((governance_class = 'BOOTSTRAP') = (base_version is null)),",
     DB_TESTS,
   ],
   ["M15", "the Class C/D rate cap never bites", MIGRATION, "if recent_cd >= 3 then", "if recent_cd >= 300 then", DB_TESTS],
@@ -136,6 +136,34 @@ const MUTATIONS = [
   ["M31", "a retried apply after a lost journal entry re-runs instead of returning what already committed (finding 1)", COMPLETE, "    if (existing.rows[0]) {\n      const outcome = Outcome.parse(existing.rows[0].contract);", "    if (false) {\n      const outcome = Outcome.parse(existing.rows[0].contract);", DB_TESTS],
   ["M32", "an interrupted bootstrap's existing profile is not resumed, so recovery collides with it (finding 3)", STORE, "if (existing) return this.matchProfile(existing, input);", "if (false) return this.matchProfile(existing, input);", WORKFLOW_TESTS],
   ["M33", "an identity profile left without an activated identity is never surfaced by health (finding 3)", HEALTH, 'incomplete.length === 0 ? "HEALTHY" : "DEGRADED",', '"HEALTHY",', HEALTH_TESTS],
+  // --- KJ-P7A delta review (1df2d52): stale candidates and approval binding ---
+  [
+    "M34",
+    "a stale candidate (proposed against an older head) applies anyway and silently reverts the newer identity",
+    MIGRATION,
+    "if prior.version is distinct from candidate.base_version\n     or prior.identity_core_digest is distinct from candidate.base_identity_core_digest then",
+    "if false then",
+    DB_TESTS,
+  ],
+  [
+    "M35",
+    "a caller-supplied base token survives instead of being derived from the real head",
+    MIGRATION,
+    "new.base_version := head.version;\n  new.base_identity_core_digest := head.identity_core_digest;",
+    "new.base_version := coalesce(new.base_version, head.version);\n  new.base_identity_core_digest := coalesce(new.base_identity_core_digest, head.identity_core_digest);",
+    DB_TESTS,
+  ],
+  [
+    "M36",
+    "a candidate's base token can be rewritten after proposal",
+    MIGRATION,
+    "\n     or new.base_version is distinct from old.base_version or new.base_identity_core_digest is distinct from old.base_identity_core_digest then",
+    " then",
+    DB_TESTS,
+  ],
+  ["M37", "a PENDING/DENIED approval satisfies a Class A/ROLLBACK activation", MIGRATION, "if approval_status is distinct from 'GRANTED' then", "if false then", DB_TESTS],
+  ["M38", "the approval is no longer bound to this candidate and proposed document (D5)", MIGRATION, "    if not exists (\n      select 1 from public.task_events e", "    if false and not exists (\n      select 1 from public.task_events e", DB_TESTS],
+  ["M39", "an approval belonging to a different task satisfies the activation", MIGRATION, "if approval_task is distinct from new.request_task_id then", "if false then", DB_TESTS],
 ];
 
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
@@ -185,7 +213,7 @@ if (unapplicable.length > 0) {
 // false KILLED (M13, 2026-09-27: exit 1 with 0 failing tests - the run errored, no assertion failed).
 // A mutation is KILLED only when at least one test actually FAILED; a non-zero exit with no failed
 // test is INCONCLUSIVE and counts against the run like a survivor. Full output is kept per run.
-const LOGS = join(tmpdir(), "mutation-check-identity");
+const LOGS = process.env["MUTATION_LOG_DIR"] ?? join(tmpdir(), "mutation-check-identity");
 function runTests(files, label) {
   const report = join(LOGS, `${label}.json`);
   rmSync(report, { force: true });

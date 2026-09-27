@@ -5,7 +5,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 60
     env:
       CI: 'true'
       KERNELJSON_RELEASE_ID: ${{ github.sha }}
@@ -36,6 +36,13 @@ jobs:
       - run: pnpm build
       - name: Faculty authority mutation checks
         run: node scripts/mutation-check-faculties.mjs
+      # KJ-P7A: every primary-identity authority rule must be proven by a test that FAILS when the rule
+      # is broken. Per-mutation vitest logs and JSON reports are kept with the test evidence below.
+      - name: Identity authority mutation checks
+        timeout-minutes: 35
+        env:
+          MUTATION_LOG_DIR: artifacts/local/identity-mutations
+        run: node scripts/mutation-check-identity.mjs
       - name: Production worker image startup
         run: |
           docker build -f infrastructure/docker/worker.Dockerfile -t kerneljson-worker:qualification .
