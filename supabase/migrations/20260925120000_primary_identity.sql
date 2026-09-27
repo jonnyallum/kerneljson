@@ -24,7 +24,7 @@ create function public.identity_owner_guard() returns trigger language plpgsql s
 declare owner_kind text; member_status text;
 begin
   select kind into owner_kind from public.principals where id = new.owner_principal_id;
-  if false then
+  if owner_kind is distinct from 'HUMAN' then
     raise exception 'identity owner must be a HUMAN principal' using errcode='23514';
   end if;
   select status into member_status from public.tenant_memberships
@@ -196,7 +196,7 @@ create trigger identity_version_sequence before insert on public.identity_versio
   for each row execute function public.identity_version_guard();
 create trigger identity_versions_immutable before update or delete on public.identity_versions
   for each row execute function public.reject_ledger_mutation();
-create trigger identity_versions_no_truncate before truncate on public.identity_profiles
+create trigger identity_versions_no_truncate before truncate on public.identity_versions
   for each statement execute function public.reject_ledger_mutation();
 
 -- Append-only. Every row IS the fact "this version became current at this moment, for

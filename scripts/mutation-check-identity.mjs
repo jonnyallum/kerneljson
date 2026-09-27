@@ -24,7 +24,7 @@
 //     black-box test cannot distinguish "lock present" from "lock removed" - the concurrency test
 //     (tests/identity-migration.integration.test.ts) proves the PK-level guarantee instead, which is
 //     the one that actually matters to an external observer.
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 const MIGRATION = "supabase/migrations/20260925120000_primary_identity.sql";
@@ -104,15 +104,46 @@ const MUTATIONS = [
 ];
 
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
+// Crash-safe restore. A SIGINT handler alone is not enough: on 2026-09-27 a run was SIGKILLed by the
+// machine's memory-pressure safeguard mid-mutation, no handler ran, and the checkpoint commit 5e13c28
+// then captured M2 and M11 still applied in the migration. The pristine text is now written to disk
+// BEFORE each mutation and recovered on the next start, whatever killed the previous run.
+const BACKUP = ".mutation-check-identity.backup.json";
+if (existsSync(BACKUP)) {
+  const saved = JSON.parse(readFileSync(BACKUP, "utf8"));
+  writeFileSync(saved.file, saved.text);
+  rmSync(BACKUP);
+  console.error(`RECOVERED ${saved.file} from ${BACKUP}: a previous run was killed while a mutation was applied.`);
+}
 const originals = new Map();
 const restore = () => {
   for (const [file, text] of originals) writeFileSync(file, text);
   originals.clear();
+  rmSync(BACKUP, { force: true });
 };
-process.on("SIGINT", () => {
-  restore();
-  process.exit(130);
-});
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"])
+  process.on(signal, () => {
+    restore();
+    process.exit(130);
+  });
+
+// Preflight: every mutation's target text must be present exactly once in the UNMUTATED source before
+// the (long) baseline runs. A missing target means either the source drifted or a mutation leaked into
+// it - in both cases every result below would mean nothing.
+// Line endings follow the file, not the table: with core.autocrlf=true the same file is CRLF in one
+// working copy and LF in another (and always LF on a Linux CI checkout), and a multi-line target
+// written for one would silently fail to match the other.
+const eolOf = (text) => (text.includes("\r\n") ? "\r\n" : "\n");
+const inEol = (s, eol) => s.replaceAll("\r\n", "\n").replaceAll("\n", eol);
+const occurrences = (file, find) => {
+  const text = readFileSync(file, "utf8");
+  return text.split(inEol(find, eolOf(text))).length - 1;
+};
+const unapplicable = MUTATIONS.filter(([, , file, find]) => occurrences(file, find) !== 1).map(([id]) => id);
+if (unapplicable.length > 0) {
+  console.error(`PREFLIGHT FAILED: target text missing or duplicated for ${unapplicable.join(", ")} - a leaked mutation or drifted source.`);
+  process.exit(2);
+}
 
 function runTests(files) {
   const r = spawnSync("npx", ["vitest", "run", ...files], {
@@ -140,9 +171,12 @@ try {
     process.exit(2);
   }
   console.log("baseline: identity tests pass unmutated");
-  for (const [id, what, file, find, replace, tests] of MUTATIONS) {
+  for (let [id, what, file, find, replace, tests] of MUTATIONS) {
     if (only && only !== id) continue;
     const text = readFileSync(file, "utf8");
+    const eol = eolOf(text);
+    find = inEol(find, eol);
+    replace = inEol(replace, eol);
     const count = text.split(find).length - 1;
     if (count !== 1) {
       console.error(`${id} CANNOT APPLY: expected the target text once in ${file}, found ${count}`);
@@ -150,6 +184,7 @@ try {
       continue;
     }
     originals.set(file, text);
+    writeFileSync(BACKUP, JSON.stringify({ file, text }));
     writeFileSync(file, text.replace(find, () => replace));
     const result = runTests(tests);
     restore();
