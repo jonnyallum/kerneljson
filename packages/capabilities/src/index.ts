@@ -367,9 +367,11 @@ export function createRuntimeRegistry(read?: RepositoryReader): CapabilityRegist
 // capability call, so `execute` always throws and `verify` always fails - registering them here only
 // lets evaluatePolicy()/ApprovalStore.record() describe and digest a real, catalogued capability
 // reference for the approval card and evidence trail, exactly as UPPERCASE does for the golden
-// workflow. Two ids, not one: Class A changes and rollbacks are approval-gated for different reasons,
-// and the Telegram card (services/kernel/src/channel/telegram/approval-cards.ts) labels each
-// unambiguously as "IDENTITY CHANGE".
+// workflow. One id per governance class, never shared: Class A changes and rollbacks are always
+// approval-gated; Class C and D changes are policy-gated (ADR-0021 D6 - every C/D change goes through
+// policy, and identity_activation_guard() requires the persisted decision) and separately so, so a rule
+// allowing persona changes can never also allow mantra/vision changes. The Telegram card
+// (services/kernel/src/channel/telegram/approval-cards.ts) labels each unambiguously as "IDENTITY CHANGE".
 export const IdentityApplyInput = z.strictObject({
   candidateId: Id,
   identityCoreDigest: z.string().regex(/^[a-f0-9]{64}$/),
@@ -381,6 +383,14 @@ export const IDENTITY_APPLY_A = Object.freeze({
 });
 export const IDENTITY_APPLY_ROLLBACK = Object.freeze({
   id: "70000000-0000-4000-8000-000000000002",
+  version: "1.0.0",
+});
+export const IDENTITY_APPLY_C = Object.freeze({
+  id: "70000000-0000-4000-8000-000000000003",
+  version: "1.0.0",
+});
+export const IDENTITY_APPLY_D = Object.freeze({
+  id: "70000000-0000-4000-8000-000000000004",
   version: "1.0.0",
 });
 function identityApplyDefinition(ref: { id: string; version: string }, description: string): CapabilityDefinition {
@@ -403,7 +413,7 @@ function identityApplyDefinition(ref: { id: string; version: string }, descripti
     verify: () => false,
   };
 }
-/** Identity governance only: the two approval-gated pseudo-capabilities above, nothing else. Kept
+/** Identity governance only: the four identity policy-gate pseudo-capabilities above, nothing else. Kept
  *  separate from createRuntimeRegistry() so the deterministic/mission registries never gain an entry
  *  they could accidentally route a real invocation through. */
 export function createIdentityCapabilityRegistry(): CapabilityRegistry {
@@ -411,6 +421,8 @@ export function createIdentityCapabilityRegistry(): CapabilityRegistry {
     [
       identityApplyDefinition(IDENTITY_APPLY_A, "Approval gate for a Class A (constitutional) identity change - never executed, the activation is a direct governed write"),
       identityApplyDefinition(IDENTITY_APPLY_ROLLBACK, "Approval gate for an identity rollback to a prior version - never executed, the activation is a direct governed write"),
+      identityApplyDefinition(IDENTITY_APPLY_C, "Policy gate for a Class C (persona) identity change - never executed, the activation is a direct governed write"),
+      identityApplyDefinition(IDENTITY_APPLY_D, "Policy gate for a Class D (mantras/vision) identity change - never executed, the activation is a direct governed write"),
     ],
     "builtin",
   );

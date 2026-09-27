@@ -16,6 +16,8 @@ import {
 } from "../../../packages/contracts/src/index.js";
 import {
   IDENTITY_APPLY_A,
+  IDENTITY_APPLY_C,
+  IDENTITY_APPLY_D,
   IDENTITY_APPLY_ROLLBACK,
   capabilityDigest,
   createIdentityCapabilityRegistry,
@@ -42,11 +44,12 @@ const SERVICE_NAME = "IdentityChangeWorkflowV1";
  * exactly, no second approval system), same TASK_CREATED -> PLAN_COMPILED -> ... -> TASK_COMPLETED
  * event shape. What is different, and why:
  *
- *  - Only Class A and ROLLBACK candidates are approval-gated (IDENTITY_APPLY_A / IDENTITY_APPLY_ROLLBACK,
- *    a capability namespace that exists purely as an ApprovalStore scope identifier and is never
- *    executed - see packages/capabilities/src/index.ts). Class C/D and BOOTSTRAP proceed straight to
- *    activation: their governance is entirely DB-trigger-enforced (rate cap, freeze, byte-identity),
- *    per ADR-0021 D6.
+ *  - Every class except BOOTSTRAP goes through policy (ADR-0021 D6) under its own gate capability
+ *    (IDENTITY_APPLY_A / _ROLLBACK / _C / _D - a namespace that exists purely as a policy/ApprovalStore
+ *    scope identifier and is never executed, see packages/capabilities/src/index.ts). Class A and
+ *    ROLLBACK must be APPROVAL_REQUIRED and human-approved; Class C/D may be ALLOWed or approval-gated;
+ *    DENY (including no matching rule) ends the task FAILED. The persisted decision is re-checked by
+ *    identity_activation_guard(), and C/D is additionally frozen by default (D7) and rate-capped there.
  *  - governance_class is never chosen here. It is read back from whatever the database's
  *    identity_candidate_classify() trigger actually derived from the document diff (D6); this
  *    workflow only supplies a placeholder request that the database is free to overwrite.
@@ -260,8 +263,14 @@ export function createIdentityChangeWorkflow(
         if (!proposed.ok) return refuse(`Identity change refused: ${proposed.reason}`);
         const candidate = proposed.candidate;
         const governanceClass: IdentityGovernanceClass = candidate.governanceClass;
-        const needsApproval = governanceClass === "A" || governanceClass === "ROLLBACK";
-        const capabilityRef = governanceClass === "ROLLBACK" ? IDENTITY_APPLY_ROLLBACK : IDENTITY_APPLY_A;
+        // ADR-0021 D6: every class except BOOTSTRAP goes through policy, each under its own gate
+        // capability, so a rule for one class can never authorise another.
+        const gate =
+          governanceClass === "A" ? IDENTITY_APPLY_A
+          : governanceClass === "ROLLBACK" ? IDENTITY_APPLY_ROLLBACK
+          : governanceClass === "C" ? IDENTITY_APPLY_C
+          : governanceClass === "D" ? IDENTITY_APPLY_D
+          : null;
 
         let step = TaskStep.parse({
           id: plan.resultStepId,
@@ -269,7 +278,7 @@ export function createIdentityChangeWorkflow(
           kind: "DETERMINISTIC_FUNCTION",
           status: "READY",
           dependencies: [],
-          requiredCapabilities: needsApproval ? [capabilityRef] : [],
+          requiredCapabilities: gate ? [gate] : [],
           riskClass: "LOW",
           retryPolicy: { maxAttempts: 1, backoffMs: 0 },
           input: { candidateId: candidate.id, identityCoreDigest: proposedDigest },
@@ -278,28 +287,27 @@ export function createIdentityChangeWorkflow(
         await emit("compile", "PLAN_COMPILED", "COMPILED", step);
 
         const approvalId = ctx.key; // one gate for this task, scoped to it - same shape as golden-workflow.
-        if (needsApproval) {
+        let evaluation: Awaited<ReturnType<typeof evaluatePolicy>> | null = null;
+        if (gate) {
           const invocation = CapabilityInvocation.parse({
             runId: ctx.rand.uuidv4(),
             taskId: task.id,
             stepId: step.id,
             trace: { traceId: task.traceId, correlationId: task.id },
-            capability: capabilityRef,
+            capability: gate,
             idempotencyKey: step.idempotencyKey!,
             input: step.input,
           });
           const decisionId = ctx.rand.uuidv4(),
             at = new Date(await ctx.date.now()).toISOString();
-          const evaluation = await ctx.run("evaluate-policy", () =>
-            evaluatePolicy(rules, taskState, step, invocation, capabilities.describe(capabilityRef), decisionId, at),
+          const evaluated = await ctx.run("evaluate-policy", () =>
+            evaluatePolicy(rules, taskState, step, invocation, capabilities.describe(gate), decisionId, at),
           );
-          if (evaluation.decision.decision !== "APPROVAL_REQUIRED") {
-            await rejectIfHeld(candidate.id, "reject-candidate");
-            return refuse("Identity change policy did not require approval as expected - refusing to proceed unguarded");
-          }
+          // Persisted whatever the decision - a DENY is audit evidence too. identity_activation_guard()
+          // later requires this exact event (candidate, proposed digest, gate, decision).
           const recorded = await ctx.run("record-policy", async () => {
             try {
-              await approvals.record(evaluation, invocation, approvalId);
+              await approvals.record(evaluated, invocation, approvalId);
               return true;
             } catch (error) {
               if (error instanceof ApprovalError || error instanceof z.ZodError) return false;
@@ -308,8 +316,20 @@ export function createIdentityChangeWorkflow(
           });
           if (!recorded) {
             await rejectIfHeld(candidate.id, "reject-candidate");
-            return refuse("Identity approval persistence rejected");
+            return refuse("Identity policy decision persistence rejected");
           }
+          // Class A and ROLLBACK must always be human-approved: ALLOW is not enough for them. Class C/D
+          // may be ALLOWed or approval-gated by policy. DENY - including "no matching rule" - refuses.
+          const decision = evaluated.decision.decision;
+          const acceptable = decision === "APPROVAL_REQUIRED" || (decision === "ALLOW" && (governanceClass === "C" || governanceClass === "D"));
+          if (!acceptable) {
+            await rejectIfHeld(candidate.id, "reject-candidate");
+            return refuse(`Identity change refused by policy: ${decision} (${evaluated.decision.reasonCode}) for Class ${governanceClass}`);
+          }
+          evaluation = evaluated;
+        }
+        const needsApproval = evaluation?.decision.decision === "APPROVAL_REQUIRED";
+        if (needsApproval && evaluation) {
           await emit("approval-required", "APPROVAL_REQUESTED", "APPROVAL_REQUIRED");
           const timeout = Math.max(1, Date.parse(evaluation.expiresAt!) - (await ctx.date.now()));
           try {

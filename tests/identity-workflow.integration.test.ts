@@ -188,6 +188,19 @@ it("an interrupted bootstrap ends its task FAILED, is surfaced by health, and th
   expect((await fetchIncompleteBootstraps(pool, new Date(Date.now() + 60 * 60_000))).map((r) => r.identityId)).not.toContain(identityId);
 }, 120000);
 
+it("ADR-0021 D7: right after bootstrap, Class C/D is frozen by DEFAULT - an owner's Class C change ends FAILED with no freeze call ever made", async () => {
+  const state = await count("select count(*)::int as n from kernel_private.identity_governance_state where identity_id=$1", [identityId]);
+  expect(state).toBe(0); // nobody called set_identity_freeze
+  const priorVersions = await versionsOf(identityId);
+  const { task, result } = await ownerChange(identityId, "right after bootstrap");
+  expect(result.ok, result.body).toBe(true);
+  expect(result.body).toContain("frozen");
+  expect(await taskStatus(task.id)).toBe("FAILED");
+  expect(await versionsOf(identityId)).toBe(priorVersions);
+  // Deployment authority opens the window, as it would for P7B G13. Every C/D test below relies on it.
+  await pool.query("select kernel_private.set_identity_freeze($1,false,'P7A E2E: P7B G13 window opened')", [identityId]);
+}, 90000);
+
 it("a Class A change waits for approval, then activates once granted - completion and activation land together", async () => {
   const changed = doc(identityId, policyOwner, { classA: classA({ constitution: "Serve the operator honestly, rigorously, and with a new clause." }) });
   const task = await submit({ kind: "PROPOSE", document: changed, reason: "constitutional update" });
@@ -307,6 +320,17 @@ it("a Class A change approved AFTER a Class C change landed underneath it is ref
   expect(now.rows[0]!.document.sections.classC.persona).toBe("landed underneath the pending Class A");
 }, 120000);
 
+it("ADR-0021 D6: an ALLOWed Class C change carries its persisted ALLOW decision under the Class C gate", async () => {
+  const { task, result } = await ownerChange(identityId, "allowed and recorded");
+  expect(result.ok, result.body).toBe(true);
+  expect(await taskStatus(task.id)).toBe("COMPLETED");
+  const decision = await pool.query<{ decision: string; capability: string }>(
+    "select payload->'evaluation'->'decision'->>'decision' as decision, payload->'invocation'->'capability'->>'id' as capability from task_events where task_id=$1 and type='POLICY_CHECKED'",
+    [task.id],
+  );
+  expect(decision.rows).toEqual([{ decision: "ALLOW", capability: "70000000-0000-4000-8000-000000000003" }]);
+}, 90000);
+
 it("a frozen Class C/D change ends FAILED with no version and no COMPLETED-without-activation (findings 1, 2)", async () => {
   const priorVersions = await versionsOf(identityId);
   await pool.query("select kernel_private.set_identity_freeze($1,true,'P7A: frozen pending P7B')", [identityId]);
@@ -340,6 +364,26 @@ it("a rate-capped Class C/D change ends FAILED with no version and no COMPLETED-
   const candidate = await pool.query("select state from identity_candidates where proposed_by_task=$1", [task.id]);
   expect(candidate.rows[0].state).toBe("REJECTED");
 }, 180000);
+
+it("ADR-0021 D6: every Class C/D change goes through policy - a Class D change with no ALLOW rule is DENIED, persisted, and ends FAILED", async () => {
+  const head = await pool.query<{ document: { sections: { classD: Record<string, unknown> } } & Record<string, unknown> }>("select document from identity_current where identity_id=$1", [identityId]);
+  const { version: _drop, ...current } = head.rows[0]!.document;
+  const document = { ...current, sections: { ...current.sections, classD: { ...current.sections.classD, vision: "a vision no policy allows" } } };
+  const priorVersions = await versionsOf(identityId);
+  const task = await submit({ kind: "PROPOSE", document, reason: "class D, no rule" });
+  const result = await finished(task.id);
+  expect(result.ok, result.body).toBe(true);
+  expect(result.body).toContain("refused by policy: DENY");
+  expect(await taskStatus(task.id)).toBe("FAILED");
+  expect(await versionsOf(identityId)).toBe(priorVersions);
+  const decision = await pool.query<{ decision: string; capability: string }>(
+    "select payload->'evaluation'->'decision'->>'decision' as decision, payload->'invocation'->'capability'->>'id' as capability from task_events where task_id=$1 and type='POLICY_CHECKED'",
+    [task.id],
+  );
+  expect(decision.rows).toEqual([{ decision: "DENY", capability: "70000000-0000-4000-8000-000000000004" }]);
+  const candidate = await pool.query("select state from identity_candidates where proposed_by_task=$1", [task.id]);
+  expect(candidate.rows[0].state).toBe("REJECTED");
+}, 90000);
 
 it("leaves no identity-change task non-terminal and no COMPLETED task without an activation, across every path above", async () => {
   const lingering = await pool.query(

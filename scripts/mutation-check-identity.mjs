@@ -82,7 +82,7 @@ const MUTATIONS = [
     DB_TESTS,
   ],
   ["M15", "the Class C/D rate cap never bites", MIGRATION, "if recent_cd >= 3 then", "if recent_cd >= 300 then", DB_TESTS],
-  ["M16", "a frozen identity still accepts a Class C/D activation", MIGRATION, "if coalesce(is_frozen, false) and new.governance_class in ('C','D') then", "if false then", DB_TESTS],
+  ["M16", "a frozen identity still accepts a Class C/D activation", MIGRATION, "if coalesce(is_frozen, true) and new.governance_class in ('C','D') then", "if false then", DB_TESTS],
   [
     "M17",
     "a MODEL_PROPOSAL/SHARED_BRAIN BOOTSTRAP candidate can self-activate with no human involved (the KJ-P7A origin-check regression)",
@@ -162,8 +162,38 @@ const MUTATIONS = [
     DB_TESTS,
   ],
   ["M37", "a PENDING/DENIED approval satisfies a Class A/ROLLBACK activation", MIGRATION, "if approval_status is distinct from 'GRANTED' then", "if false then", DB_TESTS],
-  ["M38", "the approval is no longer bound to this candidate and proposed document (D5)", MIGRATION, "    if not exists (\n      select 1 from public.task_events e", "    if false and not exists (\n      select 1 from public.task_events e", DB_TESTS],
+  [
+    "M38",
+    "the approval is no longer bound to this candidate and proposed document (D5)",
+    MIGRATION,
+    "    if not exists (\n      select 1 from public.task_events e\n      where e.task_id = new.request_task_id and e.type = 'POLICY_CHECKED'\n        and e.event_key",
+    "    if false and not exists (\n      select 1 from public.task_events e\n      where e.task_id = new.request_task_id and e.type = 'POLICY_CHECKED'\n        and e.event_key",
+    DB_TESTS,
+  ],
   ["M39", "an approval belonging to a different task satisfies the activation", MIGRATION, "if approval_task is distinct from new.request_task_id then", "if false then", DB_TESTS],
+  // --- KJ-P7A hostile seal pass (04fd7bb): D7 default freeze, D6 policy on every C/D change ---
+  ["M40", "Class C/D is no longer frozen by default after bootstrap - a missing governance row means open (D7)", MIGRATION, "if coalesce(is_frozen, true) and new.governance_class in ('C','D') then", "if coalesce(is_frozen, false) and new.governance_class in ('C','D') then", DB_TESTS],
+  ["M41", "a Class C/D activation no longer needs a persisted ALLOW policy decision (D6)", MIGRATION, "  elsif new.governance_class in ('C','D') then", "  elsif false then", DB_TESTS],
+  ["M42", "an approval's policy event no longer has to be an APPROVAL_REQUIRED decision", MIGRATION, "        and e.payload->'evaluation'->'decision'->>'decision' = 'APPROVAL_REQUIRED'\n", "", DB_TESTS],
+  [
+    "M43",
+    "a Class C/D ALLOW decision no longer has to be under that class's own gate - a Class D rule authorises Class C (D6)",
+    MIGRATION,
+    "        and e.payload->'invocation'->'capability'->>'id' = gate\n        and e.payload->'evaluation'->'decision'->>'decision' = 'ALLOW'",
+    "        and e.payload->'evaluation'->'decision'->>'decision' = 'ALLOW'",
+    DB_TESTS,
+  ],
+  ["M44", "the workflow skips policy for Class C changes (D6)", WORKFLOW, ': governanceClass === "C" ? IDENTITY_APPLY_C', ': governanceClass === "C" ? null', WORKFLOW_TESTS],
+  [
+    "M45",
+    "the workflow proceeds on a DENY policy decision (D6)",
+    WORKFLOW,
+    'const acceptable = decision === "APPROVAL_REQUIRED" || (decision === "ALLOW" && (governanceClass === "C" || governanceClass === "D"));',
+    "const acceptable = true;",
+    WORKFLOW_TESTS,
+  ],
+  ["M46", "a Class C/D version may change the Class A bytes (D6)", MIGRATION, "if new.governance_class in ('C','D') and new.class_a_digest <> prior.class_a_digest then", "if false then", DB_TESTS],
+  ["M47", "the Class A byte-identity rule wrongly applies to ROLLBACK, so an emergency rollback past a Class A change can never apply (D7)", MIGRATION, "if new.governance_class in ('C','D') and new.class_a_digest <> prior.class_a_digest then", "if new.governance_class <> 'A' and new.class_a_digest <> prior.class_a_digest then", DB_TESTS],
 ];
 
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;

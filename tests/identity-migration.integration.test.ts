@@ -4,7 +4,7 @@ import { knowledgeDatabase } from "./support/knowledge-db.js";
 import { completeAndActivateIdentity, completeIdentityTaskTx, type IdentityApply } from "../services/kernel/src/identity/complete.js";
 import { IdentityRefusal } from "../services/kernel/src/identity/store.js";
 import { fetchIdentityOrphans, fetchIncompleteBootstraps } from "../services/kernel/src/health/collect.js";
-import { IDENTITY_APPLY_A, IDENTITY_APPLY_ROLLBACK, capabilityDigest } from "../packages/capabilities/src/index.js";
+import { IDENTITY_APPLY_A, IDENTITY_APPLY_C, IDENTITY_APPLY_D, IDENTITY_APPLY_ROLLBACK, capabilityDigest } from "../packages/capabilities/src/index.js";
 
 /**
  * KJ-P7A - the primary identity migration (ADR-0021) against real Postgres. Exercises the DB
@@ -136,13 +136,23 @@ async function mkApproval(taskId: string, approverId: string, status: "PENDING" 
 /** Writes the immutable POLICY_CHECKED event ApprovalStore.record() writes for an identity approval:
  *  it is what binds the approval to one candidate and one proposed document (ADR-0021 D5), and
  *  identity_activation_guard() requires it. `overrides` forges one field, to prove each is checked. */
-async function bindApproval(taskId: string, approvalId: string, candidateId: string, overrides: { candidateId?: string; digest?: string; capabilityId?: string } = {}) {
+type PolicyOverrides = { candidateId?: string; digest?: string; capabilityId?: string; decision?: string };
+async function bindApproval(taskId: string, approvalId: string, candidateId: string, overrides: PolicyOverrides = {}) {
+  await writePolicyEvent(taskId, approvalId, candidateId, { decision: "APPROVAL_REQUIRED", capabilityId: IDENTITY_APPLY_A.id, ...overrides });
+}
+/** The POLICY_CHECKED event for a Class C/D change policy ALLOWed (ADR-0021 D6): with no approval,
+ *  identity_activation_guard() requires exactly this for the candidate, its digest and its class gate. */
+async function allowPolicy(taskId: string, candidateId: string, overrides: PolicyOverrides = {}) {
+  await writePolicyEvent(taskId, randomUUID(), candidateId, { decision: "ALLOW", capabilityId: IDENTITY_APPLY_C.id, ...overrides });
+}
+async function writePolicyEvent(taskId: string, approvalId: string, candidateId: string, overrides: PolicyOverrides & { decision: string; capabilityId: string }) {
   const task = await db.pool.query<{ principal_id: string; trace_id: string }>("select principal_id, trace_id from tasks where id=$1", [taskId]);
   const candidate = await db.pool.query<{ proposed_digest: string }>("select proposed_digest from identity_candidates where id=$1", [candidateId]);
   const payload = {
     approvalId,
+    evaluation: { decision: { decision: overrides.decision } },
     invocation: {
-      capability: { id: overrides.capabilityId ?? IDENTITY_APPLY_A.id, version: IDENTITY_APPLY_A.version },
+      capability: { id: overrides.capabilityId, version: "1.0.0" },
       input: { candidateId: overrides.candidateId ?? candidateId, identityCoreDigest: overrides.digest ?? candidate.rows[0]!.proposed_digest },
     },
   };
@@ -230,6 +240,7 @@ async function change(
 ) {
   const taskId = await mkVerifyingTask(tenantId, ownerId);
   const candidateId = await proposeOn(tenantId, identityId, taskId, document, governanceClass);
+  if (governanceClass === "C" || governanceClass === "D") await allowPolicy(taskId, candidateId, { capabilityId: governanceClass === "C" ? IDENTITY_APPLY_C.id : IDENTITY_APPLY_D.id });
   let approvalId: string | null = null;
   if (opts.approverId) {
     approvalId = await mkApproval(taskId, opts.approverId, "GRANTED");
@@ -244,9 +255,15 @@ async function change(
   return { identityId, taskId, candidateId, activationId, version };
 }
 
-async function bootstrap(tenantId: string, ownerId: string) {
+/** ADR-0021 D7: Class C/D is frozen by default once an identity exists. Every test that exercises a
+ *  C/D change opens the window explicitly, exactly as deployment authority would for P7B G13. */
+async function openP7BWindow(identityId: string) {
+  await db.pool.query("select kernel_private.set_identity_freeze($1,false,'test: P7B G13 window open')", [identityId]);
+}
+async function bootstrap(tenantId: string, ownerId: string, opts: { keepFrozen?: boolean } = {}) {
   const identityId = await mkProfile(tenantId, ownerId);
   const result = await change(tenantId, ownerId, identityId, doc(identityId, tenantId), "BOOTSTRAP");
+  if (!opts.keepFrozen) await openP7BWindow(identityId);
   return { identityId, taskId: result.taskId };
 }
 
@@ -560,9 +577,10 @@ describe("identity_activations: rate cap, freeze, and identity_current", () => {
     const taskId = await mkVerifyingTask(tenantId, ownerId);
     const changed = doc(identityId, tenantId, { classC: { persona: "four" } });
     const candidateId = await proposeOn(tenantId, identityId, taskId, changed, "C");
+    await allowPolicy(taskId, candidateId);
     await completeExistingTask(taskId);
     await insertVersion(tenantId, identityId, 5, withVersion(changed, 5), candidateId, taskId);
-    await expect(insertActivation(tenantId, identityId, 5, candidateId, null, taskId)).rejects.toMatchObject({ code: "23514" });
+    await expect(insertActivation(tenantId, identityId, 5, candidateId, null, taskId)).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("rate cap") });
   });
 
   it("kernel_private.set_identity_freeze blocks a subsequent Class C/D activation, but not a Class A one with approval", async () => {
@@ -574,9 +592,10 @@ describe("identity_activations: rate cap, freeze, and identity_current", () => {
     const taskId = await mkVerifyingTask(tenantId, ownerId);
     const changed = doc(identityId, tenantId, { classC: { persona: "should be frozen" } });
     const candidateId = await proposeOn(tenantId, identityId, taskId, changed, "C");
+    await allowPolicy(taskId, candidateId);
     await completeExistingTask(taskId);
     await insertVersion(tenantId, identityId, 2, withVersion(changed, 2), candidateId, taskId);
-    await expect(insertActivation(tenantId, identityId, 2, candidateId, null, taskId)).rejects.toMatchObject({ code: "23514" });
+    await expect(insertActivation(tenantId, identityId, 2, candidateId, null, taskId)).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("frozen") });
 
     // Class A, with a granted approval, still goes through despite the freeze (D7: emergency
     // HUMAN-approved constitutional change remains available throughout).
@@ -647,6 +666,7 @@ describe("identity_activations: rate cap, freeze, and identity_current", () => {
       const taskId = await mkVerifyingTask(tenantId, ownerId);
       const changed = doc(identityId, tenantId, { classC: { persona: label } });
       const candidateId = await proposeOn(tenantId, identityId, taskId, changed, "C");
+      await allowPolicy(taskId, candidateId);
       await completeExistingTask(taskId);
       await insertVersion(tenantId, identityId, targetVersion, withVersion(changed, targetVersion), candidateId, taskId);
       return insertActivation(tenantId, identityId, targetVersion, candidateId, null, taskId);
@@ -732,6 +752,7 @@ function applyInput(tenantId: string, identityId: string, taskId: string, candid
 async function proposeAndApply(tenantId: string, ownerId: string, identityId: string, draft: ReturnType<typeof fullDoc>, requested: string) {
   const taskId = await mkVerifyingTask(tenantId, ownerId);
   const candidateId = await proposeOn(tenantId, identityId, taskId, draft, requested);
+  if (requested === "C" || requested === "D") await allowPolicy(taskId, candidateId, { capabilityId: requested === "C" ? IDENTITY_APPLY_C.id : IDENTITY_APPLY_D.id });
   const input = applyInput(tenantId, identityId, taskId, candidateId, draft);
   return { taskId, candidateId, input, apply: () => completeAndActivateIdentity(db.pool, input) };
 }
@@ -749,10 +770,11 @@ async function footprint(taskId: string) {
   return r.rows[0] as { status: string; outcomes: number; evidence: number; completed_events: number; versions: number; activations: number };
 }
 const NOTHING_COMMITTED = { status: "VERIFYING", outcomes: 0, evidence: 0, completed_events: 0, versions: 0, activations: 0 };
-async function bootstrapAtomically(tenantId: string, ownerId: string) {
+async function bootstrapAtomically(tenantId: string, ownerId: string, opts: { keepFrozen?: boolean } = {}) {
   const identityId = await mkProfile(tenantId, ownerId);
   const boot = await proposeAndApply(tenantId, ownerId, identityId, fullDoc(identityId, tenantId), "BOOTSTRAP");
   await boot.apply();
+  if (!opts.keepFrozen) await openP7BWindow(identityId);
   return identityId;
 }
 
@@ -1029,7 +1051,8 @@ describe("a Class A/ROLLBACK activation requires a GRANTED approval bound to thi
     const s = await classAReadyToActivate();
     const unbound = await mkApproval(s.taskId, s.approverId, "GRANTED");
     await expect(activate(s, unbound)).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("not bound") });
-    for (const forged of [{ candidateId: randomUUID() }, { digest: "d".repeat(64) }, { capabilityId: IDENTITY_APPLY_ROLLBACK.id }]) {
+    // Each forges exactly one field of the binding event; the decision must have been APPROVAL_REQUIRED.
+    for (const forged of [{ candidateId: randomUUID() }, { digest: "d".repeat(64) }, { capabilityId: IDENTITY_APPLY_ROLLBACK.id }, { decision: "ALLOW" }, { decision: "DENY" }]) {
       const approvalId = await mkApproval(s.taskId, s.approverId, "GRANTED");
       await bindApproval(s.taskId, approvalId, s.candidateId, forged);
       await expect(activate(s, approvalId)).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("not bound") });
@@ -1043,5 +1066,152 @@ describe("a Class A/ROLLBACK activation requires a GRANTED approval bound to thi
     await expect(activate(s, approvalId)).resolves.toBeTruthy();
     const current = await db.pool.query("select version from identity_current where identity_id=$1", [s.identityId]);
     expect(current.rows[0].version).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// KJ-P7A hostile seal pass (04fd7bb): D7 default freeze and D6 policy on every Class C/D change.
+// ---------------------------------------------------------------------------------------------------
+
+/** A C/D (or other) candidate on a fresh task with NO policy decision written - the caller decides. */
+async function proposeUnpolicied(tenantId: string, ownerId: string, identityId: string, draft: ReturnType<typeof fullDoc>, requested: string) {
+  const taskId = await mkVerifyingTask(tenantId, ownerId);
+  const candidateId = await proposeOn(tenantId, identityId, taskId, draft, requested);
+  const input = applyInput(tenantId, identityId, taskId, candidateId, draft);
+  return { taskId, candidateId, input, apply: (approvalId: string | null = null) => completeAndActivateIdentity(db.pool, { ...input, approvalId }) };
+}
+function withVision(identityId: string, tenantId: string, vision: string) {
+  const d = fullDoc(identityId, tenantId);
+  d.sections.classD.vision = vision;
+  return d;
+}
+
+describe("ADR-0021 D7: Class C/D is frozen by default after bootstrap - no manual freeze call needed", () => {
+  it("BOOTSTRAP then an immediate Class C and Class D change are both refused with no governance-state row at all; opening the window is the only thing that lets the same candidate apply", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const identityId = await bootstrapAtomically(tenantId, ownerId, { keepFrozen: true });
+    const state = await db.pool.query("select count(*)::int as n from kernel_private.identity_governance_state where identity_id=$1", [identityId]);
+    expect(state.rows[0].n).toBe(0); // nobody called set_identity_freeze
+
+    const persona = await proposeAndApply(tenantId, ownerId, identityId, fullDoc(identityId, tenantId, "right after bootstrap"), "C");
+    const refusedC = await persona.apply().catch((error: unknown) => error);
+    expect(refusedC).toBeInstanceOf(IdentityRefusal);
+    expect(String((refusedC as Error).message)).toContain("frozen");
+    expect(await footprint(persona.taskId)).toEqual(NOTHING_COMMITTED);
+
+    const vision = await proposeAndApply(tenantId, ownerId, identityId, withVision(identityId, tenantId, "right after bootstrap"), "D");
+    const refusedD = await vision.apply().catch((error: unknown) => error);
+    expect(refusedD).toBeInstanceOf(IdentityRefusal);
+    expect(String((refusedD as Error).message)).toContain("frozen");
+    expect(await footprint(vision.taskId)).toEqual(NOTHING_COMMITTED);
+
+    await openP7BWindow(identityId); // deployment authority, P7B G13
+    await expect(persona.apply()).resolves.toMatchObject({ version: { version: 2, governanceClass: "C" } });
+  });
+
+  it("an approved Class A change remains available under the default freeze", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN"),
+      approverId = await mkPrincipal(tenantId, "HUMAN");
+    const identityId = await bootstrapAtomically(tenantId, ownerId, { keepFrozen: true });
+    const constitutional = fullDoc(identityId, tenantId);
+    constitutional.sections.classA.constitution = "An approved constitutional change during the default freeze.";
+    const change = await proposeUnpolicied(tenantId, ownerId, identityId, constitutional, "A");
+    const approvalId = await mkApproval(change.taskId, approverId, "GRANTED");
+    await bindApproval(change.taskId, approvalId, change.candidateId);
+    await db.pool.query("update identity_candidates set state='APPROVED', resolved_at=now() where id=$1", [change.candidateId]);
+    await expect(change.apply(approvalId)).resolves.toMatchObject({ version: { version: 2, governanceClass: "A" } });
+  });
+
+  it("an emergency HUMAN-approved rollback to an already-activated version remains available under the default freeze", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN"),
+      approverId = await mkPrincipal(tenantId, "HUMAN");
+    const identityId = await bootstrapAtomically(tenantId, ownerId, { keepFrozen: true });
+    const approve = async (c: Awaited<ReturnType<typeof proposeUnpolicied>>, gate: string) => {
+      const approvalId = await mkApproval(c.taskId, approverId, "GRANTED");
+      await bindApproval(c.taskId, approvalId, c.candidateId, { capabilityId: gate });
+      await db.pool.query("update identity_candidates set state='APPROVED', resolved_at=now() where id=$1", [c.candidateId]);
+      return approvalId;
+    };
+    const constitutional = fullDoc(identityId, tenantId);
+    constitutional.sections.classA.constitution = "A change the operator will need to revert.";
+    const forward = await proposeUnpolicied(tenantId, ownerId, identityId, constitutional, "A");
+    await forward.apply(await approve(forward, IDENTITY_APPLY_A.id));
+
+    const revert = await proposeUnpolicied(tenantId, ownerId, identityId, fullDoc(identityId, tenantId), "ROLLBACK");
+    await expect(revert.apply(await approve(revert, IDENTITY_APPLY_ROLLBACK.id))).resolves.toMatchObject({ version: { version: 3, governanceClass: "ROLLBACK" } });
+    const current = await currentDocument(identityId);
+    expect(current.document.sections.classA.constitution).toBe(fullDoc(identityId, tenantId).sections.classA.constitution);
+  });
+});
+
+describe("ADR-0021 D6: every Class C/D change needs a persisted ALLOW policy decision bound to it", () => {
+  it("refuses a Class C/D activation with no policy decision at all", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const identityId = await bootstrapAtomically(tenantId, ownerId);
+    const change = await proposeUnpolicied(tenantId, ownerId, identityId, fullDoc(identityId, tenantId, "never went through policy"), "C");
+    const refused = await change.apply().catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(IdentityRefusal);
+    expect(String((refused as Error).message)).toContain("ALLOW policy decision");
+    expect(await footprint(change.taskId)).toEqual(NOTHING_COMMITTED);
+  });
+
+  it("refuses a DENY decision, and an ALLOW bound to another candidate, another document or another class's gate", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const identityId = await bootstrapAtomically(tenantId, ownerId);
+    const forgeries: PolicyOverrides[] = [
+      { decision: "DENY" },
+      { candidateId: randomUUID() },
+      { digest: "e".repeat(64) },
+      { capabilityId: IDENTITY_APPLY_D.id }, // a Class D rule must never authorise a Class C change
+      { capabilityId: IDENTITY_APPLY_A.id },
+    ];
+    for (const [i, forged] of forgeries.entries()) {
+      const change = await proposeUnpolicied(tenantId, ownerId, identityId, fullDoc(identityId, tenantId, `forged policy ${i}`), "C");
+      await allowPolicy(change.taskId, change.candidateId, forged);
+      const refused = await change.apply().catch((error: unknown) => error);
+      expect(refused, JSON.stringify(forged)).toBeInstanceOf(IdentityRefusal);
+      expect(String((refused as Error).message)).toContain("ALLOW policy decision");
+      expect(await footprint(change.taskId)).toEqual(NOTHING_COMMITTED);
+    }
+  });
+
+  it("accepts a Class C change and a Class D change each ALLOWed under its own gate", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const identityId = await bootstrapAtomically(tenantId, ownerId);
+    const persona = await proposeUnpolicied(tenantId, ownerId, identityId, fullDoc(identityId, tenantId, "allowed persona"), "C");
+    await allowPolicy(persona.taskId, persona.candidateId, { capabilityId: IDENTITY_APPLY_C.id });
+    await expect(persona.apply()).resolves.toMatchObject({ version: { version: 2, governanceClass: "C" } });
+    const current = await currentDocument(identityId);
+    const { version: _drop, ...draft } = current.document as ReturnType<typeof fullDoc> & { version: number };
+    draft.sections.classD.vision = "allowed vision";
+    const vision = await proposeUnpolicied(tenantId, ownerId, identityId, draft, "D");
+    await allowPolicy(vision.taskId, vision.candidateId, { capabilityId: IDENTITY_APPLY_D.id });
+    await expect(vision.apply()).resolves.toMatchObject({ version: { version: 3, governanceClass: "D" } });
+  });
+});
+
+describe("ADR-0021 D6: a Class C/D version must leave the Class A bytes identical", () => {
+  it("refuses a Class C version whose class_a_digest differs from the head's", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const { identityId } = await bootstrap(tenantId, ownerId);
+    const taskId = await mkVerifyingTask(tenantId, ownerId);
+    const changed = doc(identityId, tenantId, { classC: { persona: "claims to be C" } });
+    const candidateId = await proposeOn(tenantId, identityId, taskId, changed, "C");
+    await completeExistingTask(taskId);
+    // Everything else about this version is valid; only its Class A digest disagrees with the head's.
+    await expect(
+      db.pool.query(
+        `insert into identity_versions(id,identity_id,tenant_id,version,document,identity_core_digest,class_a_digest,governance_class,candidate_id,created_by_task)
+         values($1,$2,$3,2,$4,$5,$6,'IGNORED',$7,$8)`,
+        [randomUUID(), identityId, tenantId, withVersion(changed, 2), H(), "f".repeat(64), candidateId, taskId],
+      ),
+    ).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("Class A bytes identical") });
   });
 });

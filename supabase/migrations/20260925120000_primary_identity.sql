@@ -221,7 +221,10 @@ begin
     if new.version <> prior.version + 1 then
       raise exception 'identity versions must be consecutive' using errcode='23514';
     end if;
-    if new.governance_class <> 'A' and new.class_a_digest <> prior.class_a_digest then
+    -- ADR-0021 D6: a Class C/D change leaves every Class A byte identical. Not ROLLBACK: an
+    -- emergency, HUMAN-approved rollback past a Class A change must restore the old Class A bytes
+    -- (D7 keeps that rollback available throughout the freeze).
+    if new.governance_class in ('C','D') and new.class_a_digest <> prior.class_a_digest then
       raise exception 'a Class % change must leave Class A bytes identical', new.governance_class using errcode='23514';
     end if;
   end if;
@@ -265,7 +268,7 @@ create table public.identity_activations (
   check (governance_class not in ('A','ROLLBACK') or approval_id is not null)
 );
 create function public.identity_activation_guard() returns trigger language plpgsql set search_path = '' as $$
-declare recent_cd integer; is_frozen boolean; approval_task uuid; approval_status text; candidate public.identity_candidates; version_row public.identity_versions;
+declare recent_cd integer; is_frozen boolean; approval_task uuid; approval_status text; gate text; candidate public.identity_candidates; version_row public.identity_versions;
 begin
   perform pg_advisory_xact_lock(hashtextextended(new.identity_id::text || ':identity-activation', 0));
   select * into strict candidate from public.identity_candidates where id = new.candidate_id and identity_id = new.identity_id;
@@ -277,6 +280,12 @@ begin
     raise exception 'activation must be requested by the task that created its version' using errcode='23514';
   end if;
   new.governance_class := candidate.governance_class; -- read back, never re-asserted independently.
+  -- The identity policy-gate capability for this class (packages/capabilities IDENTITY_APPLY_*).
+  gate := case new.governance_class
+    when 'A' then '70000000-0000-4000-8000-000000000001'
+    when 'ROLLBACK' then '70000000-0000-4000-8000-000000000002'
+    when 'C' then '70000000-0000-4000-8000-000000000003'
+    when 'D' then '70000000-0000-4000-8000-000000000004' end;
   if new.governance_class in ('A','ROLLBACK') and new.approval_id is null then
     raise exception 'Class A and ROLLBACK activations require a granted approval' using errcode='23514';
   end if;
@@ -301,8 +310,8 @@ begin
     end if;
     -- ADR-0021 D5: the approval binds THIS candidate and THIS proposed document, not merely the task.
     -- ApprovalStore.record() writes the immutable POLICY_CHECKED event that scoped this approval; its
-    -- invocation input is exactly {candidateId, identityCoreDigest} and its capability is the gate for
-    -- this governance class.
+    -- invocation input is exactly {candidateId, identityCoreDigest}, its capability is the gate for
+    -- this governance class, and its decision was APPROVAL_REQUIRED.
     if not exists (
       select 1 from public.task_events e
       where e.task_id = new.request_task_id and e.type = 'POLICY_CHECKED'
@@ -310,15 +319,33 @@ begin
         and e.payload->>'approvalId' = new.approval_id::text
         and e.payload->'invocation'->'input'->>'candidateId' = candidate.id::text
         and e.payload->'invocation'->'input'->>'identityCoreDigest' = candidate.proposed_digest
-        and e.payload->'invocation'->'capability'->>'id' = case new.governance_class
-              when 'A' then '70000000-0000-4000-8000-000000000001'
-              when 'ROLLBACK' then '70000000-0000-4000-8000-000000000002' end
+        and e.payload->'invocation'->'capability'->>'id' = gate
+        and e.payload->'evaluation'->'decision'->>'decision' = 'APPROVAL_REQUIRED'
     ) then
       raise exception 'approval is not bound to this candidate and proposed document' using errcode='23514';
     end if;
+  elsif new.governance_class in ('C','D') then
+    -- ADR-0021 D6: every Class C/D change goes through policy, not only Class A. Without an approval,
+    -- a C/D activation requires the persisted policy decision for THIS task to be ALLOW, scoped to this
+    -- exact candidate and proposed document under this class's own gate (IDENTITY_APPLY_C / _D). No
+    -- rule, a DENY, or a decision for another candidate/class is refused here.
+    if not exists (
+      select 1 from public.task_events e
+      where e.task_id = new.request_task_id and e.type = 'POLICY_CHECKED'
+        and e.payload->'invocation'->'input'->>'candidateId' = candidate.id::text
+        and e.payload->'invocation'->'input'->>'identityCoreDigest' = candidate.proposed_digest
+        and e.payload->'invocation'->'capability'->>'id' = gate
+        and e.payload->'evaluation'->'decision'->>'decision' = 'ALLOW'
+    ) then
+      raise exception 'Class C/D activation requires an ALLOW policy decision bound to this candidate and proposed document' using errcode='23514';
+    end if;
   end if;
+  -- ADR-0021 D7: Class C/D is frozen by DEFAULT once an identity exists. No governance-state row means
+  -- frozen - fail closed; only kernel_private.set_identity_freeze(id, false, ...) (deployment authority,
+  -- the P7B G13 window) opens it. An emergency HUMAN-approved rollback and an approved Class A change
+  -- are never frozen.
   select frozen into is_frozen from kernel_private.identity_governance_state where identity_id = new.identity_id;
-  if coalesce(is_frozen, false) and new.governance_class in ('C','D') then
+  if coalesce(is_frozen, true) and new.governance_class in ('C','D') then
     raise exception 'identity Class C/D activation is frozen pending P7B qualification' using errcode='23514';
   end if;
   if new.governance_class in ('C','D') then
@@ -343,8 +370,10 @@ create view public.identity_current with (security_invoker=true) as
         order by identity_id, seq desc) a
     on a.identity_id = v.identity_id and a.version = v.version;
 
--- Post-bootstrap freeze. A privileged, deployment-authority-only flag (same trust
--- boundary as kernel_private.release_epoch) — never set by the ordinary application path.
+-- Post-bootstrap freeze (ADR-0021 D7). Class C/D is frozen by DEFAULT: identity_activation_guard()
+-- treats a missing row as frozen. This privileged, deployment-authority-only flag (same trust
+-- boundary as kernel_private.release_epoch) is the only way to UNfreeze - never set by the ordinary
+-- application path, and meant to be flipped only in the P7B G13 qualification window.
 create table kernel_private.identity_governance_state (
   identity_id uuid primary key references public.identity_profiles(id),
   frozen boolean not null default false,

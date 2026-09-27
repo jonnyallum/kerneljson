@@ -156,7 +156,10 @@ export function productionApprovalWorkflow(ledger: Ledger, env: NodeJS.ProcessEn
 }
 
 /** KJ-P7A - the two identity-approval rules (Class A, ROLLBACK), same shape as approvalPolicyRules
- *  above, same door principal as the sole named approver. Reuses the exact same
+ *  above, same door principal as the sole named approver. There is deliberately NO rule for
+ *  IDENTITY_APPLY_C / IDENTITY_APPLY_D: evaluatePolicy() denies an unmatched capability, so every
+ *  Class C/D change is policy-DENIED in production until a later window (P7B, after G13) adds an
+ *  explicit rule - on top of the database's own default post-bootstrap freeze (ADR-0021 D6/D7). Reuses the exact same
  *  ApprovalBoundaryConfig/KJ_APPROVAL_ENABLED surface as the golden workflow (ADR-0021 D5: no second
  *  approval system, no new env surface for identity specifically). */
 export function identityApprovalPolicyRules(config: ApprovalBoundaryConfig): PolicyRules {
