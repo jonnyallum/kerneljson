@@ -23,6 +23,9 @@ export interface HealthExpectations {
    *  `scheduled_start_at` before it's considered stuck rather than merely about to
    *  run. */
   stuckWakeGraceMs?: number;
+  /** KJ-P7A: how long an identity profile may exist with no activated identity before it is reported
+   *  as an interrupted bootstrap rather than one still in flight. Default 10min. */
+  identityBootstrapGraceMs?: number;
 }
 
 export interface ScheduleStateRow {
@@ -145,18 +148,27 @@ export interface LegacyAuthoritySnapshot {
 }
 
 /** KJ-P7A - ADR-0021 D8's orphan detector. A completed identity-change task with no matching
- *  identity_activations row is a materialisation failure: the task claims success but the identity
- *  change it promised never took effect. `ageMs` lets evaluate.ts apply a grace period, since a very
- *  recent completion may simply be mid-flight between IdentityChangeWorkflowV1's own "complete-task"
- *  and "activate-identity" steps (see identity/complete.ts's doc comment). */
+ *  identity_activations row means the task claims success but the identity change it promised never
+ *  took effect. Completion, version and activation now commit in ONE transaction
+ *  (identity/complete.ts), so there is no legitimate in-flight window: any such row is corruption. */
 export interface IdentityOrphanRow {
   taskId: string;
+  ageMs: number;
+}
+
+/** KJ-P7A - an identity profile with no activated identity: a bootstrap that committed its profile
+ *  and was then refused or interrupted. Recoverable (the owner's next bootstrap request resumes the
+ *  same profile), so it is surfaced, not treated as corruption. */
+export interface IncompleteBootstrapRow {
+  identityId: string;
+  tenantId: string;
   ageMs: number;
 }
 
 export interface IdentitySnapshot {
   dbReachable: boolean;
   completedTasksMissingActivation: IdentityOrphanRow[];
+  profilesWithoutCurrentIdentity: IncompleteBootstrapRow[];
 }
 
 export interface HealthSnapshot {

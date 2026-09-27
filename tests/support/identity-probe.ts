@@ -5,6 +5,10 @@ import { PgControlReplayStore, createControlVerifier } from "../../services/kern
 import { CONTROL_TEST_KEY, CONTROL_TEST_KEY_ID } from "./control-test-key.js";
 import { policyOwner, policyReviewer } from "./golden-probe.js";
 
+/** A second ACTIVE HUMAN member of policyOwner's tenant who is NOT the identity's owner (KJ-P7A
+ *  pre-hostile review, finding 4): may submit tasks, may not change someone else's identity. */
+export const secondHuman = "80000000-0000-4000-8000-000000000003";
+
 /** KJ-P7A - the IdentityChangeWorkflowV1 probe, mirroring golden-probe.ts exactly: the same test
  *  principals, the same synthetic + signed authenticator, the same shape of policy rules - just for
  *  IDENTITY_APPLY_A/IDENTITY_APPLY_ROLLBACK instead of UPPERCASE. */
@@ -43,6 +47,7 @@ export function createIdentityProbe(ledger: Ledger) {
       const token = headers.get("authorization");
       if (token === "Bearer test-owner") return { id: policyOwner, kind: "HUMAN" as const };
       if (token === "Bearer test-reviewer") return { id: policyReviewer, kind: "HUMAN" as const };
+      if (token === "Bearer test-second-human") return { id: secondHuman, kind: "HUMAN" as const };
       throw new Error("Invalid test identity");
     },
   );

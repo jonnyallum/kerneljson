@@ -32,6 +32,9 @@ import { join } from "node:path";
 const MIGRATION = "supabase/migrations/20260925120000_primary_identity.sql";
 const WORKFLOW = "services/kernel/src/identity-workflow.ts";
 const POLICY = "services/memory/src/canonical/policy.ts";
+const COMPLETE = "services/kernel/src/identity/complete.ts";
+const STORE = "services/kernel/src/identity/store.ts";
+const HEALTH = "services/kernel/src/health/evaluate.ts";
 
 // Scoped per mutation, not one uniform list: the full set (below) needs a fresh Docker rebuild for
 // the Restate E2E workflow suite alone (measured ~480s), and only the two mutations that actually
@@ -42,7 +45,8 @@ const POLICY = "services/memory/src/canonical/policy.ts";
 const DB_TESTS = ["tests/identity-migration.integration.test.ts"];
 const WORKFLOW_TESTS = ["tests/identity-workflow.integration.test.ts"];
 const MEMORY_TESTS = ["tests/memory-canonical.test.ts"];
-const FULL_TESTS = [...DB_TESTS, ...WORKFLOW_TESTS, "tests/primary-identity-contracts.test.ts", "tests/identity-canonical.test.ts", "tests/identity-secret-scan.test.ts", ...MEMORY_TESTS];
+const HEALTH_TESTS = ["tests/health-model.test.ts"];
+const FULL_TESTS = [...DB_TESTS, ...WORKFLOW_TESTS, "tests/primary-identity-contracts.test.ts", "tests/identity-canonical.test.ts", "tests/identity-secret-scan.test.ts", ...MEMORY_TESTS, ...HEALTH_TESTS];
 
 /** [id, what the mutation breaks, file, exact text to find (must occur once), replacement, tests to run] */
 const MUTATIONS = [
@@ -113,6 +117,25 @@ const MUTATIONS = [
     'decision: "REQUIRE_APPROVAL",\r\n      ruleId: "relationship-promotion-disabled",',
     MEMORY_TESTS,
   ],
+  // --- KJ-P7A pre-hostile review fixes (findings 1-4) ---
+  ["M23", "the workflow no longer refuses a non-owner before creating a task (finding 4)", WORKFLOW, "if (profile && profile.ownerPrincipalId !== actor.id)", "if (false)", WORKFLOW_TESTS],
+  ["M24", "the database no longer requires the proposing task's principal to be the identity owner (finding 4)", MIGRATION, "if proposer_id is distinct from owner_id then", "if false then", DB_TESTS],
+  ["M25", "bootstrap is chosen by the absence of a profile instead of a head, so an interrupted bootstrap is stuck forever (finding 3)", WORKFLOW, 'governanceClass: request.kind === "ROLLBACK" ? "ROLLBACK" : head ? "A" : "BOOTSTRAP",', 'governanceClass: request.kind === "ROLLBACK" ? "ROLLBACK" : profile ? "A" : "BOOTSTRAP",', WORKFLOW_TESTS],
+  ["M26", "a refusal after the task exists no longer ends it FAILED - a zombie task (finding 2)", WORKFLOW, 'await emit("refused", "TASK_FAILED", "FAILED", undefined, { reason });', "", WORKFLOW_TESTS],
+  [
+    "M27",
+    "completion commits in its own transaction before the version/activation (the original D8 atomicity bug, finding 1)",
+    COMPLETE,
+    "const outcome = await completeIdentityTaskTx(db, input.taskId, input.summary, input.proof, input.audit);",
+    'const outcome = await completeIdentityTaskTx(db, input.taskId, input.summary, input.proof, input.audit);\n    await db.query("commit");\n    await db.query("begin");',
+    DB_TESTS,
+  ],
+  ["M28", "a transient database error is turned into a governance refusal, so a retryable failure FAILS the task (finding 1)", STORE, "if (!isDeterministicRefusal(error)) throw error;", "if (false) throw error;", DB_TESTS],
+  ["M29", "a version may be created by a task other than its candidate's own proposing task", MIGRATION, "if candidate.proposed_by_task is not null and candidate.proposed_by_task is distinct from new.created_by_task then", "if false then", DB_TESTS],
+  ["M30", "an activation may be requested by a task other than the one that created its version", MIGRATION, "if version_row.created_by_task is distinct from new.request_task_id then", "if false then", DB_TESTS],
+  ["M31", "a retried apply after a lost journal entry re-runs instead of returning what already committed (finding 1)", COMPLETE, "    if (existing.rows[0]) {\n      const outcome = Outcome.parse(existing.rows[0].contract);", "    if (false) {\n      const outcome = Outcome.parse(existing.rows[0].contract);", DB_TESTS],
+  ["M32", "an interrupted bootstrap's existing profile is not resumed, so recovery collides with it (finding 3)", STORE, "if (existing) return this.matchProfile(existing, input);", "if (false) return this.matchProfile(existing, input);", WORKFLOW_TESTS],
+  ["M33", "an identity profile left without an activated identity is never surfaced by health (finding 3)", HEALTH, 'incomplete.length === 0 ? "HEALTHY" : "DEGRADED",', '"HEALTHY",', HEALTH_TESTS],
 ];
 
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;

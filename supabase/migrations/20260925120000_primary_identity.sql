@@ -103,7 +103,19 @@ create table public.identity_candidates (
 -- by lying in the request: the value it sent is discarded, not merely checked.
 create function public.identity_candidate_classify() returns trigger language plpgsql set search_path = '' as $$
 declare head public.identity_versions; changed_a boolean; changed_c boolean; changed_d boolean;
+  owner_id uuid; proposer_id uuid;
 begin
+  -- Owner enforcement (KJ-P7A pre-hostile review, finding 4): an operator change to an identity may
+  -- only be proposed by a task submitted by that identity's own owner. HUMAN membership of the tenant
+  -- is not enough - a second ACTIVE HUMAN member is refused here. (Model/Shared Brain candidates carry
+  -- no proposing task and are separately capped at HELD/REJECTED by the table's own origin check.)
+  if new.origin = 'OPERATOR_INSTRUCTION' then
+    select owner_principal_id into owner_id from public.identity_profiles where id = new.identity_id;
+    select principal_id into proposer_id from public.tasks where id = new.proposed_by_task;
+    if proposer_id is distinct from owner_id then
+      raise exception 'only the identity owner may propose an operator change to it' using errcode='23514';
+    end if;
+  end if;
   select * into head from public.identity_head where identity_id = new.identity_id;
   if head is null then
     if new.governance_class <> 'BOOTSTRAP' then
@@ -171,6 +183,14 @@ begin
     raise exception 'version document must match its candidate document exactly, aside from the version number' using errcode='23514';
   end if;
   new.governance_class := candidate.governance_class; -- read back, never re-asserted independently.
+  -- An operator candidate's version may only be produced by the task that proposed it. Without this, a
+  -- candidate whose own task was refused/failed (an APPROVED Class A candidate stays APPROVED -
+  -- candidates never leave a resolved state) could later be applied under some other task's
+  -- completion. Model/Shared Brain candidates carry no proposing task; they are held back from
+  -- activation by the origin ceiling in identity_activation_guard() instead.
+  if candidate.proposed_by_task is not null and candidate.proposed_by_task is distinct from new.created_by_task then
+    raise exception 'a version must be created by the task that proposed its candidate' using errcode='23514';
+  end if;
   select * into prior from public.identity_versions
     where identity_id = new.identity_id order by version desc limit 1;
   if prior is null then
@@ -232,6 +252,9 @@ begin
   select * into strict version_row from public.identity_versions where identity_id = new.identity_id and version = new.version;
   if version_row.candidate_id is distinct from candidate.id then
     raise exception 'activation version must be the version this exact candidate produced' using errcode='23514';
+  end if;
+  if version_row.created_by_task is distinct from new.request_task_id then
+    raise exception 'activation must be requested by the task that created its version' using errcode='23514';
   end if;
   new.governance_class := candidate.governance_class; -- read back, never re-asserted independently.
   if new.governance_class in ('A','ROLLBACK') and new.approval_id is null then

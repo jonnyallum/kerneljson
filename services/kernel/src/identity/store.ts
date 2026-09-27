@@ -2,7 +2,6 @@ import type pg from "pg";
 import {
   IdentityActivationRow,
   IdentityCandidateRow,
-  IdentityDocument,
   IdentityDocumentDraft,
   IdentityGovernanceClass,
   IdentityOrigin,
@@ -23,9 +22,23 @@ export class IdentityRefusal extends Error {
   }
 }
 
-function asRefusal(context: string, error: unknown): IdentityRefusal {
+/** A database refusal that will be refused identically on every retry: an integrity-constraint
+ *  violation (SQLSTATE class 23 - every identity trigger raises 23514, and unique/FK refusals are
+ *  23505/23503), a data exception (class 22), or a `select ... into strict` that found no row
+ *  (P0002/P0003). Anything else - a dropped connection, a serialization failure (40001), a deadlock
+ *  (40P01), an admin shutdown - is transient and must propagate unwrapped so Restate retries it,
+ *  never be turned into a governance refusal that terminates the task. */
+export function isDeterministicRefusal(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && (code.startsWith("23") || code.startsWith("22") || code === "P0002" || code === "P0003");
+}
+
+/** Wraps only a deterministic refusal; rethrows anything transient exactly as it was. */
+export function refusalOrRethrow(context: string, error: unknown): never {
+  if (error instanceof IdentityRefusal) throw error;
+  if (!isDeterministicRefusal(error)) throw error;
   const message = error instanceof Error ? error.message : String(error);
-  return new IdentityRefusal(`${context}: ${message}`, error);
+  throw new IdentityRefusal(`${context}: ${message}`, error);
 }
 
 const profileRow = (r: Record<string, unknown>): IdentityProfileRow =>
@@ -33,7 +46,7 @@ const profileRow = (r: Record<string, unknown>): IdentityProfileRow =>
     id: r["id"], tenantId: r["tenant_id"], ownerPrincipalId: r["owner_principal_id"],
     name: r["name"], status: r["status"], createdAt: new Date(r["created_at"] as string).toISOString(),
   });
-const versionRow = (r: Record<string, unknown>): IdentityVersionRow =>
+export const versionRow = (r: Record<string, unknown>): IdentityVersionRow =>
   IdentityVersionRow.parse({
     id: r["id"], identityId: r["identity_id"], tenantId: r["tenant_id"], version: r["version"],
     document: r["document"], identityCoreDigest: r["identity_core_digest"], classADigest: r["class_a_digest"],
@@ -48,7 +61,7 @@ const candidateRow = (r: Record<string, unknown>): IdentityCandidateRow =>
     createdAt: new Date(r["created_at"] as string).toISOString(),
     resolvedAt: r["resolved_at"] ? new Date(r["resolved_at"] as string).toISOString() : null,
   });
-const activationRow = (r: Record<string, unknown>): IdentityActivationRow =>
+export const activationRow = (r: Record<string, unknown>): IdentityActivationRow =>
   IdentityActivationRow.parse({
     id: r["id"], identityId: r["identity_id"], tenantId: r["tenant_id"], version: r["version"],
     governanceClass: r["governance_class"], candidateId: r["candidate_id"], approvalId: r["approval_id"],
@@ -65,9 +78,14 @@ export class IdentityStore {
     return res.rows[0] ? profileRow(res.rows[0] as Record<string, unknown>) : null;
   }
 
-  /** Bootstrap-once: the unique(tenant_id) constraint refuses a second profile for the same tenant,
-   *  which is the ENTIRE enforcement - this method adds no logic beyond surfacing that refusal. */
-  async createProfile(input: { id: string; tenantId: string; ownerPrincipalId: string; name: string }): Promise<IdentityProfileRow> {
+  /** Bootstrap-once: the unique(tenant_id) constraint refuses a second profile for the same tenant.
+   *  Replay-safe: if this exact profile (same id, tenant and owner) already exists - a previous attempt
+   *  committed but its Restate journal entry was lost, or an earlier bootstrap was interrupted after
+   *  creating it - that profile is returned rather than refused. A different profile for the tenant is
+   *  refused; a second profile is never created. */
+  async ensureProfile(input: { id: string; tenantId: string; ownerPrincipalId: string; name: string }): Promise<IdentityProfileRow> {
+    const existing = await this.readProfile(input.tenantId);
+    if (existing) return this.matchProfile(existing, input);
     try {
       const res = await this.pool.query(
         "insert into public.identity_profiles(id,tenant_id,owner_principal_id,name) values($1,$2,$3,$4) returning *",
@@ -75,8 +93,16 @@ export class IdentityStore {
       );
       return profileRow(res.rows[0] as Record<string, unknown>);
     } catch (error) {
-      throw asRefusal("IDENTITY_BOOTSTRAP_REFUSED", error);
+      refusalOrRethrow("IDENTITY_BOOTSTRAP_REFUSED", error);
     }
+  }
+
+  /** An existing profile may only be resumed (an interrupted bootstrap) by exactly the identity it
+   *  already is: same id, same tenant, same owner. */
+  matchProfile(profile: IdentityProfileRow, expected: { id: string; tenantId: string; ownerPrincipalId: string }): IdentityProfileRow {
+    if (profile.id !== expected.id || profile.tenantId !== expected.tenantId || profile.ownerPrincipalId !== expected.ownerPrincipalId)
+      throw new IdentityRefusal("IDENTITY_BOOTSTRAP_REFUSED: this tenant already has a different identity profile (id, tenant or owner differ)");
+    return profile;
   }
 
   async readHead(identityId: string): Promise<IdentityVersionRow | null> {
@@ -109,6 +135,13 @@ export class IdentityStore {
     proposedDigest: string; origin: IdentityOrigin; governanceClass: IdentityGovernanceClass;
     proposedByTask: string | null;
   }): Promise<IdentityCandidateRow> {
+    // Replay-safe: the candidate id is journaled by the workflow, so a retry after a committed insert
+    // whose journal entry was lost finds its own row here instead of a primary-key refusal.
+    const prior = await this.pool.query(
+      "select * from public.identity_candidates where id=$1 and identity_id=$2 and tenant_id=$3 and document=$4::jsonb and proposed_by_task is not distinct from $5",
+      [input.id, input.identityId, input.tenantId, JSON.stringify(input.document), input.proposedByTask],
+    );
+    if (prior.rows[0]) return candidateRow(prior.rows[0] as Record<string, unknown>);
     try {
       const res = await this.pool.query(
         `insert into public.identity_candidates(id,identity_id,tenant_id,document,proposed_digest,origin,governance_class,proposed_by_task)
@@ -117,7 +150,7 @@ export class IdentityStore {
       );
       return candidateRow(res.rows[0] as Record<string, unknown>);
     } catch (error) {
-      throw asRefusal("IDENTITY_CANDIDATE_REFUSED", error);
+      refusalOrRethrow("IDENTITY_CANDIDATE_REFUSED", error);
     }
   }
 
@@ -129,47 +162,10 @@ export class IdentityStore {
         "update public.identity_candidates set state=$2, resolved_at=$3 where id=$1 returning *",
         [candidateId, state, resolvedAt],
       );
-      if (!res.rows[0]) throw new Error("candidate not found");
+      if (!res.rows[0]) throw new IdentityRefusal("IDENTITY_CANDIDATE_RESOLUTION_REFUSED: candidate not found");
       return candidateRow(res.rows[0] as Record<string, unknown>);
     } catch (error) {
-      throw asRefusal("IDENTITY_CANDIDATE_RESOLUTION_REFUSED", error);
-    }
-  }
-
-  /** Version + activation in ONE transaction: they are two rows describing the same governed
-   *  fact, and there is no meaningful state where one exists without the other. This does NOT by
-   *  itself satisfy ADR-0021 D8 (the outer task must still independently reach COMPLETED - the
-   *  version trigger enforces that ordering); it only guarantees these two rows are atomic
-   *  w.r.t. each other. */
-  async activate(input: {
-    versionId: string; identityId: string; tenantId: string; version: number;
-    document: IdentityDocument; identityCoreDigest: string; classADigest: string;
-    candidateId: string; createdByTask: string;
-    activationId: string; approvalId: string | null; requestTaskId: string;
-  }): Promise<{ version: IdentityVersionRow; activation: IdentityActivationRow }> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("begin");
-      const v = await client.query(
-        `insert into public.identity_versions(id,identity_id,tenant_id,version,document,identity_core_digest,class_a_digest,governance_class,candidate_id,created_by_task)
-         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
-        [
-          input.versionId, input.identityId, input.tenantId, input.version, JSON.stringify(input.document),
-          input.identityCoreDigest, input.classADigest, "IGNORED_DERIVED_FROM_CANDIDATE", input.candidateId, input.createdByTask,
-        ],
-      );
-      const a = await client.query(
-        `insert into public.identity_activations(id,identity_id,tenant_id,version,governance_class,candidate_id,approval_id,request_task_id)
-         values($1,$2,$3,$4,$5,$6,$7,$8) returning *`,
-        [input.activationId, input.identityId, input.tenantId, input.version, "IGNORED_DERIVED_FROM_CANDIDATE", input.candidateId, input.approvalId, input.requestTaskId],
-      );
-      await client.query("commit");
-      return { version: versionRow(v.rows[0] as Record<string, unknown>), activation: activationRow(a.rows[0] as Record<string, unknown>) };
-    } catch (error) {
-      await client.query("rollback");
-      throw asRefusal("IDENTITY_ACTIVATION_REFUSED", error);
-    } finally {
-      client.release();
+      refusalOrRethrow("IDENTITY_CANDIDATE_RESOLUTION_REFUSED", error);
     }
   }
 }

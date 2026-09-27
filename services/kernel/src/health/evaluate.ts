@@ -16,10 +16,10 @@ import type {
   SchedulerSnapshot,
 } from "./snapshot.js";
 
-/** KJ-P7A: how long a completed identity-change task may sit without a matching
- *  identity_activations row before this is a materialisation failure rather than the ordinary,
- *  brief gap between IdentityChangeWorkflowV1's "complete-task" and "activate-identity" steps. */
-const DEFAULT_IDENTITY_ACTIVATION_GRACE_MS = 5 * 60_000; // 5min
+/** KJ-P7A: how long an identity profile may exist with no activated identity before it is reported
+ *  as an interrupted bootstrap rather than a bootstrap still in flight (BOOTSTRAP needs no approval,
+ *  so an honest one takes seconds). */
+const DEFAULT_IDENTITY_BOOTSTRAP_GRACE_MS = 10 * 60_000; // 10min
 
 const DEFAULT_FIRE_STALENESS_GRACE_MS = 25 * 3_600_000; // 25h — covers a dailyAt cadence + jitter
 const DEFAULT_PLANNED_FIRE_GRACE_MS = 10 * 60_000; // 10min
@@ -901,22 +901,38 @@ export function evaluateProductionConfig(
 
 export function evaluateIdentity(s: IdentitySnapshot, exp: HealthExpectations, checkedAt: string): DomainResult {
   const checks: CheckResult[] = [];
-  const grace = exp.stuckWakeGraceMs ?? DEFAULT_IDENTITY_ACTIVATION_GRACE_MS;
+  const bootstrapGrace = exp.identityBootstrapGraceMs ?? DEFAULT_IDENTITY_BOOTSTRAP_GRACE_MS;
   if (!s.dbReachable) {
     checks.push(check("identity.completedTasksHaveActivation", "UNKNOWN", "public.tasks vs public.identity_activations", "database unreachable — see the database domain", checkedAt));
+    checks.push(check("identity.profilesHaveActivatedIdentity", "UNKNOWN", "public.identity_profiles vs public.identity_activations", "database unreachable — see the database domain", checkedAt));
     return aggregateDomain(checks);
   }
-  const stuck = s.completedTasksMissingActivation.filter((r) => r.ageMs >= grace);
+  // No grace period: completion, version and activation commit in ONE transaction
+  // (identity/complete.ts), so there is no legitimate window in which one exists without the other.
+  const stuck = s.completedTasksMissingActivation;
   checks.push(
     check(
       "identity.completedTasksHaveActivation",
       stuck.length === 0 ? "HEALTHY" : "CRITICAL",
       "public.tasks (COMPLETED, identity-change/v1) vs public.identity_activations.request_task_id",
       stuck.length === 0
-        ? "every completed identity-change task past the grace period has a matching activation"
+        ? "every completed identity-change task has a matching activation"
         : `${stuck.length} completed identity-change task(s) have no matching identity_activations row — ADR-0021 D8 orphan: the task claims success but the identity change never took effect`,
       checkedAt,
       { observed: stuck.map((r) => r.taskId), expected: [] },
+    ),
+  );
+  const incomplete = s.profilesWithoutCurrentIdentity.filter((r) => r.ageMs >= bootstrapGrace);
+  checks.push(
+    check(
+      "identity.profilesHaveActivatedIdentity",
+      incomplete.length === 0 ? "HEALTHY" : "DEGRADED",
+      "public.identity_profiles vs public.identity_activations",
+      incomplete.length === 0
+        ? "every identity profile past the bootstrap grace period has an activated identity"
+        : `${incomplete.length} identity profile(s) have no activated identity — an interrupted bootstrap; the owner's next bootstrap request resumes the same profile`,
+      checkedAt,
+      { observed: incomplete.map((r) => r.identityId), expected: [] },
     ),
   );
   return aggregateDomain(checks);

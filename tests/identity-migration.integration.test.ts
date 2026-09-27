@@ -1,18 +1,24 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { knowledgeDatabase } from "./support/knowledge-db.js";
-import { completeIdentityTask } from "../services/kernel/src/identity/complete.js";
+import { completeAndActivateIdentity, completeIdentityTaskTx, type IdentityApply } from "../services/kernel/src/identity/complete.js";
+import { IdentityRefusal } from "../services/kernel/src/identity/store.js";
+import { fetchIdentityOrphans, fetchIncompleteBootstraps } from "../services/kernel/src/health/collect.js";
 import { capabilityDigest } from "../packages/capabilities/src/index.js";
 
 /**
  * KJ-P7A - the primary identity migration (ADR-0021) against real Postgres. Exercises the DB
  * triggers directly with raw SQL, independent of IdentityChangeWorkflowV1, so a bug in the
  * database's own enforcement can never hide behind a correct workflow - but reuses the REAL
- * completeIdentityTask (identity/complete.ts) for task completion rather than a hand-rolled
+ * completeIdentityTaskTx (identity/complete.ts) for task completion rather than a hand-rolled
  * approximation, which is exactly what caught a real bug live: a raw `status='COMPLETED'` insert
  * with an empty evidenceRefs array looked fine until check_task_completion()
  * (20260905153704_intelligence_metadata.sql) refused it - and so would every real call to
- * completeIdentityTask have, before that function was fixed to write a real evidence row first.
+ * completeIdentityTaskTx have, before that function was fixed to write a real evidence row first.
+ *
+ * The raw-SQL helpers below deliberately complete a task and THEN insert its version/activation as
+ * separate statements, to reach each trigger on its own. Production never does that: it goes
+ * through completeAndActivateIdentity (one transaction), exercised in the "D8" block at the end.
  *
  * Mirrors tests/memory-canonical.integration.test.ts's "against a real Postgres. Every refusal
  * below that says 'in the database' is the schema refusing, with the application bypassed"
@@ -86,16 +92,27 @@ async function mkRunningTask(tenantId: string, principalId: string): Promise<str
   );
   return id;
 }
-/** Runs the REAL completeIdentityTask against an existing VERIFYING task. */
+/** Runs the REAL completeIdentityTaskTx against an existing VERIFYING task, committed on its own. */
 async function completeExistingTask(taskId: string): Promise<void> {
   const proofMetadata = { probe: randomUUID() };
-  await completeIdentityTask(
-    db.pool,
-    taskId,
-    "identity change applied",
-    { evidenceId: randomUUID(), digest: capabilityDigest(proofMetadata), metadata: proofMetadata },
-    { eventId: randomUUID(), at: new Date().toISOString() },
-  );
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    await client.query("select pg_advisory_xact_lock(hashtextextended($1,0))", [taskId]);
+    await completeIdentityTaskTx(
+      client,
+      taskId,
+      "identity change applied",
+      { evidenceId: randomUUID(), digest: capabilityDigest(proofMetadata), metadata: proofMetadata },
+      { eventId: randomUUID(), at: new Date().toISOString() },
+    );
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 async function mkApproval(taskId: string, approverId: string, status: "PENDING" | "GRANTED" | "DENIED" = "GRANTED"): Promise<string> {
   const id = randomUUID(),
@@ -580,7 +597,19 @@ describe("identity_activations: rate cap, freeze, and identity_current", () => {
     // (so that unique constraint alone would not catch it), but the same candidate_id.
     const secondTaskId = await mkVerifyingTask(tenantId, ownerId);
     await completeExistingTask(secondTaskId);
-    await expect(insertActivation(tenantId, identityId, 1, candidateId, null, secondTaskId)).rejects.toMatchObject({ code: "23505" });
+    // Two layers refuse this: identity_activation_guard() (the activation must be requested by the
+    // task that created the version, 23514) and unique(candidate_id) (23505). Either alone satisfies
+    // the black-box property, so prove the UNIQUE on its own too, with triggers disabled.
+    await expect(insertActivation(tenantId, identityId, 1, candidateId, null, secondTaskId)).rejects.toMatchObject({ code: "23514" });
+    await inRolledBackTransaction(async (client) => {
+      await client.query("set local session_replication_role = replica"); // user triggers do not fire
+      await expect(
+        client.query(
+          "insert into identity_activations(id,identity_id,tenant_id,version,governance_class,candidate_id,approval_id,request_task_id) values($1,$2,$3,1,'BOOTSTRAP',$4,null,$5)",
+          [randomUUID(), identityId, tenantId, candidateId, secondTaskId],
+        ),
+      ).rejects.toMatchObject({ code: "23505" });
+    });
   });
 
   it("concurrent activation: two simultaneous Class C proposals on the same identity serialize rather than both succeeding at the same version", async () => {
@@ -638,5 +667,231 @@ describe("RLS: anon and authenticated have no access to any identity table", () 
       await client.query("reset role");
       client.release();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// KJ-P7A pre-hostile review fixes. Everything below goes through the production apply path,
+// completeAndActivateIdentity (identity/complete.ts), not the raw two-step helpers above.
+// ---------------------------------------------------------------------------------------------------
+
+function fullDoc(identityId: string, tenantId: string, persona = "warm, direct") {
+  return {
+    id: identityId,
+    tenantId,
+    sections: {
+      classA: {
+        name: "Jai",
+        constitution: "Serve the operator honestly and rigorously.",
+        values: ["rigour"],
+        operatorRelationship: "Reports to the operator.",
+        facultyFraming: "Frames whichever faculty the kernel selected.",
+        memoryPolicy: "May narrow canonical memory, never widen it.",
+      },
+      classC: { persona, communication: "plain", behaviour: "cautious", presentation: "concise" },
+      classD: { objectives: ["ship KJ-P7"], vision: "A trustworthy operator partner." },
+    },
+  };
+}
+function applyInput(tenantId: string, identityId: string, taskId: string, candidateId: string, draft: ReturnType<typeof fullDoc>, approvalId: string | null = null): IdentityApply {
+  const metadata = { candidateId };
+  return {
+    taskId,
+    summary: "identity change applied",
+    proof: { evidenceId: randomUUID(), digest: capabilityDigest(metadata), metadata },
+    audit: { eventId: randomUUID(), at: new Date().toISOString() },
+    identityId,
+    tenantId,
+    draftDocument: draft,
+    candidateId,
+    versionId: randomUUID(),
+    activationId: randomUUID(),
+    approvalId,
+  };
+}
+/** Proposes `draft` on a fresh VERIFYING task owned by `ownerId`; `apply` runs the atomic apply. */
+async function proposeAndApply(tenantId: string, ownerId: string, identityId: string, draft: ReturnType<typeof fullDoc>, requested: string) {
+  const taskId = await mkVerifyingTask(tenantId, ownerId);
+  const candidateId = await proposeOn(tenantId, identityId, taskId, draft, requested);
+  const input = applyInput(tenantId, identityId, taskId, candidateId, draft);
+  return { taskId, candidateId, input, apply: () => completeAndActivateIdentity(db.pool, input) };
+}
+/** Everything a completion or an activation could have left behind for one task. */
+async function footprint(taskId: string) {
+  const r = await db.pool.query(
+    `select (select status from tasks where id=$1) as status,
+            (select count(*)::int from outcomes where task_id=$1) as outcomes,
+            (select count(*)::int from evidence where task_id=$1) as evidence,
+            (select count(*)::int from task_events where task_id=$1 and type='TASK_COMPLETED') as completed_events,
+            (select count(*)::int from identity_versions where created_by_task=$1) as versions,
+            (select count(*)::int from identity_activations where request_task_id=$1) as activations`,
+    [taskId],
+  );
+  return r.rows[0] as { status: string; outcomes: number; evidence: number; completed_events: number; versions: number; activations: number };
+}
+const NOTHING_COMMITTED = { status: "VERIFYING", outcomes: 0, evidence: 0, completed_events: 0, versions: 0, activations: 0 };
+async function bootstrapAtomically(tenantId: string, ownerId: string) {
+  const identityId = await mkProfile(tenantId, ownerId);
+  const boot = await proposeAndApply(tenantId, ownerId, identityId, fullDoc(identityId, tenantId), "BOOTSTRAP");
+  await boot.apply();
+  return identityId;
+}
+
+describe("D8: completion, version and activation are one transaction (finding 1)", () => {
+  it("a frozen Class C/D change never yields COMPLETED-without-activation: the refusal rolls the completion back", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const identityId = await bootstrapAtomically(tenantId, ownerId);
+    await db.pool.query("select kernel_private.set_identity_freeze($1,true,'P7A: frozen pending P7B')", [identityId]);
+    const change = await proposeAndApply(tenantId, ownerId, identityId, fullDoc(identityId, tenantId, "frozen persona"), "C");
+    const refused = await change.apply().catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(IdentityRefusal);
+    expect(String((refused as Error).message)).toContain("frozen");
+    expect(await footprint(change.taskId)).toEqual(NOTHING_COMMITTED);
+    expect((await fetchIdentityOrphans(db.pool, new Date())).map((o) => o.taskId)).not.toContain(change.taskId);
+  });
+
+  it("a rate-capped Class C/D change never yields COMPLETED-without-activation", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const identityId = await bootstrapAtomically(tenantId, ownerId);
+    for (const persona of ["one", "two", "three"]) await (await proposeAndApply(tenantId, ownerId, identityId, fullDoc(identityId, tenantId, persona), "C")).apply();
+    const fourth = await proposeAndApply(tenantId, ownerId, identityId, fullDoc(identityId, tenantId, "four"), "C");
+    const refused = await fourth.apply().catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(IdentityRefusal);
+    expect(String((refused as Error).message)).toContain("rate cap");
+    expect(await footprint(fourth.taskId)).toEqual(NOTHING_COMMITTED);
+  });
+
+  it("a simulated transient activation failure rolls back completion/evidence/outcome, and retry converges to exactly one of each", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const identityId = await bootstrapAtomically(tenantId, ownerId);
+    const change = await proposeAndApply(tenantId, ownerId, identityId, fullDoc(identityId, tenantId, "retried persona"), "C");
+    // Fail the activation insert - the LAST write in the transaction, after completion and version -
+    // with a serialization failure (40001), which is transient: it must propagate unwrapped (so
+    // Restate retries it), never be turned into a governance refusal that would FAIL the task.
+    await db.pool.query("create table if not exists public.p7a_fail_activation(task_id uuid primary key)");
+    await db.pool.query(
+      "create or replace function public.p7a_fail_activation() returns trigger language plpgsql as $f$ " +
+        "begin if exists (select 1 from public.p7a_fail_activation where task_id = new.request_task_id) then " +
+        "raise exception 'simulated transient activation failure' using errcode = '40001'; end if; return new; end $f$",
+    );
+    await db.pool.query("create trigger p7a_fail_activation before insert on public.identity_activations for each row execute function public.p7a_fail_activation()");
+    try {
+      await db.pool.query("insert into public.p7a_fail_activation(task_id) values($1)", [change.taskId]);
+      const failed = await change.apply().catch((error: unknown) => error);
+      expect(failed).not.toBeInstanceOf(IdentityRefusal);
+      expect(failed).toMatchObject({ code: "40001" });
+      expect(await footprint(change.taskId)).toEqual(NOTHING_COMMITTED);
+
+      await db.pool.query("delete from public.p7a_fail_activation where task_id=$1", [change.taskId]);
+      const first = await change.apply();
+      expect(first.replayed).toBe(false);
+      // A retry after a COMMIT whose journal entry was lost: same inputs, same answer, nothing new.
+      const again = await change.apply();
+      expect(again.replayed).toBe(true);
+      expect(again.activation.id).toBe(first.activation.id);
+      expect(again.version.version).toBe(first.version.version);
+      expect(await footprint(change.taskId)).toEqual({ status: "COMPLETED", outcomes: 1, evidence: 1, completed_events: 1, versions: 1, activations: 1 });
+    } finally {
+      await db.pool.query("drop trigger if exists p7a_fail_activation on public.identity_activations");
+      await db.pool.query("drop function if exists public.p7a_fail_activation()");
+      await db.pool.query("drop table if exists public.p7a_fail_activation");
+    }
+  });
+
+  it("refuses to report success for a task that is COMPLETED without an activation (written outside this path)", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const identityId = await bootstrapAtomically(tenantId, ownerId);
+    const change = await proposeAndApply(tenantId, ownerId, identityId, fullDoc(identityId, tenantId, "orphaned"), "C");
+    await completeExistingTask(change.taskId); // the old, non-atomic shape: completed, never activated
+    await expect(change.apply()).rejects.toThrow(/no activation/);
+  });
+});
+
+describe("a version/activation is bound to the task that proposed its candidate", () => {
+  it("refuses a version created by any task other than the candidate's own proposing task", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const { identityId } = await bootstrap(tenantId, ownerId);
+    const proposingTask = await mkVerifyingTask(tenantId, ownerId);
+    const draft = doc(identityId, tenantId, { classC: { persona: "borrowed completion" } });
+    const candidateId = await proposeOn(tenantId, identityId, proposingTask, draft, "C");
+    const otherTask = await mkVerifyingTask(tenantId, ownerId);
+    await completeExistingTask(otherTask);
+    await expect(insertVersion(tenantId, identityId, 2, withVersion(draft, 2), candidateId, otherTask)).rejects.toMatchObject({
+      code: "23514",
+      message: expect.stringContaining("the task that proposed its candidate"),
+    });
+  });
+
+  it("refuses an activation requested by a task other than the one that created its version", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const { identityId } = await bootstrap(tenantId, ownerId);
+    const taskId = await mkVerifyingTask(tenantId, ownerId);
+    const draft = doc(identityId, tenantId, { classC: { persona: "borrowed activation" } });
+    const candidateId = await proposeOn(tenantId, identityId, taskId, draft, "C");
+    await completeExistingTask(taskId);
+    await insertVersion(tenantId, identityId, 2, withVersion(draft, 2), candidateId, taskId);
+    const otherTask = await mkVerifyingTask(tenantId, ownerId);
+    await expect(insertActivation(tenantId, identityId, 2, candidateId, null, otherTask)).rejects.toMatchObject({
+      code: "23514",
+      message: expect.stringContaining("the task that created its version"),
+    });
+  });
+});
+
+describe("only the identity's owner may propose an operator change (finding 4, database layer)", () => {
+  it("a second ACTIVE HUMAN member of the same tenant is refused before any candidate is written; the owner is not", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN"),
+      secondHuman = await mkPrincipal(tenantId, "HUMAN");
+    const identityId = await bootstrapAtomically(tenantId, ownerId);
+    const before = await db.pool.query("select count(*)::int as n from identity_candidates where identity_id=$1", [identityId]);
+    const intruderTask = await mkVerifyingTask(tenantId, secondHuman);
+    await expect(proposeOn(tenantId, identityId, intruderTask, fullDoc(identityId, tenantId, "not yours"), "C")).rejects.toMatchObject({
+      code: "23514",
+      message: expect.stringContaining("only the identity owner"),
+    });
+    const after = await db.pool.query("select count(*)::int as n from identity_candidates where identity_id=$1", [identityId]);
+    expect(after.rows[0].n).toBe(before.rows[0].n);
+    await expect((await proposeAndApply(tenantId, ownerId, identityId, fullDoc(identityId, tenantId, "mine"), "C")).apply()).resolves.toBeTruthy();
+  });
+});
+
+describe("an interrupted bootstrap (profile without an activated identity) is detectable and recoverable (finding 3)", () => {
+  it("reproduces the interrupted state, surfaces it, and recovers it into the SAME profile with a new BOOTSTRAP", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    // The interruption: the profile and the first BOOTSTRAP candidate committed, then the bootstrap
+    // task was refused and ended FAILED - nothing was ever activated.
+    const identityId = await mkProfile(tenantId, ownerId);
+    const firstTask = await mkVerifyingTask(tenantId, ownerId);
+    const firstCandidate = await proposeOn(tenantId, identityId, firstTask, fullDoc(identityId, tenantId), "BOOTSTRAP");
+    await db.pool.query("update identity_candidates set state='REJECTED', resolved_at=now() where id=$1", [firstCandidate]);
+    await db.pool.query(`update tasks set status='FAILED', contract=jsonb_set(contract,'{status}','"FAILED"') where id=$1`, [firstTask]);
+
+    // Surfaced by the health collector (past its grace period), and not mistaken for a D8 orphan.
+    const later = new Date(Date.now() + 60 * 60_000);
+    expect((await fetchIncompleteBootstraps(db.pool, later)).map((r) => r.identityId)).toContain(identityId);
+    expect((await fetchIdentityOrphans(db.pool, later)).map((o) => o.taskId)).not.toContain(firstTask);
+
+    // The pre-fix workflow chose Class "A" because a profile existed; the database requires BOOTSTRAP
+    // while there is no head, so that request was refused and the identity was stuck for good.
+    const wrongTask = await mkVerifyingTask(tenantId, ownerId);
+    await expect(proposeOn(tenantId, identityId, wrongTask, fullDoc(identityId, tenantId), "A")).rejects.toMatchObject({ code: "23514" });
+
+    // Recovery: a new BOOTSTRAP on the same profile, applied atomically.
+    const recovery = await proposeAndApply(tenantId, ownerId, identityId, fullDoc(identityId, tenantId), "BOOTSTRAP");
+    const { version } = await recovery.apply();
+    expect(version).toMatchObject({ version: 1, governanceClass: "BOOTSTRAP" });
+    const current = await db.pool.query("select version from identity_current where identity_id=$1", [identityId]);
+    expect(current.rows[0].version).toBe(1);
+    const profiles = await db.pool.query("select count(*)::int as n from identity_profiles where tenant_id=$1", [tenantId]);
+    expect(profiles.rows[0].n).toBe(1);
+    expect((await fetchIncompleteBootstraps(db.pool, later)).map((r) => r.identityId)).not.toContain(identityId);
   });
 });
