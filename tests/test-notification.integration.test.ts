@@ -26,6 +26,13 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await pool?.end();
+  // Same race as tests/health-collect-postgres.integration.test.ts: pg-pool's end() can resolve while a
+  // client socket is still closing, and a forced drop would then deliver an unhandled FATAL 57P01.
+  await until(
+    () => admin.query<{ n: number }>("select count(*)::int as n from pg_stat_activity where datname=$1", [name]),
+    (r) => r.rows[0]!.n === 0,
+    10_000,
+  );
   await admin.query(`drop database if exists ${name} with (force)`);
   await admin.end();
   releaseRuntime();
