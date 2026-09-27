@@ -188,3 +188,18 @@ it("rejects a Class A change when the approver denies", async () => {
   const candidate = await pool.query("select state from identity_candidates where identity_id=$1 order by created_at desc limit 1", [identityId]);
   expect(candidate.rows[0].state).toBe("REJECTED");
 }, 90000);
+
+it("refuses a document containing secret-shaped content before any write", async () => {
+  const priorCandidates = await pool.query("select count(*)::int as n from identity_candidates where identity_id=$1", [identityId]);
+  const withSecret = doc(identityId, policyOwner, { classD: { objectives: ["ship KJ-P7", "rotate sk-abcdefghijklmnopqrstuvwxyz0123456789"], vision: "trustworthy" } });
+  const task = await submit({ kind: "PROPOSE", document: withSecret, reason: "should be refused before any write" });
+  // TerminalError thrown before PLAN_COMPILED leaves tasks.status at RECEIVED (matches
+  // golden-workflow's own shape: a pre-registration refusal is a Restate invocation failure, not a
+  // KernelJSON task-lifecycle FAILED transition) - assert it never advances, and no candidate for
+  // this document was ever written.
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  const status = await pool.query<{ status: string }>("select status from tasks where id=$1", [task.id]);
+  expect(status.rows[0]?.status).toBe("RECEIVED");
+  const afterCandidates = await pool.query("select count(*)::int as n from identity_candidates where identity_id=$1", [identityId]);
+  expect(afterCandidates.rows[0].n).toBe(priorCandidates.rows[0].n);
+}, 30000);

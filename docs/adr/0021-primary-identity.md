@@ -159,6 +159,42 @@ workflow (the same shape D6/D8 above already require for identity), tracked as f
 - The P5 protected-promotion bug is fenced against, not fixed, by this work. The fix is separate, future, tracked
   work.
 
+## Implementation notes (added during KJ-P7A build, not part of the reviewed design)
+
+- **Secret-shaped content is screened before any write**, the same `looksLikeSecret` check KJ-P5 already
+  applies to memory (`services/memory/src/canonical/policy.ts`), reused rather than duplicated — an identity
+  document is shown to models and to the operator exactly the same way a memory is.
+- **Cross-tenant references are DB-enforced, not merely self-consistency-checked.** `identity_candidates`,
+  `identity_versions` and `identity_activations` each carry a composite `(identity_id, tenant_id)` foreign key
+  into `identity_profiles(id, tenant_id)` — a forged `tenant_id` that disagrees with which tenant actually owns
+  the named identity is refused by the database, not just checked against the row's own embedded document.
+- **The HELD-without-approval activation exception is origin-scoped.** The original migration let a HELD
+  BOOTSTRAP/C/D candidate activate without an approval by governance class alone; live-Postgres testing caught
+  that this did not also require `origin = 'OPERATOR_INSTRUCTION'`, meaning a MODEL_PROPOSAL or SHARED_BRAIN
+  candidate classified BOOTSTRAP (the no-existing-head classification path checks governance class, not origin)
+  could otherwise self-activate with no human ever involved. Fixed and proven both ways (regression test kills
+  the mutation, positive test proves the real path still works).
+- **The `IdentityChangeRequest` objective payload is a discriminated union** (`kind: "PROPOSE" | "ROLLBACK"`),
+  not one shape with an optional field — a rollback names a prior version by number only; the workflow reads
+  that version's own persisted document back out of `identity_versions` rather than trusting a caller-supplied
+  document to faithfully reproduce it.
+- **A real, production-breaking Restate bug was found and fixed by live durable-execution testing, not by
+  static analysis or the DB-trigger suite.** `ctx.date.now()` and `ctx.rand.uuidv4()` are themselves journaled
+  Restate context operations; calling either one from inside a `ctx.run()` callback (as the first draft of the
+  approve/reject-candidate and complete/activate steps did) desyncs replay — the SDK refuses with "await could
+  not be replayed" and the invocation retries forever. Every approval-gated identity change, and the final
+  completion+activation step of every identity change including bootstrap, would have hung indefinitely in
+  production. Fixed by hoisting every such call outside its enclosing `ctx.run`. This class of bug is invisible
+  to `pnpm typecheck`, to the DB-trigger integration suite, and to a code review that does not know the Restate
+  SDK's constraint — only running the workflow through a real Restate server surfaced it, which is why KJ-P7A's
+  test suite includes a full end-to-end workflow suite (`tests/identity-workflow.integration.test.ts`) against
+  real Restate, not only the DB-trigger suite.
+- **`completeIdentityTask` originally shipped with an empty `evidenceRefs` array**, which both `Outcome`'s own
+  zod `superRefine` and the base schema's `check_task_completion()` trigger
+  (`20260905153704_intelligence_metadata.sql`) refuse for a `COMPLETED` outcome — caught the same way, by
+  running the real function against real Postgres rather than a hand-rolled test approximation. Fixed by
+  writing a real evidence row (the database-derived governance classification) before completing.
+
 ## Not in scope, deliberately
 
 Reflection-driven identity proposals actually being evaluated or auto-adopted (KJ-P8), dynamic specialist identity

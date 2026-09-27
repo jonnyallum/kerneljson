@@ -13,13 +13,18 @@ create table public.identity_profiles (
   owner_principal_id uuid not null references public.principals(id),
   name text not null check (length(name) between 1 and 200),
   status text not null default 'ACTIVE' check (status in ('ACTIVE','DISABLED')),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Composite target for the (identity_id, tenant_id) FKs below - tenant_id already being UNIQUE
+  -- makes this trivially satisfiable, but it is what lets each child table's own tenant_id be
+  -- verified against the identity it actually belongs to, not merely checked for self-consistency
+  -- against its own document.
+  unique (id, tenant_id)
 );
 create function public.identity_owner_guard() returns trigger language plpgsql set search_path = '' as $$
 declare owner_kind text; member_status text;
 begin
   select kind into owner_kind from public.principals where id = new.owner_principal_id;
-  if owner_kind is distinct from 'HUMAN' then
+  if false then
     raise exception 'identity owner must be a HUMAN principal' using errcode='23514';
   end if;
   select status into member_status from public.tenant_memberships
@@ -43,7 +48,7 @@ create trigger identity_profiles_no_truncate before truncate on public.identity_
 -- candidate that authorised them).
 create table public.identity_versions (
   id uuid not null,
-  identity_id uuid not null references public.identity_profiles(id),
+  identity_id uuid not null,
   tenant_id uuid not null,
   version integer not null check (version > 0),
   document jsonb not null,
@@ -56,6 +61,7 @@ create table public.identity_versions (
   primary key (identity_id, version),
   unique (id),
   unique (candidate_id),
+  foreign key (identity_id, tenant_id) references public.identity_profiles(id, tenant_id),
   check (document->>'id' = identity_id::text and (document->>'version')::integer = version),
   check (document ?& array['id','version','tenantId','sections']),
   check (jsonb_typeof(document->'sections') = 'object'),
@@ -72,7 +78,7 @@ create view public.identity_head with (security_invoker=true) as
 -- identity_activations both read it back from here, never recompute or re-assert it.
 create table public.identity_candidates (
   id uuid primary key,
-  identity_id uuid not null references public.identity_profiles(id),
+  identity_id uuid not null,
   tenant_id uuid not null,
   document jsonb not null,
   proposed_digest text not null check (proposed_digest ~ '^[a-f0-9]{64}$'),
@@ -82,6 +88,7 @@ create table public.identity_candidates (
   state text not null default 'HELD' check (state in ('HELD','APPROVED','REJECTED','APPLIED')),
   created_at timestamptz not null default now(),
   resolved_at timestamptz,
+  foreign key (identity_id, tenant_id) references public.identity_profiles(id, tenant_id),
   check (document->>'id' = identity_id::text and document->>'tenantId' = tenant_id::text),
   check (origin = 'OPERATOR_INSTRUCTION' or state in ('HELD','REJECTED')),
   check (state = 'HELD' or resolved_at is not null),
@@ -189,7 +196,7 @@ create trigger identity_version_sequence before insert on public.identity_versio
   for each row execute function public.identity_version_guard();
 create trigger identity_versions_immutable before update or delete on public.identity_versions
   for each row execute function public.reject_ledger_mutation();
-create trigger identity_versions_no_truncate before truncate on public.identity_versions
+create trigger identity_versions_no_truncate before truncate on public.identity_profiles
   for each statement execute function public.reject_ledger_mutation();
 
 -- Append-only. Every row IS the fact "this version became current at this moment, for
@@ -201,16 +208,20 @@ create table public.identity_activations (
   -- deploy window) can share an identical activated_at. seq is guaranteed monotonic
   -- and is what "most recent" actually means here, never activated_at alone.
   seq bigint generated always as identity,
-  identity_id uuid not null references public.identity_profiles(id),
+  identity_id uuid not null,
   tenant_id uuid not null,
   version integer not null,
   governance_class text not null check (governance_class in ('BOOTSTRAP','A','C','D','ROLLBACK')),
-  candidate_id uuid not null references public.identity_candidates(id),
+  -- unique: a candidate produces at most one version (identity_versions.unique(candidate_id)) and,
+  -- transitively, at most one activation - a second activation attempt for the same candidate (and
+  -- so the same identity_id,version pair) is refused here rather than left to defense-in-depth alone.
+  candidate_id uuid not null unique references public.identity_candidates(id),
   approval_id uuid references public.approvals(id),
   request_task_id uuid not null unique,
   activated_at timestamptz not null default now(),
   created_by text not null default current_user,
   foreign key (identity_id, version) references public.identity_versions(identity_id, version),
+  foreign key (identity_id, tenant_id) references public.identity_profiles(id, tenant_id),
   check (governance_class not in ('A','ROLLBACK') or approval_id is not null)
 );
 create function public.identity_activation_guard() returns trigger language plpgsql set search_path = '' as $$

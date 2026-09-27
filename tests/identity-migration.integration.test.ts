@@ -233,7 +233,27 @@ describe("identity_profiles: bootstrap ownership guard", () => {
       identityId = await mkProfile(tenantId, ownerId);
     await expect(db.pool.query("update identity_profiles set name='x' where id=$1", [identityId])).rejects.toBeTruthy();
     await expect(db.pool.query("delete from identity_profiles where id=$1", [identityId])).rejects.toBeTruthy();
+    await expect(db.pool.query("truncate identity_profiles")).rejects.toBeTruthy();
   });
+});
+
+describe("cross-tenant references are refused, not merely self-consistency-checked", () => {
+  it("refuses a candidate whose tenant_id does not actually own the identity_id it names", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN"),
+      identityId = await mkProfile(tenantId, ownerId);
+    const otherTenantId = await mkTenant();
+    const taskId = await mkVerifyingTask(tenantId, ownerId);
+    // The document's own tenantId is self-consistent with the (forged) tenant_id column, so only the
+    // (identity_id, tenant_id) -> identity_profiles(id, tenant_id) FK can catch this.
+    await expect(proposeOn(otherTenantId, identityId, taskId, doc(identityId, otherTenantId), "BOOTSTRAP")).rejects.toMatchObject({ code: "23503" });
+  });
+
+  // identity_versions/identity_activations also carry the same (identity_id, tenant_id) FK, but it is
+  // unreachable in isolation there: a version's document must match its candidate's document exactly
+  // (identity_version_guard's own check), and the document's embedded tenantId is itself checked
+  // against the tenant_id column, so any tenant mismatch is already caught one step earlier, before
+  // the FK is ever consulted. The FK remains as defense-in-depth for a future change to that ordering.
 });
 
 describe("identity_candidate_classify: governance class is derived, never trusted from the caller", () => {
@@ -392,6 +412,7 @@ describe("identity_version_guard: D8 - a version requires its owning task to alr
     const { identityId } = await bootstrap(tenantId, ownerId);
     await expect(db.pool.query("update identity_versions set version=99 where identity_id=$1", [identityId])).rejects.toBeTruthy();
     await expect(db.pool.query("delete from identity_versions where identity_id=$1", [identityId])).rejects.toBeTruthy();
+    await expect(db.pool.query("truncate identity_versions")).rejects.toBeTruthy();
   });
 });
 
@@ -447,6 +468,56 @@ describe("identity_activations: rate cap, freeze, and identity_current", () => {
     const { identityId } = await bootstrap(tenantId, ownerId);
     await expect(db.pool.query("update identity_activations set version=99 where identity_id=$1", [identityId])).rejects.toBeTruthy();
     await expect(db.pool.query("delete from identity_activations where identity_id=$1", [identityId])).rejects.toBeTruthy();
+    await expect(db.pool.query("truncate identity_activations")).rejects.toBeTruthy();
+  });
+
+  it("double activation: the same candidate cannot be activated twice", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN"),
+      identityId = await mkProfile(tenantId, ownerId);
+    const taskId = await mkVerifyingTask(tenantId, ownerId);
+    const candidateId = await proposeOn(tenantId, identityId, taskId, doc(identityId, tenantId), "BOOTSTRAP");
+    await completeExistingTask(taskId);
+    await insertVersion(tenantId, identityId, 1, withVersion(doc(identityId, tenantId), 1), candidateId, taskId);
+    await insertActivation(tenantId, identityId, 1, candidateId, null, taskId);
+    // A second activation for the exact same candidate - a distinct row, a distinct request_task_id
+    // (so that unique constraint alone would not catch it), but the same candidate_id.
+    const secondTaskId = await mkVerifyingTask(tenantId, ownerId);
+    await completeExistingTask(secondTaskId);
+    await expect(insertActivation(tenantId, identityId, 1, candidateId, null, secondTaskId)).rejects.toMatchObject({ code: "23505" });
+  });
+
+  it("concurrent activation: two simultaneous Class C proposals on the same identity serialize rather than both succeeding at the same version", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const { identityId } = await bootstrap(tenantId, ownerId);
+
+    // Both racers target the SAME next version number deliberately (read once, up front, and shared)
+    // rather than each reading identity_head independently - that would let Node's event-loop
+    // interleaving accidentally serialize them into two DIFFERENT valid versions, which proves
+    // nothing about the advisory lock. Forcing an identical target version is what actually exercises
+    // identity_version_guard()'s consecutiveness check under real concurrency.
+    const head = await db.pool.query("select version from public.identity_head where identity_id=$1", [identityId]);
+    const targetVersion = (head.rows[0]?.version ?? 0) + 1;
+    async function attempt(label: string) {
+      const taskId = await mkVerifyingTask(tenantId, ownerId);
+      const changed = doc(identityId, tenantId, { classC: { persona: label } });
+      const candidateId = await proposeOn(tenantId, identityId, taskId, changed, "C");
+      await completeExistingTask(taskId);
+      await insertVersion(tenantId, identityId, targetVersion, withVersion(changed, targetVersion), candidateId, taskId);
+      return insertActivation(tenantId, identityId, targetVersion, candidateId, null, taskId);
+    }
+    const results = await Promise.allSettled([attempt("racer-a"), attempt("racer-b")]);
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected");
+    // Exactly one wins the identical target version; the loser hits identity_versions' primary key
+    // (identity_id,version) - the advisory lock in identity_version_guard() serializes them, it does
+    // not silently let a second writer overwrite or duplicate the same version slot.
+    expect(fulfilled.length).toBe(1);
+    expect(rejected.length).toBe(1);
+    const activationVersions = (await db.pool.query("select version from identity_activations where identity_id=$1", [identityId])).rows.map((r) => r.version);
+    expect(new Set(activationVersions).size).toBe(activationVersions.length); // no two activations ever share a version number
+    expect(activationVersions).toContain(targetVersion);
   });
 });
 

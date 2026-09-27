@@ -29,6 +29,7 @@ import { AuthenticatorUnavailableError } from "./control-signing.js";
 import { IdentityRefusal, IdentityStore } from "./identity/store.js";
 import { classADigest, identityCoreDigest } from "./identity/canonical.js";
 import { completeIdentityTask } from "./identity/complete.js";
+import { findSecretShapedContent } from "./identity/secret-scan.js";
 import type { AuthenticatedRequest, Authenticator } from "./golden-workflow.js";
 import type { Ledger } from "./ledger.js";
 
@@ -169,6 +170,12 @@ export function createIdentityChangeWorkflow(
           }
           draftDocument = request.document;
         }
+        // A memory is never a place for a credential, and neither is an identity document - it is
+        // shown to models and to the operator exactly the same way. Fails closed before any DB write,
+        // reusing KJ-P5's own secret-shape check (services/memory/src/canonical/policy.ts) rather than
+        // a second pattern set.
+        const secretShape = findSecretShapedContent(draftDocument.sections);
+        if (secretShape) throw new restate.TerminalError(`Identity document content looks like a credential (${secretShape}); refused before any write`, { errorCode: 400 });
         if (!profile) {
           if (request.kind === "ROLLBACK") throw new restate.TerminalError("Unreachable: rollback requires an existing profile", { errorCode: 500 });
           await ctx.run("bootstrap-profile", async () => {
