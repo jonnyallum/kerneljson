@@ -138,6 +138,20 @@ async function mkProfile(tenantId: string, ownerId: string, identityId = randomU
   return identityId;
 }
 
+/** Runs `fn` on one connection inside a transaction that is always rolled back - for proving one
+ *  protection layer on its own by removing another (DDL is transactional in Postgres), without ever
+ *  leaving the schema changed for the tests that follow. */
+async function inRolledBackTransaction(fn: (client: import("pg").PoolClient) => Promise<void>): Promise<void> {
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    await fn(client);
+  } finally {
+    await client.query("rollback");
+    client.release();
+  }
+}
+
 const H = () => "a".repeat(64); // a well-formed placeholder digest; the app layer computes the real one, the DB only checks shape.
 
 async function proposeOn(tenantId: string, identityId: string, taskId: string, document: unknown, governanceClass: string, origin: "OPERATOR_INSTRUCTION" | "MODEL_PROPOSAL" | "SHARED_BRAIN" = "OPERATOR_INSTRUCTION") {
@@ -340,6 +354,21 @@ describe("identity_candidates: origin ceiling — model/Shared Brain candidates 
     await expect(db.pool.query("update identity_candidates set document='{}'::jsonb where id=$1", [candidateId])).rejects.toMatchObject({ code: "23514" });
     await expect(db.pool.query("delete from identity_candidates where id=$1", [candidateId])).rejects.toBeTruthy();
   });
+
+  it("a HELD candidate's document cannot be swapped in place (only state/resolved_at may ever change)", async () => {
+    // The document swap must be attempted on a HELD candidate with a well-formed replacement: an
+    // already-resolved candidate is refused by the "already resolved" check, and a malformed document
+    // by the table CHECKs, so neither would ever reach the document-immutability condition itself.
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const { identityId } = await bootstrap(tenantId, ownerId);
+    const taskId = await mkVerifyingTask(tenantId, ownerId);
+    const candidateId = await proposeOn(tenantId, identityId, taskId, doc(identityId, tenantId, { classC: { persona: "proposed" } }), "C");
+    const swapped = doc(identityId, tenantId, { classC: { persona: "swapped after proposal" } });
+    await expect(db.pool.query("update identity_candidates set document=$2 where id=$1", [candidateId, swapped])).rejects.toMatchObject({ code: "23514" });
+    const stored = await db.pool.query("select document from identity_candidates where id=$1", [candidateId]);
+    expect(stored.rows[0].document.sections.classC.persona).toBe("proposed");
+  });
 });
 
 describe("identity_activation_guard: the origin-check regression proof (KJ-P7A fix)", () => {
@@ -371,6 +400,50 @@ describe("identity_activation_guard: the origin-check regression proof (KJ-P7A f
     await completeExistingTask(taskId);
     await insertVersion(tenantId, identityId, 2, withVersion(changedA, 2), candidateId, taskId);
     await expect(insertActivation(tenantId, identityId, 2, candidateId, null, taskId)).rejects.toMatchObject({ code: "23514" });
+  });
+
+  // The approval requirement is enforced twice: identity_activation_guard() and the table's own CHECK.
+  // Either alone refuses the insert above, so that test cannot tell whether both still exist. These two
+  // prove each layer on its own, by removing the other inside a rolled-back transaction.
+  async function approvedClassAWithVersion() {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const { identityId } = await bootstrap(tenantId, ownerId);
+    const taskId = await mkVerifyingTask(tenantId, ownerId);
+    const changedA = doc(identityId, tenantId, { classA: { name: "layered approval proof" } });
+    const candidateId = await proposeOn(tenantId, identityId, taskId, changedA, "A");
+    await db.pool.query("update identity_candidates set state='APPROVED', resolved_at=now() where id=$1", [candidateId]);
+    await completeExistingTask(taskId);
+    await insertVersion(tenantId, identityId, 2, withVersion(changedA, 2), candidateId, taskId);
+    return { tenantId, identityId, candidateId, taskId };
+  }
+  const activationSql = `insert into identity_activations(id,identity_id,tenant_id,version,governance_class,candidate_id,approval_id,request_task_id)
+     values($1,$2,$3,2,$4,$5,null,$6)`;
+
+  it("the trigger alone refuses a Class A activation without approval (table CHECK dropped)", async () => {
+    const { tenantId, identityId, candidateId, taskId } = await approvedClassAWithVersion();
+    await inRolledBackTransaction(async (client) => {
+      const checks = await client.query(
+        "select conname from pg_constraint where conrelid='public.identity_activations'::regclass and contype='c' and pg_get_constraintdef(oid) ilike '%approval_id IS NOT NULL%'",
+      );
+      expect(checks.rowCount).toBe(1); // the lookup itself must find the CHECK, or this test proves nothing.
+      await client.query(`alter table public.identity_activations drop constraint "${checks.rows[0].conname}"`);
+      await expect(client.query(activationSql, [randomUUID(), identityId, tenantId, "IGNORED", candidateId, taskId])).rejects.toMatchObject({
+        code: "23514",
+        message: expect.stringContaining("require a granted approval"),
+      });
+    });
+  });
+
+  it("the table CHECK alone refuses a Class A activation without approval (triggers disabled)", async () => {
+    const { tenantId, identityId, candidateId, taskId } = await approvedClassAWithVersion();
+    await inRolledBackTransaction(async (client) => {
+      await client.query("set local session_replication_role = replica"); // user triggers do not fire
+      await expect(client.query(activationSql, [randomUUID(), identityId, tenantId, "A", candidateId, taskId])).rejects.toMatchObject({
+        code: "23514",
+        message: expect.stringContaining("identity_activations"),
+      });
+    });
   });
 });
 
@@ -411,8 +484,31 @@ describe("identity_version_guard: D8 - a version requires its owning task to alr
       ownerId = await mkPrincipal(tenantId, "HUMAN");
     const { identityId } = await bootstrap(tenantId, ownerId);
     await expect(db.pool.query("update identity_versions set version=99 where identity_id=$1", [identityId])).rejects.toBeTruthy();
-    await expect(db.pool.query("delete from identity_versions where identity_id=$1", [identityId])).rejects.toBeTruthy();
+    // 55000 is reject_ledger_mutation()'s own code. Accepting any error let this pass on the version
+    // CHECK / the FK from identity_activations alone, with the immutability trigger removed. A no-op
+    // UPDATE of a non-key column reaches only the trigger; the BEFORE DELETE trigger fires ahead of the
+    // (AFTER) FK check, so its code is the one reported while it exists.
+    await expect(db.pool.query("update identity_versions set document=document where identity_id=$1", [identityId])).rejects.toMatchObject({ code: "55000" });
+    await expect(db.pool.query("delete from identity_versions where identity_id=$1", [identityId])).rejects.toMatchObject({ code: "55000" });
     await expect(db.pool.query("truncate identity_versions")).rejects.toBeTruthy();
+  });
+
+  it("TRUNCATE is refused by the table's own trigger, not only by the FKs that reference it", async () => {
+    // Postgres refuses to TRUNCATE a table another table's FK references before any trigger runs
+    // (0A000), so with the FKs in place the no-truncate triggers on identity_versions/identity_profiles
+    // are unreachable and a bare "truncate rejects" assertion cannot see them. Drop the referencing FKs
+    // inside a rolled-back transaction and require the trigger's own refusal.
+    for (const table of ["identity_versions", "identity_profiles"]) {
+      await expect(db.pool.query(`truncate ${table}`)).rejects.toMatchObject({ code: "0A000" });
+      await inRolledBackTransaction(async (client) => {
+        const fks = await client.query("select conrelid::regclass::text as rel, conname from pg_constraint where contype='f' and confrelid=$1::regclass", [
+          `public.${table}`,
+        ]);
+        expect(fks.rowCount).toBeGreaterThan(0);
+        for (const fk of fks.rows) await client.query(`alter table ${fk.rel} drop constraint "${fk.conname}"`);
+        await expect(client.query(`truncate public.${table}`)).rejects.toMatchObject({ code: "55000" });
+      });
+    }
   });
 });
 

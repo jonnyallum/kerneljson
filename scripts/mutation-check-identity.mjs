@@ -24,8 +24,10 @@
 //     black-box test cannot distinguish "lock present" from "lock removed" - the concurrency test
 //     (tests/identity-migration.integration.test.ts) proves the PK-level guarantee instead, which is
 //     the one that actually matters to an external observer.
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const MIGRATION = "supabase/migrations/20260925120000_primary_identity.sql";
 const WORKFLOW = "services/kernel/src/identity-workflow.ts";
@@ -49,14 +51,24 @@ const MUTATIONS = [
   ["M3", "a caller-asserted governance class survives instead of being overwritten (Class A -> C downgrade)", MIGRATION, "new.governance_class := 'A';", "new.governance_class := 'C';", DB_TESTS],
   ["M4", "a real Class A change is never detected, so it is misclassified through Class C", MIGRATION, "changed_a := (head.document->'sections'->'classA') is distinct from (new.document->'sections'->'classA');", "changed_a := false;", DB_TESTS],
   ["M5", "a Class A/ROLLBACK activation no longer requires a granted approval", MIGRATION, "if new.governance_class in ('A','ROLLBACK') and new.approval_id is null then", "if false then", DB_TESTS],
-  ["M6", "a resolved candidate's document can still be mutated", MIGRATION, "or new.document is distinct from old.document", "or false", DB_TESTS],
+  ["M6", "a HELD candidate's document can be swapped in place after proposal", MIGRATION, "or new.document is distinct from old.document", "or false", DB_TESTS],
   ["M7", "a tenant can bootstrap a second identity", MIGRATION, "tenant_id uuid not null unique references public.tenants(id),", "tenant_id uuid not null references public.tenants(id),", DB_TESTS],
   ["M8", "the same candidate can be activated twice", MIGRATION, "candidate_id uuid not null unique references public.identity_candidates(id),", "candidate_id uuid not null references public.identity_candidates(id),", DB_TESTS],
   ["M9", "identity_versions rows become updatable", MIGRATION, "create trigger identity_versions_immutable before update or delete on public.identity_versions", "create trigger identity_versions_immutable before delete on public.identity_versions", DB_TESTS],
   ["M10", "identity_versions rows become deletable", MIGRATION, "create trigger identity_versions_immutable before update or delete on public.identity_versions", "create trigger identity_versions_immutable before update on public.identity_versions", DB_TESTS],
   ["M11", "identity_versions can be truncated", MIGRATION, "create trigger identity_versions_no_truncate before truncate on public.identity_versions", "create trigger identity_versions_no_truncate before truncate on public.identity_profiles", DB_TESTS],
   ["M12", "identity_activations can be truncated", MIGRATION, "create trigger identity_activations_no_truncate before truncate on public.identity_activations", "create trigger identity_activations_no_truncate before truncate on public.identity_profiles", DB_TESTS],
-  ["M13", "identity_profiles can be truncated", MIGRATION, "create trigger identity_profiles_no_truncate before truncate on public.identity_profiles", "create trigger identity_profiles_no_truncate before truncate on public.identity_versions", DB_TESTS],
+  // M13 removes the trigger outright. It used to move it onto identity_versions, which does not exist
+  // yet at that point in the migration, so the mutated migration failed to apply and the run was
+  // counted KILLED with zero failing tests - a broken mutation, not a caught one.
+  [
+    "M13",
+    "identity_profiles can be truncated",
+    MIGRATION,
+    "create trigger identity_profiles_no_truncate before truncate on public.identity_profiles\n  for each statement execute function public.reject_ledger_mutation();\n",
+    "",
+    DB_TESTS,
+  ],
   [
     "M14",
     "a candidate's tenant_id no longer has to actually own the identity it names",
@@ -145,8 +157,16 @@ if (unapplicable.length > 0) {
   process.exit(2);
 }
 
-function runTests(files) {
-  const r = spawnSync("npx", ["vitest", "run", ...files], {
+// Verdicts come from vitest's own JSON report, never from its exit code alone or from parsing its text.
+// The text summary misparsed once (a false SURVIVED, 2026-09-25); the exit code alone then produced a
+// false KILLED (M13, 2026-09-27: exit 1 with 0 failing tests - the run errored, no assertion failed).
+// A mutation is KILLED only when at least one test actually FAILED; a non-zero exit with no failed
+// test is INCONCLUSIVE and counts against the run like a survivor. Full output is kept per run.
+const LOGS = join(tmpdir(), "mutation-check-identity");
+function runTests(files, label) {
+  const report = join(LOGS, `${label}.json`);
+  rmSync(report, { force: true });
+  const r = spawnSync("npx", ["vitest", "run", ...files, "--reporter=default", "--reporter=json", `--outputFile.json=${report}`], {
     shell: true,
     encoding: "utf8",
     env: { ...process.env, DOCKER_CONTEXT: "default", CI: "true" },
@@ -158,14 +178,22 @@ function runTests(files) {
     timeout: 900_000,
   });
   const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-  const failed = /Tests\s+(\d+) failed/.exec(out);
-  return { code: r.status, failed: failed ? Number(failed[1]) : 0, out };
+  writeFileSync(join(LOGS, `${label}.log`), out);
+  let failed = 0,
+    total = 0;
+  if (existsSync(report)) {
+    const json = JSON.parse(readFileSync(report, "utf8"));
+    failed = json.numFailedTests ?? 0;
+    total = json.numTotalTests ?? 0;
+  }
+  return { code: r.status, failed, total, out };
 }
 
 let survivors = 0;
 try {
-  const base = runTests(FULL_TESTS);
-  if (base.code !== 0) {
+  mkdirSync(LOGS, { recursive: true });
+  const base = runTests(FULL_TESTS, "baseline");
+  if (base.code !== 0 || base.failed !== 0 || base.total === 0) {
     console.error("BASELINE FAILED: the unmutated tests do not pass, so a mutation result would mean nothing.");
     console.error(base.out.split("\n").slice(-25).join("\n"));
     process.exit(2);
@@ -186,19 +214,14 @@ try {
     originals.set(file, text);
     writeFileSync(BACKUP, JSON.stringify({ file, text }));
     writeFileSync(file, text.replace(find, () => replace));
-    const result = runTests(tests);
+    const result = runTests(tests, id);
     restore();
-    // Exit code alone, not a text-parsed failure count: verified live (2026-09-25) that combining
-    // several test files under CI=true can produce a summary vitest's own reporter formats
-    // differently than /Tests\s+(\d+) failed/ expects, silently reporting 0 failures on a run that
-    // actually failed (or was killed by the timeout) - a false "SURVIVED". `vitest run` reliably
-    // exits non-zero on any failure, crash or timeout-kill; that is the one signal this script trusts.
-    const killed = result.code !== 0;
-    if (!killed) survivors++;
-    console.log(`${id} ${killed ? "KILLED  " : "SURVIVED"} (${result.failed} failing, exit ${result.code}) ${what}`);
+    const verdict = result.failed > 0 ? "KILLED      " : result.code !== 0 ? "INCONCLUSIVE" : "SURVIVED    ";
+    if (result.failed === 0) survivors++;
+    console.log(`${id} ${verdict} (${result.failed}/${result.total} failing, exit ${result.code}, log ${join(LOGS, id + ".log")}) ${what}`);
   }
 } finally {
   restore();
 }
-console.log(survivors === 0 ? "ALL MUTATIONS KILLED" : `${survivors} MUTATION(S) SURVIVED OR COULD NOT APPLY`);
+console.log(survivors === 0 ? "ALL MUTATIONS KILLED" : `${survivors} MUTATION(S) SURVIVED, INCONCLUSIVE OR COULD NOT APPLY`);
 process.exit(survivors === 0 ? 0 : 1);
