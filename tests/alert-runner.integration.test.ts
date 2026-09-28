@@ -372,9 +372,12 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
     await stopWorker();
     // The journal/timer belongs to this disposable container and survives restart.
     docker("restart", restateName);
-    // Docker can reassign ephemeral published ports on container restart.
-    admin = `http://127.0.0.1:${port(restateName, 9070)}`;
-    ingress = `http://127.0.0.1:${port(restateName, 8080)}`;
+    // Docker can reassign ephemeral published ports on container restart, and publishes them one at a
+    // time: `docker port` for 8080 was seen failing ("no public port '8080/tcp' published") while 9070
+    // was already up (2026-09-28). Poll each until it is published - bounded, and a timeout throws.
+    const published = (internal: number) => until(async () => port(restateName, internal), (p) => Number.isInteger(p) && p > 0, 20000);
+    admin = `http://127.0.0.1:${await published(9070)}`;
+    ingress = `http://127.0.0.1:${await published(8080)}`;
     await until(
       () => fetch(`${admin}/health`),
       (r) => r.ok,
