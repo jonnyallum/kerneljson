@@ -8,7 +8,7 @@
 // non-zero.
 //
 //   node scripts/mutation-check-identity.mjs                run every mutation (needs Docker: docker info first)
-//   node scripts/mutation-check-identity.mjs --only M9       run one
+//   node scripts/mutation-check-identity.mjs --only M9       run one (or several: --only M44,M45,M48)
 //
 // Every file is restored afterwards, including on Ctrl-C.
 //
@@ -208,7 +208,7 @@ const MUTATIONS = [
   ["M54", "the Telegram bootstrap card no longer says IDENTITY CHANGE", CARDS, '[IDENTITY_APPLY_BOOTSTRAP.id]: "IDENTITY CHANGE - bootstrap Primary Identity",', '[IDENTITY_APPLY_BOOTSTRAP.id]: "bootstrap Primary Identity",', CARD_TESTS],
 ];
 
-const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
+const only = process.argv.includes("--only") ? new Set(process.argv[process.argv.indexOf("--only") + 1]?.split(",")) : null;
 // Crash-safe restore. A SIGINT handler alone is not enough: on 2026-09-27 a run was SIGKILLed by the
 // machine's memory-pressure safeguard mid-mutation, no handler ran, and the checkpoint commit 5e13c28
 // then captured M2 and M11 still applied in the migration. The pristine text is now written to disk
@@ -244,6 +244,12 @@ const occurrences = (file, find) => {
   const text = readFileSync(file, "utf8");
   return text.split(inEol(find, eolOf(text))).length - 1;
 };
+// A mistyped --only id would otherwise run nothing and still report ALL MUTATIONS KILLED.
+const unknown = only ? [...only].filter((id) => !MUTATIONS.some(([known]) => known === id)) : [];
+if (unknown.length > 0) {
+  console.error(`UNKNOWN MUTATION ID(S): ${unknown.join(", ")}`);
+  process.exit(2);
+}
 const unapplicable = MUTATIONS.filter(([, , file, find]) => occurrences(file, find) !== 1).map(([id]) => id);
 if (unapplicable.length > 0) {
   console.error(`PREFLIGHT FAILED: target text missing or duplicated for ${unapplicable.join(", ")} - a leaked mutation or drifted source.`);
@@ -293,7 +299,7 @@ try {
   }
   console.log("baseline: identity tests pass unmutated");
   for (let [id, what, file, find, replace, tests] of MUTATIONS) {
-    if (only && only !== id) continue;
+    if (only && !only.has(id)) continue;
     const text = readFileSync(file, "utf8");
     const eol = eolOf(text);
     find = inEol(find, eol);
