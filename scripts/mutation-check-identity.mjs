@@ -206,6 +206,10 @@ const MUTATIONS = [
   ["M52", "a BOOTSTRAP approval is bound under Class A's gate instead of its own", MIGRATION, "when 'BOOTSTRAP' then '70000000-0000-4000-8000-000000000005' end;", "when 'BOOTSTRAP' then '70000000-0000-4000-8000-000000000001' end;", DB_TESTS],
   ["M53", "production policy has no APPROVAL_REQUIRED rule for BOOTSTRAP", BOUNDARY, "rules: [rule(IDENTITY_APPLY_BOOTSTRAP), rule(IDENTITY_APPLY_A), rule(IDENTITY_APPLY_ROLLBACK)],", "rules: [rule(IDENTITY_APPLY_A), rule(IDENTITY_APPLY_ROLLBACK)],", BOUNDARY_TESTS],
   ["M54", "the Telegram bootstrap card no longer says IDENTITY CHANGE", CARDS, '[IDENTITY_APPLY_BOOTSTRAP.id]: "IDENTITY CHANGE - bootstrap Primary Identity",', '[IDENTITY_APPLY_BOOTSTRAP.id]: "bootstrap Primary Identity",', CARD_TESTS],
+  // --- KJ-P7A production pre-commit qualification (2026-09-28): Supabase default ACL on the views ---
+  ["M55", "the two identity views keep Supabase's default anon/authenticated grants (no view revoke)", MIGRATION, "revoke all on public.identity_head, public.identity_current from public, anon, authenticated;", "", DB_TESTS],
+  ["M56", "the identity_activations.seq identity sequence keeps Supabase's default PUBLIC/anon/authenticated grants", MIGRATION, "revoke all on sequence public.identity_activations_seq_seq from public, anon, authenticated;", "", DB_TESTS],
+  ["M57", "the five P7A trigger functions stay EXECUTE-able by anon/authenticated (revoked from PUBLIC only)", MIGRATION, "  public.identity_activation_guard() from public, anon, authenticated;", "  public.identity_activation_guard() from public;", DB_TESTS],
 ];
 
 const only = process.argv.includes("--only") ? new Set(process.argv[process.argv.indexOf("--only") + 1]?.split(",")) : null;
