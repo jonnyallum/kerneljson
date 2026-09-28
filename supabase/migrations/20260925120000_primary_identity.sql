@@ -430,6 +430,10 @@ do $$ declare t text; begin
     execute format('revoke all on public.%I from public, anon, authenticated', t);
   end loop;
 end $$;
+-- The two views too: production Supabase has default privileges in schema public, so every relation
+-- this migration creates - views included - is born with anon/authenticated grants unless revoked.
+-- Found by production pre-commit qualification (2026-09-28); security_invoker=true is unchanged.
+revoke all on public.identity_head, public.identity_current from public, anon, authenticated;
 revoke update, delete, truncate on public.identity_profiles, public.identity_versions,
   public.identity_candidates, public.identity_activations, public.identity_pins from service_role;
 revoke execute on function public.identity_owner_guard(), public.identity_version_guard(),
