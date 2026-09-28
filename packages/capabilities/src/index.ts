@@ -4,6 +4,7 @@ import {
   Capability,
   CapabilityInvocation,
   CapabilityResult,
+  Id,
   Json,
 } from "../../contracts/src/index.js";
 
@@ -357,6 +358,80 @@ export function createRuntimeRegistry(read?: RepositoryReader): CapabilityRegist
       repositoryReadDefinition(read),
     ],
     "runtime",
+  );
+}
+
+// KJ-P7A - ADR-0021 D5/D6: a distinct capability namespace used ONLY as an ApprovalStore scope
+// identifier for identity governance. These are never executed: identity activation is a direct
+// database write by IdentityChangeWorkflowV1 (services/kernel/src/identity/store.ts), never a
+// capability call, so `execute` always throws and `verify` always fails - registering them here only
+// lets evaluatePolicy()/ApprovalStore.record() describe and digest a real, catalogued capability
+// reference for the approval card and evidence trail, exactly as UPPERCASE does for the golden
+// workflow. One id per governance class, never shared: Class A changes and rollbacks are always
+// approval-gated; Class C and D changes are policy-gated (ADR-0021 D6 - every C/D change goes through
+// policy, and identity_activation_guard() requires the persisted decision) and separately so, so a rule
+// allowing persona changes can never also allow mantra/vision changes. The Telegram card
+// (services/kernel/src/channel/telegram/approval-cards.ts) labels each unambiguously as "IDENTITY CHANGE".
+export const IdentityApplyInput = z.strictObject({
+  candidateId: Id,
+  identityCoreDigest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+export const IdentityApplyOutput = z.strictObject({ applied: z.literal(true) });
+export const IDENTITY_APPLY_A = Object.freeze({
+  id: "70000000-0000-4000-8000-000000000001",
+  version: "1.0.0",
+});
+export const IDENTITY_APPLY_ROLLBACK = Object.freeze({
+  id: "70000000-0000-4000-8000-000000000002",
+  version: "1.0.0",
+});
+export const IDENTITY_APPLY_C = Object.freeze({
+  id: "70000000-0000-4000-8000-000000000003",
+  version: "1.0.0",
+});
+export const IDENTITY_APPLY_D = Object.freeze({
+  id: "70000000-0000-4000-8000-000000000004",
+  version: "1.0.0",
+});
+/** Bootstrap v1 of a tenant's Primary Identity: always HUMAN-approved (the P7 gate - bootstrap only via
+ *  a COMPLETED change task + a GRANTED HUMAN approval), never shared with Class A's gate. */
+export const IDENTITY_APPLY_BOOTSTRAP = Object.freeze({
+  id: "70000000-0000-4000-8000-000000000005",
+  version: "1.0.0",
+});
+function identityApplyDefinition(ref: { id: string; version: string }, description: string): CapabilityDefinition {
+  return {
+    metadata: Capability.parse({
+      ...ref,
+      description,
+      inputSchemaRef: "kerneljson:identity-apply-input/v1",
+      outputSchemaRef: "kerneljson:identity-apply-output/v1",
+      riskClass: "LOW",
+      permissions: [],
+      implementationType: "DETERMINISTIC",
+      verificationRequirements: ["identity-activation/v1"],
+    }),
+    inputSchema: IdentityApplyInput as z.ZodType<JsonValue>,
+    outputSchema: IdentityApplyOutput as z.ZodType<JsonValue>,
+    execute: () => {
+      throw new CapabilityError("IMPLEMENTATION_FAILED");
+    },
+    verify: () => false,
+  };
+}
+/** Identity governance only: the five identity policy-gate pseudo-capabilities above, nothing else. Kept
+ *  separate from createRuntimeRegistry() so the deterministic/mission registries never gain an entry
+ *  they could accidentally route a real invocation through. */
+export function createIdentityCapabilityRegistry(): CapabilityRegistry {
+  return new CapabilityRegistry(
+    [
+      identityApplyDefinition(IDENTITY_APPLY_A, "Approval gate for a Class A (constitutional) identity change - never executed, the activation is a direct governed write"),
+      identityApplyDefinition(IDENTITY_APPLY_ROLLBACK, "Approval gate for an identity rollback to a prior version - never executed, the activation is a direct governed write"),
+      identityApplyDefinition(IDENTITY_APPLY_C, "Policy gate for a Class C (persona) identity change - never executed, the activation is a direct governed write"),
+      identityApplyDefinition(IDENTITY_APPLY_D, "Policy gate for a Class D (mantras/vision) identity change - never executed, the activation is a direct governed write"),
+      identityApplyDefinition(IDENTITY_APPLY_BOOTSTRAP, "Approval gate for bootstrapping a tenant's Primary Identity v1 - never executed, the activation is a direct governed write"),
+    ],
+    "builtin",
   );
 }
 

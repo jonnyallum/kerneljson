@@ -5,6 +5,7 @@ import {
   RecipeId,
   GITHUB_READ_CAPABILITY,
   MISSION_RECIPE,
+  IDENTITY_CHANGE_RECIPE,
   type PlanStep,
 } from "../../../../packages/contracts/src/index.js";
 import { stableId, criteria } from "../compiler/index.js";
@@ -29,6 +30,8 @@ export function planTask(raw: Task, recipe: RecipeId): ExecutionPlan {
         ? // The canary reuses the sealed read-only REPOSITORY_READ capability; the
           // CLAUDE.md drift assertion is applied by verifyClaudeMdCheck, not a new op.
           ["REPOSITORY_READ"]
+      : recipe === IDENTITY_CHANGE_RECIPE
+        ? ["IDENTITY_GOVERN"]
         : ["UPPERCASE"];
   const steps: PlanStep[] = operations.map((operation, index) => ({
     id: stableId([task.id, recipe, index]),

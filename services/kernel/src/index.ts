@@ -9,7 +9,7 @@ import { loadCanaryConfig } from "./scheduler/canary-config.js";
 import { createScheduleDriverService } from "./scheduler/restate-service.js";
 import { productionAlertMonitor } from "./alerting/runner-production.js";
 import { productionTelegramOperator } from "./channel/telegram/production.js";
-import { productionApprovalWorkflow } from "./approval-boundary.js";
+import { productionApprovalWorkflow, productionIdentityWorkflow } from "./approval-boundary.js";
 import { PgNotificationOutboxStore } from "./alerting/pg-outbox-store.js";
 import { loadMissionConfig } from "./mission/config.js";
 import { enqueueMissionNotice } from "./mission/notify.js";
@@ -145,6 +145,10 @@ const telegramOperator = productionTelegramOperator(process.env);
 // KJ-P4B: the golden workflow behind the production approval boundary. Off unless
 // KJ_APPROVAL_ENABLED=true; a partial or ambiguous configuration refuses to start, like the seams above.
 const approvalWorkflow = productionApprovalWorkflow(ledger, process.env);
+// KJ-P7A: IdentityChangeWorkflowV1, behind the same production approval boundary (ADR-0021 D5 - no
+// second approval system, no new env surface). Off unless KJ_APPROVAL_ENABLED=true, exactly like the
+// golden workflow above.
+const identityWorkflow = productionIdentityWorkflow(ledger, process.env);
 export const services = [
   createTaskWorkflow(ledger),
   createKernelWorkflow(
@@ -158,6 +162,7 @@ export const services = [
   ...(alertMonitor ? [alertMonitor] : []),
   ...(telegramOperator ? [telegramOperator] : []),
   ...(approvalWorkflow ? [approvalWorkflow] : []),
+  ...(identityWorkflow ? [identityWorkflow] : []),
 ];
 
 // Serve only when invoked directly (not when imported by the registration test).

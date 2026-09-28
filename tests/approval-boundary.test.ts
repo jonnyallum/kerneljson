@@ -4,13 +4,22 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { UPPERCASE, createBuiltinRegistry } from "../packages/capabilities/src/index.js";
+import {
+  IDENTITY_APPLY_A,
+  IDENTITY_APPLY_BOOTSTRAP,
+  IDENTITY_APPLY_C,
+  IDENTITY_APPLY_D,
+  IDENTITY_APPLY_ROLLBACK,
+  UPPERCASE,
+  createBuiltinRegistry,
+} from "../packages/capabilities/src/index.js";
 import { CapabilityInvocation, Task, TaskStep } from "../packages/contracts/src/index.js";
 import {
   APPROVAL_POLICY_VERSION,
   DEFAULT_APPROVAL_TTL_SECONDS,
   approvalPolicyRules,
   createControlAuthenticator,
+  identityApprovalPolicyRules,
   loadApprovalBoundaryConfig,
 } from "../services/kernel/src/approval-boundary.js";
 import { InMemoryReplayStore, createControlSigner } from "../services/kernel/src/control-signing.js";
@@ -111,6 +120,21 @@ describe("KJ-P4B approval boundary configuration", () => {
     const env = { ...ENV, KJ_CONTROL_TOKEN: "SYNTHETIC-CONTROL-TOKEN-0123456789-abcdefghijklmnop" } as NodeJS.ProcessEnv;
     delete env["KJ_CONTROL_SIGNING_KEY"];
     expect(() => loadApprovalBoundaryConfig(env)).toThrow(/KJ_CONTROL_SIGNING_KEY/);
+  });
+});
+
+describe("KJ-P7A production identity policy", () => {
+  const rules = identityApprovalPolicyRules(loadApprovalBoundaryConfig(ENV)!);
+  const ruleFor = (capability: { id: string }) => rules.rules.find((r) => r.capability.id === capability.id);
+
+  it("requires a named HUMAN approval for BOOTSTRAP, Class A and ROLLBACK", () => {
+    for (const gate of [IDENTITY_APPLY_BOOTSTRAP, IDENTITY_APPLY_A, IDENTITY_APPLY_ROLLBACK])
+      expect(ruleFor(gate)).toMatchObject({ tenantId: TENANT, principalId: PRINCIPAL, effect: "APPROVAL_REQUIRED", approver: { id: PRINCIPAL, kind: "HUMAN" } });
+  });
+
+  it("has no rule for Class C or D, so evaluatePolicy denies them (ADR-0021 D6/D7: C/D stays closed until P7B)", () => {
+    expect(ruleFor(IDENTITY_APPLY_C)).toBeUndefined();
+    expect(ruleFor(IDENTITY_APPLY_D)).toBeUndefined();
   });
 });
 
@@ -258,20 +282,25 @@ describe("KJ-P4B worker registration", () => {
     process.env = { ...saved };
   });
 
-  it("registers GoldenTaskWorkflowV1 only when the boundary is enabled, and every other service is unchanged", async () => {
+  it("registers GoldenTaskWorkflowV1 and IdentityChangeWorkflowV1 only when the boundary is enabled, and every other service is unchanged", async () => {
     const off = names((await import("../services/kernel/src/index.js")).services);
     expect(off).not.toContain("GoldenTaskWorkflowV1");
+    expect(off).not.toContain("IdentityChangeWorkflowV1");
     vi.resetModules();
     Object.assign(process.env, ENV);
     const on = names((await import("../services/kernel/src/index.js")).services);
-    expect(on).toEqual([...off, "GoldenTaskWorkflowV1"]);
+    // KJ-P7A: IdentityChangeWorkflowV1 shares this exact boundary (ADR-0021 D5 - no second
+    // approval system, no new env surface), so it registers alongside the golden workflow.
+    expect(on).toEqual([...off, "GoldenTaskWorkflowV1", "IdentityChangeWorkflowV1"]);
   });
 
-  it("serves no approval workflow for an empty or false switch", async () => {
+  it("serves no approval workflow, and no identity-change workflow, for an empty or false switch", async () => {
     for (const flag of ["", "false"]) {
       vi.resetModules();
       Object.assign(process.env, ENV, { KJ_APPROVAL_ENABLED: flag });
-      expect(names((await import("../services/kernel/src/index.js")).services), JSON.stringify(flag)).not.toContain("GoldenTaskWorkflowV1");
+      const registered = names((await import("../services/kernel/src/index.js")).services);
+      expect(registered, JSON.stringify(flag)).not.toContain("GoldenTaskWorkflowV1");
+      expect(registered, JSON.stringify(flag)).not.toContain("IdentityChangeWorkflowV1");
     }
   });
 

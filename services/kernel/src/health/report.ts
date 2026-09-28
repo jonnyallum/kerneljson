@@ -31,6 +31,7 @@ const DOMAIN_LABELS: Record<DomainName, string> = {
   releaseParity: "Release parity",
   productionConfig: "Production config",
   legacyAuthority: "Legacy authority",
+  identity: "Identity",
 };
 
 function fmtDate(iso: string | null): string {

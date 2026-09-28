@@ -496,8 +496,16 @@ it("applies all four migration groups with RLS and no public API grants", async 
   );
   // 25 before KJ-P5; the canonical memory fabric adds five (candidates, promotions, versions, relations, assemblies).
   // 30 before KJ-P6; the core team faculties fabric adds two (faculty_versions, faculty_pins). faculty_current is a view, not a table.
-  expect(r.rows).toHaveLength(32);
-  expect(r.rows.map((t) => t.tablename)).toEqual(expect.arrayContaining(["memory_candidates", "memory_promotions", "memory_versions", "memory_relations", "memory_context_assemblies", "faculty_versions", "faculty_pins"]));
+  // 32 before KJ-P7A; primary identity adds five (profiles, versions, candidates, activations, pins).
+  // identity_head/identity_current are views, not tables, same as faculty_current.
+  expect(r.rows).toHaveLength(37);
+  expect(r.rows.map((t) => t.tablename)).toEqual(
+    expect.arrayContaining([
+      "memory_candidates", "memory_promotions", "memory_versions", "memory_relations", "memory_context_assemblies",
+      "faculty_versions", "faculty_pins",
+      "identity_profiles", "identity_versions", "identity_candidates", "identity_activations", "identity_pins",
+    ]),
+  );
   expect(r.rows.every((t) => t.rowsecurity)).toBe(true);
   // S1 scheduler authority tables must be RLS-protected exactly like every other
   // kernel table (regression guard for the RLS omission fixed on the S1 branch).

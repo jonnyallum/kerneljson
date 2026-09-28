@@ -10,6 +10,8 @@ export const RecipeId = z.enum([
   "claude_md_check/v1",
   // KJ-P3: GitHub evidence -> Claude analysis -> Grok review -> kernel reconciliation.
   "repo-analysis-mission/v1",
+  // KJ-P7A: a governed Primary Identity change, through IdentityChangeWorkflowV1. See ADR-0021.
+  "identity-change/v1",
 ]);
 export type RecipeId = z.infer<typeof RecipeId>;
 export const KernelSubmission = z.strictObject({
@@ -29,6 +31,9 @@ export const PlanStep = z.strictObject({
     "RUNTIME_ANALYSE",
     "RUNTIME_REVIEW",
     "RECONCILE",
+    // KJ-P7A: IdentityChangeWorkflowV1's own single deterministic step. Never routed through the
+    // generic capability/faculty execution path - identity governance is not a capability.
+    "IDENTITY_GOVERN",
   ]),
   dependencies: z.array(Id),
   input: z.discriminatedUnion("source", [

@@ -59,6 +59,7 @@ export const HEALTH_DOMAINS = [
   "releaseParity",
   "productionConfig",
   "legacyAuthority",
+  "identity",
 ] as const;
 export type DomainName = (typeof HEALTH_DOMAINS)[number];
 

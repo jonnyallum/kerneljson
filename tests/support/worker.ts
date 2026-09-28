@@ -1,4 +1,5 @@
 import { createGoldenProbe } from "./golden-probe.js";
+import { createIdentityProbe } from "./identity-probe.js";
 // Integration-only fault injection: crash after DB commit, before ctx.run acknowledgement.
 import * as restate from "@restatedev/restate-sdk";
 import pg from "pg";
@@ -40,6 +41,7 @@ restate.serve({
     createCapabilityProbe(ledger),
     createPolicyProbe(ledger),
     createGoldenProbe(ledger),
+    createIdentityProbe(ledger),
     createRoutingProbe(ledger),
     ...createAutonomousProbes(ledger),
   ],

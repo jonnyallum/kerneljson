@@ -102,6 +102,16 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await pool?.end();
+  // pg-pool's end() drops each client from its list before that client's socket has finished closing,
+  // so it can resolve while a backend is still connected. A forced drop then terminates that backend
+  // and its FATAL 57P01 lands on a client that no longer has the pool's error listener - an unhandled
+  // error that failed a CI run (2026-09-28) after every test had passed. Wait until the database has
+  // no backends left before dropping it; `with (force)` stays only as a last resort.
+  await until(
+    () => admin.query<{ n: number }>("select count(*)::int as n from pg_stat_activity where datname=$1", [name]),
+    (r) => r.rows[0]!.n === 0,
+    10_000,
+  );
   await admin.query(`drop database if exists ${name} with (force)`);
   await admin.end();
   releaseRuntime();

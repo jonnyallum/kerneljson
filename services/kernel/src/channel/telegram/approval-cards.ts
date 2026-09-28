@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { REVERSE, UPPERCASE } from "../../../../../packages/capabilities/src/index.js";
+import { IDENTITY_APPLY_A, IDENTITY_APPLY_BOOTSTRAP, IDENTITY_APPLY_C, IDENTITY_APPLY_D, IDENTITY_APPLY_ROLLBACK, REVERSE, UPPERCASE } from "../../../../../packages/capabilities/src/index.js";
 
 /**
  * KJ-P4B - what an approval looks like in Telegram, and nothing else.
@@ -73,6 +73,13 @@ export const SHORT_DIGEST_CHARS = 12;
 const CAPABILITY_LABELS: Readonly<Record<string, string>> = Object.freeze({
   [UPPERCASE.id]: "uppercase text (no side effects)",
   [REVERSE.id]: "reverse text (no side effects)",
+  // KJ-P7A: must say IDENTITY CHANGE unambiguously (ADR-0021 D5) - never confusable with a task or
+  // memory approval card.
+  [IDENTITY_APPLY_A.id]: "IDENTITY CHANGE - constitutional (Class A)",
+  [IDENTITY_APPLY_ROLLBACK.id]: "IDENTITY CHANGE - rollback to a prior version",
+  [IDENTITY_APPLY_C.id]: "IDENTITY CHANGE - persona (Class C)",
+  [IDENTITY_APPLY_D.id]: "IDENTITY CHANGE - mantras/vision (Class D)",
+  [IDENTITY_APPLY_BOOTSTRAP.id]: "IDENTITY CHANGE - bootstrap Primary Identity",
 });
 export const capabilityLabel = (id: string): string =>
   !CAPABILITY.test(id) ? "?" : (CAPABILITY_LABELS[id] ?? `capability ${id.slice(0, 8)}`);

@@ -130,6 +130,7 @@ function healthySnapshot(): HealthSnapshot {
       recipeConfigured: "claude_md_check/v1",
     },
     legacyAuthority: { b1FreezeObservable: { unavailable: true, reason: "cross-system, out of scope" } },
+    identity: { dbReachable: true, completedTasksMissingActivation: [], profilesWithoutCurrentIdentity: [] },
   };
 }
 
@@ -526,5 +527,56 @@ describe("aggregation rules", () => {
     // masquerade as an execution failure.
     expect(report.overall).toBe("UNKNOWN");
     expect(report.criticalIssues).toBe(0);
+  });
+});
+
+describe("KJ-P7A identity orphan detector (ADR-0021 D8)", () => {
+  const ORPHAN_TASK_ID = "9c3d1a2e-4f5b-4a6c-8d7e-1234567890ab";
+
+  it("a completed identity-change task with no matching activation is CRITICAL", () => {
+    const snapshot = healthySnapshot();
+    snapshot.identity.completedTasksMissingActivation = [{ taskId: ORPHAN_TASK_ID, ageMs: 10 * 60_000 }];
+    const report = evaluateHealthSnapshot(snapshot, baseExpectations());
+    expect(report.domains.identity.status).toBe("CRITICAL");
+    expect(report.overall).toBe("CRITICAL");
+    const failing = report.domains.identity.checks.find((c) => c.id === "identity.completedTasksHaveActivation");
+    expect(failing?.status).toBe("CRITICAL");
+    expect(failing?.observed).toEqual([ORPHAN_TASK_ID]);
+  });
+
+  it("has no grace period any more: completion and activation are one transaction, so even a 1s-old orphan is CRITICAL", () => {
+    const snapshot = healthySnapshot();
+    snapshot.identity.completedTasksMissingActivation = [{ taskId: ORPHAN_TASK_ID, ageMs: 1000 }];
+    const report = evaluateHealthSnapshot(snapshot, baseExpectations());
+    expect(report.domains.identity.status).toBe("CRITICAL");
+  });
+
+  it("an identity profile with no activated identity past the grace period is DEGRADED (interrupted bootstrap), not CRITICAL", () => {
+    const snapshot = healthySnapshot();
+    snapshot.identity.profilesWithoutCurrentIdentity = [{ identityId: ORPHAN_TASK_ID, tenantId: ORPHAN_TASK_ID, ageMs: 11 * 60_000 }];
+    const report = evaluateHealthSnapshot(snapshot, baseExpectations());
+    expect(report.domains.identity.status).toBe("DEGRADED");
+    const failing = report.domains.identity.checks.find((c) => c.id === "identity.profilesHaveActivatedIdentity");
+    expect(failing?.status).toBe("DEGRADED");
+    expect(failing?.observed).toEqual([ORPHAN_TASK_ID]);
+  });
+
+  it("does not flag a bootstrap still inside its grace period", () => {
+    const snapshot = healthySnapshot();
+    snapshot.identity.profilesWithoutCurrentIdentity = [{ identityId: ORPHAN_TASK_ID, tenantId: ORPHAN_TASK_ID, ageMs: 5_000 }];
+    const report = evaluateHealthSnapshot(snapshot, baseExpectations());
+    expect(report.domains.identity.status).toBe("HEALTHY");
+  });
+
+  it("is UNKNOWN, not a false HEALTHY, when the database was unreachable", () => {
+    const snapshot = healthySnapshot();
+    snapshot.identity = { dbReachable: false, completedTasksMissingActivation: [], profilesWithoutCurrentIdentity: [] };
+    const report = evaluateHealthSnapshot(snapshot, baseExpectations());
+    expect(report.domains.identity.status).toBe("UNKNOWN");
+  });
+
+  it("selftest: the healthy fixture itself proves the check can fail - an empty list is never trivially CRITICAL", () => {
+    const report = evaluateHealthSnapshot(healthySnapshot(), baseExpectations());
+    expect(report.domains.identity.status).toBe("HEALTHY");
   });
 });

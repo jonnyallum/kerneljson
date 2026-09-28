@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { REVERSE, UPPERCASE } from "../packages/capabilities/src/index.js";
+import { IDENTITY_APPLY_A, IDENTITY_APPLY_BOOTSTRAP, IDENTITY_APPLY_C, IDENTITY_APPLY_D, IDENTITY_APPLY_ROLLBACK, REVERSE, UPPERCASE } from "../packages/capabilities/src/index.js";
 import { PermanentDeliveryError } from "../services/kernel/src/alerting/outbox-types.js";
 import { TelegramUnauthorizedError } from "../services/kernel/src/alerting/telegram-notifier.js";
 import {
@@ -104,6 +104,24 @@ describe("KJ-P4B the approval card", () => {
     expect(capabilityLabel("60000000-0000-4000-8000-0000000000ff")).toBe("capability 60000000");
     expect(capabilityLabel("x y")).toBe("?");
     expect(capabilityLabel("")).toBe("?");
+  });
+
+  it("KJ-P7A: labels an identity change unambiguously as IDENTITY CHANGE, distinct from any task or memory approval card", () => {
+    expect(capabilityLabel(IDENTITY_APPLY_A.id)).toContain("IDENTITY CHANGE");
+    expect(capabilityLabel(IDENTITY_APPLY_ROLLBACK.id)).toContain("IDENTITY CHANGE");
+    // Distinct labels for Class A vs rollback, both still unambiguous.
+    expect(capabilityLabel(IDENTITY_APPLY_A.id)).not.toBe(capabilityLabel(IDENTITY_APPLY_ROLLBACK.id));
+    const text = renderCard(request({ capability: IDENTITY_APPLY_A.id }), NOW).text;
+    expect(text).toContain("IDENTITY CHANGE");
+  });
+
+  it("KJ-P7A: the bootstrap card says IDENTITY CHANGE - bootstrap Primary Identity, distinct from every other identity gate", () => {
+    expect(capabilityLabel(IDENTITY_APPLY_BOOTSTRAP.id)).toBe("IDENTITY CHANGE - bootstrap Primary Identity");
+    const text = renderCard(request({ capability: IDENTITY_APPLY_BOOTSTRAP.id }), NOW).text;
+    expect(text).toContain("IDENTITY CHANGE - bootstrap Primary Identity");
+    const labels = [IDENTITY_APPLY_BOOTSTRAP, IDENTITY_APPLY_A, IDENTITY_APPLY_ROLLBACK, IDENTITY_APPLY_C, IDENTITY_APPLY_D].map((c) => capabilityLabel(c.id));
+    expect(new Set(labels).size).toBe(labels.length);
+    for (const label of labels) expect(label).toContain("IDENTITY CHANGE");
   });
 
   it("uses UK dates and a 24-hour UTC time", () => {

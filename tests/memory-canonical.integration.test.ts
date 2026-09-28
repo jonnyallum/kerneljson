@@ -377,7 +377,20 @@ describe("verified outcomes", () => {
 });
 
 describe("protected promotion through the existing approval machinery", () => {
-  const protectedSubmission = () => submission({ class: "RELATIONSHIP", content: "Sam is my accountant and handles the VAT return", subject: { kind: "PRINCIPAL", ref: owner.principal.id } });
+  // KJ-P7A (ADR-0021 P5 fence): RELATIONSHIP no longer reaches REQUIRE_APPROVAL (see the
+  // "identity-adjacent content" describe block below for that refusal, proved end to end). The
+  // approval machinery itself - ApprovalStore grant/deny/expire, one candidate's approval never
+  // promoting another, non-approvers refused - is still real production code, still reached via
+  // VERIFIED_OUTCOME's LESSON/DECISION path, so coverage moves there rather than being deleted.
+  const protectedSubmission = () => ({
+    idempotencyKey: key(),
+    class: "LESSON" as const,
+    content: "always verify the artefact rather than the symptom",
+    subject: { kind: "TENANT" as const, ref: tenantId },
+    evidence: [{ type: "TASK_EVIDENCE" as const, ref: `${db.task.id}/${db.evidence.id}` }],
+    reason: "drawn from a verified outcome",
+  });
+  const submitProtected = () => memory.submitVerifiedOutcomeCandidate(service, protectedSubmission());
   const decide = async (approvalId: string, decision: "GRANTED" | "DENIED", actor: PrincipalRef = approver) => {
     const store = new ApprovalStore(db.pool);
     const { scopeDigest } = await store.read(approvalId);
@@ -385,7 +398,7 @@ describe("protected promotion through the existing approval machinery", () => {
   };
 
   it("holds the candidate awaiting a real approval, and promotes only once the named approver grants that exact candidate", async () => {
-    const r = await memory.submitOperatorInstruction(owner, protectedSubmission());
+    const r = await submitProtected();
     expect(r).toMatchObject({ state: "AWAITING_APPROVAL", decision: "REQUIRE_APPROVAL", memoryId: null });
     expect(r.approvalId).not.toBeNull();
     const approvalRow = await db.pool.query("select status, requested_from from approvals where id=$1", [r.approvalId]);
@@ -406,7 +419,7 @@ describe("protected promotion through the existing approval machinery", () => {
   });
 
   it("rejects the candidate when the approver denies", async () => {
-    const r = await memory.submitOperatorInstruction(owner, protectedSubmission());
+    const r = await submitProtected();
     await decide(r.approvalId as string, "DENIED");
     const done = await memory.settleApproval(owner, r.candidateId);
     expect(done).toMatchObject({ state: "REJECTED", decision: "REJECT_APPROVAL", memoryId: null });
@@ -415,7 +428,7 @@ describe("protected promotion through the existing approval machinery", () => {
 
   it("rejects the candidate when the approval expires", async () => {
     const quick = new CanonicalMemory(db.pool, { approvals: new PgPromotionApprovals(db.pool, { approver, ttlMs: 1000 }) });
-    const r = await quick.submitOperatorInstruction(owner, protectedSubmission());
+    const r = await quick.submitVerifiedOutcomeCandidate(service, protectedSubmission());
     expect(r.state).toBe("AWAITING_APPROVAL");
     await new Promise((resolve) => setTimeout(resolve, 1300));
     const done = await quick.settleApproval(owner, r.candidateId);
@@ -425,8 +438,8 @@ describe("protected promotion through the existing approval machinery", () => {
   });
 
   it("does not let an approval for one candidate promote another", async () => {
-    const a = await memory.submitOperatorInstruction(owner, protectedSubmission());
-    const b = await memory.submitOperatorInstruction(owner, protectedSubmission());
+    const a = await submitProtected();
+    const b = await submitProtected();
     await decide(a.approvalId as string, "GRANTED");
     // Forge candidate b so that it points at a's granted approval. The ledger must not let that promote b.
     await db.pool.query("alter table memory_candidates disable trigger memory_candidates_guard");
@@ -437,27 +450,43 @@ describe("protected promotion through the existing approval machinery", () => {
   });
 
   it("does not let a non-approver resolve the approval", async () => {
-    const r = await memory.submitOperatorInstruction(owner, protectedSubmission());
+    const r = await submitProtected();
     await expect(decide(r.approvalId as string, "GRANTED", owner.principal)).rejects.toThrow();
     expect(await memory.settleApproval(owner, r.candidateId)).toMatchObject({ state: "AWAITING_APPROVAL" });
   });
 
   it("stays a held candidate when no approver is configured", async () => {
     const bare = new CanonicalMemory(db.pool, { now: () => clock });
-    const r = await bare.submitOperatorInstruction(owner, protectedSubmission());
+    const r = await bare.submitVerifiedOutcomeCandidate(service, protectedSubmission());
     expect(r).toMatchObject({ state: "HELD", ruleId: "approval-unavailable", memoryId: null });
   });
 
-  it("holds a verified-outcome lesson for approval", async () => {
+  it("holds a verified-outcome decision for approval too", async () => {
     const r = await memory.submitVerifiedOutcomeCandidate(service, {
       idempotencyKey: key(),
-      class: "LESSON",
-      content: "always verify the artefact rather than the symptom",
+      class: "DECISION",
+      content: "we decided to use Restate",
       subject: { kind: "TENANT", ref: tenantId },
       evidence: [{ type: "TASK_EVIDENCE", ref: `${db.task.id}/${db.evidence.id}` }],
       reason: "drawn from a verified outcome",
     });
     expect(r).toMatchObject({ state: "AWAITING_APPROVAL", decision: "REQUIRE_APPROVAL", memoryId: null });
+  });
+});
+
+describe("KJ-P7A P5 fence: RELATIONSHIP-class content never reaches the no-admission promotion carrier", () => {
+  it("refuses a RELATIONSHIP operator instruction outright, and never creates an approval or a task for it", async () => {
+    const before = await count("approvals");
+    const r = await memory.submitOperatorInstruction(
+      owner,
+      submission({ class: "RELATIONSHIP", content: "Sam is my accountant and handles the VAT return", subject: { kind: "PRINCIPAL", ref: owner.principal.id } }),
+    );
+    expect(r).toMatchObject({ state: "REFUSED", decision: "REFUSE", ruleId: "relationship-promotion-disabled", memoryId: null, approvalId: null });
+    expect(await count("approvals")).toBe(before);
+    // Correcting, retracting or superseding an existing RELATIONSHIP memory (targetClass, rather than
+    // class, carrying the protection) is covered at the policy-unit level in memory-canonical.test.ts,
+    // which exercises decidePromotion directly - decidePromotion is the sole authority this service
+    // layer defers to, so that coverage is not duplicated here against real Postgres.
   });
 });
 

@@ -253,13 +253,13 @@ describe("KJ-P5 the first live memory proof, against persisted rows", () => {
     expect(await n("select count(*)::text n from kernel_private.telegram_inbox where update_id=$1 and state='DONE'", [id])).toBe(1);
   });
 
-  it("holds a protected memory instead of promoting it when no approver is configured", async () => {
+  it("refuses a RELATIONSHIP memory outright rather than promoting or holding it (KJ-P7A P5 fence, ADR-0021)", async () => {
     const t = await fresh();
     const h = build(t.ctx);
     const { reply } = await h.say("/remember relationship: Sam is my accountant");
-    expect(reply).toContain("Kept as a candidate only");
+    expect(reply).toContain("Not remembered");
     expect(await t.c("memory_versions")).toBe(0);
-    expect(await n("select count(*)::text n from memory_candidates where tenant_id=$1 and state='HELD'", [t.tenantId])).toBe(1);
+    expect(await n("select count(*)::text n from memory_candidates where tenant_id=$1 and state='REFUSED'", [t.tenantId])).toBe(1);
   });
 
   it("the remembered preference is what the assembler selects for a later mission-style query, with the digest recorded", async () => {

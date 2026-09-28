@@ -4,6 +4,9 @@ import {
   MISSION_CRITERION,
   MISSION_RECIPE,
   parseMissionObjective,
+  IDENTITY_CHANGE_CRITERION,
+  IDENTITY_CHANGE_RECIPE,
+  parseIdentityChangeObjective,
   type RecipeId,
 } from "../../../../packages/contracts/src/index.js";
 import { digest, CRITERION } from "../deterministic.js";
@@ -17,6 +20,7 @@ export const criteria: Record<RecipeId, string> = {
   "claude_md_check/v1":
     "repository.read of CLAUDE.md returns content_sha256 == approved digest with mutations_detected=0",
   [MISSION_RECIPE]: MISSION_CRITERION,
+  [IDENTITY_CHANGE_RECIPE]: IDENTITY_CHANGE_CRITERION,
 };
 // A content-derived UUID in a kernel-specific namespace. Pure across processes.
 export function stableId(value: unknown): string {
@@ -31,6 +35,8 @@ export function compileIntent(raw: unknown): {
   const { intent, recipe } = submission;
   // Rejected at admission, not mid-run: a mission objective is `owner/repo [question]`.
   if (recipe === MISSION_RECIPE) parseMissionObjective(intent.objective);
+  // Rejected at admission, not mid-run: an identity-change objective is a JSON IdentityChangeRequest.
+  if (recipe === IDENTITY_CHANGE_RECIPE) parseIdentityChangeObjective(intent.objective);
   if (intent.attachments.length || intent.contextRefs.length)
     throw new Error(
       "Attachments and context references are not supported by these recipes",

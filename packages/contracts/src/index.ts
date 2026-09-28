@@ -22,3 +22,4 @@ export * from "./schedule.js";
 export * from "./execution.js";
 export * from "./mission.js";
 export * from "./canonical-memory.js";
+export * from "./primary-identity.js";
