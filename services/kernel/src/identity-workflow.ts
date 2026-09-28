@@ -16,6 +16,7 @@ import {
 } from "../../../packages/contracts/src/index.js";
 import {
   IDENTITY_APPLY_A,
+  IDENTITY_APPLY_BOOTSTRAP,
   IDENTITY_APPLY_C,
   IDENTITY_APPLY_D,
   IDENTITY_APPLY_ROLLBACK,
@@ -44,10 +45,10 @@ const SERVICE_NAME = "IdentityChangeWorkflowV1";
  * exactly, no second approval system), same TASK_CREATED -> PLAN_COMPILED -> ... -> TASK_COMPLETED
  * event shape. What is different, and why:
  *
- *  - Every class except BOOTSTRAP goes through policy (ADR-0021 D6) under its own gate capability
- *    (IDENTITY_APPLY_A / _ROLLBACK / _C / _D - a namespace that exists purely as a policy/ApprovalStore
- *    scope identifier and is never executed, see packages/capabilities/src/index.ts). Class A and
- *    ROLLBACK must be APPROVAL_REQUIRED and human-approved; Class C/D may be ALLOWed or approval-gated;
+ *  - Every class goes through policy (ADR-0021 D5/D6) under its own gate capability
+ *    (IDENTITY_APPLY_BOOTSTRAP / _A / _ROLLBACK / _C / _D - a namespace that exists purely as a
+ *    policy/ApprovalStore scope identifier and is never executed, see packages/capabilities). BOOTSTRAP,
+ *    Class A and ROLLBACK must be APPROVAL_REQUIRED and human-approved; Class C/D may be ALLOWed or approval-gated;
  *    DENY (including no matching rule) ends the task FAILED. The persisted decision is re-checked by
  *    identity_activation_guard(), and C/D is additionally frozen by default (D7) and rate-capped there.
  *  - governance_class is never chosen here. It is read back from whatever the database's
@@ -263,14 +264,15 @@ export function createIdentityChangeWorkflow(
         if (!proposed.ok) return refuse(`Identity change refused: ${proposed.reason}`);
         const candidate = proposed.candidate;
         const governanceClass: IdentityGovernanceClass = candidate.governanceClass;
-        // ADR-0021 D6: every class except BOOTSTRAP goes through policy, each under its own gate
-        // capability, so a rule for one class can never authorise another.
+        // ADR-0021 D5/D6: EVERY class goes through policy, each under its own gate capability, so a rule
+        // for one class can never authorise another. BOOTSTRAP is gated too: bootstrap v1 needs a
+        // GRANTED HUMAN approval, exactly like Class A and ROLLBACK.
         const gate =
-          governanceClass === "A" ? IDENTITY_APPLY_A
+          governanceClass === "BOOTSTRAP" ? IDENTITY_APPLY_BOOTSTRAP
+          : governanceClass === "A" ? IDENTITY_APPLY_A
           : governanceClass === "ROLLBACK" ? IDENTITY_APPLY_ROLLBACK
           : governanceClass === "C" ? IDENTITY_APPLY_C
-          : governanceClass === "D" ? IDENTITY_APPLY_D
-          : null;
+          : IDENTITY_APPLY_D;
 
         let step = TaskStep.parse({
           id: plan.resultStepId,
@@ -318,8 +320,9 @@ export function createIdentityChangeWorkflow(
             await rejectIfHeld(candidate.id, "reject-candidate");
             return refuse("Identity policy decision persistence rejected");
           }
-          // Class A and ROLLBACK must always be human-approved: ALLOW is not enough for them. Class C/D
-          // may be ALLOWed or approval-gated by policy. DENY - including "no matching rule" - refuses.
+          // BOOTSTRAP, Class A and ROLLBACK must always be human-approved: ALLOW is not enough for them.
+          // Class C/D may be ALLOWed or approval-gated by policy. DENY - including "no matching rule" -
+          // refuses.
           const decision = evaluated.decision.decision;
           const acceptable = decision === "APPROVAL_REQUIRED" || (decision === "ALLOW" && (governanceClass === "C" || governanceClass === "D"));
           if (!acceptable) {

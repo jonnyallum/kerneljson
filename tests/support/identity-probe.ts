@@ -1,5 +1,5 @@
 import { createIdentityChangeWorkflow } from "../../services/kernel/src/identity-workflow.js";
-import { IDENTITY_APPLY_A, IDENTITY_APPLY_C, IDENTITY_APPLY_ROLLBACK } from "../../packages/capabilities/src/index.js";
+import { IDENTITY_APPLY_A, IDENTITY_APPLY_BOOTSTRAP, IDENTITY_APPLY_C, IDENTITY_APPLY_ROLLBACK } from "../../packages/capabilities/src/index.js";
 import type { Ledger } from "../../services/kernel/src/ledger.js";
 import { PgControlReplayStore, createControlVerifier } from "../../services/kernel/src/control-signing.js";
 import { CONTROL_TEST_KEY, CONTROL_TEST_KEY_ID } from "./control-test-key.js";
@@ -38,7 +38,7 @@ export function createIdentityProbe(ledger: Ledger) {
       version: "test-identity-policy/1",
       // Class C is ALLOWed for the owner; Class D deliberately has NO rule, so it is DENIED exactly as
       // production denies every C/D change today (ADR-0021 D6) - the E2E exercises both outcomes.
-      rules: [rule(IDENTITY_APPLY_A), rule(IDENTITY_APPLY_ROLLBACK), { tenantId: policyOwner, principalId: policyOwner, capability: IDENTITY_APPLY_C, effect: "ALLOW" as const }],
+      rules: [rule(IDENTITY_APPLY_BOOTSTRAP), rule(IDENTITY_APPLY_A), rule(IDENTITY_APPLY_ROLLBACK), { tenantId: policyOwner, principalId: policyOwner, capability: IDENTITY_APPLY_C, effect: "ALLOW" as const }],
     },
     async (headers, request) => {
       if (headers.has("x-kj-control-signature")) {

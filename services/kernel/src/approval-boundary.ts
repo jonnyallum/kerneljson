@@ -1,4 +1,4 @@
-import { IDENTITY_APPLY_A, IDENTITY_APPLY_ROLLBACK, UPPERCASE } from "../../../packages/capabilities/src/index.js";
+import { IDENTITY_APPLY_A, IDENTITY_APPLY_BOOTSTRAP, IDENTITY_APPLY_ROLLBACK, UPPERCASE } from "../../../packages/capabilities/src/index.js";
 import {
   DEFAULT_FRESHNESS_SECONDS,
   MIN_SIGNING_KEY_LENGTH,
@@ -155,7 +155,7 @@ export function productionApprovalWorkflow(ledger: Ledger, env: NodeJS.ProcessEn
   return createGoldenWorkflow(ledger, approvalPolicyRules(config), createControlAuthenticator(config, new PgControlReplayStore(ledger.pool)));
 }
 
-/** KJ-P7A - the two identity-approval rules (Class A, ROLLBACK), same shape as approvalPolicyRules
+/** KJ-P7A - the three identity-approval rules (BOOTSTRAP, Class A, ROLLBACK), same shape as approvalPolicyRules
  *  above, same door principal as the sole named approver. There is deliberately NO rule for
  *  IDENTITY_APPLY_C / IDENTITY_APPLY_D: evaluatePolicy() denies an unmatched capability, so every
  *  Class C/D change is policy-DENIED in production until a later window (P7B, after G13) adds an
@@ -173,7 +173,7 @@ export function identityApprovalPolicyRules(config: ApprovalBoundaryConfig): Pol
   });
   return PolicyRules.parse({
     version: APPROVAL_POLICY_VERSION,
-    rules: [rule(IDENTITY_APPLY_A), rule(IDENTITY_APPLY_ROLLBACK)],
+    rules: [rule(IDENTITY_APPLY_BOOTSTRAP), rule(IDENTITY_APPLY_A), rule(IDENTITY_APPLY_ROLLBACK)],
   });
 }
 

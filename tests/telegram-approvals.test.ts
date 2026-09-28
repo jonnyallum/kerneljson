@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { IDENTITY_APPLY_A, IDENTITY_APPLY_ROLLBACK, REVERSE, UPPERCASE } from "../packages/capabilities/src/index.js";
+import { IDENTITY_APPLY_A, IDENTITY_APPLY_BOOTSTRAP, IDENTITY_APPLY_C, IDENTITY_APPLY_D, IDENTITY_APPLY_ROLLBACK, REVERSE, UPPERCASE } from "../packages/capabilities/src/index.js";
 import { PermanentDeliveryError } from "../services/kernel/src/alerting/outbox-types.js";
 import { TelegramUnauthorizedError } from "../services/kernel/src/alerting/telegram-notifier.js";
 import {
@@ -113,6 +113,15 @@ describe("KJ-P4B the approval card", () => {
     expect(capabilityLabel(IDENTITY_APPLY_A.id)).not.toBe(capabilityLabel(IDENTITY_APPLY_ROLLBACK.id));
     const text = renderCard(request({ capability: IDENTITY_APPLY_A.id }), NOW).text;
     expect(text).toContain("IDENTITY CHANGE");
+  });
+
+  it("KJ-P7A: the bootstrap card says IDENTITY CHANGE - bootstrap Primary Identity, distinct from every other identity gate", () => {
+    expect(capabilityLabel(IDENTITY_APPLY_BOOTSTRAP.id)).toBe("IDENTITY CHANGE - bootstrap Primary Identity");
+    const text = renderCard(request({ capability: IDENTITY_APPLY_BOOTSTRAP.id }), NOW).text;
+    expect(text).toContain("IDENTITY CHANGE - bootstrap Primary Identity");
+    const labels = [IDENTITY_APPLY_BOOTSTRAP, IDENTITY_APPLY_A, IDENTITY_APPLY_ROLLBACK, IDENTITY_APPLY_C, IDENTITY_APPLY_D].map((c) => capabilityLabel(c.id));
+    expect(new Set(labels).size).toBe(labels.length);
+    for (const label of labels) expect(label).toContain("IDENTITY CHANGE");
   });
 
   it("uses UK dates and a 24-hour UTC time", () => {

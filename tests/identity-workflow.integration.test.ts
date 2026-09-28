@@ -83,6 +83,12 @@ async function taskStatus(taskId: string): Promise<string | undefined> {
 async function status(taskId: string, expected: string): Promise<void> {
   await until(() => taskStatus(taskId), (s) => s === expected, 60000);
 }
+/** Answers the task's pending approval as the named HUMAN approver, via the real signed-control path. */
+async function answer(taskId: string, decision: "GRANTED" | "DENIED") {
+  const events = await pool.query<{ payload: { evaluation: { scopeDigest: string } } }>("select payload from task_events where task_id=$1 and event_key=$2", [taskId, `policy-approval:${taskId}`]);
+  const response = await send(taskId, "approve", { scopeDigest: events.rows[0]!.payload.evaluation.scopeDigest, decision }, "test-reviewer");
+  expect(response.ok, await response.text()).toBe(true);
+}
 async function submit(objective: unknown, actor: Actor = "test-owner") {
   const body = submission(randomUUID(), objective, actor);
   const { task } = compileIntent(body);
@@ -173,20 +179,52 @@ it("an interrupted bootstrap ends its task FAILED, is surfaced by health, and th
     await pool.query("drop table if exists public.p7a_refuse_candidate");
   }
 
-  // Recovery: the same owner, the same document id. Bootstrap is chosen by "no head", not "no
-  // profile", and the existing profile is resumed rather than duplicated.
-  const recovery = await submit({ kind: "PROPOSE", document: doc(identityId, policyOwner), reason: "bootstrap, resumed" });
-  const result = await finished(recovery.id);
+}, 120000);
+
+it("a resumed bootstrap goes through policy to APPROVAL_REQUIRED under IDENTITY_APPLY_BOOTSTRAP; DENY ends it FAILED with no version, profile kept for the owner", async () => {
+  // Bootstrap is chosen by "no head", not "no profile": the interrupted profile is resumed, never duplicated.
+  const denied = await submit({ kind: "PROPOSE", document: doc(identityId, policyOwner), reason: "bootstrap, resumed then denied" });
+  await status(denied.id, "APPROVAL_REQUIRED");
+  const gate = await pool.query<{ capability: string; decision: string }>(
+    "select payload->'invocation'->'capability'->>'id' as capability, payload->'evaluation'->'decision'->>'decision' as decision from task_events where task_id=$1 and type='POLICY_CHECKED'",
+    [denied.id],
+  );
+  expect(gate.rows).toEqual([{ capability: "70000000-0000-4000-8000-000000000005", decision: "APPROVAL_REQUIRED" }]);
+  await answer(denied.id, "DENIED");
+  await status(denied.id, "FAILED");
+  expect(await versionsOf(identityId)).toBe(0);
+  expect(await count("select count(*)::int as n from identity_activations where identity_id=$1", [identityId])).toBe(0);
+  const candidate = await pool.query("select state from identity_candidates where proposed_by_task=$1", [denied.id]);
+  expect(candidate.rows[0].state).toBe("REJECTED");
+  expect(await count("select count(*)::int as n from identity_profiles where tenant_id=$1", [policyOwner])).toBe(1);
+  expect((await fetchIncompleteBootstraps(pool, new Date(Date.now() + 60 * 60_000))).map((r) => r.identityId)).toContain(identityId);
+}, 120000);
+
+it("the same owner resumes it again: APPROVAL_REQUIRED -> GRANTED -> exactly one v1 activation, carrying the approval, and the task COMPLETED", async () => {
+  const granted = await submit({ kind: "PROPOSE", document: doc(identityId, policyOwner), reason: "bootstrap, resumed and granted" });
+  await status(granted.id, "APPROVAL_REQUIRED");
+  await answer(granted.id, "GRANTED");
+  const result = await finished(granted.id);
   expect(result.ok, result.body).toBe(true);
-  expect(await taskStatus(recovery.id)).toBe("COMPLETED");
-  const version = await pool.query("select governance_class, version from identity_versions where identity_id=$1", [identityId]);
-  expect(version.rows).toEqual([{ governance_class: "BOOTSTRAP", version: 1 }]);
+  expect(await taskStatus(granted.id)).toBe("COMPLETED");
+  const activations = await pool.query("select version, governance_class, approval_id, request_task_id from identity_activations where identity_id=$1", [identityId]);
+  expect(activations.rows).toEqual([{ version: 1, governance_class: "BOOTSTRAP", approval_id: granted.id, request_task_id: granted.id }]);
   expect(await currentVersion(identityId)).toBe(1);
   expect(await count("select count(*)::int as n from identity_profiles where tenant_id=$1", [policyOwner])).toBe(1);
   const profile = await pool.query("select owner_principal_id from identity_profiles where id=$1", [identityId]);
   expect(profile.rows[0].owner_principal_id).toBe(policyOwner);
   expect((await fetchIncompleteBootstraps(pool, new Date(Date.now() + 60 * 60_000))).map((r) => r.identityId)).not.toContain(identityId);
 }, 120000);
+
+it("a second bootstrap is refused once the identity exists: another document id never creates a task, a candidate or a profile", async () => {
+  const priorCandidates = await candidatesOf(identityId);
+  const second = await submit({ kind: "PROPOSE", document: doc(randomUUID(), policyOwner), reason: "a second bootstrap" });
+  const result = await finished(second.id);
+  expect(result.ok).toBe(false);
+  expect(await taskStatus(second.id)).toBeUndefined();
+  expect(await candidatesOf(identityId)).toBe(priorCandidates);
+  expect(await count("select count(*)::int as n from identity_profiles where tenant_id=$1", [policyOwner])).toBe(1);
+}, 60000);
 
 it("ADR-0021 D7: right after bootstrap, Class C/D is frozen by DEFAULT - an owner's Class C change ends FAILED with no freeze call ever made", async () => {
   const state = await count("select count(*)::int as n from kernel_private.identity_governance_state where identity_id=$1", [identityId]);
@@ -220,7 +258,7 @@ it("a Class A change waits for approval, then activates once granted - completio
     [identityId],
   );
   expect(activations.rows.map((r) => r.governance_class)).toEqual(["BOOTSTRAP", "A"]);
-  expect(activations.rows[0]!.approval_id).toBeNull();
+  expect(activations.rows[0]!.approval_id).not.toBeNull(); // BOOTSTRAP is approval-gated too
   expect(activations.rows[1]!.approval_id).not.toBeNull();
   expect(activations.rows[1]!.version).toBe(2);
   expect(await currentVersion(identityId)).toBe(2);

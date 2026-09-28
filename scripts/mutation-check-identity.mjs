@@ -35,6 +35,8 @@ const POLICY = "services/memory/src/canonical/policy.ts";
 const COMPLETE = "services/kernel/src/identity/complete.ts";
 const STORE = "services/kernel/src/identity/store.ts";
 const HEALTH = "services/kernel/src/health/evaluate.ts";
+const BOUNDARY = "services/kernel/src/approval-boundary.ts";
+const CARDS = "services/kernel/src/channel/telegram/approval-cards.ts";
 
 // Scoped per mutation, not one uniform list: the full set (below) needs a fresh Docker rebuild for
 // the Restate E2E workflow suite alone (measured ~480s), and only the two mutations that actually
@@ -46,7 +48,9 @@ const DB_TESTS = ["tests/identity-migration.integration.test.ts"];
 const WORKFLOW_TESTS = ["tests/identity-workflow.integration.test.ts"];
 const MEMORY_TESTS = ["tests/memory-canonical.test.ts"];
 const HEALTH_TESTS = ["tests/health-model.test.ts"];
-const FULL_TESTS = [...DB_TESTS, ...WORKFLOW_TESTS, "tests/primary-identity-contracts.test.ts", "tests/identity-canonical.test.ts", "tests/identity-secret-scan.test.ts", ...MEMORY_TESTS, ...HEALTH_TESTS];
+const BOUNDARY_TESTS = ["tests/approval-boundary.test.ts"];
+const CARD_TESTS = ["tests/telegram-approvals.test.ts"];
+const FULL_TESTS = [...DB_TESTS, ...WORKFLOW_TESTS, "tests/primary-identity-contracts.test.ts", "tests/identity-canonical.test.ts", "tests/identity-secret-scan.test.ts", ...MEMORY_TESTS, ...HEALTH_TESTS, ...BOUNDARY_TESTS, ...CARD_TESTS];
 
 /** [id, what the mutation breaks, file, exact text to find (must occur once), replacement, tests to run] */
 const MUTATIONS = [
@@ -54,7 +58,7 @@ const MUTATIONS = [
   ["M2", "a non-HUMAN owner can bootstrap an identity", MIGRATION, "if owner_kind is distinct from 'HUMAN' then", "if false then", DB_TESTS],
   ["M3", "a caller-asserted governance class survives instead of being overwritten (Class A -> C downgrade)", MIGRATION, "new.governance_class := 'A';", "new.governance_class := 'C';", DB_TESTS],
   ["M4", "a real Class A change is never detected, so it is misclassified through Class C", MIGRATION, "changed_a := (head.document->'sections'->'classA') is distinct from (new.document->'sections'->'classA');", "changed_a := false;", DB_TESTS],
-  ["M5", "a Class A/ROLLBACK activation no longer requires a granted approval", MIGRATION, "if new.governance_class in ('A','ROLLBACK') and new.approval_id is null then", "if false then", DB_TESTS],
+  ["M5", "a BOOTSTRAP/Class A/ROLLBACK activation no longer requires a granted approval", MIGRATION, "if new.governance_class in ('BOOTSTRAP','A','ROLLBACK') and new.approval_id is null then", "if false then", DB_TESTS],
   ["M6", "a HELD candidate's document can be swapped in place after proposal", MIGRATION, "or new.document is distinct from old.document", "or false", DB_TESTS],
   ["M7", "a tenant can bootstrap a second identity", MIGRATION, "tenant_id uuid not null unique references public.tenants(id),", "tenant_id uuid not null references public.tenants(id),", DB_TESTS],
   ["M8", "the same candidate can be activated twice", MIGRATION, "candidate_id uuid not null unique references public.identity_candidates(id),", "candidate_id uuid not null references public.identity_candidates(id),", DB_TESTS],
@@ -85,10 +89,10 @@ const MUTATIONS = [
   ["M16", "a frozen identity still accepts a Class C/D activation", MIGRATION, "if coalesce(is_frozen, true) and new.governance_class in ('C','D') then", "if false then", DB_TESTS],
   [
     "M17",
-    "a MODEL_PROPOSAL/SHARED_BRAIN BOOTSTRAP candidate can self-activate with no human involved (the KJ-P7A origin-check regression)",
+    "a MODEL_PROPOSAL/SHARED_BRAIN candidate can self-activate with no human involved (the KJ-P7A origin-check regression)",
     MIGRATION,
-    "candidate.state = 'HELD' and candidate.origin = 'OPERATOR_INSTRUCTION' and new.governance_class in ('C','D','BOOTSTRAP')",
-    "candidate.state = 'HELD' and new.governance_class in ('C','D','BOOTSTRAP')",
+    "candidate.state = 'HELD' and candidate.origin = 'OPERATOR_INSTRUCTION' and new.governance_class in ('C','D')",
+    "candidate.state = 'HELD' and new.governance_class in ('C','D')",
     DB_TESTS,
   ],
   ["M18", "D8 stops requiring the owning task to be COMPLETED before a version can exist", MIGRATION, "if prior_task_status <> 'COMPLETED' then", "if false then", DB_TESTS],
@@ -194,6 +198,14 @@ const MUTATIONS = [
   ],
   ["M46", "a Class C/D version may change the Class A bytes (D6)", MIGRATION, "if new.governance_class in ('C','D') and new.class_a_digest <> prior.class_a_digest then", "if false then", DB_TESTS],
   ["M47", "the Class A byte-identity rule wrongly applies to ROLLBACK, so an emergency rollback past a Class A change can never apply (D7)", MIGRATION, "if new.governance_class in ('C','D') and new.class_a_digest <> prior.class_a_digest then", "if new.governance_class <> 'A' and new.class_a_digest <> prior.class_a_digest then", DB_TESTS],
+  // --- KJ-P7A final seal (aa53db5): BOOTSTRAP only via a GRANTED HUMAN approval under IDENTITY_APPLY_BOOTSTRAP ---
+  ["M48", "the workflow bypasses policy for BOOTSTRAP, so bootstrap never reaches a HUMAN approval", WORKFLOW, "        if (gate) {", '        if (gate && governanceClass !== "BOOTSTRAP") {', WORKFLOW_TESTS],
+  ["M49", "the activation trigger no longer requires an approval for BOOTSTRAP", MIGRATION, "if new.governance_class in ('BOOTSTRAP','A','ROLLBACK') and new.approval_id is null then", "if new.governance_class in ('A','ROLLBACK') and new.approval_id is null then", DB_TESTS],
+  ["M50", "the identity_activations CHECK no longer requires an approval for BOOTSTRAP", MIGRATION, "check (governance_class not in ('BOOTSTRAP','A','ROLLBACK') or approval_id is not null)", "check (governance_class not in ('A','ROLLBACK') or approval_id is not null)", DB_TESTS],
+  ["M51", "a HELD (unapproved) BOOTSTRAP candidate is exempt from the APPROVED requirement again", MIGRATION, "candidate.origin = 'OPERATOR_INSTRUCTION' and new.governance_class in ('C','D')) then", "candidate.origin = 'OPERATOR_INSTRUCTION' and new.governance_class in ('C','D','BOOTSTRAP')) then", DB_TESTS],
+  ["M52", "a BOOTSTRAP approval is bound under Class A's gate instead of its own", MIGRATION, "when 'BOOTSTRAP' then '70000000-0000-4000-8000-000000000005' end;", "when 'BOOTSTRAP' then '70000000-0000-4000-8000-000000000001' end;", DB_TESTS],
+  ["M53", "production policy has no APPROVAL_REQUIRED rule for BOOTSTRAP", BOUNDARY, "rules: [rule(IDENTITY_APPLY_BOOTSTRAP), rule(IDENTITY_APPLY_A), rule(IDENTITY_APPLY_ROLLBACK)],", "rules: [rule(IDENTITY_APPLY_A), rule(IDENTITY_APPLY_ROLLBACK)],", BOUNDARY_TESTS],
+  ["M54", "the Telegram bootstrap card no longer says IDENTITY CHANGE", CARDS, '[IDENTITY_APPLY_BOOTSTRAP.id]: "IDENTITY CHANGE - bootstrap Primary Identity",', '[IDENTITY_APPLY_BOOTSTRAP.id]: "bootstrap Primary Identity",', CARD_TESTS],
 ];
 
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;

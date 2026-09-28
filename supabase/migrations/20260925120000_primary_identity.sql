@@ -265,7 +265,9 @@ create table public.identity_activations (
   created_by text not null default current_user,
   foreign key (identity_id, version) references public.identity_versions(identity_id, version),
   foreign key (identity_id, tenant_id) references public.identity_profiles(id, tenant_id),
-  check (governance_class not in ('A','ROLLBACK') or approval_id is not null)
+  -- BOOTSTRAP, Class A and ROLLBACK always need a HUMAN approval (ADR-0021 D5; P7 gate: bootstrap only
+  -- via a COMPLETED change task + a GRANTED HUMAN approval).
+  check (governance_class not in ('BOOTSTRAP','A','ROLLBACK') or approval_id is not null)
 );
 create function public.identity_activation_guard() returns trigger language plpgsql set search_path = '' as $$
 declare recent_cd integer; is_frozen boolean; approval_task uuid; approval_status text; gate text; candidate public.identity_candidates; version_row public.identity_versions;
@@ -285,19 +287,19 @@ begin
     when 'A' then '70000000-0000-4000-8000-000000000001'
     when 'ROLLBACK' then '70000000-0000-4000-8000-000000000002'
     when 'C' then '70000000-0000-4000-8000-000000000003'
-    when 'D' then '70000000-0000-4000-8000-000000000004' end;
-  if new.governance_class in ('A','ROLLBACK') and new.approval_id is null then
-    raise exception 'Class A and ROLLBACK activations require a granted approval' using errcode='23514';
+    when 'D' then '70000000-0000-4000-8000-000000000004'
+    when 'BOOTSTRAP' then '70000000-0000-4000-8000-000000000005' end;
+  if new.governance_class in ('BOOTSTRAP','A','ROLLBACK') and new.approval_id is null then
+    raise exception 'BOOTSTRAP, Class A and ROLLBACK activations require a granted approval' using errcode='23514';
   end if;
-  -- The HELD-without-approval exception is for Class C/D/BOOTSTRAP AND only ever for an
-  -- OPERATOR_INSTRUCTION candidate: without the origin check, a MODEL_PROPOSAL or SHARED_BRAIN
-  -- candidate classified BOOTSTRAP (identity_candidate_classify only checks governance_class, not
-  -- origin, for the no-existing-head case) could otherwise self-activate with no human ever
-  -- involved. A non-OPERATOR_INSTRUCTION candidate can never reach state='APPROVED' (see
-  -- identity_candidates' own check), so this closes the only other route to activation.
+  -- The HELD-without-approval exception is for Class C/D ONLY (policy-ALLOWed, frozen by default,
+  -- rate-capped) and only ever for an OPERATOR_INSTRUCTION candidate: a MODEL_PROPOSAL or SHARED_BRAIN
+  -- candidate can never self-activate with no human involved. BOOTSTRAP, Class A and ROLLBACK are not
+  -- exempt - their candidate must be APPROVED, which a non-OPERATOR_INSTRUCTION candidate can never be
+  -- (see identity_candidates' own check).
   if candidate.state is distinct from 'APPROVED'
-     and not (candidate.state = 'HELD' and candidate.origin = 'OPERATOR_INSTRUCTION' and new.governance_class in ('C','D','BOOTSTRAP')) then
-    raise exception 'activation requires an APPROVED candidate, or a HELD OPERATOR_INSTRUCTION Class C/D/BOOTSTRAP candidate within cap' using errcode='23514';
+     and not (candidate.state = 'HELD' and candidate.origin = 'OPERATOR_INSTRUCTION' and new.governance_class in ('C','D')) then
+    raise exception 'activation requires an APPROVED candidate, or a HELD OPERATOR_INSTRUCTION Class C/D candidate within cap' using errcode='23514';
   end if;
   if new.approval_id is not null then
     select task_id, status into approval_task, approval_status from public.approvals where id = new.approval_id;

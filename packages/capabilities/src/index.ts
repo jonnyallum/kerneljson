@@ -393,6 +393,12 @@ export const IDENTITY_APPLY_D = Object.freeze({
   id: "70000000-0000-4000-8000-000000000004",
   version: "1.0.0",
 });
+/** Bootstrap v1 of a tenant's Primary Identity: always HUMAN-approved (the P7 gate - bootstrap only via
+ *  a COMPLETED change task + a GRANTED HUMAN approval), never shared with Class A's gate. */
+export const IDENTITY_APPLY_BOOTSTRAP = Object.freeze({
+  id: "70000000-0000-4000-8000-000000000005",
+  version: "1.0.0",
+});
 function identityApplyDefinition(ref: { id: string; version: string }, description: string): CapabilityDefinition {
   return {
     metadata: Capability.parse({
@@ -413,7 +419,7 @@ function identityApplyDefinition(ref: { id: string; version: string }, descripti
     verify: () => false,
   };
 }
-/** Identity governance only: the four identity policy-gate pseudo-capabilities above, nothing else. Kept
+/** Identity governance only: the five identity policy-gate pseudo-capabilities above, nothing else. Kept
  *  separate from createRuntimeRegistry() so the deterministic/mission registries never gain an entry
  *  they could accidentally route a real invocation through. */
 export function createIdentityCapabilityRegistry(): CapabilityRegistry {
@@ -423,6 +429,7 @@ export function createIdentityCapabilityRegistry(): CapabilityRegistry {
       identityApplyDefinition(IDENTITY_APPLY_ROLLBACK, "Approval gate for an identity rollback to a prior version - never executed, the activation is a direct governed write"),
       identityApplyDefinition(IDENTITY_APPLY_C, "Policy gate for a Class C (persona) identity change - never executed, the activation is a direct governed write"),
       identityApplyDefinition(IDENTITY_APPLY_D, "Policy gate for a Class D (mantras/vision) identity change - never executed, the activation is a direct governed write"),
+      identityApplyDefinition(IDENTITY_APPLY_BOOTSTRAP, "Approval gate for bootstrapping a tenant's Primary Identity v1 - never executed, the activation is a direct governed write"),
     ],
     "builtin",
   );

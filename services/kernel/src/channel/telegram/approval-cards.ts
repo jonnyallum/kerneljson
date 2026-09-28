@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { IDENTITY_APPLY_A, IDENTITY_APPLY_C, IDENTITY_APPLY_D, IDENTITY_APPLY_ROLLBACK, REVERSE, UPPERCASE } from "../../../../../packages/capabilities/src/index.js";
+import { IDENTITY_APPLY_A, IDENTITY_APPLY_BOOTSTRAP, IDENTITY_APPLY_C, IDENTITY_APPLY_D, IDENTITY_APPLY_ROLLBACK, REVERSE, UPPERCASE } from "../../../../../packages/capabilities/src/index.js";
 
 /**
  * KJ-P4B - what an approval looks like in Telegram, and nothing else.
@@ -79,6 +79,7 @@ const CAPABILITY_LABELS: Readonly<Record<string, string>> = Object.freeze({
   [IDENTITY_APPLY_ROLLBACK.id]: "IDENTITY CHANGE - rollback to a prior version",
   [IDENTITY_APPLY_C.id]: "IDENTITY CHANGE - persona (Class C)",
   [IDENTITY_APPLY_D.id]: "IDENTITY CHANGE - mantras/vision (Class D)",
+  [IDENTITY_APPLY_BOOTSTRAP.id]: "IDENTITY CHANGE - bootstrap Primary Identity",
 });
 export const capabilityLabel = (id: string): string =>
   !CAPABILITY.test(id) ? "?" : (CAPABILITY_LABELS[id] ?? `capability ${id.slice(0, 8)}`);

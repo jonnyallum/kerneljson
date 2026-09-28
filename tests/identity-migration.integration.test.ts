@@ -4,7 +4,7 @@ import { knowledgeDatabase } from "./support/knowledge-db.js";
 import { completeAndActivateIdentity, completeIdentityTaskTx, type IdentityApply } from "../services/kernel/src/identity/complete.js";
 import { IdentityRefusal } from "../services/kernel/src/identity/store.js";
 import { fetchIdentityOrphans, fetchIncompleteBootstraps } from "../services/kernel/src/health/collect.js";
-import { IDENTITY_APPLY_A, IDENTITY_APPLY_C, IDENTITY_APPLY_D, IDENTITY_APPLY_ROLLBACK, capabilityDigest } from "../packages/capabilities/src/index.js";
+import { IDENTITY_APPLY_A, IDENTITY_APPLY_BOOTSTRAP, IDENTITY_APPLY_C, IDENTITY_APPLY_D, IDENTITY_APPLY_ROLLBACK, capabilityDigest } from "../packages/capabilities/src/index.js";
 
 /**
  * KJ-P7A - the primary identity migration (ADR-0021) against real Postgres. Exercises the DB
@@ -114,7 +114,7 @@ async function completeExistingTask(taskId: string): Promise<void> {
     client.release();
   }
 }
-async function mkApproval(taskId: string, approverId: string, status: "PENDING" | "GRANTED" | "DENIED" = "GRANTED"): Promise<string> {
+async function mkApproval(taskId: string, approverId: string, status: "PENDING" | "GRANTED" | "DENIED" | "EXPIRED" = "GRANTED"): Promise<string> {
   const id = randomUUID(),
     requestedAt = new Date(Date.now() - 5_000).toISOString();
   if (status === "PENDING") {
@@ -144,6 +144,19 @@ async function bindApproval(taskId: string, approvalId: string, candidateId: str
  *  identity_activation_guard() requires exactly this for the candidate, its digest and its class gate. */
 async function allowPolicy(taskId: string, candidateId: string, overrides: PolicyOverrides = {}) {
   await writePolicyEvent(taskId, randomUUID(), candidateId, { decision: "ALLOW", capabilityId: IDENTITY_APPLY_C.id, ...overrides });
+}
+/** The identity gate capability for each governance class (packages/capabilities IDENTITY_APPLY_*). */
+function gateFor(governanceClass: string): string {
+  return { BOOTSTRAP: IDENTITY_APPLY_BOOTSTRAP.id, A: IDENTITY_APPLY_A.id, ROLLBACK: IDENTITY_APPLY_ROLLBACK.id, C: IDENTITY_APPLY_C.id, D: IDENTITY_APPLY_D.id }[governanceClass]!;
+}
+/** A GRANTED HUMAN approval on `taskId`, bound (D5) to this candidate under this class's gate, with the
+ *  candidate moved to APPROVED - everything a BOOTSTRAP / Class A / ROLLBACK activation requires. */
+async function approveFor(tenantId: string, taskId: string, candidateId: string, governanceClass: string): Promise<string> {
+  const approverId = await mkPrincipal(tenantId, "HUMAN");
+  const approvalId = await mkApproval(taskId, approverId, "GRANTED");
+  await bindApproval(taskId, approvalId, candidateId, { capabilityId: gateFor(governanceClass) });
+  await db.pool.query("update identity_candidates set state='APPROVED', resolved_at=now() where id=$1", [candidateId]);
+  return approvalId;
 }
 async function writePolicyEvent(taskId: string, approvalId: string, candidateId: string, overrides: PolicyOverrides & { decision: string; capabilityId: string }) {
   const task = await db.pool.query<{ principal_id: string; trace_id: string }>("select principal_id, trace_id from tasks where id=$1", [taskId]);
@@ -242,9 +255,11 @@ async function change(
   const candidateId = await proposeOn(tenantId, identityId, taskId, document, governanceClass);
   if (governanceClass === "C" || governanceClass === "D") await allowPolicy(taskId, candidateId, { capabilityId: governanceClass === "C" ? IDENTITY_APPLY_C.id : IDENTITY_APPLY_D.id });
   let approvalId: string | null = null;
-  if (opts.approverId) {
-    approvalId = await mkApproval(taskId, opts.approverId, "GRANTED");
-    await bindApproval(taskId, approvalId, candidateId);
+  // BOOTSTRAP always needs a GRANTED HUMAN approval, like Class A / ROLLBACK (P7 gate).
+  const approverId = opts.approverId ?? (governanceClass === "BOOTSTRAP" ? await mkPrincipal(tenantId, "HUMAN") : undefined);
+  if (approverId) {
+    approvalId = await mkApproval(taskId, approverId, "GRANTED");
+    await bindApproval(taskId, approvalId, candidateId, { capabilityId: gateFor(governanceClass) });
     await db.pool.query("update identity_candidates set state='APPROVED', resolved_at=now() where id=$1", [candidateId]);
   }
   await completeExistingTask(taskId);
@@ -436,7 +451,26 @@ describe("identity_activation_guard: the origin-check regression proof (KJ-P7A f
     await expect(insertActivation(tenantId, identityId, 1, candidateId, null, taskId)).rejects.toMatchObject({ code: "23514" });
   });
 
-  it("the equivalent OPERATOR_INSTRUCTION BOOTSTRAP candidate, HELD, activates cleanly (the fix does not break the real path)", async () => {
+  // BOOTSTRAP now needs an approval (refused above before the origin check is reached), so the origin
+  // ceiling itself is proven on the one class that is still exempt from approval when HELD: Class C/D.
+  // Everything else about this model candidate is valid - policy ALLOW, window open, task completed.
+  it("a MODEL_PROPOSAL Class C candidate, HELD and policy-ALLOWed, still cannot self-activate: the origin ceiling", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const { identityId } = await bootstrap(tenantId, ownerId);
+    const taskId = await mkVerifyingTask(tenantId, ownerId);
+    const changed = doc(identityId, tenantId, { classC: { persona: "model-suggested" } });
+    const candidateId = await proposeOn(tenantId, identityId, taskId, changed, "C", "MODEL_PROPOSAL");
+    await allowPolicy(taskId, candidateId);
+    await completeExistingTask(taskId);
+    await insertVersion(tenantId, identityId, 2, withVersion(changed, 2), candidateId, taskId);
+    await expect(insertActivation(tenantId, identityId, 2, candidateId, null, taskId)).rejects.toMatchObject({
+      code: "23514",
+      message: expect.stringContaining("APPROVED candidate"),
+    });
+  });
+
+  it("an OPERATOR_INSTRUCTION BOOTSTRAP candidate with a bound GRANTED approval activates cleanly (the real path)", async () => {
     const tenantId = await mkTenant(),
       ownerId = await mkPrincipal(tenantId, "HUMAN");
     await expect(bootstrap(tenantId, ownerId)).resolves.toBeTruthy();
@@ -628,9 +662,10 @@ describe("identity_activations: rate cap, freeze, and identity_current", () => {
       identityId = await mkProfile(tenantId, ownerId);
     const taskId = await mkVerifyingTask(tenantId, ownerId);
     const candidateId = await proposeOn(tenantId, identityId, taskId, doc(identityId, tenantId), "BOOTSTRAP");
+    const approvalId = await approveFor(tenantId, taskId, candidateId, "BOOTSTRAP");
     await completeExistingTask(taskId);
     await insertVersion(tenantId, identityId, 1, withVersion(doc(identityId, tenantId), 1), candidateId, taskId);
-    await insertActivation(tenantId, identityId, 1, candidateId, null, taskId);
+    await insertActivation(tenantId, identityId, 1, candidateId, approvalId, taskId);
     // A second activation for the exact same candidate - a distinct row, a distinct request_task_id
     // (so that unique constraint alone would not catch it), but the same candidate_id.
     const secondTaskId = await mkVerifyingTask(tenantId, ownerId);
@@ -643,8 +678,8 @@ describe("identity_activations: rate cap, freeze, and identity_current", () => {
       await client.query("set local session_replication_role = replica"); // user triggers do not fire
       await expect(
         client.query(
-          "insert into identity_activations(id,identity_id,tenant_id,version,governance_class,candidate_id,approval_id,request_task_id) values($1,$2,$3,1,'BOOTSTRAP',$4,null,$5)",
-          [randomUUID(), identityId, tenantId, candidateId, secondTaskId],
+          "insert into identity_activations(id,identity_id,tenant_id,version,governance_class,candidate_id,approval_id,request_task_id) values($1,$2,$3,1,'BOOTSTRAP',$4,$5,$6)",
+          [randomUUID(), identityId, tenantId, candidateId, approvalId, secondTaskId],
         ),
       ).rejects.toMatchObject({ code: "23505" });
     });
@@ -753,7 +788,8 @@ async function proposeAndApply(tenantId: string, ownerId: string, identityId: st
   const taskId = await mkVerifyingTask(tenantId, ownerId);
   const candidateId = await proposeOn(tenantId, identityId, taskId, draft, requested);
   if (requested === "C" || requested === "D") await allowPolicy(taskId, candidateId, { capabilityId: requested === "C" ? IDENTITY_APPLY_C.id : IDENTITY_APPLY_D.id });
-  const input = applyInput(tenantId, identityId, taskId, candidateId, draft);
+  const approvalId = requested === "BOOTSTRAP" ? await approveFor(tenantId, taskId, candidateId, "BOOTSTRAP") : null;
+  const input = applyInput(tenantId, identityId, taskId, candidateId, draft, approvalId);
   return { taskId, candidateId, input, apply: () => completeAndActivateIdentity(db.pool, input) };
 }
 /** Everything a completion or an activation could have left behind for one task. */
@@ -1213,5 +1249,127 @@ describe("ADR-0021 D6: a Class C/D version must leave the Class A bytes identica
         [randomUUID(), identityId, tenantId, withVersion(changed, 2), H(), "f".repeat(64), candidateId, taskId],
       ),
     ).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("Class A bytes identical") });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// KJ-P7A final seal (aa53db5): BOOTSTRAP only via a COMPLETED change task + a GRANTED HUMAN approval,
+// bound to the exact candidate, proposed digest and task under IDENTITY_APPLY_BOOTSTRAP.
+// ---------------------------------------------------------------------------------------------------
+
+describe("BOOTSTRAP requires a GRANTED HUMAN approval bound to this candidate, document and task under IDENTITY_APPLY_BOOTSTRAP", () => {
+  /** A HELD BOOTSTRAP candidate with its task COMPLETED and version 1 written - only the activation remains. */
+  async function bootstrapReadyToActivate() {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN"),
+      approverId = await mkPrincipal(tenantId, "HUMAN"),
+      identityId = await mkProfile(tenantId, ownerId);
+    const taskId = await mkVerifyingTask(tenantId, ownerId);
+    const candidateId = await proposeOn(tenantId, identityId, taskId, doc(identityId, tenantId), "BOOTSTRAP");
+    await completeExistingTask(taskId);
+    await insertVersion(tenantId, identityId, 1, withVersion(doc(identityId, tenantId), 1), candidateId, taskId);
+    return { tenantId, ownerId, approverId, identityId, taskId, candidateId };
+  }
+  type Ready = Awaited<ReturnType<typeof bootstrapReadyToActivate>>;
+  const activate = (s: Ready, approvalId: string | null) => insertActivation(s.tenantId, s.identityId, 1, s.candidateId, approvalId, s.taskId);
+  const markApproved = (s: Ready) => db.pool.query("update identity_candidates set state='APPROVED', resolved_at=now() where id=$1", [s.candidateId]);
+  const activations = async (s: Ready) => (await db.pool.query("select count(*)::int as n from identity_activations where identity_id=$1", [s.identityId])).rows[0].n;
+
+  it("refuses a BOOTSTRAP activation with no approval at all", async () => {
+    const s = await bootstrapReadyToActivate();
+    await markApproved(s);
+    await expect(activate(s, null)).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("require a granted approval") });
+  });
+
+  it("refuses a HELD (not APPROVED) BOOTSTRAP candidate even with a bound GRANTED approval - no HELD exception for BOOTSTRAP", async () => {
+    const s = await bootstrapReadyToActivate();
+    const approvalId = await mkApproval(s.taskId, s.approverId, "GRANTED");
+    await bindApproval(s.taskId, approvalId, s.candidateId, { capabilityId: IDENTITY_APPLY_BOOTSTRAP.id });
+    await expect(activate(s, approvalId)).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("APPROVED candidate") });
+  });
+
+  it("refuses PENDING, DENIED and EXPIRED approvals", async () => {
+    const s = await bootstrapReadyToActivate();
+    await markApproved(s);
+    for (const status of ["PENDING", "DENIED", "EXPIRED"] as const) {
+      const approvalId = await mkApproval(s.taskId, s.approverId, status);
+      await bindApproval(s.taskId, approvalId, s.candidateId, { capabilityId: IDENTITY_APPLY_BOOTSTRAP.id });
+      await expect(activate(s, approvalId), status).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("GRANTED approval") });
+    }
+    expect(await activations(s)).toBe(0);
+  });
+
+  it("refuses a GRANTED approval belonging to another task", async () => {
+    const s = await bootstrapReadyToActivate();
+    await markApproved(s);
+    const otherTask = await mkVerifyingTask(s.tenantId, s.ownerId);
+    const approvalId = await mkApproval(otherTask, s.approverId, "GRANTED");
+    await expect(activate(s, approvalId)).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("request task") });
+  });
+
+  it("refuses a GRANTED same-task approval bound to another candidate, another document, the Class A gate, or with a non-APPROVAL_REQUIRED decision", async () => {
+    const s = await bootstrapReadyToActivate();
+    await markApproved(s);
+    const forgeries: PolicyOverrides[] = [
+      { capabilityId: IDENTITY_APPLY_BOOTSTRAP.id, candidateId: randomUUID() },
+      { capabilityId: IDENTITY_APPLY_BOOTSTRAP.id, digest: "d".repeat(64) },
+      { capabilityId: IDENTITY_APPLY_A.id }, // Class A's gate must never authorise a bootstrap
+      { capabilityId: IDENTITY_APPLY_BOOTSTRAP.id, decision: "ALLOW" },
+    ];
+    for (const forged of forgeries) {
+      const approvalId = await mkApproval(s.taskId, s.approverId, "GRANTED");
+      await bindApproval(s.taskId, approvalId, s.candidateId, forged);
+      await expect(activate(s, approvalId), JSON.stringify(forged)).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("not bound") });
+    }
+    expect(await activations(s)).toBe(0);
+  });
+
+  it("accepts a GRANTED approval bound to this candidate and document under the BOOTSTRAP gate: exactly one v1 activation", async () => {
+    const s = await bootstrapReadyToActivate();
+    await markApproved(s);
+    const approvalId = await mkApproval(s.taskId, s.approverId, "GRANTED");
+    await bindApproval(s.taskId, approvalId, s.candidateId, { capabilityId: IDENTITY_APPLY_BOOTSTRAP.id });
+    await expect(activate(s, approvalId)).resolves.toBeTruthy();
+    const rows = await db.pool.query("select version, governance_class, approval_id from identity_activations where identity_id=$1", [s.identityId]);
+    expect(rows.rows).toEqual([{ version: 1, governance_class: "BOOTSTRAP", approval_id: approvalId }]);
+  });
+
+  it("the approval requirement holds in two independent layers: the trigger alone (CHECK dropped) and the CHECK alone (triggers disabled)", async () => {
+    const s = await bootstrapReadyToActivate();
+    await markApproved(s);
+    const sql = `insert into identity_activations(id,identity_id,tenant_id,version,governance_class,candidate_id,approval_id,request_task_id) values($1,$2,$3,1,'BOOTSTRAP',$4,null,$5)`;
+    await inRolledBackTransaction(async (client) => {
+      const checks = await client.query(
+        "select conname from pg_constraint where conrelid='public.identity_activations'::regclass and contype='c' and pg_get_constraintdef(oid) ilike '%approval_id IS NOT NULL%'",
+      );
+      expect(checks.rowCount).toBe(1);
+      await client.query(`alter table public.identity_activations drop constraint "${checks.rows[0].conname}"`);
+      await expect(client.query(sql, [randomUUID(), s.identityId, s.tenantId, s.candidateId, s.taskId])).rejects.toMatchObject({
+        code: "23514",
+        message: expect.stringContaining("require a granted approval"),
+      });
+    });
+    await inRolledBackTransaction(async (client) => {
+      await client.query("set local session_replication_role = replica"); // user triggers do not fire
+      await expect(client.query(sql, [randomUUID(), s.identityId, s.tenantId, s.candidateId, s.taskId])).rejects.toMatchObject({
+        code: "23514",
+        message: expect.stringContaining("identity_activations"),
+      });
+    });
+  });
+});
+
+describe("a second bootstrap is still refused once an identity exists", () => {
+  it("refuses a second profile for the tenant, and a BOOTSTRAP-requested candidate is reclassified, never BOOTSTRAP", async () => {
+    const tenantId = await mkTenant(),
+      ownerId = await mkPrincipal(tenantId, "HUMAN");
+    const { identityId } = await bootstrap(tenantId, ownerId);
+    await expect(mkProfile(tenantId, ownerId)).rejects.toMatchObject({ code: "23505" });
+    const taskId = await mkVerifyingTask(tenantId, ownerId);
+    const candidateId = await proposeOn(tenantId, identityId, taskId, doc(identityId, tenantId, { classA: { name: "a second bootstrap" } }), "BOOTSTRAP");
+    const stored = await db.pool.query("select governance_class from identity_candidates where id=$1", [candidateId]);
+    expect(stored.rows[0].governance_class).toBe("A"); // derived from the diff against the head
+    const versions = await db.pool.query("select count(*)::int as n from identity_versions where identity_id=$1 and governance_class='BOOTSTRAP'", [identityId]);
+    expect(versions.rows[0].n).toBe(1);
   });
 });
