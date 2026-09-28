@@ -434,8 +434,11 @@ end $$;
 -- this migration creates - views included - is born with anon/authenticated grants unless revoked.
 -- Found by production pre-commit qualification (2026-09-28); security_invoker=true is unchanged.
 revoke all on public.identity_head, public.identity_current from public, anon, authenticated;
+-- The identity sequence behind identity_activations.seq (GENERATED ALWAYS AS IDENTITY) is born with the same
+-- Supabase default grants on sequences.
+revoke all on sequence public.identity_activations_seq_seq from public, anon, authenticated;
 revoke update, delete, truncate on public.identity_profiles, public.identity_versions,
   public.identity_candidates, public.identity_activations, public.identity_pins from service_role;
 revoke execute on function public.identity_owner_guard(), public.identity_version_guard(),
   public.identity_candidate_classify(), public.identity_candidate_transition_guard(),
-  public.identity_activation_guard() from public;
+  public.identity_activation_guard() from public, anon, authenticated;
