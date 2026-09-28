@@ -1,7 +1,8 @@
 # ADR-0021: Primary Identity — governed durable state, not a second authority
 
-Status: PROPOSED (design adversarially reviewed by Grok — APPROVE, conditional on D4/D6/D7 below being folded into
-the implementation before this seal is considered closed)
+Status: ACCEPTED (28/09/2026). Design adversarially reviewed by Grok (APPROVE, conditional on D4/D6/D7); implementation
+sealed by Grok's final hostile reviews of PR #46 and PR #47 and proven live in production at epoch 12 - see
+docs/operations/PHASE_KJ_P7A_PRIMARY_IDENTITY_STORE_LIVE_RESULT_2026-09-28.md. P7B (cognition consumption) remains separate.
 
 Date: 25/09/2026
 
