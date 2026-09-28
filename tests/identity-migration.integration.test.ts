@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
+import pg from "pg";
 import { knowledgeDatabase } from "./support/knowledge-db.js";
+import { DATABASE, migrate, until } from "./support/local.js";
 import { completeAndActivateIdentity, completeIdentityTaskTx, type IdentityApply } from "../services/kernel/src/identity/complete.js";
 import { IdentityRefusal } from "../services/kernel/src/identity/store.js";
 import { fetchIdentityOrphans, fetchIncompleteBootstraps } from "../services/kernel/src/health/collect.js";
@@ -1371,5 +1373,95 @@ describe("a second bootstrap is still refused once an identity exists", () => {
     expect(stored.rows[0].governance_class).toBe("A"); // derived from the diff against the head
     const versions = await db.pool.query("select count(*)::int as n from identity_versions where identity_id=$1 and governance_class='BOOTSTRAP'", [identityId]);
     expect(versions.rows[0].n).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// KJ-P7A production pre-commit qualification (2026-09-28): the production Supabase database carries
+// default privileges in schema `public` (postgres-owned relations: anon/authenticated `Dxtm`), so every
+// relation the migration creates is born WITH grants unless the migration revokes them. The disposable
+// test Postgres has no such default ACL, which is how the two views shipped without a revoke and still
+// passed. This block reproduces that condition - a Supabase-style default ACL granting ALL on tables
+// (a superset of production's Dxtm, so a privilege Supabase adds later is caught too) - in its own
+// fresh database BEFORE the migrations run, then inspects the ACL catalog directly.
+// ---------------------------------------------------------------------------------------------------
+
+const P7A_RELATIONS = [
+  "identity_profiles",
+  "identity_versions",
+  "identity_candidates",
+  "identity_activations",
+  "identity_pins",
+  "identity_head",
+  "identity_current",
+];
+
+describe("least privilege under a Supabase-style default ACL: PUBLIC, anon and authenticated hold NO privilege on any P7A relation", () => {
+  const name = `identity_acl_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+  const admin = new pg.Pool({ connectionString: DATABASE, max: 1 });
+  let acl: pg.Pool;
+
+  beforeAll(async () => {
+    await admin.query(`create database ${name}`);
+    acl = new pg.Pool({ connectionString: DATABASE.replace(/\/kerneljson$/, `/${name}`), max: 2 });
+    await acl.query(`do $$ begin
+      if not exists(select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
+      if not exists(select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
+      if not exists(select 1 from pg_roles where rolname='service_role') then create role service_role nologin bypassrls; end if;
+    end $$`);
+    // Database-scoped (pg_default_acl lives in this database only), for relations the migration role
+    // creates in `public` - exactly the production condition, widened to ALL privileges.
+    await acl.query("alter default privileges in schema public grant all on tables to public, anon, authenticated");
+    await migrate(acl);
+  });
+  afterAll(async () => {
+    await acl?.end();
+    // Same end()-then-forced-drop race as tests/health-collect-postgres.integration.test.ts.
+    await until(
+      () => admin.query<{ n: number }>("select count(*)::int as n from pg_stat_activity where datname=$1", [name]),
+      (r) => r.rows[0]!.n === 0,
+      10_000,
+    );
+    await admin.query(`drop database if exists ${name} with (force)`);
+    await admin.end();
+  });
+
+  it("the reproduced default ACL is real: a relation created without a revoke is born with PUBLIC/anon/authenticated privileges", async () => {
+    // The negative control for the assertion below: if the default ACL were not in effect, "zero rows"
+    // would be meaningless.
+    const client = await acl.connect();
+    try {
+      await client.query("begin");
+      await client.query("create table public.acl_probe(x int)");
+      const probe = await client.query(
+        `select count(*)::int as n from pg_class c cross join lateral aclexplode(c.relacl) a
+          where c.oid = 'public.acl_probe'::regclass and a.grantee in (0, 'anon'::regrole, 'authenticated'::regrole)`,
+      );
+      expect(probe.rows[0].n).toBeGreaterThan(0);
+    } finally {
+      await client.query("rollback");
+      client.release();
+    }
+  });
+
+  it("all seven P7A relations exist, and the ACL catalog shows zero privileges of any kind for PUBLIC, anon and authenticated", async () => {
+    const present = await acl.query("select relname, relkind from pg_class where relnamespace='public'::regnamespace and relname = any($1::text[]) order by relname", [P7A_RELATIONS]);
+    expect(present.rows.map((r) => r.relname).sort()).toEqual([...P7A_RELATIONS].sort());
+    expect(present.rows.filter((r) => r.relkind === "v").map((r) => r.relname).sort()).toEqual(["identity_current", "identity_head"]);
+    const leaked = await acl.query(
+      `select c.relname, case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end as grantee, a.privilege_type
+         from pg_class c cross join lateral aclexplode(c.relacl) a
+        where c.relnamespace = 'public'::regnamespace and c.relname = any($1::text[])
+          and a.grantee in (0, 'anon'::regrole, 'authenticated'::regrole)
+        order by 1, 2, 3`,
+      [P7A_RELATIONS],
+    );
+    expect(leaked.rows).toEqual([]);
+  });
+
+  it("both views keep security_invoker=true", async () => {
+    const views = await acl.query("select relname, reloptions from pg_class where relnamespace='public'::regnamespace and relname in ('identity_head','identity_current') order by relname");
+    for (const v of views.rows) expect(v.reloptions).toContain("security_invoker=true");
+    expect(views.rowCount).toBe(2);
   });
 });
