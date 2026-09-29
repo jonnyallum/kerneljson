@@ -1,8 +1,11 @@
 # ADR-0022: KJ-P7B, identity projection and cognition binding
 
-Status: PROPOSED, revision 2 (design only). Revision 1 (`e962bbd`) was BLOCKED by Grok's hostile review
-(B1 to B6 and the G1/G3/G4/G5 conditions). This revision closes each blocker as a decision; no
-implementation-critical question is deferred.
+Status: PROPOSED, revision 3 (design only).
+- Revision 1 (`e962bbd`) was BLOCKED by Grok's hostile review (B1 to B6 and the G1/G3/G4/G5 conditions).
+- Revision 2 (`868cabb`) closed B1, B3, B4, B5, B6, G1 and G5.
+- This revision closes the remaining blockers: B2.a (the tenant FK), B2.b (the latch ACL and writer), B2.c
+  (the release, replay and completion oracle, all in section 4), and NB1 (D9 digest naming, section 9).
+- No implementation-critical question is deferred.
 
 Date: 29/09/2026
 
@@ -122,47 +125,259 @@ memory text is interpreted.
 
 ## 4. B2: durable task-latched enablement
 
-`KJ_IDENTITY_COGNITION_ENABLED` (worker env, `true|false`, default `false`) is read **exactly once per
-analyst step**: inside the journaled latch creation. It is never consulted again for that step.
+`KJ_IDENTITY_COGNITION_ENABLED` (worker env, `true|false`, default `false`) is read **at most once per analyst
+step**, inside the latch transaction and only when no latch row exists. No decision path reads it
+anywhere else: not completion, not replay, not authorisation. The health CLI only displays it (section 4.8a)
+and decides nothing from it.
 
-- **New table `kernel_private.identity_cognition_latches`:**
-  - columns `tenant_id`, `task_id`, `step_id`, `mode` (`NONE` or `REQUIRED`), `release_id`, `latched_at`;
-  - primary key `(task_id, step_id)`; foreign key `(step_id, task_id)` to `task_steps`; RLS on; all grants
-    revoked from PUBLIC, anon, authenticated and service_role;
-  - immutable: UPDATE, DELETE and TRUNCATE are refused, like every ledger table.
-  - Checked by a deferred constraint trigger:
-    - `mode = REQUIRED` requires an `identity_pins` row for the same `(task_id, step_id)`;
-    - `mode = NONE` requires that none exists;
-    - `identity_pins` rows may exist only for analyst steps whose latch is REQUIRED.
-- **Latch creation** runs in `ctx.run("identity:<analyst step>:latch")`, **after** the faculty pin is
-  obtained, in one database transaction under `pg_advisory_xact_lock('identity-latch:<task>:<step>')`:
-  1. If a latch row exists, return it unchanged, **ignoring the env**. The env is not even read.
-  2. Otherwise read the env once:
-     - **OFF:** insert a `NONE` latch. No identity pin exists, and the provider request is byte-identical to
-       the pre-P7B request (B3).
-     - **ON:** create the exact identity pin (section 8), then insert a `REQUIRED` latch in the same
-       transaction.
-- **Afterwards:**
-  - Restate replay returns the journaled latch.
-  - Retries after a lost journal entry find the database row.
-  - Completion verification (section 10) reads the persisted latch, never the env.
-  - An environment change has **zero** effect on any task already latched. No replay or retry can turn
-    NONE into REQUIRED or REQUIRED into NONE, because the row is immutable and the env is not read when it
-    exists.
-- **Rollback semantics:**
-  - **Turning the env OFF** affects only analyst steps latched after the change. In-flight REQUIRED tasks
-    stay REQUIRED and complete, or fail closed, as REQUIRED.
-  - **Turning it ON** affects only newly latched steps.
-  - **Rolling the release back** below P7B-1 is permitted only after draining: zero non-terminal tasks with a
-    REQUIRED latch. Pre-P7B code does not read latches, so it must never host a REQUIRED task. This is added
-    to the release-rollback checklist.
-  - **Legacy tasks.** Tasks bound at an epoch before P7B-1's activation have no latch and keep their original
-    completion contract, like pre-P6 tasks without faculty pins. Any mission task **bound at or after the
-    P7B-1 epoch** must have a latch for its analyst step, or completion is refused.
-- **Observability without secrets.** The env value is non-secret. The health CLI reports the worker's current
-  enablement for **new** work and the count of latches by mode. The value is read with the existing
-  allow-listed `printenv`. Adding the variable to `execution.compose.yaml`'s environment allowlist and to
-  `runtime_env_merge.py` `PUBLIC_KEYS` (`^(true|false)$`) is a P7B-1 requirement.
+### 4.1 The latch table, tenant-bound (B2.a)
+
+The latch uses the same tenant authority pattern as `faculty_pins` and `identity_pins`: composite foreign
+keys, never JSON self-consistency.
+
+    create table kernel_private.identity_cognition_latches (
+      tenant_id     uuid        not null,
+      task_id       uuid        not null,
+      step_id       uuid        not null,
+      mode          text        not null check (mode in ('NONE','REQUIRED')),
+      release_epoch bigint      not null check (release_epoch > 0),
+      latched_at    timestamptz not null default clock_timestamp(),   -- audit only, never ordering
+      primary key (task_id, step_id),
+      foreign key (task_id, tenant_id) references public.tasks(id, tenant_id),
+      foreign key (step_id, task_id)   references public.task_steps(id, task_id),
+      foreign key (task_id, tenant_id, release_epoch)
+        references kernel_private.execution_bindings(task_id, tenant_id, release_epoch),
+      foreign key (release_epoch) references kernel_private.release_activations(epoch)
+    );
+
+- The P7B migration adds `unique (task_id, tenant_id, release_epoch)` to `kernel_private.execution_bindings`
+  as the composite FK target. `task_id` is already its primary key, so the constraint cannot reject an
+  existing row; it exists only so the FK can be declared.
+- A latch's tenant is therefore the task's tenant **and** the binding's tenant, and its `release_epoch` is the
+  binding's epoch (section 4.4). None of them can disagree with the task.
+- There is **no `release_id` column**. Release truth has one source (section 4.4).
+- A BEFORE INSERT guard, `kernel_private.identity_cognition_latch_guard()` (security invoker,
+  `search_path = ''`), refuses with `23514` unless:
+  1. `kernel_private.identity_cognition_contract_v1` has its row, and
+     `NEW.release_epoch >= first_release_epoch` (`IDENTITY_LATCH_PRE_CONTRACT`). Legacy tasks cannot be
+     latched.
+  2. A `public.faculty_pins` row exists for the same `(task_id, step_id)` with `faculty_id = 'intelligence'`
+     (`IDENTITY_LATCH_NOT_ANALYST`). Identity reads the persisted faculty pin here and never writes it (B4).
+- **Planned real-Postgres negative test:** the correct `task_id` and `step_id` with another tenant's
+  `tenant_id` must be refused by the `(task_id, tenant_id)` FK (SQLSTATE `23503`, named constraint).
+
+### 4.2 One worker write path and its ACL (B2.b)
+
+There is **no SECURITY DEFINER latch writer**. The worker inserts the latch with a plain `INSERT` from its
+pooled connection, inside the same transaction that writes the identity pin. This is the same model as
+`faculty_pins` and `identity_pins`. No other application write path exists.
+
+Explicit ACLs, never ambient Supabase defaults:
+
+    alter table kernel_private.identity_cognition_latches enable row level security;
+    revoke all on kernel_private.identity_cognition_latches from public, anon, authenticated, service_role;
+    grant usage on schema kernel_private to service_role;
+    grant select, insert on kernel_private.identity_cognition_latches to service_role;
+    create trigger identity_cognition_latches_immutable before update or delete
+      on kernel_private.identity_cognition_latches for each row execute function public.reject_ledger_mutation();
+    create trigger identity_cognition_latches_no_truncate before truncate
+      on kernel_private.identity_cognition_latches for each statement execute function public.reject_ledger_mutation();
+
+- Every new function (the guards and the consistency function) has EXECUTE revoked from public, anon,
+  authenticated and service_role.
+- **Required ACL tests**, run in the production-shaped default-ACL harness from PR #47:
+  - PUBLIC, anon and authenticated have no privilege of any kind on the latch table;
+  - service_role has SELECT and INSERT true, and UPDATE, DELETE and TRUNCATE false;
+  - the harness recreates Supabase's `service_role` with BYPASSRLS, as in production;
+  - because `USAGE` on `kernel_private` is new for service_role, a test enumerates **every** relation,
+    sequence and function in `kernel_private`. service_role must hold no privilege on any of them except
+    SELECT/INSERT on the latch and SELECT on the contract marker (section 4.5).
+- **Immutability applies to every role.** UPDATE, DELETE and TRUNCATE are refused by
+  `reject_ledger_mutation` triggers, which fire for the table owner too.
+- **Which role the worker uses (INFERRED, to verify in P7B-1).** The worker already inserts into
+  `kernel_private.execution_bindings`. That table and schema were never granted to service_role, so the worker
+  evidently connects as the owning role.
+  - The P7B-1 PR records the production worker's `current_user` with a read-only query. CI then exercises the
+    latch path as that role.
+  - If it is the owner, grants do not bind it. Its ceiling is the immutability triggers and the constraint
+    triggers in section 4.3. The service_role grant above remains the exact ceiling for any non-owner service
+    path.
+
+### 4.3 The latch and pin invariant in final transaction state
+
+For every analyst `(task_id, step_id)`, at COMMIT:
+
+| Latch | `identity_pins` rows | Result |
+|---|---|---|
+| REQUIRED | exactly one | valid |
+| NONE | zero | valid |
+| REQUIRED | zero | invalid |
+| NONE | one | invalid |
+| none | one | invalid (a pin without a REQUIRED latch) |
+
+The check is also tenant-consistent: `identity_pins.tenant_id = latch.tenant_id`. Both are already FK-bound to
+`tasks(id, tenant_id)`, and the check restates it.
+
+- It is enforced by `kernel_private.identity_latch_pin_consistency()`, called from two
+  `CONSTRAINT TRIGGER … AFTER INSERT … DEFERRABLE INITIALLY DEFERRED FOR EACH ROW` triggers:
+  - one on `kernel_private.identity_cognition_latches`;
+  - one on `public.identity_pins`, added by the P7B migration. The P7A migration file is not edited.
+- Each re-reads both tables for the row's `(task_id, step_id)` at COMMIT. Latch and pin can therefore be
+  created in either order inside one transaction, and neither survives COMMIT alone.
+- INSERT is the only insertion surface. UPDATE, DELETE and TRUNCATE are refused on both tables.
+- The migration asserts before COMMIT that `public.identity_pins` holds zero rows (true in production:
+  nothing writes it yet), so no existing row can violate the new invariant.
+- **Required tests.** Each negative must fail **at COMMIT** with the invariant's own SQLSTATE and message.
+  Each test first asserts the migration applied and the triggers exist, so no apply or syntax failure can
+  count as a pass.
+  - REQUIRED with a pin: COMMIT succeeds.
+  - NONE with no pin: COMMIT succeeds.
+  - REQUIRED with no pin: COMMIT fails.
+  - NONE with a pin: COMMIT fails.
+  - A pin with no latch: COMMIT fails.
+  - A cross-tenant pair: fails.
+
+### 4.4 Release provenance: `release_epoch`, one source of truth (B2.c)
+
+- Canonical task release provenance already exists: `kernel_private.execution_bindings.release_epoch`,
+  stamped by `stamp_binding_provenance()` at binding time.
+- The latch stores `release_epoch`. The composite FK in 4.1 makes the **database** enforce
+  `latch.release_epoch = execution_bindings.release_epoch` for the same task. A TypeScript object cannot
+  supply a different value.
+- A task with no execution binding cannot be latched.
+- When a person needs the release id, it is resolved, never copied:
+
+      execution_bindings.release_epoch  ->  release_activations.epoch  ->  release_activations.release_id
+
+### 4.5 The contract-start marker
+
+"Tasks bound under P7B" is defined by one immutable database row, not by prose or a timestamp:
+
+    create table kernel_private.identity_cognition_contract_v1 (
+      singleton           boolean     primary key default true check (singleton),
+      contract            text        not null check (contract = 'kerneljson:identity-cognition/v1'),
+      first_release_epoch bigint      not null references kernel_private.release_activations(epoch),
+      created_at          timestamptz not null default clock_timestamp()
+    );
+
+- There is at most one row: the singleton primary key.
+- The table is immutable through the `reject_ledger_mutation` UPDATE/DELETE/TRUNCATE triggers, and RLS is on.
+- ACLs: all privileges are revoked from public, anon, authenticated and service_role, then SELECT alone is
+  granted to service_role. The worker reads it for the oracle and never writes it.
+- **The migration inserts no row.** The epoch is not guessed as "current + 1".
+- A BEFORE INSERT guard refuses (`23514`) unless `NEW.first_release_epoch` equals the current value of
+  `kernel_private.release_epoch`. The marker can only name the epoch activated in the same transaction, never
+  a past epoch. Marking a past epoch would retroactively turn legacy tasks into contract tasks.
+- It authorises nothing. It is only the immutable compatibility boundary used by the completion and replay
+  oracle. `activate_release` remains the only release authority.
+
+**Atomic P7B-1 activation.** It runs while ingress is quiesced, as the operator role that already runs
+`activate_release`:
+
+    BEGIN;
+      select kernel_private.activate_release(<request uuid>, '<P7B-1 release sha>', 12, <evidence>);  -- returns 13
+      insert into kernel_private.identity_cognition_contract_v1(contract, first_release_epoch)
+        values ('kerneljson:identity-cognition/v1', <returned epoch>);
+      -- verify: one marker row; first_release_epoch = returned epoch = release_epoch.epoch;
+      --         release_activations(<returned epoch>).release_id = <P7B-1 release sha>
+    COMMIT;
+
+- If either statement or the verification fails, both roll back and production stays at epoch 12 with no
+  marker.
+- `activate_release` holds the `release_epoch` row lock until COMMIT, and `stamp_binding_provenance` takes
+  that same lock. So no binding can be stamped with the new epoch before the marker exists.
+- **Retry.** `activate_release` returns the existing epoch for the same request id. The retry script inserts
+  the marker only if no row exists. If a row exists with the same epoch, that is success; with a different
+  epoch, it aborts.
+
+### 4.6 Latch creation, and why the database row is canonical
+
+The **database latch row is canonical**. The Restate `ctx.run` result is durable replay material, never a
+second source of truth.
+
+Latch creation runs in `ctx.run("identity:<analyst step>:latch")`, after the faculty pin. It is one database
+transaction:
+
+1. Take `pg_advisory_xact_lock(hashtext('identity-latch:<task>:<step>'))`.
+2. Read `execution_bindings.release_epoch` and the contract marker.
+   - If there is no marker, or the binding epoch is below `first_release_epoch`, the task is **legacy**.
+     Nothing is written, the env is not read, and `{legacy: true, releaseEpoch}` is returned.
+3. If a latch row exists, return the exact persisted row. **The env is not read.**
+4. Otherwise:
+   - read the env once;
+   - insert a NONE latch, or insert the identity pin (section 8) and a REQUIRED latch;
+   - COMMIT, then return the persisted row as re-read after the insert.
+
+**Before any provider invocation**, `IdentityPort.authorize` re-reads the database:
+
+- It re-derives legacy against non-legacy from `execution_bindings` and the marker.
+- It re-reads the latch, and the pin for REQUIRED.
+- The journaled value must equal the database row field for field. **If they disagree, it fails closed.**
+- A non-legacy task with no latch row **fails closed**.
+- A task the database says is legacy but whose journal holds a latch, or whose latch row exists, **fails
+  closed**.
+
+If the journal is lost and the `ctx.run` body executes again, step 3 finds the row. The database wins and the
+env is not re-read.
+
+None of these can relatch NONE to REQUIRED or REQUIRED to NONE:
+
+| Event | Why it cannot relatch |
+|---|---|
+| env flip | the env is read only when no row exists |
+| worker restart | the row is persisted |
+| Restate replay | the journal must equal the row |
+| lost journal | the row is found first |
+| later release | the row and its epoch are immutable |
+
+**Legacy composition.** A legacy task's analyst request is built by the same assembler on the NONE path, so
+it is byte-identical to `4127361` (section 5).
+
+### 4.7 The completion oracle
+
+In `Ledger.write`, `verifyIdentityEvidence` receives the database facts. The rule:
+
+    binding_epoch        = execution_bindings.release_epoch for the task
+    contract_start_epoch = identity_cognition_contract_v1.first_release_epoch   (absent: no contract)
+
+    no marker, or binding_epoch < contract_start_epoch
+        -> LEGACY: the analyst step must have NO latch and no identity pin, and analyst evidence carries no
+           identity; completion follows the pre-P7B contract
+    binding_epoch >= contract_start_epoch
+        -> the analyst step must have EXACTLY ONE latch; missing -> CompletionVerificationError
+           (then section 10's REQUIRED/NONE rules apply)
+
+- **Never used:** timestamps, environment values, the current process's release id, "current release"
+  guesses, or Restate journal state.
+- A task with no execution binding is legacy by construction: it cannot have a latch. Its release provenance
+  is governed by the existing release-provenance checks, unchanged by P7B.
+
+### 4.8 Rollback and drain
+
+The chosen, stricter rule:
+
+- **Before activating any release that does not implement `kerneljson:identity-cognition/v1`** while the
+  marker exists, there must be **zero non-terminal tasks whose `execution_bindings.release_epoch >=
+  first_release_epoch`**, whatever their latch mode.
+- Safety is never inferred from the env being OFF. A REQUIRED task stays REQUIRED after the switch is turned
+  off.
+- **Epochs are monotonic.** Tasks bound while rolled back get epochs at or above `first_release_epoch`, but
+  the rolled-back code writes no latches. If P7B-capable code later completes them, the oracle refuses them:
+  it fails closed, never open.
+  - So **rolling forward** onto a P7B-capable release after such a rollback also requires zero non-terminal
+    tasks bound at the rolled-back epochs.
+  - That drain protects availability. Safety already holds, because the oracle errs closed.
+- Both drains are added to the release-rollback checklist as queries against `execution_bindings`, `tasks`
+  and the marker.
+
+### 4.8a Observability without secrets
+
+- The env value is non-secret.
+- The health CLI reports the worker's current enablement for **new** work, the marker's `first_release_epoch`,
+  and the count of latches by mode.
+- The env value is read with the existing allow-listed `printenv`.
+- P7B-1 requires adding the variable to `execution.compose.yaml`'s environment allowlist and to
+  `runtime_env_merge.py` `PUBLIC_KEYS` (`^(true|false)$`).
 
 ## 5. B3: one analyst assembly contract
 
@@ -182,11 +397,12 @@ composed, and the only code that may place identity bytes into any request.
      `messages[0].content = IDENTITY_BLOCK + messages[0].content`.
   3. `projectFacultyRequest(facultyPin, request)`, unchanged. It prefixes the faculty role line and enforces
      the faculty byte and output budgets.
-- **Returns** `{ request, requestBytes, assemblyDigest, contextDigest }`:
+- **Returns** `{ request, requestBytes, assemblyDigest, continuityDigest }`:
   - `requestBytes = canonicalStringify(request)` (ADR-0021 D3 canonical form), the exact object handed to
     `ModelPort.generate`;
-  - `assemblyDigest = sha256(requestBytes as UTF-8)`;
-  - `contextDigest`, see section 9.
+  - `assemblyDigest = sha256(requestBytes as UTF-8)`: this is **ADR-0021 D9's `assembly_digest`** (section
+    9.2);
+  - `continuityDigest`, the provider-independent `continuity_digest` (section 9.3).
 - **What changes in `run.ts`.** `runRuntime` stops calling `projectFacultyRequest` itself. The analyst's
   `build` closure calls `assembleAnalystRequest`; the reviewer's `build` closure calls
   `projectFacultyRequest(pin, reviewerRequest(...))`, which is byte-identical to today's reviewer path.
@@ -229,7 +445,7 @@ Why this order:
   `assemblyDigest` on every run.
 
 Both digests are **bound**:
-- the analyst's runtime evidence records `assembly_digest` and `context_digest`;
+- the analyst's runtime evidence records `assembly_digest` and `continuity_digest`;
 - `IdentityPort.authorize` (section 8) recomputes `assembleAnalystRequest` from the pinned inputs and requires
   `assemblyDigest(outgoing request) = the recomputed assemblyDigest`;
 - completion verification requires the evidence's `assembly_digest` to equal
@@ -393,34 +609,81 @@ checks all of these:
 If the pinned version is unavailable or corrupt, the step fails closed (`REQUEST_REJECTED`). **The latest
 HEAD is never substituted.**
 
-**Replay and retry** use the same journaled latch and pin, and therefore byte-identical projection and
-request bytes.
+**Replay and retry** use the canonical database latch and pin (section 4.6). The journal must equal them,
+which gives byte-identical projection and request bytes.
 
-## 9. `context_digest` (provider-independent) against `request_digest` (historical)
+**Pin validation to be widened in the implementation PR (not done in this design commit).** The P7A
+`identity_pins` CHECK requires only `tenantId`, `taskId`, `stepId`, `identityId`, `identityVersion` and
+`identityCoreDigest`. The P7B-1 migration must add a new CHECK, and the Zod/contract validation must match, so
+that every one of the following keys is required:
+- `tenantId`, `taskId`, `stepId`;
+- `identityId`, `identityVersionId`, `identityVersion`;
+- `identityCoreDigest`, `classADigest`, `digestContract`;
+- `projectionSchema`, `projectionProfile`, `projection`, `projectionBytes`, `projectionDigest`;
+- `facultyId`, `facultyVersion`, `facultyDigest`;
+- `mode`.
 
-- **`request_digest`** is unchanged, and keeps its meaning: the digest of exactly what one provider call was
-  sent, **including provider and model**. It is per-call execution evidence and differs between providers by
-  design.
-- **`context_digest`** is new. It is the provider-independent digest of the deterministic cognition inputs,
-  and it is ADR-0021 D9's `assembly_digest`:
+It must also enforce:
+- `mode = 'REQUIRED'`;
+- `digestContract = 'kerneljson:identity-core/v1'`;
+- `projectionSchema = 'kerneljson:identity-projection/v1'`;
+- `projectionProfile = 'ANALYST_INTELLIGENCE_V1'`;
+- `projectionBytes <= 16384`.
 
-      context_digest = sha256(canonicalStringify({
-        "contract": "kerneljson:analyst-context/v1",
-        "mission": { "recipe", "question", "contractDigest": sha256(canonicalStringify(missionContract)),
-                     "repo", "factsDigest" },
-        "faculty": { "id", "version", "digest" },
-        "identity": null | { "mode": "REQUIRED", "identityCoreDigest", "projectionProfile", "projectionDigest" },
-        "memory": null | { "assemblyDigest": <P5 contextDigest, task-id-free> },
-        "messagesDigest": sha256(canonicalStringify(request.messages))
-      }))
+The new CHECK goes in the new migration; the P7A migration file is not edited.
 
-  `messagesDigest` covers only the system and user message bytes: no call, task or step id, trace, timestamp
-  or provider. For NONE, `identity` is `null`.
-- **It excludes** provider, model, task UUID, step or call ids, trace ids, timestamps, attempt numbers and all
-  other nondeterministic execution metadata.
-- **Provider and model** are recorded separately and immutably in the same evidence record (the existing
-  `provider`, `model` and `response_model` fields).
-- **Output hashes are never compared across providers.**
+## 9. Digest taxonomy, the D9 mapping and `continuity_digest`
+
+### 9.1 One meaning per name
+
+| Name | Exactly one meaning |
+|---|---|
+| `identity_core_digest` | the immutable canonical identity document (`kerneljson:identity-core/v1`) |
+| `class_a_digest` | the immutable canonical Class A section |
+| `projection_digest` | the exact bounded IdentityProjection (`kerneljson:identity-projection/v1`) |
+| P5 memory assembly digest | the exact authorised canonical memory assembly: P5's existing `contextDigest` in `services/memory/src/canonical/assembler.ts`, task-id-free. This is its historical name and it is **not** reused for anything else |
+| `assembly_digest` | **ADR-0021 D9's `assembly_digest`**: the exact assembled model request before provider-specific transport transformation |
+| `continuity_digest` | the provider-independent cross-provider comparison contract (`kerneljson:analyst-continuity/v1`) |
+| `request_digest` | the existing per-provider, per-call request evidence, including provider and model, as currently defined in `models.ts` |
+
+There are no aliases between these names. P7B introduces no new digest called `context_digest`.
+
+### 9.2 `assembly_digest` is D9's `assembly_digest`
+
+    assembly_digest = sha256( canonicalStringify(request) as UTF-8 )
+
+- `request` is the `ModelRequest` returned by `assembleAnalystRequest` and handed unchanged to
+  `ModelPort.generate`. That is the actual assembled model input, before any provider adapter serialises it
+  into its HTTP body.
+- It is evidence of what was actually handed to the model. `IdentityPort.authorize` recomputes it, and
+  completion re-verifies it (section 5).
+- **It is per call.** It includes the request's call, task and step ids and trace, so two fresh missions never
+  share it.
+- D9 requires the content handed to the model to match across providers. That is discharged by
+  `continuity_digest.messagesDigest`, computed from the **same** `request` object whose `assembly_digest` is
+  verified. `continuity_digest` is never called the D9 assembly digest.
+
+### 9.3 `continuity_digest`
+
+Its purpose is to prove that the provider-independent, deterministic cognition context is the same across
+fresh executions:
+
+    continuity_digest = sha256(canonicalStringify({
+      "contract": "kerneljson:analyst-continuity/v1",
+      "mission":  { "recipe", "question", "contractDigest": sha256(canonicalStringify(missionContract)),
+                    "repo", "factsDigest" },
+      "faculty":  { "id", "version", "digest" },
+      "identity": null | { "mode": "REQUIRED", "identityCoreDigest", "projectionProfile", "projectionDigest" },
+      "memory":   null | { "assemblyDigest": <P5 task-id-free memory assembly digest> },
+      "messagesDigest": sha256(canonicalStringify(request.messages))
+    }))
+
+- `messagesDigest` covers only the system and user message bytes. For NONE and for legacy tasks, `identity` is
+  `null`.
+- **Excluded:** provider, model, task id, step id, call id, trace id, timestamps, attempt ids and provider
+  request id.
+- Provider, model and `response_model` stay recorded separately and immutably in the same evidence record.
+- Output hashes are never compared across providers.
 
 ## 10. Evidence and completion
 
@@ -428,15 +691,17 @@ request bytes.
 - `identity`: `null`, or `{identity_id, identity_version_id, identity_version, identity_core_digest,
   class_a_digest, projection_profile, projection_digest}`;
 - `identity_cognition_mode`: `NONE` or `REQUIRED`;
-- `assembly_digest`;
-- `context_digest`.
+- `assembly_digest` (D9);
+- `continuity_digest`.
 
-**Reviewer runtime evidence** gains `identity_cognition_mode: "NONE"` and `context_digest`, and **must not**
-carry an `identity` object.
+**Reviewer runtime evidence** gains only `identity_cognition_mode: "NONE"`, and **must not** carry an
+`identity` object.
 
 **`verifyIdentityEvidence`** (pure, in `identity/evidence-verify.ts`) is called in `Ledger.write` beside
 `verifyFacultyEvidence`, with the **database** latches and pins:
-- **Every mission task bound at or after the P7B-1 epoch** must have exactly one analyst latch.
+- **The section 4.7 oracle decides first.** If the task is legacy (no contract marker, or binding epoch below
+  `first_release_epoch`), it must have no latch and no identity pin. Otherwise the analyst step must have
+  exactly one latch.
 - **REQUIRED:** the analyst evidence `identity` equals the pin field for field; `mode` is REQUIRED;
   `assembly_digest` recomputes as described in section 5.
 - **NONE:** no identity pin, and analyst evidence `identity` is `null`.
@@ -470,7 +735,7 @@ exists.
 | Check | Invariant | Data source | Observation condition | HEALTHY | Incident | NO_OBSERVATION | Recovery / debounce | Severity |
 |---|---|---|---|---|---|---|---|---|
 | `identity.analystRunsBound` | every REQUIRED analyst latch has an identity pin, runtime evidence equal to the pin, a pinned version whose SQL v1 digest equals the pin, and a recomputed projection digest equal to the pin | latches, pins, evidence, `identity_versions` | at least one REQUIRED latch exists | all bound and equal | any unbound or unequal: CRITICAL | no REQUIRED latch ever (including while OFF): P3, notify off | durable evidence rows; recovers only when every REQUIRED record verifies | **P0**: a model received identity bytes not provably governed |
-| `identity.verifierIsolated` | no reviewer evidence carries identity; no identity pin on a non-analyst step; no NONE-latched analyst carries identity | evidence, pins, latches | at least one mission runtime record at or after the P7B-1 epoch | none violated | any violation: CRITICAL | no mission since P7B-1: P3, notify off | durable | **P1** |
+| `identity.verifierIsolated` | no reviewer evidence carries identity; no identity pin on a non-analyst step; no NONE-latched analyst carries identity | evidence, pins, latches | at least one mission runtime record whose binding `release_epoch >= identity_cognition_contract_v1.first_release_epoch` | none violated | any violation: CRITICAL | no such record, or no contract marker: P3, notify off | durable | **P1** |
 
 - **Feature OFF can never raise P0 or P1 by itself.** Group B reports NO_OBSERVATION or HEALTHY while OFF.
   Group A is independent of the switch and alarms only on a real store fault.
@@ -486,7 +751,10 @@ exists.
   shared digest corpus (section 7).
 - **Real Postgres:**
   - the migration's parity trigger and pre-COMMIT assertion against Kernel v1;
-  - latch immutability and the latch/pin consistency trigger;
+  - latch immutability; the section 4.1 cross-tenant FK refusal; the section 4.2 ACL matrix and
+    `kernel_private` enumeration; the six section 4.3 COMMIT-time cases; the latch guard (pre-contract and
+    non-analyst refusals); `release_epoch` FK disagreement refused; the marker's singleton, immutability and
+    current-epoch guard; the atomic activation rolling back both on failure;
   - pin contents;
   - `identity_cognition_source_v1`;
   - ACLs (no PUBLIC, anon or authenticated privilege on the new table, function or trigger function), using
@@ -495,6 +763,9 @@ exists.
   - an OFF mission is byte-identical;
   - an ON mission is bound;
   - an env flip mid-mission changes nothing for a latched task;
+  - journal and database disagreement fails closed; a lost journal re-executes and returns the database row
+    without reading the env; a non-legacy task without a latch fails closed; a legacy task runs NONE bytes
+    with no latch;
   - a v2 activation mid-mission leaves the pinned v1 in use;
   - replay reproduces the same bytes;
   - a missing or corrupt pinned version fails closed;
@@ -504,6 +775,10 @@ exists.
   - skip the pre-COMMIT v1 assertion;
   - skip DB parity at pin time;
   - read the env instead of the latch at completion or replay;
+  - drop the latch tenant FK, the `release_epoch` FK or either deferred constraint trigger;
+  - grant UPDATE to service_role on the latch;
+  - skip the journal/database equality check;
+  - compare against the current release instead of the binding epoch in the oracle;
   - fall back to NONE when REQUIRED cannot pin;
   - substitute HEAD for the pinned version at call time;
   - truncate instead of refusing over the cap;
@@ -518,8 +793,9 @@ exists.
 ## 13. G5: cross-provider proof
 
 - **In CI:** two fake providers, the same mission. Required equal: identity pin digests, `projection_digest`,
-  faculty id, version and digest, memory `assemblyDigest`, and `context_digest`. Different: provider, model
-  and `request_digest`.
+  faculty id, version and digest, the P5 memory assembly digest, and `continuity_digest`. Each run's
+  `assembly_digest` is separately proven valid for its own actual assembled request, by recomputation.
+  Different: provider, model and `request_digest`.
 - **Live, in P7B-2:**
   1. Two **fresh** missions, with no shared provider session or history and the same semantic input: the same
      repo at the same head, the same question and contract, and unchanged memory.
@@ -527,8 +803,10 @@ exists.
   3. The analyst route is then changed **by config only** to `openrouter`. It is already in the intelligence
      faculty's `providerPreferences`, so there is no faculty swap and no faculty version change.
   4. **Mission 2** runs under the same identity pin version (Kernel v1).
-  5. **Pass:** the identity pin fields, `projection_digest`, the faculty pin fields, the memory assembly
-     digest and `context_digest` are equal. Each mission's execution evidence proves **which provider and
+  5. **Pass:** the semantic mission input, the faculty pin fields, the identity pin fields,
+     `projection_digest`, the P5 memory assembly digest and `continuity_digest` are equal. Each mission's
+     `assembly_digest` (D9) recomputes from its own actual assembled request. `assembly_digest` is **not**
+     required to be equal across missions: it is per call. Each mission's execution evidence proves **which provider and
      model actually ran**: the receipt's provider, model, `response_model` and provider request id.
   6. **Refused as not a proof:** both runs on the same provider. There is no fallback path that could cause
      it (a faculty route is a single pinned provider and model, and `FACULTY_PINNED_ROUTE_UNAVAILABLE`
@@ -556,8 +834,17 @@ exists.
 ## 15. Delivery: two windows, default off
 
 1. **P7B-1: code and migration, deployed as epoch 13**, with `KJ_IDENTITY_COGNITION_ENABLED=false`.
-   - The migration adds the digest twin, parity trigger, pre-COMMIT v1 assertion, latch table and source
-     function, with the full Supabase ACL qualification.
+   - The migration adds:
+     - the digest twin, the parity trigger and the pre-COMMIT v1 assertion;
+     - the latch table, its guard, and the latch/pin constraint triggers;
+     - the `execution_bindings` composite unique key;
+     - the contract-marker table, empty;
+     - the widened pin CHECK and the source function.
+
+     It carries the full Supabase default-ACL qualification.
+   - Activation is the single atomic transaction in section 4.5: `activate_release` returns 13, and the
+     `identity_cognition_contract_v1` marker is written with `first_release_epoch = 13`. Ingress is quiesced
+     throughout.
    - After deploy, a controlled mission proves the analyst request bytes are byte-identical to `4127361`.
    - The G2 group A checks are live; group B reports NO_OBSERVATION.
    - Class C/D is still frozen.
