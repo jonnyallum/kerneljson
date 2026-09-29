@@ -895,3 +895,97 @@ actual request (section 5).
 | 3. Switch granularity | a worker env switch, **latched durably per analyst step** (section 4); the latch is the auditable ledger record |
 | 4. G5 provider pair | two fresh missions with a config-only route change and a provider-difference assertion (section 13) |
 | 5. Severity | the section 11 tables (P0 is consumed-identity mismatch and multiple current identities) |
+
+## Erratum, 29/09/2026: D1, call-time assembly binding (implementation discovery)
+
+The sealed design is `2dd2af5909b8fc49d208834ba9d2a99148ba5daa`. This erratum does not rewrite it. It
+corrects one impossibility found by the KJ-P7B-1 precondition review.
+
+**What is wrong in the text above.**
+- Sections 5 and 10 say completion verification recomputes `assembly_digest` (and `request_digest`) from the
+  exact `ModelRequest` that `callModel` sent.
+- That request is intentionally not persisted: only Restate journals it.
+- Persisting it would copy canonical-memory text into immutable evidence and break P5 retract semantics.
+- Rebuilding it at completion would make `Ledger` and evidence verification import memory and identity
+  assembly, which B4 (section 6) forbids.
+- Where sections 5, 8 and 10 conflict with this erratum, the erratum governs.
+
+**Decision: call-time binding plus a completion cross-check.** The full `ModelRequest`, its messages and
+memory text are never persisted. The corrected contract:
+
+1. **Build.** `assembleAnalystRequest` constructs the exact `ModelRequest`.
+2. **Authorise.** Immediately before the provider is invoked, `IdentityPort.authorize` recomputes the
+   following and verifies it against the exact outgoing request object:
+
+       assembly_digest = sha256(canonicalStringify({
+         messages: request.messages,
+         maxOutputTokens: request.maxOutputTokens
+       }))
+
+3. **Call.** `callModel` receives that exact request.
+4. **Receipt.** The existing `validateModelResult` (`packages/models/src/port.ts`) continues to prove that
+   `receipt.requestDigest == modelDigest({ provider: receipt.provider, model: receipt.model, request })`. So
+   `request_digest` remains the binding of the complete `ModelRequest`, provider and model.
+5. **Bind.** The existing `callModel(..., record)` hook, a no-op in the mission today, persists an immutable
+   `MODEL_CALLED` call-binding record through the ledger after the provider result has been validated.
+   - Its payload holds only non-secret provenance and digests, at minimum: `task_id`, `step_id`, `call_id`,
+     `provider`, `model`, `request_digest`, `assembly_digest` and `continuity_digest`.
+   - It must **not** hold the `ModelRequest`, messages, memory text, identity projection text beyond what is
+     already deliberately pinned (section 8), credentials, or provider request bodies.
+   - It is written for the analyst call of every contract task (section 4.7), in both NONE and REQUIRED
+     mode. Legacy tasks write none and keep their pre-P7B completion contract.
+6. **Evidence.** The analyst runtime evidence carries the same `call_id`, `request_digest`,
+   `assembly_digest` and `continuity_digest`, plus the identity cognition provenance (section 10).
+7. **Completion.** Completion verification does **not** reconstruct the prompt. From persisted database state
+   it verifies:
+   - exactly one applicable `MODEL_CALLED` binding exists for the analyst call;
+   - the runtime evidence's `call_id`, `request_digest`, `assembly_digest` and `continuity_digest` each equal
+     that binding's;
+   - the runtime identity provenance equals the canonical latch and pin;
+   - the NONE, REQUIRED and reviewer-isolation rules (sections 4.7 and 10) still hold.
+8. **Purity.** `verifyIdentityEvidence` stays pure. It consumes persisted latch, pin, evidence and model-call
+   binding data only. It must not import the memory assembler, the identity projection assembler, the analyst
+   prompt builder or `ModelPort`.
+9. **Authority.** `Ledger` remains the completion authority. The `MODEL_CALLED` record is evidence and a
+   binding, not authority.
+10. **P5 retract semantics.** They stay intact because only digests and identifiers are durable. Retracted
+    memory content is never copied into immutable model-call evidence.
+
+**D9.** ADR-0021 D9 remains satisfied. The evidence-bound `assembly_digest` is computed and verified against
+the exact outgoing request at call time, then durably recorded. Completion verifies that durable binding and
+does not pretend to reconstruct prompt bytes that no longer exist.
+
+**What completion proves.** It does not prove the request from scratch. It proves that:
+1. the exact outgoing request was authorised before the call;
+2. its `assembly_digest` was bound to the immutable model-call record;
+3. the provider receipt's `request_digest` matched that exact full request;
+4. the final runtime evidence refers to those same immutable call bindings;
+5. the identity provenance still matches the canonical latch and pin.
+
+**Planned tests (added to section 12):**
+- changing one byte of an outgoing system or user message changes `assembly_digest`, and so does changing
+  `maxOutputTokens`;
+- call-time `authorize` sees the exact request object passed to `ModelPort.generate`;
+- the `MODEL_CALLED` binding receives that same `assembly_digest`, and the validated receipt's
+  `request_digest` binds that same full `ModelRequest`;
+- completion refuses runtime evidence whose `assembly_digest`, `call_id`, `request_digest` or
+  `continuity_digest` differs from the `MODEL_CALLED` binding;
+- no prompt text or memory text appears in the `MODEL_CALLED` payload;
+- a P5 memory retraction needs no mutation of immutable model-call evidence.
+
+**Implementation clarifications from the same review.** These are not design changes.
+- **Alert notification.** `AlertPolicyEntry` gains a backward-compatible per-status and per-severity
+  notification policy, `notifyFor(status, severity)`, and the existing `notify` semantics are kept.
+  `identity.analystRunsBound` then tracks UNKNOWN/NO_OBSERVATION at P3 without notifying, while a real P0
+  still notifies.
+- **Correction to section 11.** Today the two P7A identity checks have no policy rows, so an unreachable
+  database raises **no** identity alert. "Stays P3, as today" was inaccurate. All seven identity checks now
+  map database-unreachable UNKNOWN explicitly to P3 with notification off, deferring to the database domain.
+- **Faculty pins in contract tasks.** When the cognition contract applies but no valid `intelligence` faculty
+  pin exists, the step fails closed. No identity latch may bypass faculty authority (the section 4.1
+  guard).
+- **Contract marker in tests.** Tests write it only in disposable test databases, through a real
+  `activate_release`. The migration still creates the table empty.
+- **Replay tests.** P7B-1 uses the established journal-simulated replay and lost-journal pattern
+  (`tests/mission-workflow.integration.test.ts`) together with the existing identity-workflow Restate test. A
+  full live-Restate mission proof, if needed, belongs to a later qualification window.
