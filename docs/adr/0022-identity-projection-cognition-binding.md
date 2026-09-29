@@ -1,291 +1,577 @@
 # ADR-0022: KJ-P7B, identity projection and cognition binding
 
-Status: PROPOSED (design only, for hostile review before any code is written)
+Status: PROPOSED, revision 2 (design only). Revision 1 (`e962bbd`) was BLOCKED by Grok's hostile review
+(B1 to B6 and the G1/G3/G4/G5 conditions). This revision closes each blocker as a decision; no
+implementation-critical question is deferred.
 
 Date: 29/09/2026
 
 Builds on ADR-0021 (Primary Identity, ACCEPTED 28/09/2026). It writes the "P7B, runtime identity assembly"
 section that ADR-0021 D7 refers to but never defined, and it discharges ADR-0021's recorded P7B
-preconditions:
-- explicit `identity.*` alert-policy rows;
-- a database-side twin of the canonical digest before cognition trusts identity;
-- Class C/D stays frozen until P7B's live qualification (G13).
+preconditions: explicit `identity.*` alert-policy rows, and a database-side twin of the canonical digest.
+Class C/D remains frozen before, during and **after** P7B (B6).
 
-It changes nothing about who holds authority. KernelJSON remains the sole task authority. Identity decides
-how a cognitive execution is framed, never what it is allowed to do.
+Authority does not move. KernelJSON remains the sole task authority. Identity frames how one cognitive
+execution speaks and judges; it never decides what is allowed, which faculty runs, or what memory is read.
 
-## Where we start (observed, not assumed)
+## 1. Where we start (observed in the code at `4127361`, not assumed)
 
-- **Production.** One active Primary Identity: **Kernel v1** (`d60a1f11…`, `identity_core_digest`
-  `4f6dc581…`), epoch 12, release `4127361`. Nothing reads it at runtime yet.
-- **The only production model consumer** is the repo-analysis mission (`services/kernel/src/mission/run.ts`).
-  It has two runtime steps: the **analyst** (`RUNTIME_ANALYSE`, P6 faculty `intelligence`) and the
-  **reviewer** (`RUNTIME_REVIEW`, P6 faculty `verifier`). `model-smoke.ts` is a CLI smoke test, not a
-  consumer.
-- **Existing assembly shape.**
-  1. `prompts.ts` builds the request.
-  2. `projectFacultyRequest` prefixes the system message with a one-line faculty role and enforces the
-     faculty budget (`maxInputBytes` 512,000).
-  3. Canonical memory (P5) is assembled once in a journaled `ctx.run`, **for the analyst only**. The reviewer
-     is memory-isolated by `FACULTY_REVIEW_ISOLATION_REFUSED`.
-- **Existing evidence.**
-  - Every runtime step records provider, model, `request_digest` (over provider, model and request), the
-    memory-assembly digest and the faculty digest.
-  - At completion, `ledger.write` calls `verifyFacultyEvidence` against the **database** faculty pins, not
-    model-supplied metadata.
-- **P7A already created `identity_pins`** (tenant, task, step, identity id and version, with a `pin` jsonb
-  requiring `identityCoreDigest`). It is not yet written by anything.
-- **Alerting gap.** Every `identity.*` health check falls through to the alert policy's conservative default
-  (CRITICAL maps to P2). A D8 orphan would page no louder than a P2 today.
+- **Production.** One active Primary Identity: **Kernel v1**.
+  - identity `d60a1f11-01c2-46b5-90d4-94cd4b696aeb`, version row `08be5e20-2606-4809-b81f-11552bb67502`;
+  - `identity_core_digest` `4f6dc581f06701c207d5cdf8bc1ced59fa0741c15bab18c30537d0b17a7bf9ed`;
+  - `class_a_digest` `c1e3d107616db8ebf4586121d62eb2c6dd966351e2e11de3949a253ce6158dc6`;
+  - epoch 12, release `4127361`.
+- **The only production model consumer** is `runRepoAnalysisMission` in `services/kernel/src/mission/run.ts`
+  (`model-smoke.ts` is a CLI smoke test). Its two runtime steps:
+  - **analyst**: operation `RUNTIME_ANALYSE`, P6 faculty `intelligence`, with `providerPreferences`
+    `["deepseek","openrouter"]`;
+  - **reviewer**: operation `RUNTIME_REVIEW`, P6 faculty `verifier`.
+- **How today's analyst request is built:**
+  1. `analystRequest(...)` in `services/kernel/src/mission/prompts.ts` returns a `ModelRequest` with exactly
+     two messages:
+     - `system`: `analystSystem(contract)`;
+     - `user`: `` `Question: ${question}\n\n${memory}${renderFacts(facts, factsDigest)}` ``, where `memory` is
+       the P5 rendered context plus `"\n\n"`, or empty.
+  2. Inside `runRuntime` in `run.ts`, `projectFacultyRequest(pin, request)` in
+     `services/kernel/src/faculty/policy.ts` **prefixes** the system message with the faculty role line
+     (`"Kernel faculty: …\nPurpose: …\nAuthority: advisory text only; KernelJSON owns decisions and
+     execution.\n"`). It also enforces `contextBudget.maxInputBytes` (512,000) and the output budget.
+  3. `callModel` in `services/kernel/src/models.ts` sends it through the guarded `ModelPort`. The receipt's
+     `request_digest` is `modelDigest({provider, model, request})`, so it **includes provider and model**.
+- **Where memory comes in.** It is assembled once, journaled (`ctx.run("mission-memory-context")`), for the
+  **analyst only**. Its digest (`contextDigest` in `services/memory/src/canonical/assembler.ts`) is
+  task-id-free: tenant, purpose, project, classes, budget and items. The reviewer is memory-isolated
+  (`FACULTY_REVIEW_ISOLATION_REFUSED`).
+- **Where the faculty pin comes in.** It is written by `PgFacultyRegistry.pin` in a journaled
+  `ctx.run("faculty:<step>:pin")` and re-checked by `faculties.authorize` before the call. At completion it
+  is verified inside `Ledger.write` by `verifyFacultyEvidence` against the **database** pins.
+- **`identity_pins` already exists** from P7A: tenant, task, step, identity id and version, and a `pin`
+  jsonb with the required keys. Nothing writes it yet.
+- **Alerting gap.** Every `identity.*` check falls through to the policy default (CRITICAL maps to P2).
 
-## Decision
+## 2. Scope: exactly one consumer
 
-P7B wires Kernel into **exactly one consumer**, the analyst step of `repo-analysis-mission/v1`, behind a
-default-off switch. It does so through five gates. G13 is the live qualification that ends P7B; it does not
-by itself unfreeze anything.
-
-### Scope boundary (the smallest thing that proves the architecture)
-
-| Consumer | Receives Kernel? | Why |
+| Consumer | Kernel identity | Why |
 |---|---|---|
-| Mission **analyst** (`intelligence`) | **Yes**, profile `ANALYST_PERSPECTIVE` | The one D7 consumer. It is where "which Kernel made this decision" matters |
-| Mission **reviewer** (`verifier`) | **No, structurally refused** | Independence. A verifier sharing the analyst's persona becomes the Colonel agreeing with himself. This mirrors P6's memory isolation of the reviewer |
-| Golden workflow, canary, scheduler, Telegram operator, identity workflow | No | Out of scope. They make no model call, or they are not cognition |
+| Mission analyst (`intelligence`) | profile `ANALYST_INTELLIGENCE_V1`, when latched REQUIRED | The single D7 consumer |
+| Mission reviewer (`verifier`) | **none, structurally** (B4 fence and ceiling NONE) | Verifier independence: it must not become the Colonel agreeing with himself |
+| Everything else (golden, canary, scheduler, Telegram, identity workflow, memory) | none | Not cognition, or out of scope |
 
-Anything wider, including a conversational Kernel on Telegram, is a later ADR. It is not P7B.
+Not in P7B:
+- reviewer identity, reflection or KJ-P8, self-model;
+- identity-generated missions, Shared Brain expansion, automatic memory promotion;
+- any change to faculty selection, policy authority or admission authority;
+- unfreezing Class C/D.
 
-### Switch: `KJ_IDENTITY_COGNITION_ENABLED` (worker, default off)
+## 3. B1: narrow-only projection (discharges ADR-0021 D4)
 
-- **Off (default):** the analyst request is **byte-identical** to today. A regression test pins this by
-  request digest, so P7B-1 can ship to production with zero behavioural change, the same property P7A had.
-- **On:** for every mission, the analyst **requires** exactly one current identity for the task's tenant,
-  DB-digest-verified (G1). If one is missing, mismatched or ambiguous, the analyst step fails closed
-  (`ANALYST_IDENTITY_REFUSED`) and the mission ends FAILED with evidence. **There is never a silent fallback
-  to "no identity"**, because that is exactly the "cognition with no identity when one is required" failure.
-- **Adding the variable:** it is added to the `execution.compose.yaml` environment allowlist and to
-  `runtime_env_merge.py`'s `PUBLIC_KEYS` as `^(true|false)$`, so it cannot be silently dropped. This is the
-  allowlist trap that bit S1D2.
+    effective_scope = identity_framing_scope  INTERSECT  kernel_faculty_ceiling
 
-### G1: database digest authority (before cognition trusts anything)
+Both sides are **machine allow-lists of document field paths**. Neither is ever parsed from identity prose.
 
-Postgres gets its own implementation of the ADR-0021 D3 canonical form. Its outputs are then required to
-equal the application's.
+- **`identity_framing_scope`** is owned by KernelJSON, not by the identity document. It is a constant attached
+  to a versioned projection profile in the P7B identity-binding module. P7B defines exactly one profile:
+  `ANALYST_INTELLIGENCE_V1`.
+- **`kernel_faculty_ceiling`** is owned by Kernel/P6. It is a constant table in a new P6-side module,
+  `services/kernel/src/faculty/identity-ceiling.ts`, keyed by `(faculty id, faculty policyVersion)` of the
+  **already-selected, already-validated** faculty pin. That module imports nothing from identity (B4).
+  - `intelligence`: the field list in the table below.
+  - `verifier`: the empty list.
+  - Any other or unknown faculty, or unknown policyVersion: NONE.
+- **Content.** Identity content can populate only fields in the intersection. A missing profile, a missing
+  ceiling entry or an empty intersection means NONE. In REQUIRED mode that fails closed before any provider
+  call.
+- **Limits.** Identity can never select a faculty, alter a ceiling, choose a profile or request a larger
+  projection. The profile is chosen by the step operation (`RUNTIME_ANALYSE` gives `ANALYST_INTELLIGENCE_V1`);
+  no other mapping exists.
 
-- **`kernel_private.identity_canonical_text(jsonb) returns text`** (IMMUTABLE STRICT, `search_path=''`) and
-  **`kernel_private.identity_canonical_digest(jsonb) returns text`** (`sha256` over the UTF-8 text,
-  lowercase hex). The rules match `canonicalStringify`:
-  - object keys sorted at every depth (keys ordered with `COLLATE "C"`);
+**The exact `ANALYST_INTELLIGENCE_V1` allow-list, identical on both sides for `intelligence`:**
+
+| Class | Fields projected | Fields withheld |
+|---|---|---|
+| A | `name`, `constitution`, `values`, `operatorRelationship`, `facultyFraming`, `memoryPolicy` (all six) | none |
+| C | `persona`, `communication`, `behaviour` | `presentation` |
+| D | none | `objectives`, `vision` |
+
+**Why Class A is projected intact.** Class A is the constitutional framing boundary, and it is what makes
+the rest safe:
+- It carries identity's own subordination: "KernelJSON remains the sole task authority…", "I do not create
+  authority for myself, bypass governance…", `facultyFraming` ("I do not select, enable, disable, reorder or
+  widen faculties") and `memoryPolicy` ("must never widen permissions or authority").
+- Projecting persona or values without those constraints would hand a model the voice without the limits.
+- Projecting Class A whole makes it **verifiable**: `classADigest(projection.sections.classA)` must equal the
+  pinned `class_a_digest` of the immutable version. A partial Class A could not be checked against a governed
+  digest.
+
+**Why these three Class C fields.**
+- `behaviour` ("investigate before concluding; challenge contradictions and false greens; stop at
+  governance boundaries") and `communication` ("plain UK English; lead with the finding, then evidence")
+  directly shape the quality of an evidence-cited analysis.
+- `persona` carries the Colonel's judgement and standards, which is the point of the consumer.
+- `presentation` (sections, tables, layout) is **withheld** because the analyst's output is a machine-checked
+  JSON object with a fixed shape and hard length limits. Layout guidance cannot improve it and could only
+  compete with the output contract.
+
+**Class D is never projected in P7B**, so objectives and vision cannot reach cognition.
+
+**Memory stays fully independent.** Retrieval scope, the memory query (`purpose`, `project`), memory
+permissions and classes, ranking, and the faculty memory ceiling (`permittedMemoryClasses`,
+`maxMemoryTokens`) are computed exactly as today, **before and without** any identity read. The memory
+module is fenced from identity (B4). `memoryPolicy` only frames how already-authorised, already-assembled
+memory text is interpreted.
+
+## 4. B2: durable task-latched enablement
+
+`KJ_IDENTITY_COGNITION_ENABLED` (worker env, `true|false`, default `false`) is read **exactly once per
+analyst step**: inside the journaled latch creation. It is never consulted again for that step.
+
+- **New table `kernel_private.identity_cognition_latches`:**
+  - columns `tenant_id`, `task_id`, `step_id`, `mode` (`NONE` or `REQUIRED`), `release_id`, `latched_at`;
+  - primary key `(task_id, step_id)`; foreign key `(step_id, task_id)` to `task_steps`; RLS on; all grants
+    revoked from PUBLIC, anon, authenticated and service_role;
+  - immutable: UPDATE, DELETE and TRUNCATE are refused, like every ledger table.
+  - Checked by a deferred constraint trigger:
+    - `mode = REQUIRED` requires an `identity_pins` row for the same `(task_id, step_id)`;
+    - `mode = NONE` requires that none exists;
+    - `identity_pins` rows may exist only for analyst steps whose latch is REQUIRED.
+- **Latch creation** runs in `ctx.run("identity:<analyst step>:latch")`, **after** the faculty pin is
+  obtained, in one database transaction under `pg_advisory_xact_lock('identity-latch:<task>:<step>')`:
+  1. If a latch row exists, return it unchanged, **ignoring the env**. The env is not even read.
+  2. Otherwise read the env once:
+     - **OFF:** insert a `NONE` latch. No identity pin exists, and the provider request is byte-identical to
+       the pre-P7B request (B3).
+     - **ON:** create the exact identity pin (section 8), then insert a `REQUIRED` latch in the same
+       transaction.
+- **Afterwards:**
+  - Restate replay returns the journaled latch.
+  - Retries after a lost journal entry find the database row.
+  - Completion verification (section 10) reads the persisted latch, never the env.
+  - An environment change has **zero** effect on any task already latched. No replay or retry can turn
+    NONE into REQUIRED or REQUIRED into NONE, because the row is immutable and the env is not read when it
+    exists.
+- **Rollback semantics:**
+  - **Turning the env OFF** affects only analyst steps latched after the change. In-flight REQUIRED tasks
+    stay REQUIRED and complete, or fail closed, as REQUIRED.
+  - **Turning it ON** affects only newly latched steps.
+  - **Rolling the release back** below P7B-1 is permitted only after draining: zero non-terminal tasks with a
+    REQUIRED latch. Pre-P7B code does not read latches, so it must never host a REQUIRED task. This is added
+    to the release-rollback checklist.
+  - **Legacy tasks.** Tasks bound at an epoch before P7B-1's activation have no latch and keep their original
+    completion contract, like pre-P6 tasks without faculty pins. Any mission task **bound at or after the
+    P7B-1 epoch** must have a latch for its analyst step, or completion is refused.
+- **Observability without secrets.** The env value is non-secret. The health CLI reports the worker's current
+  enablement for **new** work and the count of latches by mode. The value is read with the existing
+  allow-listed `printenv`. Adding the variable to `execution.compose.yaml`'s environment allowlist and to
+  `runtime_env_merge.py` `PUBLIC_KEYS` (`^(true|false)$`) is a P7B-1 requirement.
+
+## 5. B3: one analyst assembly contract
+
+**The one canonical assembler** is a new `assembleAnalystRequest(input)` in
+`services/kernel/src/mission/analyst-assembly.ts`. It is the **only** place the analyst provider request is
+composed, and the only code that may place identity bytes into any request.
+
+- **Inputs:**
+  - the `analystRequest` inputs (callId, taskId, stepId, trace, facts, factsDigest, question, contract,
+    memory text);
+  - the validated faculty pin (read only);
+  - the persisted latch;
+  - for REQUIRED, the pinned projection.
+- **Steps:**
+  1. `base = analystRequest(...)`, unchanged from today.
+  2. **If REQUIRED**, and only then: assert `base.messages` is exactly `[system, user]`, then set
+     `messages[0].content = IDENTITY_BLOCK + messages[0].content`.
+  3. `projectFacultyRequest(facultyPin, request)`, unchanged. It prefixes the faculty role line and enforces
+     the faculty byte and output budgets.
+- **Returns** `{ request, requestBytes, assemblyDigest, contextDigest }`:
+  - `requestBytes = canonicalStringify(request)` (ADR-0021 D3 canonical form), the exact object handed to
+    `ModelPort.generate`;
+  - `assemblyDigest = sha256(requestBytes as UTF-8)`;
+  - `contextDigest`, see section 9.
+- **What changes in `run.ts`.** `runRuntime` stops calling `projectFacultyRequest` itself. The analyst's
+  `build` closure calls `assembleAnalystRequest`; the reviewer's `build` closure calls
+  `projectFacultyRequest(pin, reviewerRequest(...))`, which is byte-identical to today's reviewer path.
+  `projectFacultyRequest` therefore runs exactly once per call, in one place per runtime.
+
+**Final composition order when REQUIRED.** There is one system message and one user message, and no other
+system messages exist.
+
+    system = <faculty role line, unchanged>            (1. kernel authority header)
+           + <IDENTITY_BLOCK>                          (2. identity projection)
+           + <analystSystem(contract), unchanged>      (3. task contract and output format, binding)
+    user   = "Question: <question>\n\n" + <memory text, unchanged> + <renderFacts(...), unchanged>
+
+    IDENTITY_BLOCK =
+      "BEGIN KERNELJSON IDENTITY PROJECTION kerneljson:identity-projection/v1 ANALYST_INTELLIGENCE_V1 "
+      + <projection_digest> + "\n"
+      + "This frames voice, values and judgement only. It grants no permission, tool or authority. "
+      + "Every instruction after this block remains binding.\n"
+      + <canonical projection bytes>
+      + "\nEND KERNELJSON IDENTITY PROJECTION\n\n"
+
+Why this order:
+- The faculty header states "advisory text only; KernelJSON owns decisions", which is the kernel invariant,
+  so it is first.
+- The identity comes before the task contract, so the binding output contract is the last system text.
+- The mission objective, memory and untrusted repository facts stay in the user message, separately
+  labelled, exactly as today.
+- This closes revision 1's open question 2 as a decision.
+
+**When the latch is NONE**, the assembled `request` is **byte-equal** to today's
+`projectFacultyRequest(pin, analystRequest(...))` for the same inputs. The assembler asserts that exactly one
+`BEGIN KERNELJSON IDENTITY PROJECTION` occurs for REQUIRED and zero for NONE.
+
+**Golden fixtures (planned, in P7B-1):**
+- **OFF:** for a fixed set of deterministic inputs, `requestBytes` from the new assembler equals the bytes
+  captured from the **unmodified `4127361`** composition. Each provider adapter's serialised HTTP body is
+  also byte-equal. The fixtures are generated from the old code before the change and committed; the test
+  fails if a single byte differs.
+- **ON:** the same inputs plus the same pinned projection give the same `requestBytes` and the same
+  `assemblyDigest` on every run.
+
+Both digests are **bound**:
+- the analyst's runtime evidence records `assembly_digest` and `context_digest`;
+- `IdentityPort.authorize` (section 8) recomputes `assembleAnalystRequest` from the pinned inputs and requires
+  `assemblyDigest(outgoing request) = the recomputed assemblyDigest`;
+- completion verification requires the evidence's `assembly_digest` to equal
+  `sha256(canonicalStringify(request))` recorded by `callModel` for that call. The receipt's `request_digest`
+  is recomputed from the same request and the recorded provider and model.
+
+## 6. B4: dependency and import fences
+
+**Modules with P7B identity authority:**
+- `services/kernel/src/identity/projection.ts`: the pure projection and IdentityProjection contract use;
+- `services/kernel/src/identity/cognition-binding.ts`: IdentityPort, latch, pin and authorize.
+
+**The only permitted importers** of those two modules:
+- `services/kernel/src/mission/analyst-assembly.ts`;
+- `services/kernel/src/mission/run.ts`, for wiring the analyst step only;
+- `services/kernel/src/index.ts`, the composition root;
+- their own tests.
+
+**Forbidden** from reaching either module through any transitive import:
+- `services/kernel/src/faculty/**`, including `routeFaculty`, the registry and the new
+  `identity-ceiling.ts`;
+- `services/memory/**`, covering retrieval, assembly, policy and the mission port;
+- admission: `apps/gateway/**` and `services/kernel/src/compiler/**`;
+- `services/kernel/src/planner/**`;
+- policy: `services/kernel/src/policy.ts` and `services/kernel/src/approval-*.ts`;
+- `services/kernel/src/mission/prompts.ts`, which includes `reviewerRequest`;
+- completion authority: `services/kernel/src/ledger.ts` and `services/kernel/src/verification*.ts`.
+
+Completion verification uses a **separate** pure module, `services/kernel/src/identity/evidence-verify.ts`.
+It imports only contracts and `identity/canonical.ts` and has **no** IdentityPort, database or projection
+import. Only that module is allowed into `ledger.ts`.
+
+**The inverse direction.** `projection.ts` and `cognition-binding.ts` must not import:
+- `faculty/registry.ts`, `faculty/policy.ts` routing or `faculty/templates.ts`;
+- any memory module.
+
+They may import the `FacultyPin` **type** from contracts and read `faculty/identity-ceiling.ts`. Identity
+can **read** the persisted faculty pin value handed to it, and can never produce, replace or influence it.
+The faculty pin and the identity pin meet only in `analyst-assembly.ts` and in the evidence record.
+
+**The topology test** (`tests/identity-topology.test.ts`) builds the static import graph of the repository's
+TypeScript. It asserts:
+- the permitted-importer allow-list above is exact;
+- no forbidden root reaches either identity module transitively;
+- the inverse rule holds;
+- `evidence-verify.ts` stays pure.
+
+**Mutations the topology test must kill** (each injects one forbidden import):
+1. into `faculty/policy.ts` (`routeFaculty`);
+2. into `services/memory/src/canonical/assembler.ts`;
+3. into `apps/gateway/src/server.ts` (admission);
+4. into `services/kernel/src/policy.ts`;
+5. into `services/kernel/src/mission/prompts.ts` (`reviewerRequest`);
+6. `faculty/registry.ts` into `identity/cognition-binding.ts` (inverse direction).
+
+These sit alongside the behavioural mutations in section 12.
+
+**Behavioural fence.** The reviewer's faculty ceiling is empty. `assembleAnalystRequest` is the only function
+that emits an identity block. Completion refuses any reviewer evidence carrying identity metadata and any
+identity pin on a non-analyst step.
+
+## 7. G1: versioned digest contract (the database digest authority)
+
+- **Contract identifier:** `kerneljson:identity-core/v1`, which is exactly ADR-0021 D3's `canonicalStringify`:
+  - object keys sorted at every depth;
   - arrays kept in order;
-  - strings through `to_json(text)::text`;
-  - `true`, `false` and `null` literal;
-  - numbers restricted to **integers**. The function raises on any non-integer numeric, because
-    JavaScript and Postgres float formatting differ and the identity schema has no floats. Refusing is
-    safer than approximating.
-  - **Keys must be ASCII.** JavaScript sorts by UTF-16 code unit and `COLLATE "C"` sorts by UTF-8 byte;
-    they agree for ASCII, and the identity schema's keys are fixed ASCII. The function raises on a
-    non-ASCII key rather than risk a divergent order.
-- **A BEFORE INSERT trigger on `identity_versions`** refuses (23514 `IDENTITY_DIGEST_PARITY`) any version
-  whose stored `identity_core_digest` or `class_a_digest` differs from the database's own computation.
-  From P7B on, no future version can be written with a digest the database disagrees with.
-- **The migration asserts parity for every existing version before COMMIT** (today, Kernel v1 only:
-  `4f6dc581…` and `c1e3d107…`). If any version disagrees, the migration rolls back. This is the same
-  pre-COMMIT discipline that caught the ACL defect.
-- **`kernel_private.identity_cognition_source(p_tenant uuid)`** is a single read that returns the current
-  version for the tenant: id, version, document, stored digest, DB-computed digest, and the count of current
-  identities. Cognition reads identity **only** through this function.
-- **Refusing on disagreement.** The pin step (G4) requires *stored = DB-computed = application-computed*.
-  Any disagreement refuses the analyst (`IDENTITY_DIGEST_MISMATCH`).
-- **Proof.** A differential test runs a corpus through `canonicalStringify` (TypeScript) and
-  `identity_canonical_text` (SQL) and requires **byte equality**. The corpus covers:
-  - quotes, backslashes and every control character from U+0000 to U+001F;
-  - U+007F, U+2028 and U+2029;
-  - multi-byte and astral characters (emoji);
-  - empty strings and arrays, nested arrays of objects, deep nesting;
-  - the real Kernel v1.
+  - primitives encoded as JSON.
+- **Exact UTF-8 canonicalisation:**
+  - The canonical text is encoded as UTF-8 with no BOM and no trailing newline, with no whitespace between
+    tokens.
+  - Keys are sorted by UTF-16 code unit. Identity keys are fixed ASCII, so this equals byte order. The SQL
+    function **raises** on any non-ASCII key.
+  - Strings are JSON-escaped exactly as `JSON.stringify` does: `\"`, `\\`, `\b`, `\f`, `\n`, `\r`, `\t`, and
+    other U+0000 to U+001F as `\u00xx` in lowercase hex. Every other code point, including U+007F, U+2028,
+    U+2029 and non-ASCII, is emitted literally as UTF-8.
+  - Numbers must be integers. The SQL function **raises** on any non-integer.
+  - Booleans and null are literal.
+  - `sha256` over those bytes is emitted as lowercase hex.
+- **Versioned twins:**
+  - TypeScript `identityCoreDigestV1`, with today's `identityCoreDigest` and `classADigest` as aliases, their
+    semantics frozen;
+  - SQL `kernel_private.identity_core_canonical_v1(jsonb) returns text` and
+    `kernel_private.identity_core_digest_v1(jsonb) returns text`, IMMUTABLE STRICT with `search_path=''`.
+- **One golden corpus**, `tests/fixtures/identity-core-v1.vectors.json`, holds entries of the form
+  `{name, inputJson, canonical, sha256}`. It is consumed by **both** the TypeScript test and the real-Postgres
+  test, and each must reproduce `canonical` byte-for-byte and `sha256` exactly. The vectors:
+  - the exact production Kernel v1, as a draft (`proposed_digest` `01998d01…`) and as v1 with `version: 1`
+    (`4f6dc581…`), plus its Class A alone (`c1e3d107…`);
+  - object key reordering, and whitespace differences in `inputJson` (same canonical);
+  - Unicode and non-ASCII strings, including astral and emoji, and every escaped control character;
+  - arrays whose order changes (different digest), and empty arrays;
+  - null against an absent key (different digests; generic vectors, since the identity schema has no
+    optional field);
+  - a one-byte Class A change, a Class C-only change and a Class D-only change (the whole-document digest
+    changes each time; `class_a_digest` changes only for the Class A change);
+  - version treatment (draft without `version` against the version with it);
+  - `id` and `tenantId` changes;
+  - negative vectors: a float and a non-ASCII key, both of which must raise in SQL.
+- **Enforcement:**
+  - The P7B migration adds a BEFORE INSERT trigger on `identity_versions` refusing (`23514
+    IDENTITY_DIGEST_PARITY`) any row whose stored `identity_core_digest` or `class_a_digest` differs from
+    `identity_core_digest_v1(document)` or `identity_core_digest_v1(document->'sections'->'classA')`.
+  - **Before COMMIT**, the migration verifies that production Kernel v1 (`08be5e20…`) recomputes to exactly
+    `4f6dc581…` and `c1e3d107…`, and that every existing version has parity. Otherwise it rolls back.
+  - `kernel_private.identity_cognition_source_v1(p_tenant uuid, p_identity uuid, p_version int)` returns the
+    exact immutable version with its stored and DB-computed digests. The latch and pin use only this.
+- **Evolution rule.** The semantics of a digest function or version are **never changed in place**. A v2
+  would require all of these:
+  1. new versioned SQL and TypeScript implementations;
+  2. dual computation across every existing version;
+  3. an explicit, proven parity or migration;
+  4. switching consumers only in a separately reviewed migration and release;
+  5. keeping v1 verification for all historical evidence.
 
-  Negative controls: a float and a non-ASCII key must each **raise**, and a deliberately altered stored
-  digest must be refused by the trigger.
+## 8. G3/G4: the durable projection pin
 
-### G2: identity health, made loud
+**Projection object** (`kerneljson:identity-projection/v1`):
 
-These are new or completed health checks, **each with explicit rows in `services/kernel/src/alerting/policy.ts`**
-(no more default fall-through), and each shipped with its negative case.
+    { "schema": "kerneljson:identity-projection/v1", "profile": "ANALYST_INTELLIGENCE_V1",
+      "identity": { "id", "version", "identityCoreDigest", "digestContract": "kerneljson:identity-core/v1" },
+      "sections": { "classA": {6 fields}, "classC": { "persona", "communication", "behaviour" } } }
 
-| Check | Fails when | Status → severity |
-|---|---|---|
-| `identity.completedTasksHaveActivation` (exists) | a COMPLETED identity task has no activation (the D8 orphan) | CRITICAL → **P1** |
-| `identity.profilesHaveActivatedIdentity` (exists) | a profile has no activated identity past grace | DEGRADED → P2 |
-| `identity.currentDigestParity` | for any current version, stored ≠ DB-computed digest | CRITICAL → **P0** (integrity) |
-| `identity.singleCurrentPerTenant` | a tenant has more than one current identity | CRITICAL → **P0** (structurally impossible today; checked anyway) |
-| `identity.headEqualsCurrent` | the head version is not the current version | CRITICAL → **P1** |
-| `identity.analystRunsBound` (only when the switch is on) | an analyst runtime record since enablement lacks an identity pin, or its evidence differs from its pin | CRITICAL → **P1** |
-| `identity.verifierIsolated` | any reviewer runtime record carries identity metadata or an identity pin | CRITICAL → **P1** |
+- `projection_digest = sha256(canonicalStringify(projection))`.
+- **The 16 KiB limit** is `16 * 1024 = 16384` **UTF-8 bytes** of exactly
+  `canonicalStringify(projection)`: the bytes inserted by the assembler between the block's header and footer
+  lines. It is not a JavaScript character count, a token count or a pre-serialisation object size.
+  Kernel v1's `ANALYST_INTELLIGENCE_V1` projection is about 6 KB.
+- **Over the cap while REQUIRED fails before any provider call** (`IDENTITY_PROJECTION_TOO_LARGE`). There is
+  no truncation, and no partial constitution or persona.
 
-"Cognition using a stale identity version" is **not** an alert. A pinned mission deliberately keeps its
-pinned version (see G4, version pinning). The check that matters is that the pin, the evidence and the
-immutable version agree, and `analystRunsBound` covers it.
+**Identity pin (REQUIRED only).** One `identity_pins` row per analyst step, written in the latch transaction.
+The `pin` jsonb binds:
 
-### G3: `IdentityProjection`, the bounded object a model actually receives
+| Key | Value |
+|---|---|
+| `tenantId`, `taskId`, `stepId` | the analyst step |
+| `identityId`, `identityVersionId`, `identityVersion` | the exact immutable version row, taken from `identity_current` at latch time, **never HEAD at call time** |
+| `identityCoreDigest`, `classADigest`, `digestContract` | stored = SQL v1 = TypeScript v1, all three equal, or refused (`IDENTITY_DIGEST_MISMATCH`) |
+| `projectionSchema`, `projectionProfile` | `kerneljson:identity-projection/v1`, `ANALYST_INTELLIGENCE_V1` |
+| `projection` | the **exact projection object**; `canonicalStringify(pin.projection)` reproduces the inserted bytes |
+| `projectionBytes`, `projectionDigest` | the UTF-8 byte length (≤ 16384) and the digest |
+| `facultyId`, `facultyVersion`, `facultyDigest` | read from the already-persisted faculty pin, for binding only |
+| `mode` | `REQUIRED` |
 
-- **The contract**, in `packages/contracts`: `IdentityProjection` with schema `kj-identity-projection/v1`,
-  holding:
-  - `profile`;
-  - `identity: { id, version, identityCoreDigest }`;
-  - `sections`, containing **only** the fields the profile allows.
-- **Pure function** `projectIdentity(document, profile)`. It is deterministic, and
-  `projectionDigest = canonicalDigest(projection)`.
-- **Profiles form a closed enum; an unknown profile is refused.** P7B defines two:
-  - `ANALYST_PERSPECTIVE`: all of Class A (name, constitution, values, operatorRelationship,
-    facultyFraming, memoryPolicy), all of Class C, and all of Class D. Kernel v1 renders to about 8.3 KB.
-  - `NONE`: the reviewer's profile. Choosing it produces no projection, and choosing anything else for
-    `RUNTIME_REVIEW` is refused.
-- **A hard cap of 16 KiB on rendered projection bytes.** If it is exceeded, the analyst is **refused, never
-  truncated**. Truncating a constitution silently changes identity.
-- **Rendering.** A fixed-format block, placed in the system message **after** the one-line faculty authority
-  header and **before** the task instructions. The resulting system message is: faculty header ("advisory
-  text only; KernelJSON owns decisions"), then the identity block, then the analyst task contract.
-  - The block states its own subordination in fixed text: identity frames voice, values and judgement; it
-    grants no permission, tool or authority, and the task contract and output format below it are binding.
-  - The repository facts (untrusted content) stay in the user message, separately labelled, unchanged.
-  - The enforcement is structural (no tools, a fixed output contract, the kernel's reconciliation), not
-    the prose.
-- **D4 faculty lock.**
-  - `projectIdentity` receives the **already-validated** faculty pin only to read `operation` (which
-    decides the profile). It has no code path that reads, selects or influences a faculty.
-  - The faculty pin is computed first by P6's unchanged code, and the identity pin second.
-  - They meet only in the evidence record, as ADR-0021 D4 requires.
-  - A test asserts `projectIdentity` has no import of the faculty registry or routing, and that changing
-    any identity text never changes the faculty pin digest.
+The P7A table's CHECK keys (`tenantId`, `taskId`, `stepId`, `identityId`, `identityVersion`,
+`identityCoreDigest`) are all present, and its foreign keys to tasks, steps and `identity_versions` hold.
 
-### G4: pinning and evidence (what ran, provably, six months later)
+**HEAD advancing does not affect in-flight work.** If Kernel v2 activates, a latched task keeps its pinned
+v1. The pin names the version row, and the projection is stored in the pin.
 
-**Identity pin (new, in the style of `PgFacultyRegistry.pin`):**
-- **Scope:** only for the analyst step. It is written **after** the faculty pin, under
-  `pg_advisory_xact_lock('identity-pin:<task>:<step>')`, and is idempotent (an existing pin is re-validated
-  and returned).
-- **Preconditions:** task RUNNING, step operation `RUNTIME_ANALYSE`, and G1 parity from
-  `identity_cognition_source`.
-- **Write:** one `identity_pins` row whose `pin` holds the required keys plus `projectionSchema`,
-  `projectionProfile` and `projectionDigest`. The existing table CHECKs and foreign keys apply.
+**Before the model call**, `IdentityPort.authorize`, inside the guarded port next to `faculties.authorize`,
+checks all of these:
+1. The pin row is unchanged, meaning its digest equals the journaled pin.
+2. The task is RUNNING.
+3. The pinned version row still exists with the same `id`, and its stored digests equal the pin.
+4. SQL `identity_core_digest_v1` of its document equals the pin.
+5. Recomputing `projectIdentity(pinnedVersion.document, profile, ceiling)` equals `pin.projection` and
+   `projectionDigest`.
+6. The outgoing request's `assemblyDigest` equals the recomputed `assembleAnalystRequest` output.
 
-**Version pinning:** a mission uses the version pinned at the analyst step, even if a governed change
-activates a newer version mid-mission (IDENTITY_GOVERNANCE: "must not silently change semantics of an
-already-running pinned mission").
+If the pinned version is unavailable or corrupt, the step fails closed (`REQUEST_REJECTED`). **The latest
+HEAD is never substituted.**
 
-**Authorisation before the model call** (`IdentityPort.authorize`, next to `faculties.authorize` in the
-guarded port):
-- the pin row is unchanged;
-- the task is RUNNING;
-- the pinned version still exists;
-- the identity block in the outgoing request is byte-equal to the pinned projection's rendering.
+**Replay and retry** use the same journaled latch and pin, and therefore byte-identical projection and
+request bytes.
 
-Any failure fails closed with `REQUEST_REJECTED`.
+## 9. `context_digest` (provider-independent) against `request_digest` (historical)
 
-**Evidence:** `runtimeEvidence.metadata.identity = { identity_id, identity_version, identity_core_digest,
-projection_schema, projection_profile, projection_digest }` on the analyst. There is **no** `identity` key
-on the reviewer.
+- **`request_digest`** is unchanged, and keeps its meaning: the digest of exactly what one provider call was
+  sent, **including provider and model**. It is per-call execution evidence and differs between providers by
+  design.
+- **`context_digest`** is new. It is the provider-independent digest of the deterministic cognition inputs,
+  and it is ADR-0021 D9's `assembly_digest`:
 
-**A context digest for both runtimes:** `context_digest = canonicalDigest(request.messages)`, the digest of
-exactly what was handed to the model, **excluding provider and model**. Today's `request_digest` includes
-provider and model, so it can never be equal across providers. `context_digest` is the ADR-0021 D9
-`assembly_digest`.
+      context_digest = sha256(canonicalStringify({
+        "contract": "kerneljson:analyst-context/v1",
+        "mission": { "recipe", "question", "contractDigest": sha256(canonicalStringify(missionContract)),
+                     "repo", "factsDigest" },
+        "faculty": { "id", "version", "digest" },
+        "identity": null | { "mode": "REQUIRED", "identityCoreDigest", "projectionProfile", "projectionDigest" },
+        "memory": null | { "assemblyDigest": <P5 contextDigest, task-id-free> },
+        "messagesDigest": sha256(canonicalStringify(request.messages))
+      }))
 
-**Completion** (`ledger.write`, beside `verifyFacultyEvidence`): `verifyIdentityEvidence(identityPins,
-evidence, required)`. It requires:
-- the analyst's evidence identity metadata to equal its database pin;
-- no identity pin on any non-analyst step;
-- no identity metadata on reviewer evidence;
-- `required` to be true when the switch was on for this task.
+  `messagesDigest` covers only the system and user message bytes: no call, task or step id, trace, timestamp
+  or provider. For NONE, `identity` is `null`.
+- **It excludes** provider, model, task UUID, step or call ids, trace ids, timestamps, attempt numbers and all
+  other nondeterministic execution metadata.
+- **Provider and model** are recorded separately and immutably in the same evidence record (the existing
+  `provider`, `model` and `response_model` fields).
+- **Output hashes are never compared across providers.**
 
-A COMPLETED mission therefore cannot exist whose evidence disagrees with its identity pin. Otherwise the
-existing `CompletionVerificationError` path ends the task FAILED.
+## 10. Evidence and completion
 
-**Replay:** the projection and pin are built inside a journaled `ctx.run`, as memory context is today, so a
-Restate replay sees the same identity even if a new version activated meanwhile.
+**Analyst runtime evidence** gains:
+- `identity`: `null`, or `{identity_id, identity_version_id, identity_version, identity_core_digest,
+  class_a_digest, projection_profile, projection_digest}`;
+- `identity_cognition_mode`: `NONE` or `REQUIRED`;
+- `assembly_digest`;
+- `context_digest`.
 
-The four D9 digests on every bound analyst run are then:
-- `identity_core_digest`;
-- `context_digest` (the assembly);
-- the P6 faculty digest;
-- the P5 memory-assembly digest.
+**Reviewer runtime evidence** gains `identity_cognition_mode: "NONE"` and `context_digest`, and **must not**
+carry an `identity` object.
 
-### G5: cross-provider continuity proof
+**`verifyIdentityEvidence`** (pure, in `identity/evidence-verify.ts`) is called in `Ledger.write` beside
+`verifyFacultyEvidence`, with the **database** latches and pins:
+- **Every mission task bound at or after the P7B-1 epoch** must have exactly one analyst latch.
+- **REQUIRED:** the analyst evidence `identity` equals the pin field for field; `mode` is REQUIRED;
+  `assembly_digest` recomputes as described in section 5.
+- **NONE:** no identity pin, and analyst evidence `identity` is `null`.
+- **Never:** an identity pin on a non-analyst step, or identity metadata on reviewer evidence.
+- **On any mismatch:** a `CompletionVerificationError`, and the task ends FAILED.
 
-- **In CI (deterministic):** the same mission through two fake providers must produce identical
-  `identity_core_digest`, `projection_digest`, faculty digest, memory-assembly digest **and
-  `context_digest`**. Only provider, model and `request_digest` may differ.
-- **Live, in the P7B-2 window:**
-  1. Run one governed mission with the analyst on provider A.
-  2. Change the analyst route by config to provider B (it must already be in the intelligence faculty's
-     `providerPreferences`, so there is no faculty change).
-  3. Run the same objective against unchanged memory, with a fresh session and no shared history.
-  4. **Hard pass:** the four D9 digests are equal across the two runs. **Qualitative, for the record only:**
-     both outputs speak as Kernel within the same authority boundaries. Wording is expected to differ, and
-     identity is not.
+## 11. B5: G2 alert semantics
 
-### G13: P7B live qualification (ends P7B; unfreezes nothing by itself)
+Every check uses the existing alerting standard: HealthStatus, then an explicit row in
+`services/kernel/src/alerting/policy.ts`, then the existing episode, notify and recovery lifecycle. There is
+**no generic P2 fallback**; a P7B-1 test asserts each id below has an explicit row.
 
-G13 is complete when all of these have passed in production:
-- G1 parity is live;
-- the G2 checks are HEALTHY and their alerts have fired on purpose in a negative test;
-- the switch-on analyst runs are bound;
-- the reviewer is isolated;
-- the G5 digests are equal across providers.
+- **UNKNOWN because the database is unreachable** stays P3 and defers to the database domain, as today.
+- **UNKNOWN because there is no observation** is recorded as `NO_OBSERVATION` and mapped explicitly to **P3
+  with `notify:false`**. It is visible, never paged, and never presented as broken identity.
 
-**Unfreezing Class C/D is a separate, explicitly authorised decision after G13.** That decision would be
-`set_identity_freeze(…, false)` plus a production C/D policy rule, reviewed on its own. It is not part of
-this ADR and no code in P7B performs it.
+**A. Canonical identity and store invariants.** These are observable whether cognition is on or off, and
+none of them depends on cognition having run.
 
-## Delivery: two windows, same discipline as P7A
+| Check | Invariant | Data source | HEALTHY | Incident | NO_OBSERVATION | Recovery / debounce | Severity |
+|---|---|---|---|---|---|---|---|
+| `identity.completedTasksHaveActivation` | every COMPLETED identity-change task has an activation (D8) | `tasks` joined to `identity_activations` | none missing | any missing: CRITICAL | never; zero identity tasks is HEALTHY | recovers when none missing; no grace (atomic since P7A) | **P1** |
+| `identity.profilesHaveActivatedIdentity` | every profile has an activated identity | `identity_profiles` joined to `identity_activations` | none missing past grace | missing past 10 min: DEGRADED | never | the existing 10 min grace | **P2** |
+| `identity.currentDigestParity` | for every version, stored digests equal SQL `identity_core_digest_v1` | `identity_versions` plus the SQL function | all equal | any differs: CRITICAL | never; zero versions is HEALTHY | recovers only when equal; durable, so no flapping | **P1** |
+| `identity.singleCurrentPerTenant` | at most one current identity per tenant | `identity_current` grouped by tenant | at most one | more than one: CRITICAL | never | durable | **P0** |
+| `identity.headEqualsCurrent` | head version = current version for each identity | `identity_head` against `identity_current` | equal | differs: CRITICAL | never | durable | **P1** |
 
-1. **P7B-1, code with the switch off.**
-   - Contents: one PR with the G1 migration (functions, trigger, pre-COMMIT parity assertion), the G2
-     checks and policy rows, the G3 projection contract and function, the G4 port, pin, evidence and
-     completion verification, and the G5 CI test.
-   - Qualification: hostile review, failing-first tests, mutations, CI.
-   - Deploy as epoch 13 with the switch **off**, the migration's pre-COMMIT parity check live against
-     Kernel v1, and the analyst request digest proven unchanged against the next natural canary. That
-     canary is not an analyst run, so a controlled mission compares before and after.
-2. **P7B-2, enable.**
-   - A config-only window (switch on; no release change, so no epoch change).
-   - One bound analyst mission; the negative health proofs; the G5 cross-provider pair; then G13.
+**B. Cognition-binding invariants.** These legitimately report NO_OBSERVATION until a qualifying execution
+exists.
 
-**Mutations to add** (each must be killed by its own test, like M55 to M57):
-- remove the version digest-parity trigger;
-- skip DB-digest parity at pin time;
-- fall back to no identity when the switch is on;
-- give the reviewer a projection;
-- truncate instead of refusing over the cap;
-- drop identity metadata from evidence;
-- skip `verifyIdentityEvidence` at completion;
-- read the current version at call time instead of the pin;
-- let identity text reach faculty routing;
-- remove a G2 policy row (must fall back to P2 and be caught by the policy test).
+| Check | Invariant | Data source | Observation condition | HEALTHY | Incident | NO_OBSERVATION | Recovery / debounce | Severity |
+|---|---|---|---|---|---|---|---|---|
+| `identity.analystRunsBound` | every REQUIRED analyst latch has an identity pin, runtime evidence equal to the pin, a pinned version whose SQL v1 digest equals the pin, and a recomputed projection digest equal to the pin | latches, pins, evidence, `identity_versions` | at least one REQUIRED latch exists | all bound and equal | any unbound or unequal: CRITICAL | no REQUIRED latch ever (including while OFF): P3, notify off | durable evidence rows; recovers only when every REQUIRED record verifies | **P0**: a model received identity bytes not provably governed |
+| `identity.verifierIsolated` | no reviewer evidence carries identity; no identity pin on a non-analyst step; no NONE-latched analyst carries identity | evidence, pins, latches | at least one mission runtime record at or after the P7B-1 epoch | none violated | any violation: CRITICAL | no mission since P7B-1: P3, notify off | durable | **P1** |
 
-## Explicitly not in P7B
+- **Feature OFF can never raise P0 or P1 by itself.** Group B reports NO_OBSERVATION or HEALTHY while OFF.
+  Group A is independent of the switch and alarms only on a real store fault.
+- **Seriousness is graded.** A digest mismatch against identity actually consumed (`analystRunsBound`) is P0;
+  store parity with nothing consumed is P1; absence of a first cognition observation is P3 with no
+  notification.
+- **Each check ships with its negative case**, a deliberately broken input that must produce the incident
+  status, and with the `smoke.py --selftest`-style assertion.
 
-- A conversational or primary Kernel runtime, including Kernel speaking on Telegram.
-- Reflection or proposals (KJ-P8).
-- Class E self-model.
-- Any memory write.
-- Any faculty change.
-- The P5 protected-promotion fix.
-- Unfreezing C/D.
-- Shared Brain integration (P9).
+## 12. Testing and mutations (planned for P7B-1)
 
-## Open questions for hostile review
+- **Golden fixtures:** the OFF byte-equality fixtures and the ON determinism fixtures (section 5), and the
+  shared digest corpus (section 7).
+- **Real Postgres:**
+  - the migration's parity trigger and pre-COMMIT assertion against Kernel v1;
+  - latch immutability and the latch/pin consistency trigger;
+  - pin contents;
+  - `identity_cognition_source_v1`;
+  - ACLs (no PUBLIC, anon or authenticated privilege on the new table, function or trigger function), using
+    the Supabase default-ACL regression from PR #47.
+- **Real Restate end to end:**
+  - an OFF mission is byte-identical;
+  - an ON mission is bound;
+  - an env flip mid-mission changes nothing for a latched task;
+  - a v2 activation mid-mission leaves the pinned v1 in use;
+  - replay reproduces the same bytes;
+  - a missing or corrupt pinned version fails closed;
+  - over-cap fails before the provider call.
+- **Behavioural mutations, each killed by its own test:**
+  - remove the parity trigger;
+  - skip the pre-COMMIT v1 assertion;
+  - skip DB parity at pin time;
+  - read the env instead of the latch at completion or replay;
+  - fall back to NONE when REQUIRED cannot pin;
+  - substitute HEAD for the pinned version at call time;
+  - truncate instead of refusing over the cap;
+  - project Class D or `presentation`;
+  - give the reviewer a projection;
+  - drop the identity metadata from evidence;
+  - skip `verifyIdentityEvidence`;
+  - insert the identity block in a second place or position;
+  - remove each G2 policy row (caught by the explicit-row test).
+- **Topology mutations:** the six injections in section 6.
 
-1. **Scope of `ANALYST_PERSPECTIVE`.** Should the analyst get all of Class C/D, or should Class D
-   (objectives and vision) be withheld from an analysis step to keep it about the repository in front of
-   it? The proposal includes it, because "revisit old projects" is exactly an analysis concern.
-2. **Placement.** The faculty header goes before the identity block. That departs slightly from
-   CONTEXT_ASSEMBLY's order (identity 4, role 5). The one-line authority header is treated as the invariant
-   (order 1 to 2), not the role projection. Is that acceptable, or should the faculty purpose line move
-   after identity?
-3. **Switch granularity.** The switch is worker-wide and single-tenant today. Should it be per-tenant from
-   the start (a database flag in `kernel_private`, deployment-authority only) so enabling is auditable in
-   the ledger rather than in an env file?
-4. **G5 provider pair.** Is switching the analyst route by config between two runs acceptable as "fresh
-   session, no shared history", or should G5 use two separately pinned faculty routes in one run?
-5. **Is P0 right for `currentDigestParity`?** It is proposed as P0 because a mismatch means the identity a
-   model would receive is not provably the governed one.
+## 13. G5: cross-provider proof
+
+- **In CI:** two fake providers, the same mission. Required equal: identity pin digests, `projection_digest`,
+  faculty id, version and digest, memory `assemblyDigest`, and `context_digest`. Different: provider, model
+  and `request_digest`.
+- **Live, in P7B-2:**
+  1. Two **fresh** missions, with no shared provider session or history and the same semantic input: the same
+     repo at the same head, the same question and contract, and unchanged memory.
+  2. **Mission 1** has the analyst route on `deepseek`.
+  3. The analyst route is then changed **by config only** to `openrouter`. It is already in the intelligence
+     faculty's `providerPreferences`, so there is no faculty swap and no faculty version change.
+  4. **Mission 2** runs under the same identity pin version (Kernel v1).
+  5. **Pass:** the identity pin fields, `projection_digest`, the faculty pin fields, the memory assembly
+     digest and `context_digest` are equal. Each mission's execution evidence proves **which provider and
+     model actually ran**: the receipt's provider, model, `response_model` and provider request id.
+  6. **Refused as not a proof:** both runs on the same provider. There is no fallback path that could cause
+     it (a faculty route is a single pinned provider and model, and `FACULTY_PINNED_ROUTE_UNAVAILABLE`
+     refuses rather than falls back), and the proof asserts the two recorded providers differ.
+  7. Output text is never compared by hash.
+
+## 14. B6: G13 does not unfreeze Class C/D
+
+- **G13 means only** "P7B live qualification has completed": P7B-2 passed its live proofs.
+- **It does not** call `kernel_private.set_identity_freeze(…, false)`, does not add any production C/D policy
+  rule, and does not unfreeze Class C/D. **Class C/D remains frozen after P7B PASS.**
+- **Any future unfreeze requires** a separate phase and window, explicit human authorisation, its own review
+  and its own production evidence.
+- **The historical artefact rule.** The applied P7A migration `20260925120000_primary_identity.sql`
+  (production blob SHA-256 `85ead096…`) contains comments at lines 347 and 378 implying the P7B G13 window
+  opens the freeze:
+  - Those comments are **superseded operational guidance and MUST NOT be acted upon**.
+  - The file itself is **not edited**. Its exact blob and hash are part of the P7A release evidence, and
+    changing it would break provenance.
+  - The correction is carried by a dated erratum appended to ADR-0021, by corrected wording in the P7A live
+    result record, and by this section.
+  - A code comment with the same implication in `services/kernel/src/approval-boundary.ts` (line 161) will be
+    corrected in the P7B-1 code PR. It is a comment only, so no behaviour changes.
+
+## 15. Delivery: two windows, default off
+
+1. **P7B-1: code and migration, deployed as epoch 13**, with `KJ_IDENTITY_COGNITION_ENABLED=false`.
+   - The migration adds the digest twin, parity trigger, pre-COMMIT v1 assertion, latch table and source
+     function, with the full Supabase ACL qualification.
+   - After deploy, a controlled mission proves the analyst request bytes are byte-identical to `4127361`.
+   - The G2 group A checks are live; group B reports NO_OBSERVATION.
+   - Class C/D is still frozen.
+2. **P7B-2: separate authorisation.**
+   - The env is turned on for **new** analyst latches only. In-flight tasks are unaffected by the latch.
+   - One bound mission; the G2 negative proofs; the G5 live cross-provider pair; then G13 closes P7B.
+   - **Class C/D is still frozen.**
+
+## 16. Decisions that close revision 1's open questions
+
+| Revision 1 question | Decision |
+|---|---|
+| 1. Scope of the analyst projection | the section 3 allow-list: Class A all six, Class C persona/communication/behaviour, no Class D, no `presentation` |
+| 2. Placement | the section 5 order: faculty header, then the identity block, then the task contract (system); user message unchanged |
+| 3. Switch granularity | a worker env switch, **latched durably per analyst step** (section 4); the latch is the auditable ledger record |
+| 4. G5 provider pair | two fresh missions with a config-only route change and a provider-difference assertion (section 13) |
+| 5. Severity | the section 11 tables (P0 is consumed-identity mismatch and multiple current identities) |

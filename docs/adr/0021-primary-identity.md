@@ -202,3 +202,15 @@ Reflection-driven identity proposals actually being evaluated or auto-adopted (K
 (Stage F), swarms or adversarial cognition (Stage H), voice/CLI/future-channel presentation overlays beyond the
 bounded, non-widening kind D7's "channels" rule already constrains, and any model or Shared Brain path that can
 reach activation rather than only ever producing a HELD candidate.
+
+## Erratum, 29/09/2026: G13 does not unfreeze Class C/D
+
+The Context section above says Class C/D activations are frozen "until P7B's live qualification (G13) completes".
+That wording is corrected, not silently changed: **G13 means only that P7B live qualification has completed.** It
+does not call `kernel_private.set_identity_freeze(…, false)`, does not add a production Class C/D policy rule, and
+does not unfreeze Class C/D. Class C/D remains frozen after P7B passes. Any future unfreeze requires its own
+phase and change window, explicit human authorisation, its own hostile review and its own production evidence.
+
+The applied migration `20260925120000_primary_identity.sql` (SHA-256 `85ead096…`) carries comments with the old
+implication. Those comments are superseded guidance and MUST NOT be acted on. The file is not edited, because its
+exact blob is part of the P7A release evidence. See ADR-0022 section 14.
