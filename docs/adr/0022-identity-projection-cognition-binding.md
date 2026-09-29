@@ -398,10 +398,18 @@ composed, and the only code that may place identity bytes into any request.
   3. `projectFacultyRequest(facultyPin, request)`, unchanged. It prefixes the faculty role line and enforces
      the faculty byte and output budgets.
 - **Returns** `{ request, requestBytes, assemblyDigest, continuityDigest }`:
-  - `requestBytes = canonicalStringify(request)` (ADR-0021 D3 canonical form), the exact object handed to
-    `ModelPort.generate`;
-  - `assemblyDigest = sha256(requestBytes as UTF-8)`: this is **ADR-0021 D9's `assembly_digest`** (section
-    9.2);
+  - `requestBytes = canonicalStringify(request)` (ADR-0021 D3 canonical form) of the **full** `ModelRequest`,
+    which is handed unchanged to `ModelPort.generate`. It exists for deterministic regression (the OFF-mode
+    golden fixtures) and request construction.
+    - `requestBytes` is **not** "what the model sees". The full request includes envelope fields (`callId`,
+      `taskId`, `stepId`, `trace`).
+    - The provider adapter receives the full `ModelRequest` internally but serialises only the
+      provider-visible fields outward. For the chat-completions adapter
+      (`packages/models/src/chat-completions.ts`) those are `model`, `messages`,
+      `max_tokens = maxOutputTokens`, `stream` and any provider-specific extra body.
+  - `assemblyDigest = sha256(canonicalStringify({ messages: request.messages, maxOutputTokens:
+    request.maxOutputTokens }))`. This is **ADR-0021 D9's `assembly_digest`**: the provider-neutral cognitive
+    assembly only (section 9.2);
   - `continuityDigest`, the provider-independent `continuity_digest` (section 9.3).
 - **What changes in `run.ts`.** `runRuntime` stops calling `projectFacultyRequest` itself. The analyst's
   `build` closure calls `assembleAnalystRequest`; the reviewer's `build` closure calls
@@ -448,9 +456,10 @@ Both digests are **bound**:
 - the analyst's runtime evidence records `assembly_digest` and `continuity_digest`;
 - `IdentityPort.authorize` (section 8) recomputes `assembleAnalystRequest` from the pinned inputs and requires
   `assemblyDigest(outgoing request) = the recomputed assemblyDigest`;
-- completion verification requires the evidence's `assembly_digest` to equal
-  `sha256(canonicalStringify(request))` recorded by `callModel` for that call. The receipt's `request_digest`
-  is recomputed from the same request and the recorded provider and model.
+- completion verification requires the evidence's `assembly_digest` to equal the digest recomputed, by the
+  section 9.2 formula, from the `messages` and `maxOutputTokens` of the request that `callModel` actually
+  sent for that call. The receipt's `request_digest` keeps its existing meaning: it is recomputed from the
+  same full request and the recorded provider and model.
 
 ## 6. B4: dependency and import fences
 
@@ -642,31 +651,41 @@ The new CHECK goes in the new migration; the P7A migration file is not edited.
 | `class_a_digest` | the immutable canonical Class A section |
 | `projection_digest` | the exact bounded IdentityProjection (`kerneljson:identity-projection/v1`) |
 | P5 memory assembly digest | the exact authorised canonical memory assembly: P5's existing `contextDigest` in `services/memory/src/canonical/assembler.ts`, task-id-free. This is its historical name and it is **not** reused for anything else |
-| `assembly_digest` | **ADR-0021 D9's `assembly_digest`**: the exact assembled model request before provider-specific transport transformation |
-| `continuity_digest` | the provider-independent cross-provider comparison contract (`kerneljson:analyst-continuity/v1`) |
-| `request_digest` | the existing per-provider, per-call request evidence, including provider and model, as currently defined in `models.ts` |
+| `assembly_digest` | **ADR-0021 D9's `assembly_digest`**: the provider-neutral, model-visible cognitive assembly, `messages` + `maxOutputTokens` |
+| `continuity_digest` | the broader provider-independent G5 continuity contract (`kerneljson:analyst-continuity/v1`) |
+| `request_digest` | the existing per-call receipt digest over provider, model and the full `ModelRequest`, as currently defined in `models.ts` |
 
 There are no aliases between these names. P7B introduces no new digest called `context_digest`.
 
 ### 9.2 `assembly_digest` is D9's `assembly_digest`
 
-    assembly_digest = sha256( canonicalStringify(request) as UTF-8 )
+    assembly_digest = sha256(canonicalStringify({
+      "messages":        request.messages,
+      "maxOutputTokens": request.maxOutputTokens
+    }))
 
-- `request` is the `ModelRequest` returned by `assembleAnalystRequest` and handed unchanged to
-  `ModelPort.generate`. That is the actual assembled model input, before any provider adapter serialises it
-  into its HTTP body.
-- It is evidence of what was actually handed to the model. `IdentityPort.authorize` recomputes it, and
-  completion re-verifies it (section 5).
-- **It is per call.** It includes the request's call, task and step ids and trace, so two fresh missions never
-  share it.
-- D9 requires the content handed to the model to match across providers. That is discharged by
-  `continuity_digest.messagesDigest`, computed from the **same** `request` object whose `assembly_digest` is
-  verified. `continuity_digest` is never called the D9 assembly digest.
+- **Contract meaning.** `assembly_digest` is ADR-0021 D9's evidence-bound digest of the exact
+  provider-neutral cognitive assembly presented for generation. It covers the system and user messages, which
+  carry the faculty header, the identity block, the task contract, the question, memory and facts, plus the
+  output budget.
+- **It excludes** `callId`, `taskId`, `stepId`, `trace`, provider, model, timestamps and attempt ids. Those are
+  execution and routing envelope metadata, not identity or context assembly. Of them, only `model` reaches the
+  provider HTTP body, and it is recorded separately.
+- **What stays as it is.** The full `ModelRequest` is unchanged and is still passed to `ModelPort.generate`.
+  This revision changes no `ModelRequest` contract. `request_digest` keeps its per-call execution meaning and
+  continues to bind provider, model and the full `ModelRequest` exactly as the existing receipt contract
+  defines.
+- **It is evidence-bound.** `IdentityPort.authorize` recomputes it from the outgoing request before the
+  provider call, and completion re-verifies it from the request `callModel` actually sent (section 5).
+- **`assembly_digest` MUST match across the two G5 providers** (section 13). Identical deterministic inputs
+  produce identical messages and output budget, whichever provider runs. That match is the literal discharge
+  of ADR-0021 D9.
+- `continuity_digest` is never called the D9 assembly digest.
 
 ### 9.3 `continuity_digest`
 
-Its purpose is to prove that the provider-independent, deterministic cognition context is the same across
-fresh executions:
+It is the richer provider-independent proof that all deterministic cognition inputs matched across fresh
+executions:
 
     continuity_digest = sha256(canonicalStringify({
       "contract": "kerneljson:analyst-continuity/v1",
@@ -675,11 +694,12 @@ fresh executions:
       "faculty":  { "id", "version", "digest" },
       "identity": null | { "mode": "REQUIRED", "identityCoreDigest", "projectionProfile", "projectionDigest" },
       "memory":   null | { "assemblyDigest": <P5 task-id-free memory assembly digest> },
-      "messagesDigest": sha256(canonicalStringify(request.messages))
+      "assemblyDigest": <ADR-0021 D9 assembly_digest, section 9.2>
     }))
 
-- `messagesDigest` covers only the system and user message bytes. For NONE and for legacy tasks, `identity` is
-  `null`.
+- It includes the D9 `assemblyDigest` rather than a separate messages digest, because `assembly_digest` is
+  itself provider-independent and covers the exact messages and `maxOutputTokens`.
+- For NONE and for legacy tasks, `identity` is `null`.
 - **Excluded:** provider, model, task id, step id, call id, trace id, timestamps, attempt ids and provider
   request id.
 - Provider, model and `response_model` stay recorded separately and immutably in the same evidence record.
@@ -792,10 +812,24 @@ exists.
 
 ## 13. G5: cross-provider proof
 
-- **In CI:** two fake providers, the same mission. Required equal: identity pin digests, `projection_digest`,
-  faculty id, version and digest, the P5 memory assembly digest, and `continuity_digest`. Each run's
-  `assembly_digest` is separately proven valid for its own actual assembled request, by recomputation.
-  Different: provider, model and `request_digest`.
+**The G5 comparison set** is used both in CI (two fake providers) and live. It compares only stable
+continuity fields. Two fresh missions can never have fully equal pin objects: the faculty pin carries the
+route's provider and model, and both pins carry `taskId` and `stepId`.
+
+| Must be equal across Mission 1 and Mission 2 | Fields |
+|---|---|
+| Identity pin | `tenantId`, `identityId`, `identityVersionId`, `identityVersion`, `identityCoreDigest`, `classADigest`, `digestContract`, `projectionSchema`, `projectionProfile`, `projection`, `projectionBytes`, `projectionDigest`, `facultyId`, `facultyVersion`, `facultyDigest`, `mode` |
+| Faculty pin | faculty id, faculty version, `facultyDigest` (the faculty definition digest), `policyVersion`, `operation` (`RUNTIME_ANALYSE`), `routingReason` (`repo-analysis/analyst`) |
+| Mission and context | the semantic mission input (recipe, question, contract digest, repo at the same head, facts digest), the P5 memory assembly digest, `assembly_digest` (D9), `continuity_digest` |
+
+| Must differ | Why |
+|---|---|
+| `taskId`, `stepId` (both pins) | fresh missions |
+| provider, model (faculty pin and receipt) | the point of the proof: the live G5 proof requires them to differ |
+| `request_digest` | provider, model and the execution envelope differ |
+
+Output digests and text are **not** compared. Each run's `assembly_digest` is also recomputed from its own
+actual request (section 5).
 - **Live, in P7B-2:**
   1. Two **fresh** missions, with no shared provider session or history and the same semantic input: the same
      repo at the same head, the same question and contract, and unchanged memory.
@@ -803,11 +837,10 @@ exists.
   3. The analyst route is then changed **by config only** to `openrouter`. It is already in the intelligence
      faculty's `providerPreferences`, so there is no faculty swap and no faculty version change.
   4. **Mission 2** runs under the same identity pin version (Kernel v1).
-  5. **Pass:** the semantic mission input, the faculty pin fields, the identity pin fields,
-     `projection_digest`, the P5 memory assembly digest and `continuity_digest` are equal. Each mission's
-     `assembly_digest` (D9) recomputes from its own actual assembled request. `assembly_digest` is **not**
-     required to be equal across missions: it is per call. Each mission's execution evidence proves **which provider and
-     model actually ran**: the receipt's provider, model, `response_model` and provider request id.
+  5. **Pass:** every field in the equal set above is equal, including `assembly_digest` and
+     `continuity_digest`, and every field in the differ set differs. Each mission's execution evidence proves
+     **which provider and model actually ran**: the receipt's provider, model, `response_model` and provider
+     request id.
   6. **Refused as not a proof:** both runs on the same provider. There is no fallback path that could cause
      it (a faculty route is a single pinned provider and model, and `FACULTY_PINNED_ROUTE_UNAVAILABLE`
      refuses rather than falls back), and the proof asserts the two recorded providers differ.
