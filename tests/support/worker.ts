@@ -1,5 +1,6 @@
 import { createGoldenProbe } from "./golden-probe.js";
 import { createIdentityProbe } from "./identity-probe.js";
+import { createCognitionProbe } from "./cognition-probe.js";
 // Integration-only fault injection: crash after DB commit, before ctx.run acknowledgement.
 import * as restate from "@restatedev/restate-sdk";
 import pg from "pg";
@@ -13,6 +14,10 @@ import { createPolicyProbe } from "./policy-probe.js";
 const ledger = new Ledger(
   new pg.Pool({ connectionString: process.env["DATABASE_URL"] }),
   async (key, taskId) => {
+    if (key.startsWith("model:") && key.endsWith(":called") && existsSync("/tmp/kerneljson-cognition-receipt-crash")) {
+      unlinkSync("/tmp/kerneljson-cognition-receipt-crash");
+      process.exit(137);
+    }
     if(key==='verify' && existsSync('/tmp/kerneljson-corrupt-step-once')) {
       unlinkSync('/tmp/kerneljson-corrupt-step-once');
       const db=new pg.Pool({connectionString:process.env['DATABASE_URL']});
@@ -33,10 +38,12 @@ const ledger = new Ledger(
     }
   },
 );
+const cognitionProbe = createCognitionProbe(ledger);
 restate.serve({
   services: [
     createTaskWorkflow(ledger),
-    createKernelWorkflow(ledger),
+    createKernelWorkflow(ledger, cognitionProbe.options),
+    cognitionProbe.service,
     createModelProbe(ledger),
     createCapabilityProbe(ledger),
     createPolicyProbe(ledger),

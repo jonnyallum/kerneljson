@@ -80,6 +80,28 @@ Both runs are retained in `p7b-mutations.log`, `p7b-mutations-recheck.log` and t
 `identity-cognition-mutations*/` report directories. `p7b-mutation-verdicts.json` records the latest
 verdict and source log for every case. Source hashes verify that all intentional mutations were restored.
 
+## Follow-up: real Restate recovery qualification
+
+The database suite above uses a simulated journal. The additional
+`tests/identity-cognition-restate.integration.test.ts` runs the production
+`KernelWorkflowV1` through real Restate 1.7.9 and Postgres, with only GitHub and model
+I/O replaced by fixture services. All three cases pass:
+
+- Legacy and contract-OFF missions send equal analyst/reviewer assembly digests;
+  the latter persists a NONE latch and one matching MODEL_CALLED binding.
+- A process exit after the REQUIRED latch COMMIT but before journal acknowledgement,
+  followed by switching OFF and restarting the worker, retains REQUIRED and completes.
+- A process exit after MODEL_CALLED COMMIT but before receipt-journal acknowledgement
+  recovers with one immutable binding, one analyst call, one reviewer call, matching
+  evidence and canonical COMPLETED. Reattaching does not execute either provider again.
+
+The worker's fault hooks and digest-only call observer exist only in test support.
+The production entrypoint is unchanged. The Dockerfile includes the added test helpers,
+following its existing explicit-copy convention. Local evidence is retained in
+`artifacts/local/p7b-restate-tests.json` and `p7b-restate-tests.log`.
+The combined targeted rerun passed **34/34**: all three new cases and all 31 protected
+recovery tests. Typecheck, lint, build and topology checks also passed after these additions.
+
 ## Production boundary
 
 No production deployment, migration, activation, configuration change or provider call was performed.

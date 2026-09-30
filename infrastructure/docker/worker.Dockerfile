@@ -13,6 +13,8 @@ COPY tests/support/capability-probe.ts ./tests/support/capability-probe.ts
 COPY tests/support/policy-probe.ts ./tests/support/policy-probe.ts
 COPY tests/support/golden-probe.ts ./tests/support/golden-probe.ts
 COPY tests/support/identity-probe.ts ./tests/support/identity-probe.ts
+COPY tests/support/cognition-probe.ts ./tests/support/cognition-probe.ts
+COPY tests/support/mission-fixture.ts ./tests/support/mission-fixture.ts
 COPY tests/support/control-test-key.ts ./tests/support/control-test-key.ts
 COPY tests/support/routing-probe.ts ./tests/support/routing-probe.ts
 COPY tests/support/autonomous-probe.ts ./tests/support/autonomous-probe.ts
