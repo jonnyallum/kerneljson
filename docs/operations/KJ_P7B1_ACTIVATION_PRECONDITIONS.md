@@ -28,6 +28,20 @@ Before any deployment, measure it read-only, as the worker's own database connec
 
 CI runs the latch path as `postgres`, the owner, which is the role the disposable test stack's worker uses.
 
+**Observed 2026-09-30:** `SELECT current_user` executed inside the running
+`kerneljson-execution-worker-1`, using its own `DATABASE_URL` in a READ ONLY transaction,
+returned **`postgres`**. Only the role name was emitted. This closes the implementation
+PR's role-discovery gate; repeat it immediately before the activation window.
+
+The accompanying read-only snapshot at `2026-09-30T21:08:07.736Z` found epoch **12**,
+active and worker release `4127361860700085453f86aa09adfa7bf81ef7d3`, cognition unset,
+zero nonterminal tasks, zero identity pins, one current identity for the production
+tenant, the expected Kernel v1 row with both approved digests, zero unfrozen identities,
+and zero open P0/P1 alerts. Neither P7B table existed. These are point-in-time
+observations, not a deployment or a substitute for fresh preflight.
+
+The window sequence is in [KJ_P7B1_DEPLOYMENT_RUNBOOK.md](KJ_P7B1_DEPLOYMENT_RUNBOOK.md).
+
 ## STOP gate 2: the migration's own pre-COMMIT qualification
 
 `supabase/migrations/20260929120000_identity_cognition_binding.sql` runs in one transaction and raises, rolling back
