@@ -16,6 +16,7 @@ import { enqueueMissionNotice } from "./mission/notify.js";
 import { createConfiguredMemory, loadMemoryConfig } from "../../memory/src/canonical/config.js";
 import { createMissionMemoryPort } from "../../memory/src/canonical/mission-port.js";
 import { PgFacultyRegistry } from "./faculty/registry.js";
+import { PgIdentityCognition, parseIdentityCognitionEnabled } from "./identity/cognition-binding.js";
 
 const connectionString = process.env["DATABASE_URL"];
 if (!connectionString)
@@ -56,6 +57,10 @@ if (missionRuntimes && !(canary && capabilityService))
 // ever get the read-only port: they can be given a bounded memory context, and nothing else.
 const memoryConfig = loadMemoryConfig(process.env);
 const missionMemory = memoryConfig ? createMissionMemoryPort(createConfiguredMemory(pool, memoryConfig).memory) : undefined;
+// KJ-P7B-1 identity cognition. OFF unless KJ_IDENTITY_COGNITION_ENABLED=true (unset or empty both mean off). A malformed
+// value refuses to start. The value is re-read ONLY when a new analyst latch is created; an existing latch never
+// consults it again, so flipping it affects new work only (ADR-0022 section 4).
+parseIdentityCognitionEnabled(process.env["KJ_IDENTITY_COGNITION_ENABLED"]);
 const mission = missionRuntimes
   ? {
       analyst: missionRuntimes.analyst,
@@ -65,6 +70,7 @@ const mission = missionRuntimes
         reviewer: { provider: missionRuntimes.reviewerProvider, model: missionRuntimes.reviewerModel },
       }),
       ...(missionMemory ? { memory: missionMemory } : {}),
+      identity: new PgIdentityCognition(pool, () => parseIdentityCognitionEnabled(process.env["KJ_IDENTITY_COGNITION_ENABLED"])),
       notify: async (notice: Parameters<typeof enqueueMissionNotice>[1]) => {
         await enqueueMissionNotice(new PgNotificationOutboxStore(pool), notice);
       },

@@ -69,6 +69,18 @@ string. Reproduced here for the checks KJ-P1.2 explicitly requires:
 | `evidence.toolReceiptPresentWhereRequired` | P2 | — | — | evidence-completeness gap |
 | `evidence.digestMatchesApproved` | P1 | — | — | real integrity signal, more than bookkeeping |
 | `legacyAuthority.b1FreezeObservable` | P0 | — | P3, **notify: false** | known, permanent, documented gap — see "Known gaps" |
+| `identity.completedTasksHaveActivation` | P1 | — | P3, silent | KJ-P7B-1 Group A: ADR-0021 D8 orphan |
+| `identity.profilesHaveActivatedIdentity` | — | P2 | P3, silent | Group A: interrupted bootstrap past a 10-minute grace |
+| `identity.currentDigestParity` | P1 | — | P3, silent | Group A: stored digest differs from `identity_core_digest_v1` |
+| `identity.singleCurrentPerTenant` | P0 | — | P3, silent | Group A: ambiguous identity authority |
+| `identity.headEqualsCurrent` | P1 | — | P3, silent | Group A: a version exists that governance never activated |
+| `identity.analystRunsBound` | P0 | — | P3, silent (NO_OBSERVATION) | Group B: identity bytes consumed without verifying against the pin |
+| `identity.verifierIsolated` | P1 | — | P3, silent (NO_OBSERVATION) | Group B: identity on the reviewer or outside the analyst |
+
+The seven `identity.*` rows (ADR-0022 section 11 and its D1 erratum) use the per-status `notifyFor` control. UNKNOWN,
+whether the database is unreachable or there is no observation yet, is tracked at P3 and never notified, so it defers to
+`database.reachable`. An episode that opened silently also recovers silently: there is no "recovered" message for an
+alert nobody was sent. The feature being OFF can never raise P0 or P1 by itself.
 
 The full table (all ~30 check ids, every `rationale`) is `policy.ts` itself —
 treat that file, not this table, as canonical; this is a snapshot for readability.

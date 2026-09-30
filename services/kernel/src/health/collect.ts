@@ -6,6 +6,7 @@ import { IDENTITY_CHANGE_CRITERION } from "../../../../packages/contracts/src/in
 import type {
   HealthExpectations,
   HealthSnapshot,
+  IdentityCognitionSnapshot,
   IdentityOrphanRow,
   IncompleteBootstrapRow,
   RestateInvocationRow,
@@ -13,6 +14,9 @@ import type {
   ScheduleStateRow,
 } from "./snapshot.js";
 import type { Unavailable } from "./types.js";
+import { provenanceOf } from "../identity/evidence-verify.js";
+import { canonicalDigest } from "../identity/canonical.js";
+import { IdentityCognitionPin } from "../../../../packages/contracts/src/index.js";
 
 /**
  * COLLECT — the only impure layer. Every function here either returns real data or
@@ -143,6 +147,86 @@ export async function fetchIncompleteBootstraps(pool: pg.Pool, now: Date): Promi
   }));
 }
 
+/** KJ-P7B-1 (ADR-0022 section 11) - the P7B store invariants and the two cognition-binding invariants. Every read is
+ *  a durable database fact; nothing here reads the feature switch. Unavailable if the P7B schema cannot be read. */
+export async function fetchIdentityCognition(pool: pg.Pool): Promise<IdentityCognitionSnapshot | Unavailable> {
+  try {
+    const parity = await pool.query(
+      `select v.id from public.identity_versions v
+       where v.identity_core_digest is distinct from kernel_private.identity_core_digest_v1(v.document)
+          or v.class_a_digest is distinct from kernel_private.identity_core_digest_v1(v.document->'sections'->'classA')`,
+    );
+    const multi = await pool.query(`select tenant_id from public.identity_current group by tenant_id having count(*) > 1`);
+    const head = await pool.query(
+      `select h.identity_id from public.identity_head h
+       left join public.identity_current c on c.identity_id = h.identity_id
+       where c.version is distinct from h.version`,
+    );
+    const marker = await pool.query(`select first_release_epoch from kernel_private.identity_cognition_contract_v1 where singleton`);
+    const required = await pool.query(
+      `select l.task_id, l.step_id, p.pin,
+         (v.id is null) as no_version,
+         (v.id is not null and (v.identity_core_digest is distinct from p.pin->>'identityCoreDigest'
+            or kernel_private.identity_core_digest_v1(v.document) is distinct from p.pin->>'identityCoreDigest'
+            or kernel_private.identity_core_digest_v1(v.document->'sections'->'classA') is distinct from p.pin->>'classADigest')) as version_mismatch,
+         (p.pin is not null and kernel_private.identity_core_digest_v1(p.pin->'projection') is distinct from p.pin->>'projectionDigest') as projection_mismatch,
+         e.metadata as analyst_metadata
+       from kernel_private.identity_cognition_latches l
+       left join public.identity_pins p on p.task_id = l.task_id and p.step_id = l.step_id
+       left join public.identity_versions v on v.id::text = p.pin->>'identityVersionId'
+       left join lateral (select ev.metadata from public.evidence ev
+                          where ev.task_id = l.task_id and ev.step_id = l.step_id and ev.source = 'kerneljson:runtime/analyst'
+                            and ev.metadata ? 'output_digest' -- a completed model execution, not a refusal record
+                          order by ev.captured_at limit 1) e on true
+       where l.mode = 'REQUIRED'`,
+    );
+    const unboundRequired: IdentityCognitionSnapshot["unboundRequired"] = [];
+    for (const r of required.rows as Array<Record<string, unknown>>) {
+      const at = { taskId: String(r["task_id"]), stepId: String(r["step_id"]) };
+      if (!r["pin"]) { unboundRequired.push({ ...at, reason: "REQUIRED latch has no identity pin" }); continue; }
+      if (r["no_version"]) { unboundRequired.push({ ...at, reason: "pinned identity version is unavailable" }); continue; }
+      if (r["version_mismatch"]) { unboundRequired.push({ ...at, reason: "pinned version digests do not equal the pin" }); continue; }
+      if (r["projection_mismatch"]) { unboundRequired.push({ ...at, reason: "pinned projection digest does not verify" }); continue; }
+      const metadata = r["analyst_metadata"] as Record<string, unknown> | null;
+      if (!metadata) continue; // the call has not produced evidence yet: nothing consumed to compare
+      const pin = IdentityCognitionPin.safeParse(r["pin"]);
+      if (!pin.success || metadata["identity_cognition_mode"] !== "REQUIRED"
+        || canonicalDigest(metadata["identity"] ?? null) !== canonicalDigest(provenanceOf(pin.data)))
+        unboundRequired.push({ ...at, reason: "analyst runtime evidence differs from the canonical pin" });
+    }
+    const observed = await pool.query(
+      `select count(*)::int as n from public.evidence e
+       join kernel_private.execution_bindings b on b.task_id = e.task_id
+       join kernel_private.identity_cognition_contract_v1 m on m.singleton
+       where e.source in ('kerneljson:runtime/analyst', 'kerneljson:runtime/reviewer') and b.release_epoch >= m.first_release_epoch`,
+    );
+    const isolation = await pool.query(
+      `select e.task_id, 'reviewer evidence carries identity' as reason from public.evidence e
+         where e.source = 'kerneljson:runtime/reviewer' and e.metadata ? 'identity'
+       union all
+       select p.task_id, 'identity pin on a non-analyst step' from public.identity_pins p
+         where not exists (select 1 from public.faculty_pins f
+                           where f.task_id = p.task_id and f.step_id = p.step_id and f.faculty_id = 'intelligence')
+       union all
+       select l.task_id, 'NONE-latched analyst evidence carries identity' from kernel_private.identity_cognition_latches l
+         join public.evidence e on e.task_id = l.task_id and e.step_id = l.step_id and e.source = 'kerneljson:runtime/analyst'
+         where l.mode = 'NONE' and e.metadata ? 'identity' and jsonb_typeof(e.metadata->'identity') <> 'null'`,
+    );
+    return {
+      digestParityFailures: parity.rows.map((r: Record<string, unknown>) => String(r["id"])),
+      tenantsWithMultipleCurrent: multi.rows.map((r: Record<string, unknown>) => String(r["tenant_id"])),
+      headCurrentMismatches: head.rows.map((r: Record<string, unknown>) => String(r["identity_id"])),
+      contractActive: marker.rows.length === 1,
+      requiredLatches: required.rows.length,
+      unboundRequired,
+      contractRuntimeRecords: Number((observed.rows[0] as Record<string, unknown>)["n"]),
+      isolationViolations: isolation.rows.map((r: Record<string, unknown>) => ({ taskId: String(r["task_id"]), reason: String(r["reason"]) })),
+    };
+  } catch (error) {
+    return unavailable(`identity cognition schema not readable: ${error instanceof Error ? error.message.slice(0, 120) : "error"}`);
+  }
+}
+
 async function fetchEvidenceForTask(
   pool: pg.Pool,
   taskId: string,
@@ -247,6 +331,7 @@ export async function collectHealthSnapshot(deps: CollectDeps): Promise<HealthSn
   const humanOperatorPresent = dbReachable ? await fetchHumanOperatorPresent(pool) : false;
   const identityOrphans = dbReachable ? await fetchIdentityOrphans(pool, deps.now?.() ?? new Date()) : [];
   const incompleteBootstraps = dbReachable ? await fetchIncompleteBootstraps(pool, deps.now?.() ?? new Date()) : [];
+  const identityCognition = dbReachable ? await fetchIdentityCognition(pool) : unavailable("database unreachable");
 
   const mostRecentAdmittedFire =
     [...fires].filter((f) => f.admittedChildTaskId).sort((a, b) => Date.parse(b.fireAtUtc) - Date.parse(a.fireAtUtc))[0] ??
@@ -334,6 +419,7 @@ export async function collectHealthSnapshot(deps: CollectDeps): Promise<HealthSn
       dbReachable,
       completedTasksMissingActivation: identityOrphans,
       profilesWithoutCurrentIdentity: incompleteBootstraps,
+      cognition: identityCognition,
     },
   };
 }

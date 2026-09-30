@@ -3,6 +3,7 @@ import { assertResolvedEffects, readOutcome } from "./terminal.js";
 import { bindingFor, persistBinding, workflowTargets, type WorkflowName } from "./execution-binding.js";
 import pg from "pg";
 import { verifyFacultyEvidence } from "./faculty/verify.js";
+import { verifyIdentityEvidence } from "./identity/evidence-verify.js";
 import {
   Task,
   TaskEvent,
@@ -155,6 +156,26 @@ export class Ledger {
           const configuredFaculties = await db.query("select 1 from public.faculty_versions where tenant_id=$1 limit 1", [task.tenant.id]);
           const facultyRequired = (plan as { recipe?: string } | undefined)?.recipe === "repo-analysis-mission/v1" && configuredFaculties.rows.length > 0;
           verifyCompletion(() => verifyFacultyEvidence(facultyPins.rows.map(r => r.pin), rows.rows.map(r => r.record), facultyRequired));
+          // KJ-P7B-1 (ADR-0022 section 4.7, D1 erratum): the identity cognition oracle. The database release provenance
+          // decides whether the latch contract applies; runtime evidence must equal the immutable MODEL_CALLED binding
+          // and the canonical latch/pin. Never the environment, a timestamp, the current release or Restate state.
+          if ((plan as { recipe?: string } | undefined)?.recipe === "repo-analysis-mission/v1") {
+            const analystStepId = ((plan as { steps?: Array<{ id: string; operation: string }> }).steps ?? []).find((s) => s.operation === "RUNTIME_ANALYSE")?.id ?? "";
+            const binding = await db.query<{ release_epoch: string }>("select release_epoch from kernel_private.execution_bindings where task_id=$1", [task.id]);
+            const marker = await db.query<{ first_release_epoch: string }>("select first_release_epoch from kernel_private.identity_cognition_contract_v1 where singleton");
+            const latches = await db.query("select tenant_id, task_id, step_id, mode, release_epoch from kernel_private.identity_cognition_latches where task_id=$1", [task.id]);
+            const identityPins = await db.query<{ pin: unknown }>("select pin from public.identity_pins where task_id=$1", [task.id]);
+            const modelCalls = await db.query<{ payload: unknown }>("select payload from public.task_events where task_id=$1 and type='MODEL_CALLED'", [task.id]);
+            verifyCompletion(() => verifyIdentityEvidence({
+              contractStartEpoch: marker.rows[0] ? Number(marker.rows[0].first_release_epoch) : null,
+              bindingEpoch: binding.rows[0] ? Number(binding.rows[0].release_epoch) : null,
+              analystStepId,
+              latches: latches.rows,
+              pins: identityPins.rows.map((r) => r.pin),
+              modelCalls: modelCalls.rows.map((r) => r.payload),
+              evidence: rows.rows.map((r) => r.record),
+            }));
+          }
           verifyCompletion(()=>{if (rows.rows.some(r => {
             const captured = Date.parse(Evidence.parse(r.record).capturedAt);
             return captured < Date.parse(task.createdAt) || captured > Date.parse(event.occurredAt);

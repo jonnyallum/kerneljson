@@ -116,6 +116,8 @@ for (const key of [
   "KJ_MEMORY_ENABLED",
   "KJ_MEMORY_APPROVER_ID",
   "KJ_MEMORY_APPROVAL_TTL_SECONDS",
+  // KJ-P7B-1 identity cognition switch (latched per analyst step).
+  "KJ_IDENTITY_COGNITION_ENABLED",
 ]) {
   check(key in (worker?.environment ?? {}), `execution: worker environment does not declare ${key} (silently dropped from runtime.env)`);
 }

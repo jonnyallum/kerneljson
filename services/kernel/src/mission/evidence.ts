@@ -65,6 +65,8 @@ export function runtimeEvidence(
     /** KJ-P5: the memory context this call was given. Added only when memory was in play. */
     memoryContext?: Record<string, unknown>;
     faculty?: Record<string, unknown>;
+    /** KJ-P7B-1: identity cognition fields, present only for a task under the cognition contract. */
+    cognition?: Record<string, unknown>;
   },
 ): Evidence {
   const r = args.receipt;
@@ -90,6 +92,7 @@ export function runtimeEvidence(
       text: args.text,
       ...(args.memoryContext ? { memory_context: args.memoryContext } : {}),
       ...(args.faculty ? { faculty: args.faculty } : {}),
+      ...(args.cognition ?? {}),
     },
   });
 }
