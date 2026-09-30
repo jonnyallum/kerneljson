@@ -128,6 +128,9 @@ services:
       KJ_MEMORY_ENABLED: ${KJ_MEMORY_ENABLED:-}
       KJ_MEMORY_APPROVER_ID: ${KJ_MEMORY_APPROVER_ID:-}
       KJ_MEMORY_APPROVAL_TTL_SECONDS: ${KJ_MEMORY_APPROVAL_TTL_SECONDS:-}
+      # KJ-P7B-1 identity cognition (ADR-0022). Off unless exactly "true"; unset or empty means off, anything else refuses
+      # to start. Read only when a NEW analyst latch is created, so a change affects new work only. Not a secret.
+      KJ_IDENTITY_COGNITION_ENABLED: ${KJ_IDENTITY_COGNITION_ENABLED:-}
       RESTATE_ADMIN_URL: ${RESTATE_ADMIN_URL:-http://restate:9070}
       EXPECTED_RELEASE_ID: ${EXPECTED_RELEASE_ID:-${KERNELJSON_RELEASE_ID}}
       PORT: "9080"

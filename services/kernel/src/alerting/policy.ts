@@ -240,7 +240,58 @@ export const ALERT_POLICY: readonly AlertPolicyEntry[] = [
     'A KNOWN, DOCUMENTED, PERMANENT gap (see docs/operations/HEALTH_MODEL.md "Known gaps") — this module has no Shared Brain credentials, so this check is UNKNOWN by design, not a live problem. Tracked (a state row exists, for audit) but deliberately never notified: alerting on a gap we already know about and cannot act on in this phase would be pure noise. If B1 freeze observability is ever wired up and genuinely reports CRITICAL (the freeze visibly broke), that IS a real authority-corruption signal — P0, and notified normally.',
     { notify: false },
   ),
+
+  // ---- identity (KJ-P7A store, KJ-P7B-1 cognition binding; ADR-0022 section 11) --------------------------------
+  // Every identity check has an explicit row: there is no generic P2 fallback. UNKNOWN (database unreachable, or a
+  // cognition check with nothing yet to observe) is tracked at P3 and never notified - it defers to the database
+  // domain, and cognition being OFF is not an incident. A deliberately silent UNKNOWN episode also recovers silently.
+  identity(
+    "identity.completedTasksHaveActivation",
+    { CRITICAL: "P1" },
+    "Group A store invariant (ADR-0021 D8): a COMPLETED identity-change task with no activation claims a change that never took effect. Completion and activation are one transaction, so any row is corruption. P1.",
+  ),
+  identity(
+    "identity.profilesHaveActivatedIdentity",
+    { DEGRADED: "P2" },
+    "Group A: an identity profile past the 10-minute bootstrap grace with no activated identity is an interrupted, recoverable bootstrap. P2.",
+  ),
+  identity(
+    "identity.currentDigestParity",
+    { CRITICAL: "P1" },
+    "Group A: a stored identity digest differing from kernel_private.identity_core_digest_v1 means the digest authority is broken, even before any cognition consumes it. P1.",
+  ),
+  identity(
+    "identity.singleCurrentPerTenant",
+    { CRITICAL: "P0" },
+    "Group A: more than one current identity for a tenant means identity authority is ambiguous. Authority corruption, P0.",
+  ),
+  identity(
+    "identity.headEqualsCurrent",
+    { CRITICAL: "P1" },
+    "Group A: an identity head that is not its current activated version means a version exists that governance never activated. P1.",
+  ),
+  identity(
+    "identity.analystRunsBound",
+    { CRITICAL: "P0" },
+    "Group B: a REQUIRED analyst latch whose pin, pinned version digests, projection digest or runtime evidence do not verify means a model received identity bytes that are not provably governed. P0 - more serious than a missing first observation, which is UNKNOWN/NO_OBSERVATION, P3, silent (feature OFF or no REQUIRED run yet).",
+  ),
+  identity(
+    "identity.verifierIsolated",
+    { CRITICAL: "P1" },
+    "Group B: identity on reviewer evidence, a pin on a non-analyst step, or identity on a NONE-latched analyst breaks verifier independence. P1. No contract-era runtime record yet is UNKNOWN/NO_OBSERVATION, P3, silent.",
+  ),
 ] as const;
+
+function identity(
+  checkId: string,
+  map: Partial<Record<"CRITICAL" | "DEGRADED", AlertSeverity>>,
+  rationale: string,
+): AlertPolicyEntry {
+  return {
+    ...simple(checkId, { ...map, UNKNOWN: "P3" }, rationale),
+    notifyFor: (status) => status !== "UNKNOWN",
+  };
+}
 
 const POLICY_BY_CHECK_ID: ReadonlyMap<string, AlertPolicyEntry> = new Map(
   ALERT_POLICY.map((entry) => [entry.checkId, entry]),

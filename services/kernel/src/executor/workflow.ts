@@ -20,6 +20,9 @@ import { runRepoAnalysisMission, type Emit } from "../mission/run.js";
 import type { MissionNotice } from "../mission/notify.js";
 import type { MissionMemoryPort } from "../mission/memory-port.js";
 import type { MissionFacultyPort } from "../faculty/registry.js";
+import type { MissionIdentityPort } from "../identity/cognition-binding.js";
+import { createHash } from "node:crypto";
+import type { ModelCallBinding } from "../../../../packages/contracts/src/index.js";
 
 /** KJ-P3 mission wiring: the two runtimes and how to queue the completion notice. */
 export interface MissionWiring {
@@ -29,6 +32,14 @@ export interface MissionWiring {
   /** KJ-P5: read-only canonical memory for the analyst. Absent unless KJ_MEMORY_ENABLED. */
   memory?: MissionMemoryPort;
   faculties?: MissionFacultyPort;
+  /** KJ-P7B-1: identity cognition latch + call-time authorisation. */
+  identity?: MissionIdentityPort;
+}
+
+/** A deterministic event id for a call's MODEL_CALLED record, so a re-executed receipt step writes identical bytes. */
+export function modelCalledEventId(callId: string): string {
+  const h = createHash("sha256").update(`kerneljson:model-called:${callId}`).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
 /** Optional capability-recipe wiring. Present only on a worker configured to serve the
@@ -166,6 +177,23 @@ export function createKernelWorkflow(
             reviewer: mission.reviewer,
             ...(mission.memory ? { memory: mission.memory } : {}),
             ...(mission.faculties ? { faculties: mission.faculties } : {}),
+            ...(mission.identity ? { identity: mission.identity } : {}),
+            // D1 erratum: runs INSIDE callModel's own `model:<callId>:receipt` ctx.run, so it writes to the ledger
+            // directly - never through emit(), which would nest a second journal entry. Idempotent by call id; the
+            // event id and time come from the journaled call, never from ctx.rand/ctx.date inside ctx.run.
+            recordModelCall: async (binding: ModelCallBinding, occurredAt: string) => {
+              const event = TaskEvent.parse({
+                id: modelCalledEventId(binding.call_id),
+                taskId: task.id,
+                type: "MODEL_CALLED",
+                occurredAt,
+                actor: task.principal,
+                traceId: task.traceId,
+                stepId: binding.step_id,
+                payload: { status: "RUNNING", binding },
+              });
+              await ledger.write({ key: `model:${binding.call_id}:called`, task, event });
+            },
             notify: mission.notify,
           });
         }

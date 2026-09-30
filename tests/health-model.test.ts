@@ -130,7 +130,16 @@ function healthySnapshot(): HealthSnapshot {
       recipeConfigured: "claude_md_check/v1",
     },
     legacyAuthority: { b1FreezeObservable: { unavailable: true, reason: "cross-system, out of scope" } },
-    identity: { dbReachable: true, completedTasksMissingActivation: [], profilesWithoutCurrentIdentity: [] },
+    identity: {
+      dbReachable: true,
+      completedTasksMissingActivation: [],
+      profilesWithoutCurrentIdentity: [],
+      // Fully observed and healthy: a REQUIRED run exists and verifies, and the contract has runtime records.
+      cognition: {
+        digestParityFailures: [], tenantsWithMultipleCurrent: [], headCurrentMismatches: [],
+        contractActive: true, requiredLatches: 1, unboundRequired: [], contractRuntimeRecords: 2, isolationViolations: [],
+      },
+    },
   };
 }
 
@@ -570,7 +579,7 @@ describe("KJ-P7A identity orphan detector (ADR-0021 D8)", () => {
 
   it("is UNKNOWN, not a false HEALTHY, when the database was unreachable", () => {
     const snapshot = healthySnapshot();
-    snapshot.identity = { dbReachable: false, completedTasksMissingActivation: [], profilesWithoutCurrentIdentity: [] };
+    snapshot.identity = { dbReachable: false, completedTasksMissingActivation: [], profilesWithoutCurrentIdentity: [], cognition: { unavailable: true, reason: "database unreachable" } };
     const report = evaluateHealthSnapshot(snapshot, baseExpectations());
     expect(report.domains.identity.status).toBe("UNKNOWN");
   });

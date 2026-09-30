@@ -5,6 +5,7 @@ import { knowledgeDatabase } from "./support/knowledge-db.js";
 import { DATABASE, migrate, until } from "./support/local.js";
 import { completeAndActivateIdentity, completeIdentityTaskTx, type IdentityApply } from "../services/kernel/src/identity/complete.js";
 import { IdentityRefusal } from "../services/kernel/src/identity/store.js";
+import { identityCoreDigestV1 } from "../services/kernel/src/identity/canonical.js";
 import { fetchIdentityOrphans, fetchIncompleteBootstraps } from "../services/kernel/src/health/collect.js";
 import { IDENTITY_APPLY_A, IDENTITY_APPLY_BOOTSTRAP, IDENTITY_APPLY_C, IDENTITY_APPLY_D, IDENTITY_APPLY_ROLLBACK, capabilityDigest } from "../packages/capabilities/src/index.js";
 
@@ -212,7 +213,7 @@ async function inRolledBackTransaction(fn: (client: import("pg").PoolClient) => 
   }
 }
 
-const H = () => "a".repeat(64); // a well-formed placeholder digest; the app layer computes the real one, the DB only checks shape.
+const H = () => "a".repeat(64); // Shape-only candidate/proof fixtures; persisted versions below use real P7B digests.
 
 async function proposeOn(tenantId: string, identityId: string, taskId: string, document: unknown, governanceClass: string, origin: "OPERATOR_INSTRUCTION" | "MODEL_PROPOSAL" | "SHARED_BRAIN" = "OPERATOR_INSTRUCTION") {
   const candidateId = randomUUID();
@@ -227,8 +228,9 @@ async function insertVersion(tenantId: string, identityId: string, version: numb
   const versionId = randomUUID();
   await db.pool.query(
     `insert into identity_versions(id,identity_id,tenant_id,version,document,identity_core_digest,class_a_digest,governance_class,candidate_id,created_by_task)
-     values($1,$2,$3,$4,$5,$6,$6,'IGNORED',$7,$8)`,
-    [versionId, identityId, tenantId, version, document, H(), candidateId, taskId],
+     values($1,$2,$3,$4,$5,$6,$7,'IGNORED',$8,$9)`,
+    [versionId, identityId, tenantId, version, document, identityCoreDigestV1(document),
+      identityCoreDigestV1((document as { sections: { classA: unknown } }).sections.classA), candidateId, taskId],
   );
   return versionId;
 }
@@ -273,14 +275,14 @@ async function change(
 }
 
 /** ADR-0021 D7: Class C/D is frozen by default once an identity exists. Every test that exercises a
- *  C/D change opens the window explicitly, exactly as deployment authority would for P7B G13. */
-async function openP7BWindow(identityId: string) {
-  await db.pool.query("select kernel_private.set_identity_freeze($1,false,'test: P7B G13 window open')", [identityId]);
+ *  C/D change opens a disposable test-only change window explicitly. P7B G13 never unfreezes production. */
+async function openTestChangeWindow(identityId: string) {
+  await db.pool.query("select kernel_private.set_identity_freeze($1,false,'test: explicitly authorised C/D change window')", [identityId]);
 }
 async function bootstrap(tenantId: string, ownerId: string, opts: { keepFrozen?: boolean } = {}) {
   const identityId = await mkProfile(tenantId, ownerId);
   const result = await change(tenantId, ownerId, identityId, doc(identityId, tenantId), "BOOTSTRAP");
-  if (!opts.keepFrozen) await openP7BWindow(identityId);
+  if (!opts.keepFrozen) await openTestChangeWindow(identityId);
   return { identityId, taskId: result.taskId };
 }
 
@@ -812,7 +814,7 @@ async function bootstrapAtomically(tenantId: string, ownerId: string, opts: { ke
   const identityId = await mkProfile(tenantId, ownerId);
   const boot = await proposeAndApply(tenantId, ownerId, identityId, fullDoc(identityId, tenantId), "BOOTSTRAP");
   await boot.apply();
-  if (!opts.keepFrozen) await openP7BWindow(identityId);
+  if (!opts.keepFrozen) await openTestChangeWindow(identityId);
   return identityId;
 }
 
@@ -1144,7 +1146,7 @@ describe("ADR-0021 D7: Class C/D is frozen by default after bootstrap - no manua
     expect(String((refusedD as Error).message)).toContain("frozen");
     expect(await footprint(vision.taskId)).toEqual(NOTHING_COMMITTED);
 
-    await openP7BWindow(identityId); // deployment authority, P7B G13
+    await openTestChangeWindow(identityId); // explicit disposable test-only change window
     await expect(persona.apply()).resolves.toMatchObject({ version: { version: 2, governanceClass: "C" } });
   });
 
@@ -1248,7 +1250,7 @@ describe("ADR-0021 D6: a Class C/D version must leave the Class A bytes identica
       db.pool.query(
         `insert into identity_versions(id,identity_id,tenant_id,version,document,identity_core_digest,class_a_digest,governance_class,candidate_id,created_by_task)
          values($1,$2,$3,2,$4,$5,$6,'IGNORED',$7,$8)`,
-        [randomUUID(), identityId, tenantId, withVersion(changed, 2), H(), "f".repeat(64), candidateId, taskId],
+        [randomUUID(), identityId, tenantId, withVersion(changed, 2), identityCoreDigestV1(withVersion(changed, 2)), "f".repeat(64), candidateId, taskId],
       ),
     ).rejects.toMatchObject({ code: "23514", message: expect.stringContaining("Class A bytes identical") });
   });

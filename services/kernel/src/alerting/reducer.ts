@@ -1,7 +1,7 @@
 import type { CheckResult } from "../health/types.js";
 import { fingerprintFor, resolveEntityId } from "./fingerprint.js";
 import { resolvePolicy } from "./policy.js";
-import { isWorse, type AlertDecision, type AlertPolicyEntry, type AlertStateRow } from "./types.js";
+import { isWorse, type AlertDecision, type AlertPolicyEntry, type AlertSeverity, type AlertStateRow } from "./types.js";
 
 /**
  * PURE core of KJ-P1.2. No I/O: takes the existing state row for one
@@ -23,6 +23,12 @@ import { isWorse, type AlertDecision, type AlertPolicyEntry, type AlertStateRow 
  *  - RECOVERED row, unhealthy   -> a NEW episode: reset firstSeenAt/occurrenceCount, reopen, notify
  *                                   per policy ("recurrence after recovery alerts again").
  */
+/** Whether a decision for this status/severity notifies. `notify: false` always wins; `notifyFor` narrows further. */
+export function policyNotifies(policy: AlertPolicyEntry, status: CheckResult["status"], severity: AlertSeverity): boolean {
+  if (policy.notify === false) return false;
+  return policy.notifyFor ? policy.notifyFor(status, severity) : true;
+}
+
 export function reduceCheck(
   existing: AlertStateRow | null,
   check: CheckResult,
@@ -48,7 +54,9 @@ export function reduceCheck(
       lastSeenAt: now,
       recoveredAt: now,
     };
-    const notify = policy.notify !== false;
+    // An entry with per-status notification control only announces the recovery of an episode it actually
+    // notified; entries without it keep the original behaviour exactly.
+    const notify = policy.notify !== false && (policy.notifyFor === undefined || existing.lastNotifiedAt !== null);
     const decision: AlertDecision = {
       kind: "RECOVERED",
       severity: existing.severity,
@@ -73,7 +81,7 @@ export function reduceCheck(
   // fresh episode. This is exactly "first detection" AND "recurrence after
   // recovery" — both are "no currently-open episode", so both behave the same.
   if (!existing || existing.currentState === "RECOVERED") {
-    const notify = policy.notify !== false;
+    const notify = policyNotifies(policy, check.status, severity);
     const row: AlertStateRow = {
       fingerprint,
       checkId: check.id,
@@ -106,7 +114,7 @@ export function reduceCheck(
   // Still unhealthy, episode already OPEN.
   const kind: "ONGOING" | "ESCALATED" | "DEESCALATED" =
     severity === existing.severity ? "ONGOING" : isWorse(severity, existing.severity) ? "ESCALATED" : "DEESCALATED";
-  const notify = kind !== "ONGOING" && policy.notify !== false;
+  const notify = kind !== "ONGOING" && policyNotifies(policy, check.status, severity);
   const nextRow: AlertStateRow = {
     ...existing,
     severity,

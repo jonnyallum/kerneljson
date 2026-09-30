@@ -48,6 +48,8 @@ PUBLIC_KEYS = {
     "KJ_MEMORY_ENABLED": re.compile(r"^(true|false)$"),
     "KJ_MEMORY_APPROVER_ID": re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"),
     "KJ_MEMORY_APPROVAL_TTL_SECONDS": re.compile(r"^[0-9]{2,6}$"),
+    # KJ-P7B-1 identity cognition: an on/off switch, latched per analyst step (ADR-0022). Not a secret.
+    "KJ_IDENTITY_COGNITION_ENABLED": re.compile(r"^(true|false)$"),
 }
 SECRET_KEYS = {
     "TELEGRAM_BOT_TOKEN": re.compile(r"^\d{6,12}:[A-Za-z0-9_-]{35}$"),

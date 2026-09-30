@@ -165,10 +165,29 @@ export interface IncompleteBootstrapRow {
   ageMs: number;
 }
 
+/** KJ-P7B-1 (ADR-0022 section 11) - the store invariants added by P7B and the two cognition-binding invariants.
+ *  Unavailable only when the P7B schema itself cannot be read (for example before its migration is applied). */
+export interface IdentityCognitionSnapshot {
+  /** identity_versions ids whose stored digests differ from kernel_private.identity_core_digest_v1. */
+  digestParityFailures: string[];
+  /** Tenants with more than one current identity. */
+  tenantsWithMultipleCurrent: string[];
+  /** Identities whose head version is not their current activated version. */
+  headCurrentMismatches: string[];
+  /** The kernel_private.identity_cognition_contract_v1 marker exists. */
+  contractActive: boolean;
+  requiredLatches: number;
+  unboundRequired: Array<{ taskId: string; stepId: string; reason: string }>;
+  /** Mission runtime evidence records bound at or after the contract-start epoch. */
+  contractRuntimeRecords: number;
+  isolationViolations: Array<{ taskId: string; reason: string }>;
+}
+
 export interface IdentitySnapshot {
   dbReachable: boolean;
   completedTasksMissingActivation: IdentityOrphanRow[];
   profilesWithoutCurrentIdentity: IncompleteBootstrapRow[];
+  cognition: IdentityCognitionSnapshot | Unavailable;
 }
 
 export interface HealthSnapshot {

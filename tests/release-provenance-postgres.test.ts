@@ -153,7 +153,10 @@ it("missing activation and no current observations are explicitly UNKNOWN", asyn
 
 it("migration baselines preexisting immutable bindings without inventing their insertion time", async () => {
   // Reconstruct the immediately preceding schema in this disposable database.
-  await f.pool.query(`drop trigger execution_bindings_provenance on kernel_private.execution_bindings;
+  // Remove the later P7B dependants explicitly before reconstructing the pre-provenance schema.
+  await f.pool.query(`drop table kernel_private.identity_cognition_latches, kernel_private.identity_cognition_contract_v1;
+    alter table kernel_private.execution_bindings drop constraint execution_bindings_task_tenant_epoch;
+    drop trigger execution_bindings_provenance on kernel_private.execution_bindings;
     drop function kernel_private.stamp_binding_provenance();
     drop function kernel_private.activate_release(uuid,text,bigint,jsonb);
     drop table kernel_private.release_epoch, kernel_private.release_activations;

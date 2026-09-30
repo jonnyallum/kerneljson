@@ -903,8 +903,8 @@ export function evaluateIdentity(s: IdentitySnapshot, exp: HealthExpectations, c
   const checks: CheckResult[] = [];
   const bootstrapGrace = exp.identityBootstrapGraceMs ?? DEFAULT_IDENTITY_BOOTSTRAP_GRACE_MS;
   if (!s.dbReachable) {
-    checks.push(check("identity.completedTasksHaveActivation", "UNKNOWN", "public.tasks vs public.identity_activations", "database unreachable — see the database domain", checkedAt));
-    checks.push(check("identity.profilesHaveActivatedIdentity", "UNKNOWN", "public.identity_profiles vs public.identity_activations", "database unreachable — see the database domain", checkedAt));
+    for (const [id, source] of IDENTITY_CHECK_SOURCES)
+      checks.push(check(id, "UNKNOWN", source, "database unreachable — see the database domain", checkedAt));
     return aggregateDomain(checks);
   }
   // No grace period: completion, version and activation commit in ONE transaction
@@ -935,7 +935,58 @@ export function evaluateIdentity(s: IdentitySnapshot, exp: HealthExpectations, c
       { observed: incomplete.map((r) => r.identityId), expected: [] },
     ),
   );
+  evaluateIdentityCognition(s, checkedAt, checks);
   return aggregateDomain(checks);
+}
+
+/** Every identity check, in order, with the durable source it reads. */
+const IDENTITY_CHECK_SOURCES: ReadonlyArray<readonly [string, string]> = [
+  ["identity.completedTasksHaveActivation", "public.tasks vs public.identity_activations"],
+  ["identity.profilesHaveActivatedIdentity", "public.identity_profiles vs public.identity_activations"],
+  ["identity.currentDigestParity", "public.identity_versions vs kernel_private.identity_core_digest_v1"],
+  ["identity.singleCurrentPerTenant", "public.identity_current grouped by tenant"],
+  ["identity.headEqualsCurrent", "public.identity_head vs public.identity_current"],
+  ["identity.analystRunsBound", "identity_cognition_latches (REQUIRED) vs identity_pins, identity_versions, analyst evidence"],
+  ["identity.verifierIsolated", "reviewer evidence, identity_pins, NONE latches vs analyst evidence"],
+];
+const source = (id: string): string => IDENTITY_CHECK_SOURCES.find(([k]) => k === id)![1];
+
+/** KJ-P7B-1 (ADR-0022 section 11). Group A store invariants never depend on cognition having run; Group B reports
+ *  NO_OBSERVATION (UNKNOWN, P3, silent) until a qualifying execution exists. Cognition OFF can never raise P0/P1. */
+function evaluateIdentityCognition(s: IdentitySnapshot, checkedAt: string, checks: CheckResult[]): void {
+  const c = s.cognition;
+  if (isUnavailable(c)) {
+    for (const [id, src] of IDENTITY_CHECK_SOURCES.slice(2)) checks.push(unknownFromUnavailable(id, c.reason, src, checkedAt));
+    return;
+  }
+  const invariant = (id: string, observed: string[], ok: string, bad: string) =>
+    checks.push(check(id, observed.length === 0 ? "HEALTHY" : "CRITICAL", source(id), observed.length === 0 ? ok : `${observed.length} ${bad}`, checkedAt, { observed, expected: [] }));
+  invariant("identity.currentDigestParity", c.digestParityFailures, "every identity version's stored digests equal kerneljson:identity-core/v1",
+    "identity version(s) whose stored digests differ from kerneljson:identity-core/v1");
+  invariant("identity.singleCurrentPerTenant", c.tenantsWithMultipleCurrent, "at most one current identity per tenant",
+    "tenant(s) with more than one current identity");
+  invariant("identity.headEqualsCurrent", c.headCurrentMismatches, "every identity head is its current activated version",
+    "identity/identities whose head is not the current activated version");
+  checks.push(
+    c.requiredLatches === 0
+      ? check("identity.analystRunsBound", "UNKNOWN", source("identity.analystRunsBound"),
+        "NO_OBSERVATION: no REQUIRED analyst latch exists (cognition OFF or not yet run) — nothing consumed identity", checkedAt)
+      : check("identity.analystRunsBound", c.unboundRequired.length === 0 ? "HEALTHY" : "CRITICAL", source("identity.analystRunsBound"),
+        c.unboundRequired.length === 0
+          ? `every one of ${c.requiredLatches} REQUIRED analyst latch(es) is bound: pin, pinned version, projection and evidence verify`
+          : `${c.unboundRequired.length} REQUIRED analyst latch(es) do not verify — a model may have received identity bytes that are not provably governed`,
+        checkedAt, { observed: c.unboundRequired, expected: [] }),
+  );
+  checks.push(
+    c.isolationViolations.length > 0
+      ? check("identity.verifierIsolated", "CRITICAL", source("identity.verifierIsolated"),
+        `${c.isolationViolations.length} identity isolation violation(s)`, checkedAt, { observed: c.isolationViolations, expected: [] })
+      : !c.contractActive || c.contractRuntimeRecords === 0
+        ? check("identity.verifierIsolated", "UNKNOWN", source("identity.verifierIsolated"),
+          "NO_OBSERVATION: no mission runtime record under the identity cognition contract yet", checkedAt)
+        : check("identity.verifierIsolated", "HEALTHY", source("identity.verifierIsolated"),
+          `no identity on the reviewer or outside the analyst across ${c.contractRuntimeRecords} contract-era runtime record(s)`, checkedAt),
+  );
 }
 
 // ---------------------------------------------------------------------------

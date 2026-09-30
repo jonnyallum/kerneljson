@@ -5,7 +5,8 @@
 Primary Identity is live in production as governed, durable KernelJSON state (ADR-0021). Tenant
 `5f970749-7507-894b-a2e4-872ce20a94b7` has exactly one active identity, **Kernel v1**. It was bootstrapped
 through the real admission door and approved by the HUMAN operator through the Telegram approval card. No
-cognition consumes it yet: P7B owns that, and Class C/D stays closed until P7B G13.
+cognition consumes it yet: P7B owns that. Class C/D stays closed through P7B and after it: P7B G13 only marks
+P7B live qualification complete and does not unfreeze C/D (erratum 29/09/2026, ADR-0021 and ADR-0022 section 14).
 
 ## Release and provenance
 
@@ -241,7 +242,9 @@ because policy blocks first.
   - explicit `identity.*` alert-policy rows;
   - a database-side twin of the canonical digest (parity) before any cognition pinning or evidence binding
     of identity;
-  - Class C/D stays frozen; `set_identity_freeze(…, false)` belongs to P7B G13 only.
+  - Class C/D stays frozen through and after P7B. G13 is only "P7B live qualification complete"; any
+    `set_identity_freeze(…, false)` needs its own separately authorised phase, review and evidence
+    (corrected 29/09/2026, see the ADR-0021 erratum and ADR-0022 section 14).
 - **Grok's accepted residuals:** candidate state `APPLIED` currently unused; the global 64 KiB gateway body
   cap; a single-HUMAN approval (the door principal is both bootstrap owner and approver); the advisory locks
   are not mutation-tested (the primary key and compare-and-swap backstop them).
