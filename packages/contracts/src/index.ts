@@ -24,3 +24,4 @@ export * from "./mission.js";
 export * from "./canonical-memory.js";
 export * from "./primary-identity.js";
 export * from "./identity-cognition.js";
+export * from "./reflection.js";

@@ -34,6 +34,9 @@ jobs:
           pnpm test --reporter=default --reporter=json --outputFile=artifacts/local/tests.json
           pnpm test:baseline
       - run: pnpm build
+      - name: Reflection pure-contract mutation checks
+        timeout-minutes: 5
+        run: node scripts/mutation-check-reflection.mjs
       - name: Faculty authority mutation checks
         run: node scripts/mutation-check-faculties.mjs
       # KJ-P7A: every primary-identity authority rule must be proven by a test that FAILS when the rule

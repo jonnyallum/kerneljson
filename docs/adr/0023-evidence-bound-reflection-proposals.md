@@ -1,6 +1,6 @@
 # ADR-0023: Evidence-bound reflection proposals
 
-Status: PROPOSED — design only; no implementation or production activation.
+Status: PROPOSED — K1 contracts/pure verification implemented; persistence and execution pending. No production activation.
 Date: 30 September 2026.
 
 ## 1. Problem and first deliverable
@@ -61,6 +61,13 @@ Duplicate JSON keys and unknown fields are refused before normalization. Maximum
 encoded input: 1 KiB UTF-8. Compare replay requests using canonical parsed bytes;
 the same admission key with a different semantic input refuses as it does today.
 
+K1 parser decision: both public payloads are flat objects of string values only.
+A bounded JSON string-token scanner decodes keys before checking uniqueness, then
+strict schemas validate the object. Arrays, nested objects, scalar non-string values,
+trailing data, NUL and lone surrogates refuse. The 1 KiB UTF-8 cap applies before
+scanning. No general-purpose recursive parser or new dependency is required.
+Disposition idempotency keys use UUIDs. Parsing errors expose a fixed code only.
+
 The output `ReflectionProposalV1` contains kernel-assigned proposal/reflection-task/
 source-task/tenant IDs; authenticated requester ID; focus; schema and policy versions;
 source binding epoch/release; evidence references and digests; verified analyst and
@@ -83,6 +90,14 @@ source-manifest digest excludes proposal/request IDs and creation time. Allocate
 proposal identity/time once in the producing transaction and return the committed
 record on replay rather than regenerate them. The exact field allowlist must be
 embodied by strict K1 schemas, including explicit nulls instead of absent fields.
+
+K1 represents source provenance as a nested strict `ReflectionSourceV1` object
+inside the proposal. It includes task/plan/outcome/binding digests, the contract
+marker epoch, sorted evidence references, both requested and response model IDs,
+and a mode-discriminated identity reference (null for NONE). No source text is
+included. Verification recomputes continuity from the persisted mission, faculty,
+identity and memory digests and requires equality with the immutable call binding.
+Memory assembly ID and digest are both present or both null.
 
 Observation codes are factual, versioned enums: `CANONICAL_COMPLETION_VERIFIED`,
 `ANALYST_RECEIPT_BOUND`, `REVIEWER_ISOLATED`. Evaluation-request codes map one-to-one
@@ -148,6 +163,17 @@ design before implementation; do not insert a proposal and then optimistically
 declare a task complete. A deferred constraint must reject a committed proposal
 whose producing task is not canonically COMPLETED with its matching evidence.
 
+Transaction decision for K2/K3: `Ledger.write` owns its transaction and is not a
+caller-transaction API. Follow `identity/complete.ts`'s existing kernel completion
+pattern with a reflection-specific `completeReflectionTaskTx` on a caller-owned
+`pg.PoolClient`; it must never commit itself. Under the producing-task lock, the
+kernel checks resolved effects, VERIFYING state, immutable admission/binding,
+source predicates and proposal integrity, then writes the proposal, strict evidence,
+outcome, completion event and terminal task update atomically. Do not weaken the
+generic verifier or add blanket acceptance of reflection evidence. K2 must prove
+the deferred invariant independently of this helper; K3 must qualify cancellation
+and existing workflow behavior. This is a planned integration, not K1 DB code.
+
 The lock order is producing task, then proposal/disposition. Source rows used here
 are immutable completed records; never lock or update the source as a new authority.
 Completion rereads the producing task's state in that transaction, so cancellation
@@ -211,3 +237,13 @@ No production feature flag or deployment is introduced by this document. Later
 code must remain unreachable from production admission until its independent
 implementation qualification and explicitly authorised activation window. This
 design does not authorise a P8 production migration, schedule or unfreeze.
+
+Deployment decision for K3/L1: K1 does not register a recipe, admission route or
+Restate handler. Later wiring requires an explicit default-OFF capability gate at
+both admission and direct workflow entry. Persist eligibility with the canonical
+admission/binding; a direct invocation must not manufacture it. New/uncommitted
+work requires both persisted eligibility and an enabled gate. A committed result
+is read and integrity-checked before consulting the current gate or requalifying
+its source, so disabling the feature never changes a previously committed result.
+K3 must test direct-entry refusal, cancellation and this replay order; L1 separately
+authorises deployment and activation. An absent UI command is not the gate.

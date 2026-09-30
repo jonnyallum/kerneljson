@@ -1,6 +1,6 @@
 # KJ-P8-A: resumable implementation plan
 
-Status: design checkpoint; no P8 implementation or production work executed.
+Status: K1 contracts and pure verification checkpoint; K2–K4 pending. No production work executed.
 Date: 30 September 2026.
 Contract: [ADR-0023](../adr/0023-evidence-bound-reflection-proposals.md).
 Programme authority and restart state: [new-system checkpoint](https://github.com/jonnyallum/new-system/blob/main/docs/migration/KJ_P8_RESTART_CHECKPOINT.md).
@@ -10,8 +10,8 @@ Programme authority and restart state: [new-system checkpoint](https://github.co
 | ID | Deliverable and completion evidence | State |
 |---|---|---|
 | D0 | P7B result and restart pointer committed/pushed; historical pointers superseded | DONE: new-system `1e32de9e7fce0f17eada46644a586cc6e83743dc` |
-| D1 | ADR, refusal matrix and bounded implementation sequence committed/pushed | This design change |
-| K1 | Strict contracts, canonical manifests, deterministic projection and pure verifier; focused positive/refusal tests | NOT STARTED |
+| D1 | ADR, refusal matrix and bounded implementation sequence committed/pushed | DONE: `9d95aa91a76b191a5af9bcecf727dd28701f6699` |
+| K1 | Strict contracts, canonical manifests, deterministic projection and pure verifier; focused positive/refusal tests | DONE locally: 263 regression tests, 14 mutations; see K1 qualification note |
 | K2 | Real-Postgres schema, RLS/ACLs, immutability, deferred completion invariant and concurrency; migration rollback qualification | NOT STARTED |
 | K3 | Explicit HUMAN admission/control and durable workflow; proposal/evidence/completion atomicity and cancellation | NOT STARTED |
 | K4 | Real Restate crash/replay, behavioral mutations, full regression, image/topology qualification | NOT STARTED |
@@ -20,7 +20,8 @@ Programme authority and restart state: [new-system checkpoint](https://github.co
 Do not skip from D1 to production. A draft design is not an implemented contract.
 Implementation review must resolve the transaction and deployment seams listed
 below against actual interfaces before adding a migration or admission recipe.
-No acceptance or test result is claimed for K1–K4 yet.
+K1 results are recorded in [its qualification note](KJ_P8A_K1_QUALIFICATION.md).
+No acceptance or test result is claimed for K2–K4 yet.
 
 ## K1: contract and verifier
 
@@ -66,18 +67,14 @@ authentication, freshness and membership checks. Do not overload approve to mean
 acknowledge or add a second approval store. Record disposition after completion,
 as a distinct immutable event with its own idempotency namespace.
 
-Resolve these concrete integration questions before implementation:
+Integration decisions (ADR-0023); implementation/qualification remains K2/K3:
 
-1. How does the current Ledger API permit proposal insertion and verified completion
-   on one caller-owned transaction? Follow existing identity completion patterns;
-   if adaptation is needed, qualify its effect on existing workflows first.
-2. How is the recipe unavailable in production before L1, including direct Restate
-   entry points? An absent UI command alone is not a gate. Design a fail-closed
-   admission/execution gate whose replay behavior is explicit; do not introduce a
-   switch that changes previously committed results.
-3. How will the strict objective JSON parser detect duplicate keys before ordinary
-   JSON parsing discards them? Select/test a small bounded parser; do not hand-wave
-   this requirement or silently weaken it to last-key-wins.
+1. Use a reflection-specific kernel transaction completion helper following
+   `identity/complete.ts`. Do not change generic completion into blanket acceptance.
+2. Default-OFF admission and direct-entry gates plus persisted eligibility; check
+   committed replay first, so switching off cannot alter existing durable results.
+3. K1 implements flat string-object parsing, decoded-key duplicate detection and
+   strict schemas. Input byte bounds precede scanning; malformed input is refused.
 
 Exit: gateway/ledger/control integration tests, known forbidden-store write probes,
 and cancellation race tests. Commit and push before K4.

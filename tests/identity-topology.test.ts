@@ -100,6 +100,16 @@ describe("B4 identity import fence (runtime import graph)", () => {
   it("completion verification stays pure: contracts and the canonical digest only", () => {
     const r = [...reach(EVIDENCE_VERIFY)].filter((f) => !f.startsWith("packages/contracts/"));
     expect(r).toEqual(["services/kernel/src/identity/canonical.ts"]);
-    expect(importersOf(EVIDENCE_VERIFY)).toEqual(["services/kernel/src/health/collect.ts", "services/kernel/src/ledger.ts", "services/kernel/src/mission/run.ts"]);
+    expect(importersOf(EVIDENCE_VERIFY)).toEqual(["services/kernel/src/health/collect.ts", "services/kernel/src/ledger.ts", "services/kernel/src/mission/run.ts", "services/kernel/src/reflection/verify.ts"]);
+  });
+  it("reflection source verification cannot reach model, prompt, identity assembly or persistence wiring", () => {
+    const from = "services/kernel/src/reflection/verify.ts", r = [...reach(from)];
+    expect(r).toContain(EVIDENCE_VERIFY);
+    expect(r.filter(f => [PROJECTION, BINDING, "services/kernel/src/ledger.ts",
+      "services/kernel/src/mission/prompts.ts", "services/kernel/src/mission/analyst-assembly.ts",
+      "services/kernel/src/mission/run.ts", "services/kernel/src/index.ts"].includes(f)
+      || f.startsWith("packages/models/") || /(?:store|workflow|registry)\.ts$/.test(f))).toEqual([]);
+    // K1 exposes no production execution entry point. K3 must explicitly review this fence.
+    expect(importersOf(from)).toEqual([]);
   });
 });
