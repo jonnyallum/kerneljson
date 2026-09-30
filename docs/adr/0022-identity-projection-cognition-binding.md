@@ -989,3 +989,128 @@ does not pretend to reconstruct prompt bytes that no longer exist.
 - **Replay tests.** P7B-1 uses the established journal-simulated replay and lost-journal pattern
   (`tests/mission-workflow.integration.test.ts`) together with the existing identity-workflow Restate test. A
   full live-Restate mission proof, if needed, belongs to a later qualification window.
+
+
+## Erratum, 30/09/2026: KJ-P7B-1 D1 call-time assembly binding — confirmed contract
+
+This implementation-discovery erratum appends the requested contract and planned tests verbatim.
+The sealed design at `2dd2af5909b8fc49d208834ba9d2a99148ba5daa` and the preceding
+29/09/2026 erratum remain unchanged. This contract governs completion verification where the
+sealed text implies reconstruction of the exact outgoing request.
+
+Decision: CALL-TIME BINDING + COMPLETION CROSS-CHECK.
+Do not persist full ModelRequest or prompt/memory text.
+
+The corrected contract is:
+
+1. `assembleAnalystRequest` constructs the exact ModelRequest.
+
+2. Immediately before provider invocation,
+   `IdentityPort.authorize` recomputes and verifies:
+
+   assembly_digest =
+   sha256(canonicalStringify({
+     messages: request.messages,
+     maxOutputTokens: request.maxOutputTokens
+   }))
+
+   against the exact outgoing request object.
+
+3. `callModel` receives that exact request.
+
+4. Existing `validateModelResult` continues to prove:
+
+   receipt.requestDigest ==
+   modelDigest({
+     provider: receipt.provider,
+     model: receipt.model,
+     request
+   })
+
+   therefore request_digest remains the binding of the complete ModelRequest,
+   provider and model.
+
+5. Use the existing `callModel(..., record)` hook to persist an immutable
+   MODEL_CALLED call-binding record after the validated provider result.
+
+   The binding contains only non-secret provenance/digests, at minimum:
+
+   - task_id
+   - step_id
+   - call_id
+   - provider
+   - model
+   - request_digest
+   - assembly_digest
+   - continuity_digest
+
+   Do NOT persist:
+   - ModelRequest
+   - messages
+   - memory text
+   - identity projection text beyond what is already deliberately pinned
+   - credentials
+   - provider request bodies
+
+6. The analyst runtime evidence carries the same:
+
+   - call_id
+   - request_digest
+   - assembly_digest
+   - continuity_digest
+   - identity cognition provenance
+
+7. Completion verification does NOT reconstruct the prompt.
+
+   Instead, from persisted DB state it verifies:
+
+   - exactly one applicable MODEL_CALLED binding for the analyst call;
+   - runtime evidence call_id equals MODEL_CALLED call_id;
+   - runtime evidence request_digest equals MODEL_CALLED request_digest;
+   - runtime evidence assembly_digest equals MODEL_CALLED assembly_digest;
+   - runtime evidence continuity_digest equals MODEL_CALLED continuity_digest;
+   - runtime identity provenance equals the canonical latch/pin;
+   - NONE / REQUIRED / reviewer-isolation rules still hold.
+
+8. `verifyIdentityEvidence` remains pure.
+
+   It consumes persisted latch/pin/evidence/model-call-binding data only.
+
+   It must not import:
+   - memory assembler
+   - identity projection assembler
+   - analyst prompt builder
+   - ModelPort
+
+9. Ledger remains completion authority.
+
+   The MODEL_CALLED record is evidence/binding, not authority.
+
+10. P5 retract semantics remain intact because only digests and identifiers are
+    durable. Retracted memory content is not copied into immutable model-call evidence.
+
+### D9
+
+ADR-0021 D9 remains satisfied.
+
+The evidence-bound assembly_digest is computed and verified against the exact outgoing request at call time and then durably recorded.
+
+Completion verifies the durable call-time binding rather than pretending to reconstruct unavailable prompt bytes.
+
+### Planned tests
+
+Add planned tests proving:
+
+- changing one outgoing system/user message byte changes assembly_digest;
+- changing maxOutputTokens changes assembly_digest;
+- call-time authorize sees the exact request passed to ModelPort.generate;
+- MODEL_CALLED binding receives the same assembly_digest;
+- validated receipt request_digest binds the same full ModelRequest;
+- runtime evidence digest differing from MODEL_CALLED is refused at completion;
+- call_id mismatch is refused;
+- request_digest mismatch is refused;
+- continuity_digest mismatch is refused;
+- no prompt text or memory text appears in MODEL_CALLED payload;
+- P5 memory retraction does not require mutation of immutable model-call evidence.
+
+No code yet. Implementation remains stopped pending approval to resume.
