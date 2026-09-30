@@ -1,0 +1,565 @@
+{
+  "schema": "kerneljson:p7b-live-qualification-record/v1",
+  "date": "2026-09-30",
+  "result": "P7B1_PASS_P7B2_PASS_G13_COMPLETE",
+  "deployedRelease": "cebbb0dfe32e913ac3d4cd2860abce6ca9ecf05e",
+  "cognitionEnabled": true,
+  "classCD": "FROZEN",
+  "finalRoutes": {
+    "reviewer": "openrouter/anthropic/claude-sonnet-5",
+    "analyst": "deepseek/deepseek-flash"
+  },
+  "activation": {
+    "evidence": {
+      "baselineBindings": 52,
+      "ci": "https://github.com/jonnyallum/kerneljson/actions/runs/36779293871",
+      "doorImage": "sha256:7450971fbc1292755701de842bf108613152468e6619af2a2853b001dcd7b553",
+      "classCD": "frozen",
+      "window": "2026-09-30 identity cognition OFF deployment",
+      "phase": "KJ-P7B-1",
+      "baseline": "zero nonterminal tasks, pins, provenance failures, poison and open P0/P1; approved Kernel v1; recurring schedule enabled/v2",
+      "migrationSha256": "29eb36204b4d9f49a47a0ad4d908d26c4ed968213153da09b5580971defa770a",
+      "baselineAdmissions": 51,
+      "workerImage": "sha256:1501b7217162ca450a9511072a06cd2fabeb1a531f716ebfded5cd82717eb8ff",
+      "priorRelease": "4127361860700085453f86aa09adfa7bf81ef7d3",
+      "ciTestedCommit": "cebbb0dfe32e913ac3d4cd2860abce6ca9ecf05e",
+      "preparedAt": "2026-09-30T22:01:08.3479032Z",
+      "quiescence": "HTTP door stopped; Telegram and scheduler use door; no pending task workflows; direct localhost ingress held by operator",
+      "rollback": "/opt/kerneljson/runtime/p7b1-20260930-cebbb0d",
+      "priorEpoch": 12,
+      "ciConclusion": "success",
+      "cognitionEnabled": false,
+      "tree": "d546b62896f3b2633b7ff6b50e4aa0c07605cb20",
+      "historicalUnmaterialisedAdmissions": 20,
+      "operator": "Jonny-authorised Codex session",
+      "config": "runtime_env_merge.py independently verified all other keys preserved; signing and bearer parity"
+    },
+    "requestId": "98f4f62c-d830-45f0-a08c-7ac218e2abe3",
+    "releaseId": "cebbb0dfe32e913ac3d4cd2860abce6ca9ecf05e"
+  },
+  "offProof": {
+    "taskId": "45064c50-9fa2-818d-a299-a867844071cc",
+    "baselineRelease": "4127361860700085453f86aa09adfa7bf81ef7d3",
+    "proof": "OFF_LIVE_JOURNAL_AND_VALIDATED_RECEIPT",
+    "analystBytesEqual": true,
+    "reviewerBytesEqual": true,
+    "analystAssemblyDigest": "cb479c3b3a5dc0c117201327f6b7367b39013b62bd3020f991203412db21d5ec",
+    "reviewerAssemblyDigest": "79d2288508395e3fd9d8a018650db12c41dff0556327018270cfc7fbe49b9931",
+    "analystRequestDigest": "4a8d6cfbe8e15f21b5b645cba91a3c3c5a12524be0cc64785d2cc33faf3b3eeb",
+    "reviewerRequestDigest": "395e6fc341606648f2b466a4d764b298a3fb946bf55defedddc74c6e70765ec0",
+    "memoryDigest": "e5c2d5b9818229d85849f5783c0437ece0c210094005c76c4b8a7bc3bec01e27",
+    "mode": "NONE",
+    "identityPins": 0,
+    "modelCalled": 1,
+    "reviewerIsolated": true
+  },
+  "requiredProof": {
+    "proof": "REQUIRED_PASS",
+    "results": [
+      {
+        "taskId": "9b623096-95d7-88db-a41b-7436ef54ab6e",
+        "analystStepId": "97717dac-7c03-823c-acab-0b4dc126b610",
+        "reviewerStepId": "6a9fd780-4c6f-8fb4-a03f-13656e229243",
+        "epoch": 13,
+        "canonicalCompletion": true,
+        "mode": "REQUIRED",
+        "identityPins": 1,
+        "modelCalled": 1,
+        "identityVersionId": "08be5e20-2606-4809-b81f-11552bb67502",
+        "identityCoreDigest": "4f6dc581f06701c207d5cdf8bc1ced59fa0741c15bab18c30537d0b17a7bf9ed",
+        "projectionDigest": "c154e47c1533a81e01e9605cac1150151af2c734ab497d426f79740b2b93b7d3",
+        "identityStableDigest": "0dd4fba25dd77b666c1f5ac0ed07964e14f58d27d6c3ab838ae4f8ef4560948a",
+        "facultyStableDigest": "b6b82a82b43ed39b9fd786336095f7a786be6761874a1e7764f718daf96f3fe9",
+        "semanticDigest": "33ecb79fa0c3aac873c82cef2edb2493bc27fbe7abe191f6568a711d48847795",
+        "repoHead": "cebbb0dfe32e913ac3d4cd2860abce6ca9ecf05e",
+        "factsDigest": "f38af5865815e22289ac6b298d929f9499704514c0a6b57c7a970fcd9d1487cb",
+        "memoryDigest": "e5c2d5b9818229d85849f5783c0437ece0c210094005c76c4b8a7bc3bec01e27",
+        "assemblyDigest": "829e980914329bea9b33bdd5179fbd99d3c49b7a24bf04a7eff5fee080967a37",
+        "continuityDigest": "f0c6ece24dcdcae9fd018097fee7d44a043499a018be7f95fe8d44a44ef774fe",
+        "provider": "deepseek",
+        "model": "deepseek-flash",
+        "responseModel": "deepseek-flash",
+        "providerRequestId": "0ac69ef9-78ee-4e60-a588-c07e66665a4e",
+        "requestDigest": "80d125a4dc0770d7f6894593f87f510d6e0160acb5304cddf8d3430835292814",
+        "reviewerProvider": "openrouter",
+        "reviewerModel": "anthropic/claude-sonnet-5",
+        "reviewerIsolated": true,
+        "versionParity": true,
+        "receiptBound": true
+      }
+    ]
+  },
+  "g2Proof": {
+    "at": "2026-09-30T22:11:14.878Z",
+    "proof": "G2_PASS",
+    "mode": "LIVE_CODE_COPIED_SNAPSHOT_IN_MEMORY",
+    "productionMutations": 0,
+    "notifications": 0,
+    "results": [
+      {
+        "id": "identity.completedTasksHaveActivation",
+        "status": "CRITICAL",
+        "severity": "P1",
+        "notify": true
+      },
+      {
+        "id": "identity.profilesHaveActivatedIdentity",
+        "status": "DEGRADED",
+        "severity": "P2",
+        "notify": true
+      },
+      {
+        "id": "identity.currentDigestParity",
+        "status": "CRITICAL",
+        "severity": "P1",
+        "notify": true
+      },
+      {
+        "id": "identity.singleCurrentPerTenant",
+        "status": "CRITICAL",
+        "severity": "P0",
+        "notify": true
+      },
+      {
+        "id": "identity.headEqualsCurrent",
+        "status": "CRITICAL",
+        "severity": "P1",
+        "notify": true
+      },
+      {
+        "id": "identity.analystRunsBound",
+        "status": "CRITICAL",
+        "severity": "P0",
+        "notify": true
+      },
+      {
+        "id": "identity.verifierIsolated",
+        "status": "CRITICAL",
+        "severity": "P1",
+        "notify": true
+      },
+      {
+        "id": "identity.analystRunsBound",
+        "status": "NO_OBSERVATION",
+        "severity": "P3",
+        "notify": false
+      },
+      {
+        "id": "identity.verifierIsolated",
+        "status": "NO_OBSERVATION",
+        "severity": "P3",
+        "notify": false
+      }
+    ],
+    "databaseUnavailable": "ALL_7_UNKNOWN_P3"
+  },
+  "g5Proof": {
+    "proof": "G5_PASS",
+    "results": [
+      {
+        "taskId": "8e925614-fa52-88fc-a3ed-f640de052bec",
+        "analystStepId": "f16c646a-236e-8da4-a2e3-2ace760aa0b1",
+        "reviewerStepId": "7fd7a9c8-7b61-8256-a2d8-f9d91c95a719",
+        "epoch": 13,
+        "canonicalCompletion": true,
+        "mode": "REQUIRED",
+        "identityPins": 1,
+        "modelCalled": 1,
+        "identityVersionId": "08be5e20-2606-4809-b81f-11552bb67502",
+        "identityCoreDigest": "4f6dc581f06701c207d5cdf8bc1ced59fa0741c15bab18c30537d0b17a7bf9ed",
+        "projectionDigest": "c154e47c1533a81e01e9605cac1150151af2c734ab497d426f79740b2b93b7d3",
+        "identityStableDigest": "0dd4fba25dd77b666c1f5ac0ed07964e14f58d27d6c3ab838ae4f8ef4560948a",
+        "facultyStableDigest": "b6b82a82b43ed39b9fd786336095f7a786be6761874a1e7764f718daf96f3fe9",
+        "semanticDigest": "33ecb79fa0c3aac873c82cef2edb2493bc27fbe7abe191f6568a711d48847795",
+        "repoHead": "cebbb0dfe32e913ac3d4cd2860abce6ca9ecf05e",
+        "factsDigest": "f38af5865815e22289ac6b298d929f9499704514c0a6b57c7a970fcd9d1487cb",
+        "memoryDigest": "e5c2d5b9818229d85849f5783c0437ece0c210094005c76c4b8a7bc3bec01e27",
+        "assemblyDigest": "829e980914329bea9b33bdd5179fbd99d3c49b7a24bf04a7eff5fee080967a37",
+        "continuityDigest": "f0c6ece24dcdcae9fd018097fee7d44a043499a018be7f95fe8d44a44ef774fe",
+        "provider": "deepseek",
+        "model": "deepseek-flash",
+        "responseModel": "deepseek-flash",
+        "providerRequestId": "f49998ec-f70f-47f2-9843-fa12ae2e090d",
+        "requestDigest": "9b69d19a02b786238f502c6a30276cc7356afe5fd6235189b0d5ed06af712fb9",
+        "reviewerProvider": "openrouter",
+        "reviewerModel": "anthropic/claude-sonnet-5",
+        "reviewerIsolated": true,
+        "versionParity": true,
+        "receiptBound": true
+      },
+      {
+        "taskId": "a1d5cabb-17c8-88eb-abaa-4dfbdf00bf6d",
+        "analystStepId": "e2c6468c-c63f-8a4e-a90d-40aa6c611076",
+        "reviewerStepId": "85f6afb5-1066-8964-ae98-e6f61d71f00a",
+        "epoch": 13,
+        "canonicalCompletion": true,
+        "mode": "REQUIRED",
+        "identityPins": 1,
+        "modelCalled": 1,
+        "identityVersionId": "08be5e20-2606-4809-b81f-11552bb67502",
+        "identityCoreDigest": "4f6dc581f06701c207d5cdf8bc1ced59fa0741c15bab18c30537d0b17a7bf9ed",
+        "projectionDigest": "c154e47c1533a81e01e9605cac1150151af2c734ab497d426f79740b2b93b7d3",
+        "identityStableDigest": "0dd4fba25dd77b666c1f5ac0ed07964e14f58d27d6c3ab838ae4f8ef4560948a",
+        "facultyStableDigest": "b6b82a82b43ed39b9fd786336095f7a786be6761874a1e7764f718daf96f3fe9",
+        "semanticDigest": "33ecb79fa0c3aac873c82cef2edb2493bc27fbe7abe191f6568a711d48847795",
+        "repoHead": "cebbb0dfe32e913ac3d4cd2860abce6ca9ecf05e",
+        "factsDigest": "f38af5865815e22289ac6b298d929f9499704514c0a6b57c7a970fcd9d1487cb",
+        "memoryDigest": "e5c2d5b9818229d85849f5783c0437ece0c210094005c76c4b8a7bc3bec01e27",
+        "assemblyDigest": "829e980914329bea9b33bdd5179fbd99d3c49b7a24bf04a7eff5fee080967a37",
+        "continuityDigest": "f0c6ece24dcdcae9fd018097fee7d44a043499a018be7f95fe8d44a44ef774fe",
+        "provider": "openrouter",
+        "model": "anthropic/claude-sonnet-5",
+        "responseModel": "anthropic/claude-sonnet-5",
+        "providerRequestId": "gen-1790806324-GrEK7TlMeqkbwWlzzghs",
+        "requestDigest": "41f4081c9671a8bfa8fb8873a4e231b0dda1cd0ca0201ddf16d307b14661acbc",
+        "reviewerProvider": "deepseek",
+        "reviewerModel": "deepseek-flash",
+        "reviewerIsolated": true,
+        "versionParity": true,
+        "receiptBound": true
+      }
+    ]
+  },
+  "finalHealth": {
+    "at": "2026-09-30T22:13:59.538Z",
+    "release": "cebbb0dfe32e913ac3d4cd2860abce6ca9ecf05e",
+    "overall": "DEGRADED",
+    "criticalIssues": 0,
+    "degradedIssues": 1,
+    "lastFireAtUtc": "2026-09-30T08:00:00Z",
+    "nextWakeAtUtc": "2026-10-01T08:00:00.014Z",
+    "domains": {
+      "authority": {
+        "status": "DEGRADED",
+        "checks": [
+          {
+            "id": "authority.bindingReleaseConsistent",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "authority.admittedFiresHaveCanonicalTasks",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "authority.admittedFiresMaterialised",
+            "status": "DEGRADED"
+          },
+          {
+            "id": "authority.noReleaseMismatchIncidents",
+            "status": "HEALTHY"
+          }
+        ]
+      },
+      "admission": {
+        "status": "HEALTHY",
+        "checks": [
+          {
+            "id": "admission.doorReachable",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "admission.humanOperatorPresent",
+            "status": "HEALTHY"
+          }
+        ]
+      },
+      "scheduler": {
+        "status": "HEALTHY",
+        "checks": [
+          {
+            "id": "scheduler.scheduleEnabled",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "scheduler.activeVersionExpected",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "scheduler.recentFireExists",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "scheduler.noDuplicateFireWindow",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "scheduler.noOrphanPlannedFire",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "scheduler.admittedFiresBoundConsistently",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "scheduler.nextWakeArmedAndFuture",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "scheduler.noZeroDelayLoop",
+            "status": "HEALTHY"
+          }
+        ]
+      },
+      "execution": {
+        "status": "HEALTHY",
+        "checks": [
+          {
+            "id": "execution.workerRegistered",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "execution.capabilityServiceRegistered",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "execution.noWorkerRestartLoop",
+            "status": "HEALTHY"
+          }
+        ]
+      },
+      "restate": {
+        "status": "HEALTHY",
+        "checks": [
+          {
+            "id": "restate.reachable",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "restate.expectedServicesRegistered",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "restate.noStuckInvocation",
+            "status": "HEALTHY"
+          }
+        ]
+      },
+      "database": {
+        "status": "HEALTHY",
+        "checks": [
+          {
+            "id": "database.reachable",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "database.scheduleReadsSucceed",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "database.taskReadsSucceed",
+            "status": "HEALTHY"
+          }
+        ]
+      },
+      "evidence": {
+        "status": "HEALTHY",
+        "checks": [
+          {
+            "id": "evidence.mostRecentCompletedTaskHasEvidence",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "evidence.toolReceiptPresentWhereRequired",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "evidence.digestMatchesApproved",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "evidence.boundToCorrectTask",
+            "status": "HEALTHY"
+          }
+        ]
+      },
+      "releaseParity": {
+        "status": "HEALTHY",
+        "checks": [
+          {
+            "id": "releaseParity.selfReportedReleaseKnown",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "releaseParity.matchesExpected",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "releaseParity.recentBindingsConsistent",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "releaseParity.noBoundReleaseRejection",
+            "status": "HEALTHY"
+          }
+        ]
+      },
+      "productionConfig": {
+        "status": "HEALTHY",
+        "checks": [
+          {
+            "id": "productionConfig.armNextExpected",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "productionConfig.approvedDigestPresentAndValid",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "productionConfig.scheduleIdentityMatchesCanonical",
+            "status": "HEALTHY"
+          }
+        ]
+      },
+      "legacyAuthority": {
+        "status": "UNKNOWN",
+        "checks": [
+          {
+            "id": "legacyAuthority.b1FreezeObservable",
+            "status": "UNKNOWN"
+          }
+        ]
+      },
+      "identity": {
+        "status": "HEALTHY",
+        "checks": [
+          {
+            "id": "identity.completedTasksHaveActivation",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "identity.profilesHaveActivatedIdentity",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "identity.currentDigestParity",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "identity.singleCurrentPerTenant",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "identity.headEqualsCurrent",
+            "status": "HEALTHY"
+          },
+          {
+            "id": "identity.analystRunsBound",
+            "status": "HEALTHY",
+            "observed": []
+          },
+          {
+            "id": "identity.verifierIsolated",
+            "status": "HEALTHY"
+          }
+        ]
+      }
+    }
+  },
+  "finalState": {
+    "at": "2026-09-30T22:14:00.296Z",
+    "epoch": 13,
+    "release_id": "cebbb0dfe32e913ac3d4cd2860abce6ca9ecf05e",
+    "first_release_epoch": 13,
+    "nonterminal": 0,
+    "unfrozen": 0,
+    "parity_failures": 0,
+    "poison": 0,
+    "latches": [
+      {
+        "mode": "NONE",
+        "count": 1
+      },
+      {
+        "mode": "REQUIRED",
+        "count": 3
+      }
+    ],
+    "recent": [
+      {
+        "id": "a1d5cabb-17c8-88eb-abaa-4dfbdf00bf6d",
+        "status": "COMPLETED",
+        "mode": "REQUIRED"
+      },
+      {
+        "id": "8e925614-fa52-88fc-a3ed-f640de052bec",
+        "status": "COMPLETED",
+        "mode": "REQUIRED"
+      },
+      {
+        "id": "9b623096-95d7-88db-a41b-7436ef54ab6e",
+        "status": "COMPLETED",
+        "mode": "REQUIRED"
+      },
+      {
+        "id": "45064c50-9fa2-818d-a299-a867844071cc",
+        "status": "COMPLETED",
+        "mode": "NONE"
+      }
+    ],
+    "alerts": []
+  },
+  "finalConfig": {
+    "mode": "verify",
+    "signingParity": true,
+    "bearerParity": true,
+    "changes": {
+      "worker": [
+        "EXPECTED_RELEASE_ID",
+        "KERNELJSON_RELEASE_ID",
+        "KJ_IDENTITY_COGNITION_ENABLED"
+      ],
+      "door": [
+        "KERNELJSON_RELEASE_ID"
+      ],
+      "restate": []
+    },
+    "containers": {
+      "worker": {
+        "image": "sha256:1501b7217162ca450a9511072a06cd2fabeb1a531f716ebfded5cd82717eb8ff",
+        "status": "running",
+        "health": "healthy",
+        "restarts": 0,
+        "ports": {}
+      },
+      "door": {
+        "image": "sha256:7450971fbc1292755701de842bf108613152468e6619af2a2853b001dcd7b553",
+        "status": "running",
+        "health": "healthy",
+        "restarts": 0,
+        "ports": {
+          "8081/tcp": [
+            {
+              "HostIp": "127.0.0.1",
+              "HostPort": "8081"
+            }
+          ]
+        }
+      },
+      "restate": {
+        "image": "sha256:329e32e12059610b681e165161bcd0722d193325b6c893bc46bfec72cd54b595",
+        "status": "running",
+        "health": "healthy",
+        "restarts": 0,
+        "ports": {
+          "8080/tcp": [
+            {
+              "HostIp": "127.0.0.1",
+              "HostPort": "8080"
+            }
+          ],
+          "9070/tcp": [
+            {
+              "HostIp": "127.0.0.1",
+              "HostPort": "9070"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "finalHttpProbes": [
+    200,
+    401,
+    401
+  ]
+}

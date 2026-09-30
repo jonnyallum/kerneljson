@@ -104,6 +104,10 @@ recovery tests. Typecheck, lint, build and topology checks also passed after the
 
 ## Production boundary
 
+This section records the implementation qualification boundary before deployment.
+The subsequently authorised OFF and ON windows are recorded in
+[KJ_P7B_LIVE_RESULT_2026-09-30.md](KJ_P7B_LIVE_RESULT_2026-09-30.md).
+
 No production deployment, migration, activation, configuration change or provider call was performed.
 The feature defaults OFF. Production epoch 13 activation, marker insertion and the P7B-2 live provider
 proofs remain separate windows. Class C/D remains frozen.

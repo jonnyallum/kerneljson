@@ -1,6 +1,9 @@
 # KJ-P7B-1 epoch-13 deployment runbook
 
-Status: prepared, not executed. PR #48 contains the implementation. The production
+Status: executed successfully on 30 September 2026; see
+[P7B live result](KJ_P7B_LIVE_RESULT_2026-09-30.md) for P7B-1 and the subsequent,
+separately authorised P7B-2 window. The sequence below records the OFF window;
+the live result records the final ON configuration. PR #48 contains the implementation. The production
 baseline observed on 30 September 2026 is release
 `4127361860700085453f86aa09adfa7bf81ef7d3`, epoch 12. Cognition stays **false** throughout
 this window. P7B-2 and Class C/D unfreezing are outside this window.
