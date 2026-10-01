@@ -1,8 +1,8 @@
 # KJ-P8 implementation sequence (design only)
 
-Status: DESIGN ONLY, revision 2. Nothing here is authorised for implementation. Each step needs its own explicit
+Status: DESIGN ONLY, revision 2.1. Nothing here is authorised for implementation. Each step needs its own explicit
 authorisation, hostile implementation review and, for production, its own change window. Design: ADR-0023 (PROPOSED,
-revision 2). Revision 1 (`f2b36fa`) was blocked at the hostile design seal; this file follows the remediated ADR.
+revision 2.1). Revision 1 (`f2b36fa`) was blocked at the hostile design seal; this file follows the remediated ADR.
 
 The order is fixed. A step may not start before the one above it has passed its gate.
 

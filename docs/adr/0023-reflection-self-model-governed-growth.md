@@ -1,6 +1,6 @@
 # ADR-0023: Reflection, self-model and governed identity growth (KJ-P8)
 
-Status: PROPOSED, revision 2 (design only). Nothing here is implemented, migrated or deployed.
+Status: PROPOSED, revision 2.1 (design only). Nothing here is implemented, migrated or deployed.
 Date: 01/10/2026.
 Base: canonical `main` `750d5b7926f320d8e9d3f64789b8f7035eaa4f3d`. Production: epoch 13, release `cebbb0d`, cognition
 ON, Class C/D frozen (docs/operations/KJ_P7B_LIVE_RESULT_2026-09-30.md).
@@ -30,6 +30,17 @@ blockers. Revision 2 is a new commit on the same branch; revision 1 is not rewri
 | composite foreign keys | several relationships were bare UUIDs | section 23 |
 | 14-day semantics | read as a threshold with authority | section 14 |
 
+Revision 2.1 is a further docs-only commit on top of revision 2 (`12580fd0b9c36f328c8868d8ddf4a2abcc44cb98`). It
+corrects four defects the author found in revision 2 before the re-seal, and states one residual:
+
+| Revision 2 defect | Corrected in |
+|---|---|
+| the support bound was stated as 6 rows per tenant per 24h; the true bound is 36 | section 11 |
+| the memory excerpt guard left normalisation undefined, so two implementers would differ | section 15.4 |
+| a record that hit the excerpt guard was still stored with its text as an `INELIGIBLE` row | section 15.4 |
+| the adoption binding did not require the approval to be requested from the identity owner | section 18.2 item 4 |
+| residual: expiry between the guard's check and commit | section 17.2 |
+
 Section numbers changed from revision 1: section 18 (P8B adoption mechanics) and section 23 (same-tenant references)
 are new, and the later sections moved down.
 
@@ -51,8 +62,12 @@ These facts constrain the design. Each was read in this worktree; none was exerc
    reach `APPROVED`. The activation guard requires `APPROVED` (or a HELD operator C/D candidate).
 4. **The version guard does not protect model candidates.** `identity_version_guard` binds a version to the
    candidate's proposing task only when `proposed_by_task` is set, and relies on the activation guard for model and
-   Shared Brain origins. A version row moves `identity_head` even when it is never activated (INFERENCE from reading
-   the trigger; not exercised). Section 10 closes this before P8 creates any model candidate.
+   Shared Brain origins. It has no check on the candidate's origin or state. A version row moves `identity_head`
+   even when it is never activated; `identity_current` follows activations and would not move (INFERENCE from
+   reading the trigger; not exercised). This is latent, not reachable through application code today: the only
+   writer, `completeAndActivateIdentity`, inserts the version and the activation in one transaction, the activation
+   guard refuses, and both roll back; and nothing creates model candidates yet. It is reachable by direct SQL or by
+   the worker acting as owner. Section 10 closes it before P8 creates any model candidate.
 5. **The identity-change workflow** creates only `OPERATOR_INSTRUCTION` candidates (`identity-workflow.ts`). It has two
    request kinds, `PROPOSE` and `ROLLBACK`, requires a HUMAN actor and requires the actor to be the profile's
    `owner_principal_id`. Stale protection is the P7A compare-and-swap: the candidate's
@@ -621,9 +636,10 @@ runtime health signal.
   one immutable row to **`public.reflection_support`**. Immutable content is never mutated. This applies to rejected
   proposals too, so a repeatedly rejected idea cannot respawn.
 - **Support is bounded.** `reflection_support` has `unique (subject_id, reflection_task_id)`: at most one support row
-  per subject per reflection task. Its row id is deterministic from that pair. Only `REFLECT` tasks write support, so
-  support growth for any subject is bounded by the admitted-reflection quota: at most 6 rows per tenant per rolling
-  24 hours across all subjects.
+  per subject per reflection task. Its row id is deterministic from that pair. Only `REFLECT` tasks write support. One
+  task emits at most 3 proposals and 3 observations, and each can match at most one existing key, so one task writes
+  at most 6 support rows. With the admission quota of 6 tasks, a tenant gains at most 36 support rows per rolling 24
+  hours across all subjects, and any one subject gains at most 6.
 - **Replay.** Ids are deterministic (task, step, ordinal), and the record step runs in one `ctx.run` and one database
   transaction under an advisory lock on the reflection task. A replay or lost journal re-executes to the same rows
   (`on conflict do nothing` plus digest comparison; a mismatch refuses). A replay therefore appends no second support
@@ -716,10 +732,26 @@ runtime evidence (evidence holds the record id and digest).
 - P8 stores memory **references and digests** as provenance (assembly id, assembly digest, memory ids), never a copied
   memory source excerpt.
 - A derived proposal or observation is its own governed canonical claim, not a clone of a memory.
-- **Deterministic excerpt guard.** At `REFLECT_RECORD` the kernel compares each `value` and `claim` with the content
-  of every memory item in the journaled assembly, after whitespace and case normalisation. A shared contiguous run of
-  40 or more characters makes the record `INELIGIBLE (MEMORY_EXCERPT)`; it is recorded without that text reaching a
-  candidate or CURRENT. The memory text is compared in process and is not persisted by the check.
+- **The primary defence is structural:** P8 evidence holds no text (15.1), there is no rationale text, and the only
+  model-authored text stored is one bounded `value` or `claim` per record. The excerpt guard below is defence in depth
+  against verbatim copying into those two fields. It is not a privacy boundary and does not detect paraphrase.
+- **Deterministic excerpt guard**, contract `kerneljson:memory-excerpt-guard/v1`. At `REFLECT_RECORD`, for each
+  `value` and `claim` and for the content of each memory item in the journaled assembly, the kernel computes a
+  normalised string by exactly these steps, in order:
+  1. Unicode normalisation form NFKC;
+  2. locale-independent lowercase mapping;
+  3. removal of every code point that is not a Unicode letter or number (general categories L and N), so all
+     whitespace, punctuation and symbols are dropped.
+
+  Lengths are counted in code points of the normalised strings. The record is refused if the normalised `value` or
+  `claim` shares a contiguous run of **40 or more** code points with any normalised memory item, or wholly contains a
+  normalised memory item of 20 to 39 code points. Memory items shorter than 20 normalised code points are not
+  compared. Inserted spacing, punctuation, case and compatibility characters therefore do not evade it.
+- **A refused record is not written.** No proposal or observation row is created, so the text is stored nowhere by
+  P8. Evidence records only the record ordinal and the factual code `MEMORY_EXCERPT_REFUSED`. The other records of
+  the same task proceed. The memory text is compared in process and is not persisted by the check.
+- A false positive (generic text that happens to match) costs one record. The owner can still make the same change
+  as an operator `PROPOSE`, which is unaffected.
 - There is no rationale text, so a quoted excerpt cannot be persisted as rationale.
 - If a cited memory is later retracted under P5, the P8 record is not altered. Mission Control derives and shows
   "cites a retracted memory" from the stored references, and the owner may dismiss or correct. This has no authority.
@@ -844,6 +876,13 @@ the `DISABLED` mode row and closes any effective window in one transaction.
 
 **Expiry needs no write.** An expired window is simply not effective.
 
+**Residual, stated.** The guard reads `clock_timestamp()` once, after the lock. A window can reach `expires_at` in
+the interval between that read and the transaction's commit. A close cannot interleave, because the lock is held to
+commit. The replaced P8B guard sets the activation's `activated_at` to that same reading (today it defaults to
+transaction start), so the P0 health check
+`reflection.modelGrowthInsideWindow` compares like with like. The interval is the remainder of one database
+transaction and is accepted.
+
 **A window opening is not an approval and grants no task authority.** It creates no task, changes no candidate and
 activates nothing. It is one of several facts the activation guard requires.
 
@@ -922,7 +961,8 @@ and refuses on the first failure:
 1. the candidate exists in the same tenant, its origin is `MODEL_PROPOSAL` and its state is `HELD`;
 2. the ADOPT task's admission has recipe `identity-change/v1` and objective kind `ADOPT` naming this `candidateId`;
 3. the task's principal is a HUMAN and equals the identity's `owner_principal_id`, with ACTIVE membership;
-4. the approval belongs to that task and its status is `GRANTED`;
+4. the approval belongs to that task, its status is `GRANTED`, and its `requested_from` is the identity's
+   `owner_principal_id`, so the decision was requested from, and can only have been given by, the HUMAN owner;
 5. the approval is bound to this exact candidate, digest and gate: the task's immutable `POLICY_CHECKED` event with
    key `policy-approval:<approval_id>` has invocation input `candidateId` equal to the candidate and
    `identityCoreDigest` equal to `proposed_digest`, capability id equal to the class-specific
@@ -1146,7 +1186,7 @@ tables, the `ADOPT` workflow and controlled activation. **There is no auto-adopt
 | 1 | two concurrent reflection admissions at count 5 | exactly one admitted | per-tenant advisory lock in the reservation trigger; the loser counts with a fresh snapshot after the lock (section 5.4) |
 | 2 | fail tasks on purpose to recover quota | no recovery | a reservation is immutable and counts for 24h whatever the task's outcome |
 | 3 | secret in `operatorFeedback` | refused before admission; nothing stored | the scan is step 6, admission is step 9 (section 5.3) |
-| 4 | reflector quotes memory into runtime evidence | impossible; and blocked from records | evidence holds digests and ids only (15.1); no rationale text; excerpt guard on `value` and `claim` (15.4) |
+| 4 | reflector quotes memory into runtime evidence | impossible; verbatim copies are also kept out of records | evidence holds digests and ids only (15.1); no rationale text; a record that hits the excerpt guard is not written (15.4) |
 | 5 | two simultaneous window opens | one opens, one refused | both serialise on the identity-activation lock; the second sees an effective window |
 | 6 | window close racing activation | one clean outcome | same lock; the guard evaluates the window after the lock at `clock_timestamp()` |
 | 7 | window expires during ADOPT | refused if expired at guard evaluation | the window is evaluated inside the activation transaction, not at approval time |
@@ -1157,7 +1197,7 @@ tables, the `ADOPT` workflow and controlled activation. **There is no auto-adopt
 | 12 | `REFLECT_EVALUATE` receives memory | refused at pin; nothing to pass | operation on the verifier-isolated allow-list; builder has no memory port; fence and mutation |
 | 13 | fallback makes the evaluator the reflector's model | task fails closed, no record | receipts compared with `sameModel` before and after the call (section 6.5) |
 | 14 | model observation overrides a HUMAN correction | cannot become CURRENT | derivation rule 1; kernel disposition `OPERATOR_CORRECTED_SCOPE` |
-| 15 | replay appends duplicate support | absorbed | `unique (subject_id, reflection_task_id)` and a deterministic id |
+| 15 | replay appends duplicate support | absorbed | `unique (subject_id, reflection_task_id)` and a deterministic id; at most 6 rows per task, 36 per tenant per 24h |
 | 16 | worker as `postgres` in P8A | residual accepted, bounded and stated | B1 below |
 | 17 | worker as `postgres` in P8B | not permitted | P8B cannot be implemented or deployed before B1 |
 
