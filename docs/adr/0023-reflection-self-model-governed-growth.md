@@ -1,6 +1,6 @@
 # ADR-0023: Reflection, self-model and governed identity growth (KJ-P8)
 
-Status: PROPOSED, revision 2.1 (design only). Nothing here is implemented, migrated or deployed.
+Status: PROPOSED, revision 2.2 (design only). Nothing here is implemented, migrated or deployed.
 Date: 01/10/2026.
 Base: canonical `main` `750d5b7926f320d8e9d3f64789b8f7035eaa4f3d`. Production: epoch 13, release `cebbb0d`, cognition
 ON, Class C/D frozen (docs/operations/KJ_P7B_LIVE_RESULT_2026-09-30.md).
@@ -40,6 +40,17 @@ corrects four defects the author found in revision 2 before the re-seal, and sta
 | a record that hit the excerpt guard was still stored with its text as an `INELIGIBLE` row | section 15.4 |
 | the adoption binding did not require the approval to be requested from the identity owner | section 18.2 item 4 |
 | residual: expiry between the guard's check and commit | section 17.2 |
+
+Revision 2.2 is a further docs-only commit on top of revision 2.1 (`90264f4e314313a4bb372ba4e1ea2522e1d1a5e4`). The
+hostile re-seal of 2.1 closed the original six blockers and returned BLOCK on one new item:
+
+| Blocker | Revision 2.1 defect | Resolved in |
+|---|---|---|
+| B-DEDUP-NORM | `proposal_key` and `observation_key` used "normalised value" and "normalised claim" without defining them, so two implementers would diverge on mint versus support and on rejected-key stickiness | section 11 |
+
+While closing it the author found one further defect in 2.1: an owner correction whose text repeated an earlier
+correction would have matched the earlier key and written no new row, so it could not become CURRENT. Corrections
+are now never deduplicated (section 11.2).
 
 Section numbers changed from revision 1: section 18 (P8B adoption mechanics) and section 23 (same-tenant references)
 are new, and the later sections moved down.
@@ -358,7 +369,7 @@ Observation            { "kind": OBSERVATION_KIND, "scope": per-kind strict obje
 **The whole output is refused** (task FAILED `REFLECTION_OUTPUT_REFUSED`, no record written) on any of: an unknown
 key; a duplicate decoded key; any text outside the single object; an unsupported path or path/op pairing; an
 oversize value or array; text failing the step 5 rules of section 5.3; an unknown enumeration value; a missing
-required key; a verdict list that does not match the records one for one; an evidence reference that is not an entry
+required key; two records with the same dedupe key (section 11.3); a verdict list that does not match the records one for one; an evidence reference that is not an entry
 of this task's packet. Refusal is all-or-nothing: there is no partial acceptance of a malformed response.
 
 **A secret-shaped `value` or `claim`** fails the task `REFLECTION_OUTPUT_SECRET` with no record written.
@@ -515,7 +526,7 @@ Class A digest, the P7B projection, G5 continuity, version comparison and activa
 
 **Immutable `public.self_model_observations`:** `id`, `seq` (generated identity, the ordering tiebreaker),
 `tenant_id`, `identity_id`, `reflection_task_id`, `origin` (`MODEL_REFLECTION` or `OPERATOR_CORRECTION`), `kind`,
-`scope` (jsonb, strict per kind), `scope_key` (sha256 of the canonical scope), `claim` (at most 300 characters),
+`scope` (jsonb, strict per kind), `scope_key` (`canonicalDigest` of the scope, section 11.1), `claim` (at most 300 characters),
 `evidence_refs` (1 to 10), `observation_key`, `corrects_id` (for `OPERATOR_CORRECTION`: the observation the owner
 corrected; same tenant, identity, kind and `scope_key`, enforced by trigger), `created_at`.
 
@@ -628,22 +639,134 @@ runtime health signal.
 
 ## 11. Deduplication, replay and idempotency
 
-- **`proposal_key`** = sha256 of the canonical JSON of `{contract: "kerneljson:reflection-proposal-key/v1", tenant,
-  identity, base_version, base_identity_core_digest, kind, path, op, normalised value}`. It is UNIQUE per tenant.
-- **`observation_key`** = sha256 of `{contract: "kerneljson:self-model-key/v1", tenant, identity, origin, kind,
-  canonical scope, normalised claim}`. It is UNIQUE per tenant.
-- **A repeat with the same key does not mint a new record.** The record step returns the existing one and appends
-  one immutable row to **`public.reflection_support`**. Immutable content is never mutated. This applies to rejected
-  proposals too, so a repeatedly rejected idea cannot respawn.
+### 11.1 Key normalisation contract (B-DEDUP-NORM)
+
+One pure function, contract **`kerneljson:reflection-key-normalise/v1`**, in `packages/contracts`. It is the only
+normalisation used for dedupe keys. Applied to a string, it performs exactly these steps, in order:
+
+1. Unicode normalisation form NFKC;
+2. locale-independent lowercase mapping, as ECMAScript `String.prototype.toLowerCase` defines it (Unicode default
+   case conversion, no locale tailoring; this is lowercase mapping, not case folding);
+3. NFKC again, because step 2 can produce a sequence that is not normalised;
+4. every maximal run of code points with the Unicode `White_Space` property is replaced by one U+0020;
+5. leading and trailing U+0020 are removed.
+
+Nothing else is changed. **Punctuation, symbols, digits and word order are kept**: in an identity field or a claim
+they can change the meaning, and a dedupe key decides whether two records are the same record.
+
+The reference expression is `s.normalize("NFKC").toLowerCase().normalize("NFKC")` followed by steps 4 and 5. The
+contract ships with a fixed table of golden vectors (input, normalised output, key). An implementation that
+disagrees with one vector is wrong, whatever its reading of the steps. Changing any step or vector is a new contract
+version and a new key contract name; `v1` keys are never recomputed.
+
+**Relation to the excerpt guard (section 15.4).** They are two separate contracts with two purposes, and neither is
+used in place of the other:
+
+| | `reflection-key-normalise/v1` | `memory-excerpt-guard/v1` |
+|---|---|---|
+| Purpose | decide whether two records are the same record | detect verbatim copying of memory text |
+| Punctuation and symbols | kept | removed |
+| Whitespace | collapsed to one space | removed |
+| Result is stored | only inside a key digest | never |
+| Errs towards | treating records as different | treating text as copied |
+
+**What is normalised and what is not:**
+
+| Key input | Treatment |
+|---|---|
+| `value` of an `IDENTITY_EDIT` (for `REPLACE`, `ADD_ITEM` and `REMOVE_ITEM` alike) | the function above |
+| `claim` of a model observation | the function above |
+| `tenant`, `identity`, `base_identity_core_digest` | exact lowercase UUID or hex string, no normalisation |
+| `base_version`, `targetVersion` | JSON integer |
+| `kind`, `path`, `op`, `origin` | exact enumeration string |
+| `scope` | the parsed strict per-kind object; its members are enumerations, UUIDs and recipe labels, compared exactly |
+
+**Canonical JSON** means `canonicalStringify` in `services/kernel/src/identity/canonical.ts`: object keys sorted
+recursively, arrays in given order, JSON primitive encoding. "sha256 of the canonical JSON" is `canonicalDigest`.
+`scope_key` is `canonicalDigest(scope)`. The same function moves to, or is re-exported from, `packages/contracts` so
+the key function has one implementation; no second canonical encoder is written.
+
+**The stored text is not the normalised text.** A row stores `value` or `claim` exactly as parsed (it has already
+passed the text limits of section 5.3 step 5). Normalisation feeds the key only.
+
+### 11.2 The keys
+
+Each key is `canonicalDigest` of exactly the object shown, with exactly these member names. An absent member is
+omitted, not null.
+
+**`proposal_key`, `IDENTITY_EDIT`:**
+
+```
+{ "contract": "kerneljson:reflection-proposal-key/v1", "tenant", "identity", "baseVersion",
+  "baseIdentityCoreDigest", "kind": "IDENTITY_EDIT", "path", "op", "value": normalise(value) }
+```
+
+**`proposal_key`, `ROLLBACK_RECOMMENDATION`:**
+
+```
+{ "contract": "kerneljson:reflection-proposal-key/v1", "tenant", "identity", "baseVersion",
+  "baseIdentityCoreDigest", "kind": "ROLLBACK_RECOMMENDATION", "targetVersion" }
+```
+
+**`observation_key`, origin `MODEL_REFLECTION`:**
+
+```
+{ "contract": "kerneljson:self-model-key/v1", "tenant", "identity", "origin": "MODEL_REFLECTION",
+  "kind", "scopeKey", "claim": normalise(claim) }
+```
+
+**`observation_key`, origin `OPERATOR_CORRECTION`:**
+
+```
+{ "contract": "kerneljson:self-model-key/v1", "tenant", "identity", "origin": "OPERATOR_CORRECTION",
+  "kind", "scopeKey", "correctionTask": <the DISPOSE task id> }
+```
+
+- Both keys are UNIQUE per tenant.
+- The kernel computes the key; the database enforces its format and uniqueness. The database does not recompute
+  it, because Postgres `lower()` is locale-dependent and would not match step 2.
+- **An owner correction is never deduplicated.** Its key contains its own `DISPOSE` task, so every correction is its
+  own row and takes the highest `seq` in its scope (section 9.3 rule 1), even when its text repeats an earlier
+  correction. It is bounded at one row per `DISPOSE` task.
+
+### 11.3 What a key match does (mint versus support)
+
+At `REFLECT_RECORD`, for each record of the output, in ordinal order, inside the one record transaction:
+
+1. **Two records of the same output with the same key:** the whole output is refused
+   (`REFLECTION_OUTPUT_REFUSED`); nothing is written.
+2. **No existing row has the key:** a new row is minted, then evaluated for eligibility (section 6.2).
+3. **An existing row from a different reflection task has the key:** no row is minted. Exactly one
+   `reflection_support` row is appended for the existing subject. The new surface text is not stored anywhere.
+   **A support row changes nothing else:** it never creates a candidate, never changes a disposition, and never
+   makes an ineligible, dismissed or stale record eligible. Its only effect is the distinct-source count behind the
+   confidence class (section 9.5).
+4. **A row with the same deterministic id exists (a replay of this task):** the stored digest is compared; equal
+   returns the existing row, unequal refuses the task.
+
+A candidate is created only in case 2, for a newly minted proposal. Case 3 can never mint a HELD candidate.
+
+**Stickiness, exactly:**
+
+| Record | Key scope | Consequence |
+|---|---|---|
+| proposal | includes the base version and digest | a proposal that is ineligible (for any reason, including `CAP`), dismissed, or whose candidate was rejected stays so **for that head**. The same edit against a later head has a different key and is a new proposal. |
+| model observation | no base; exact scope plus normalised claim | a dismissed or ineligible model observation stays so **permanently** for that claim in that scope. A repeat adds support only. |
+| owner correction | its own task | never sticky; never matched |
+
+The owner's route around a sticky proposal is an operator `PROPOSE` under `identity-change/v1`, which is unaffected.
+
+### 11.4 Support bound and replay
+
 - **Support is bounded.** `reflection_support` has `unique (subject_id, reflection_task_id)`: at most one support row
   per subject per reflection task. Its row id is deterministic from that pair. Only `REFLECT` tasks write support. One
   task emits at most 3 proposals and 3 observations, and each can match at most one existing key, so one task writes
   at most 6 support rows. With the admission quota of 6 tasks, a tenant gains at most 36 support rows per rolling 24
-  hours across all subjects, and any one subject gains at most 6.
+  hours across all subjects, and any one subject gains at most 6. The table grows without a lifetime cap; rows are
+  small and immutable.
 - **Replay.** Ids are deterministic (task, step, ordinal), and the record step runs in one `ctx.run` and one database
   transaction under an advisory lock on the reflection task. A replay or lost journal re-executes to the same rows
-  (`on conflict do nothing` plus digest comparison; a mismatch refuses). A replay therefore appends no second support
-  row: the unique key absorbs it.
+  (case 4 above). A replay therefore appends no second support row: the unique key absorbs it.
 
 ## 12. Rate limits and spam
 
@@ -1197,6 +1320,7 @@ tables, the `ADOPT` workflow and controlled activation. **There is no auto-adopt
 | 12 | `REFLECT_EVALUATE` receives memory | refused at pin; nothing to pass | operation on the verifier-isolated allow-list; builder has no memory port; fence and mutation |
 | 13 | fallback makes the evaluator the reflector's model | task fails closed, no record | receipts compared with `sameModel` before and after the call (section 6.5) |
 | 14 | model observation overrides a HUMAN correction | cannot become CURRENT | derivation rule 1; kernel disposition `OPERATOR_CORRECTED_SCOPE` |
+| 15b | trivially reworded repeat (case, spacing, compatibility characters) mints a second record | matches the existing key; support only | `reflection-key-normalise/v1` with golden vectors (section 11.1) |
 | 15 | replay appends duplicate support | absorbed | `unique (subject_id, reflection_task_id)` and a deterministic id; at most 6 rows per task, 36 per tenant per 24h |
 | 16 | worker as `postgres` in P8A | residual accepted, bounded and stated | B1 below |
 | 17 | worker as `postgres` in P8B | not permitted | P8B cannot be implemented or deployed before B1 |
