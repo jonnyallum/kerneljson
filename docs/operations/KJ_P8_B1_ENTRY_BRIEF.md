@@ -5,7 +5,8 @@ design so the next engineering session starts from one place. It adds nothing to
 it. Where this brief and the ADR differ, the ADR wins.
 
 Source: ADR-0023 revision 2.3, section 27, at sealed commit `679e3a3dfc7a33f9106ed77913d49cdac19166d5`
-(`docs/adr/0023-reflection-self-model-governed-growth.md`). Seal: `docs/reviews/KJ_P8_ADR0023_R23_HOSTILE_SEAL_679e3a3.md`.
+(`docs/adr/0023-reflection-self-model-governed-growth.md`, on branch `design/kjp8-reflection-governed-growth`).
+Seal: `docs/reviews/KJ_P8_ADR0023_R23_HOSTILE_SEAL_679e3a3.md`.
 
 ## Rule
 
@@ -45,6 +46,10 @@ Neither role may, and each line is a negative test:
 - execute `set_identity_freeze`;
 - UPDATE or DELETE on any append-only table;
 - assume another role, or bypass row level security.
+
+**No direct approval, adoption, version or activation bypass (ADR 27.3).** `kj_worker` has no way to approve or adopt
+directly. Where it may insert an identity version, an activation or, later, an adoption binding, it may insert only
+rows that pass the guards and triggers, which it cannot alter or disable. There is no ungoverned write.
 
 From P8A-0 onward the same roles are also denied: `set_reflection_mode`, any insert into `reflection_governance`,
 `open_growth_window`, the deployment close, and any insert into either growth-window table. Those objects do not
@@ -103,6 +108,12 @@ inventory completes and freezes it:
   `task_admissions` and `dispatch_events`; no UPDATE and no DELETE.
 
 Nothing is revoked from a path production needs.
+
+**The category wording above is not a shippable manifest.** The sealing review states that the finished, exhaustive
+P1 to P7 grant list is a B1 engineering deliverable and that B1's own review must reject any attempt to ship the
+category prose ("the capability tables", "those the inventory finds", the door's SELECT list). Only the frozen
+manifest file, with catalogue equality in both directions, counts. B1 must discover it, freeze it, have it reviewed
+and equality-test it. It is not written here.
 
 ## 8. Required negative privilege probes
 

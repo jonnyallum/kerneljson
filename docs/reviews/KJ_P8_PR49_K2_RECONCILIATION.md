@@ -1,6 +1,7 @@
 # KJ-P8: reconciliation of PR #49 and the uncommitted K2 work against sealed ADR-0023 revision 2.3
 
-Date: 01/10/2026. Read-only forensic classification. Nothing in PR #49 or in the main checkout was changed.
+Date: 01/10/2026. Read-only forensic classification. Nothing in PR #49 or in the main checkout was changed while
+classifying. What was done afterwards, on Jonny's separate authorisation, is recorded in section 6.
 
 Authority: sealed design commit `679e3a3dfc7a33f9106ed77913d49cdac19166d5` (see
 `KJ_P8_ADR0023_R23_HOSTILE_SEAL_679e3a3.md`). "ADR" below means
@@ -105,9 +106,35 @@ The K2 files should stay where they are until Jonny decides what to do with them
 exist only in that checkout; deleting them would be irreversible. Options for a later decision: commit them to a
 clearly named archive branch off `d231867`, or discard them. Neither is done here.
 
-## 5. What this reconciliation does not do
+## 5. What the reconciliation itself did not do
 
 - It does not merge, close, edit or comment on PR #49.
 - It does not touch, move or stage any K2 file.
 - It does not start B1 or any P8 implementation.
 - It does not change the sealed design.
+
+## 6. Outcome, 02/10/2026
+
+Jonny authorised the following after reading this reconciliation. Each was done and checked.
+
+**PR #49: closed as superseded, not merged.** Closed on 01/10/2026 at 23:15 UTC with an archival comment naming the
+sealed design SHA. Its head was still `d2318678de054333c21206d8e8b3431f1babae8b` when closed. The branch
+`codex/kjp8-proposal-design` was not deleted and both commits remain reachable.
+
+**The six K2 paths: quarantined, then removed from the working tree.**
+
+| Item | Value |
+|---|---|
+| Patch | `C:\Users\jonny\Desktop\kerneljson-quarantine\KJ_P8_PRESEAL_K2_QUARANTINE_2026-10-02.patch` |
+| Patch SHA-256 | `921c4e168bfbe87823a8621a36dd9873af6a172a1e85539baaf0587043bf0cc5` |
+| Manifest | `KJ_P8_PRESEAL_K2_QUARANTINE_2026-10-02.md`, beside the patch |
+| Status | PRE-SEAL / NOT AUTHORISED / REFERENCE ONLY |
+
+- The patch is outside every repository working tree and is not committed anywhere.
+- Before anything was removed, the patch was applied to a scratch worktree at `d231867` and each of the six files
+  was compared with its original: content identical, line endings LF instead of CRLF.
+- `tests/identity-topology.test.ts` was then restored to its tracked state, and the five untracked files were
+  deleted. None of the six paths is dirty any more.
+- No other untracked item in that checkout was touched.
+
+The patch exists on one machine only. If it matters, it should be copied somewhere backed up.
