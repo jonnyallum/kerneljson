@@ -1,6 +1,6 @@
 # ADR-0023: Reflection, self-model and governed identity growth (KJ-P8)
 
-Status: PROPOSED, revision 2.2 (design only). Nothing here is implemented, migrated or deployed.
+Status: PROPOSED, revision 2.3 (design only). Nothing here is implemented, migrated or deployed.
 Date: 01/10/2026.
 Base: canonical `main` `750d5b7926f320d8e9d3f64789b8f7035eaa4f3d`. Production: epoch 13, release `cebbb0d`, cognition
 ON, Class C/D frozen (docs/operations/KJ_P7B_LIVE_RESULT_2026-09-30.md).
@@ -52,6 +52,23 @@ While closing it the author found one further defect in 2.1: an owner correction
 correction would have matched the earlier key and written no new row, so it could not become CURRENT. Corrections
 are now never deduplicated (section 11.2).
 
+Revision 2.3 is a further docs-only commit on top of revision 2.2 (`53f2ab011f0de627f3de97fd76d287b2beeb18c9`). The
+independent hostile re-seal of 2.2 returned BLOCK. Revision 2.2 is not rewritten.
+
+| Finding | Kind | Revision 2.2 defect | Resolved in |
+|---|---|---|---|
+| P8-R22-B1-LP | blocker | P8A was accepted in production while the worker ran as the `postgres` owner; the dedicated role was deferred to before P8B | section 27 (new), with sections 1, 2, 4, 17, 19, 20, 21, 22 and 26 and the sequence document made consistent |
+| P8-R22-LIST-EDIT | blocker | `ADD_ITEM` and `REMOVE_ITEM` did not define how the candidate document is built, so two implementations could produce different bytes and digests | section 10.1 (new) |
+| P8-R22-UNICODE-PIN | hardening | the key normalisation left the Unicode table version to the runtime | section 11.1 |
+| P8-R22-SUPPORT-PROVENANCE | hardening | the support row was under-specified, so confidence could not be reconstructed from durable facts | sections 9.5 and 11.4 |
+
+Two further changes were made by the author for determinism while closing these:
+- the reflection mode can no longer be raised by a transaction-local setting, which any role can set; it is raised
+  only through a function the runtime roles cannot execute (section 17.1);
+- the `CONSISTENT` confidence class no longer depends on an undefined "contradicting task" (section 9.5).
+
+Section 27 is new and is placed last so that no earlier section is renumbered.
+
 Section numbers changed from revision 1: section 18 (P8B adoption mechanics) and section 23 (same-tenant references)
 are new, and the later sections moved down.
 
@@ -99,8 +116,13 @@ These facts constrain the design. Each was read in this worktree; none was exerc
 10. **P5.** `submitModelCandidate` produces HELD model memory candidates. The protected-promotion carrier is broken and
     fenced (ADR-0021). P8 needs neither.
 11. **The production worker connects as `postgres`**, the owner (OBSERVED, KJ_P7B1_DEPLOYMENT_RUNBOOK.md and the P7B
-    live record). Database grants therefore cannot separate worker code from deployment authority. This drives
-    blocker B1 (section 22).
+    live record). Database grants therefore cannot separate worker code from deployment authority. The door's
+    database role was not established by this review; it builds its pool from `DATABASE_URL` like the worker.
+    Every table has row level security enabled and **no migration creates a policy** (OBSERVED by search), so today
+    only an owner, which bypasses row level security, can read or write them. Existing private functions such as
+    `activate_release` and `set_identity_freeze` are `security invoker` and are revoked only from the API roles.
+    This drives prerequisite B1 (section 27): no P8 object may reach production while any runtime process is the
+    owner.
 12. **Secret screen.** The pattern set is `looksLikeSecret` in `services/memory/src/canonical/policy.ts`.
     `services/kernel/src/identity/secret-scan.ts` (`findSecretShapedContent`) walks a value and applies it. Mission
     runtime evidence today keeps model output text.
@@ -114,7 +136,8 @@ It can emit only two kinds of record: bounded **ReflectionProposals** and **Self
 come from a strict structured-output contract, are evaluated by an isolated, independent verifier, and are classified
 and stored by KernelJSON. No raw model output is copied into evidence. From P8A-2, an eligible identity proposal may
 become exactly one **HELD `MODEL_PROPOSAL` candidate** in the existing `identity_candidates` table, and in P8A nothing
-can approve or activate it. P8B, under a separate review and after blocker B1 is closed, lets the owner adopt a model
+can approve or activate it. No P8 stage is deployed to production until the worker and the door run as dedicated least-privilege database
+roles (B1, section 27). P8B, under a separate review, lets the owner adopt a model
 candidate through one writer path, `identity-change/v1` `ADOPT`, with a database-proven approval binding and, for
 Class C/D, an effective append-only growth window. Reflection never produces canonical behavioural change.
 
@@ -146,7 +169,8 @@ No Codex code is reused. The prototype's K1 implementation is not approved by th
 | KernelJSON (door, workflow, ledger, database) | scan and refuse; reserve quota; qualify evidence; parse and classify; deduplicate; enforce caps; store records; create a HELD model candidate; complete the task | activate identity from a model output; change routing, faculty, memory permission, policy, admission or schedule |
 | Reflecting model (intelligence faculty) | propose edits and observations as structured JSON | create state, tasks, approvals or activations; choose a faculty, provider or model; assert a governance class, confidence, eligibility or staleness |
 | Evaluating model (verifier faculty) | give an advisory verdict on each record | approve, classify, make a record eligible on its own, or create anything |
-| Deployment authority (change window) | raise the reflection mode; in P8B, open a growth window | operate from inside the worker (code fence in P8A; database privilege after B1) |
+| Deployment authority (the database owner, used by a human operator in a change window) | apply migrations; activate a release; raise the reflection mode; in P8B, open a growth window | be used by any running service. The runtime roles cannot execute these functions and cannot assume the owner (section 27) |
+| Runtime database roles `kj_worker` and `kj_door` | exactly the reads, inserts, updates and function calls of the section 27 grant manifest | own or alter any object; disable a trigger; change row level security; raise the mode; open a window; apply a migration; activate a release; assume another role |
 
 Reflection records are **outputs of a task**, never permission tokens. One admission door, many event and execution
 doors, one task authority: unchanged.
@@ -344,7 +368,8 @@ Observation            { "kind": OBSERVATION_KIND, "scope": per-kind strict obje
   `classA.facultyFraming`, `classA.memoryPolicy`, `classC.persona`, `classC.communication`, `classC.behaviour`,
   `classC.presentation`, `classD.objectives`, `classD.vision`. These are the fields of `IdentitySections`.
 - `OP` is `REPLACE` for a string field, or `ADD_ITEM` / `REMOVE_ITEM` for the list fields `classA.values` and
-  `classD.objectives`. Any other pairing is refused.
+  `classD.objectives`. Any other pairing is refused. How each operation builds the candidate document is defined
+  exactly in section 10.1.
 - `value` obeys the bound of its target field in `packages/contracts/src/primary-identity.ts`: 100 characters for
   `classA.name`, 300 for a list item, 4000 for the other string fields. `claim` is at most 300 characters.
 - `RATIONALE` is a closed enumeration of factual codes (for example `VERIFIER_FINDING_REPEATED`,
@@ -593,10 +618,16 @@ Deterministic and computed by the kernel, never by the model:
 | `OPERATOR_ASSERTED` | origin `OPERATOR_CORRECTION` |
 | `ANECDOTAL` | 1 distinct supporting source task |
 | `EMERGING` | 2 to 4 distinct supporting source tasks |
-| `CONSISTENT` | at least 5 distinct supporting source tasks and no cited contradicting task |
+| `CONSISTENT` | at least 5 distinct supporting source tasks |
 
-A "supporting source task" is a distinct qualified packet entry cited by the observation or by its support rows
-(section 11). There is no numeric pseudo-probability.
+**Reconstruction rule.** The set of supporting source tasks of a subject is the set of distinct `source_task_id`
+values found in:
+- the `evidence_refs` of the subject's own row; and
+- the `evidence_refs` of every `reflection_support` row for that subject (section 11.4).
+
+The class is a pure function of the size of that set and the origin. It is computed in a view from those durable
+rows and is stored nowhere, so it can always be recomputed and audited. There is no numeric pseudo-probability, and
+revision 2.3 removes the earlier "no cited contradicting task" condition, because nothing defined a contradiction.
 
 ### 9.6 Authority ceiling
 
@@ -621,9 +652,9 @@ runtime health signal.
 4. `proposed_by_task` is set to the reflection task, with a same-tenant composite foreign key (section 23), so
    provenance is a foreign key, not a claim. A new trigger requires a `MODEL_PROPOSAL` candidate's task to be a
    `REFLECT` task of recipe `identity-reflection/v1`.
-5. **The candidate document** is computed by the kernel: the head document plus the single structured edit. It is
-   validated by `IdentityDocumentDraft` and screened for secrets. The database computes the class and base. Stale
-   protection is the P7A compare-and-swap; P8 adds nothing weaker.
+5. **The candidate document** is computed by the kernel: the head document plus the single structured edit, by the
+   exact contract of section 10.1. It is validated by `IdentityDocumentDraft` and screened for secrets. The database
+   computes the class and base. Stale protection is the P7A compare-and-swap; P8 adds nothing weaker.
 6. **Conditions for creating the candidate (P8A-2):**
    - reflection mode is `PROPOSE_IDENTITY`;
    - the proposal is eligible under section 6.2 (`SUPPORT`, no concerns, every kernel check);
@@ -636,6 +667,72 @@ runtime health signal.
    P8B relaxes this for `MODEL_PROPOSAL` only, and only through the adoption binding (section 18).
 8. **Class A proposals** may become HELD candidates. Their adoption is HUMAN-approved only, in P8B and forever.
 9. **`SHARED_BRAIN` origin stays never-approvable**, mechanically (section 18.1). P8 does not create such candidates.
+
+### 10.1 Candidate construction contract (P8-R22-LIST-EDIT)
+
+Contract **`kerneljson:reflection-candidate-construct/v1`**, one pure function in `packages/contracts`:
+`construct(headDocument, edit)` returns either exactly one candidate document or exactly one ineligibility code.
+One structured proposal maps to at most one candidate document, byte for byte.
+
+**Facts at base main this depends on** (read in `packages/contracts/src/primary-identity.ts` and
+`services/kernel/src/identity/canonical.ts`): `classA.values` is an array of 1 to 20 items and `classD.objectives`
+an array of 0 to 20 items; each item is a string trimmed to 1 to 300 characters; duplicates are permitted; array
+order is semantic and `canonicalStringify` preserves it.
+
+**Common steps, in order:**
+
+1. Start from the head document with its `version` member removed (a candidate never embeds a version, per P7A).
+2. Parse `value` with the Zod schema of the target: the field's own schema for `REPLACE`, the list item schema for
+   `ADD_ITEM` and `REMOVE_ITEM`. This applies the existing trim and length bounds and nothing else. A parse failure
+   has already refused the whole output (section 6.2).
+3. Apply the operation below to the one target path. **Every other member of the document is carried over
+   unchanged**, and no array is sorted, deduplicated or reordered.
+4. Validate the result with `IdentityDocumentDraft`. A failure here is `INELIGIBLE (INVALID_DOCUMENT)`.
+
+**Equality** everywhere in this contract is exact equality of the stored strings, code unit for code unit, after
+step 2. It is **not** the dedupe key normalisation of section 11.1: two items that differ only in case or spacing
+are different items here, because the identity document stores them as different bytes.
+
+| Operation | Rule | Result |
+|---|---|---|
+| `REPLACE` | the parsed value equals the current field value | `INELIGIBLE (NO_CHANGE)` |
+| `REPLACE` | otherwise | the field is set to the parsed value |
+| `ADD_ITEM` | an equal item already exists in the list (one or more) | `INELIGIBLE (NO_CHANGE)` |
+| `ADD_ITEM` | the list already holds 20 items | `INELIGIBLE (LIST_FULL)` |
+| `ADD_ITEM` | otherwise | the item is appended once, at the end; existing items keep their positions |
+| `REMOVE_ITEM` | no item equals the value | `INELIGIBLE (NO_CHANGE)` |
+| `REMOVE_ITEM` | more than one item equals the value | `INELIGIBLE (AMBIGUOUS_EDIT)` |
+| `REMOVE_ITEM` | exactly one match, the path is `classA.values`, and the list holds exactly 1 item | `INELIGIBLE (LIST_MINIMUM)` |
+| `REMOVE_ITEM` | exactly one match otherwise | that one item is removed; the remaining items keep their relative order |
+
+- The rows of one operation are checked top to bottom; the first that applies decides.
+- `LIST_FULL` is a distinct code from `CAP`, which already means a record cap of section 12.
+- `classD.objectives` may become empty; its schema allows it.
+- An ineligible proposal is still minted as a proposal row with its `INELIGIBLE` disposition and code, so it is
+  auditable and sticky for its head (section 11.3). No candidate row is written for it.
+- The kernel never constructs a document it knows to be invalid and then relies on a later check to refuse it.
+- After construction the database still classifies the candidate. If the class it computes differs from the class
+  implied by the path, the proposal is `INELIGIBLE (CLASS_MISMATCH)`; `identity_candidate_classify()` remains the
+  authority.
+
+**Golden construction vectors are part of the contract.** Each vector is a head document, an edit and the expected
+result: either the full candidate document with its `proposed_digest`, or the ineligibility code. The design
+requires at least these, and an implementation that disagrees with one is wrong:
+
+| # | Case | Expected |
+|---|---|---|
+| 1 | Class A `ADD_ITEM` to `classA.values` | appended last; `proposed_digest` fixed |
+| 2 | Class A `REMOVE_ITEM` of one of several values | removed; order of the rest unchanged; digest fixed |
+| 3 | Class D `ADD_ITEM` to `classD.objectives`, including to an empty list | appended last; digest fixed |
+| 4 | Class D `REMOVE_ITEM`, including removal of the only objective | removed; empty list allowed; digest fixed |
+| 5 | duplicate add (item already present) | `NO_CHANGE` |
+| 6 | absent remove | `NO_CHANGE` |
+| 7 | ambiguous remove (the head holds the item twice) | `AMBIGUOUS_EDIT` |
+| 8 | Class A final-item removal | `LIST_MINIMUM` |
+| 9 | add to a list of 20 | `LIST_FULL` |
+| 10 | item differing from an existing one only by case or internal spacing | appended (not equal under this contract) |
+| 11 | `REPLACE` with the current value | `NO_CHANGE` |
+| 12 | value with leading and trailing spaces | trimmed by the schema, then treated as cases 1 to 11 |
 
 ## 11. Deduplication, replay and idempotency
 
@@ -658,6 +755,31 @@ The reference expression is `s.normalize("NFKC").toLowerCase().normalize("NFKC")
 contract ships with a fixed table of golden vectors (input, normalised output, key). An implementation that
 disagrees with one vector is wrong, whatever its reading of the steps. Changing any step or vector is a new contract
 version and a new key contract name; `v1` keys are never recomputed.
+
+**Unicode pin (P8-R22-UNICODE-PIN).** `v1` is defined against **Unicode 15.1.0** and no other version: NFKC from its
+normalisation data, lowercase from its `UnicodeData.txt` and the unconditional and `Final_Sigma` rules of its
+`SpecialCasing.txt`, and `White_Space` from its `PropList.txt`. "The runtime's current Unicode" is not the
+definition. Three rules make a runtime upgrade unable to change `v1` output silently:
+
+1. **Assigned-only input.** A `value` or `claim` containing a code point that is unassigned in Unicode 15.1.0
+   (general category `Cn`), a private-use code point or a noncharacter is refused before a key is computed
+   (`REFLECTION_TEXT_INVALID`). A character added by a later Unicode version therefore never enters a `v1` key.
+2. **Conformance digest.** The contract fixes one constant, `UNICODE_15_1_CONFORMANCE_SHA256`: the sha256 of the
+   concatenation, in code point order, of `normalise(c)` for every Unicode scalar value `c` from U+0000 to U+10FFFF
+   taken as a one-character string, each followed by U+000A, encoded as UTF-8; followed by `normalise` of every
+   source string of the 15.1.0 `NormalizationTest.txt`, in file order, each followed by U+000A. The constant is
+   computed once from the 15.1.0 data when P8A-0 is implemented, recorded in the contract file and reviewed. This
+   ADR fixes the procedure, not the hexadecimal value, because no code was run for this design.
+3. **Fail closed.** An implementation must either carry frozen 15.1.0 tables, or use runtime functions and prove at
+   process start that they reproduce the conformance digest and every golden vector. If the proof fails, the
+   reflection record step refuses (`REFLECTION_KEY_CONTRACT_UNAVAILABLE`) and no key is computed. It never falls back
+   to whatever the runtime provides. The same proof runs in CI.
+
+The golden vectors must include at least: precomposed and decomposed forms of one character; compatibility forms
+(full-width, ligature, superscript); capital sharp s and dotted capital I; Greek sigma in final and non-final
+position; no-break space, ideographic space, tab and line separators; a string containing only white space; and
+punctuation that must be preserved. Moving to a later Unicode version is a new contract (`.../v2`) with new key
+contract names; `v1` rows keep their `v1` keys.
 
 **Relation to the excerpt guard (section 15.4).** They are two separate contracts with two purposes, and neither is
 used in place of the other:
@@ -724,7 +846,9 @@ omitted, not null.
 
 - Both keys are UNIQUE per tenant.
 - The kernel computes the key; the database enforces its format and uniqueness. The database does not recompute
-  it, because Postgres `lower()` is locale-dependent and would not match step 2.
+  it, because Postgres `lower()` is locale-dependent and would not match step 2. A defective worker could therefore
+  write a wrong key. That residual is bounded to advisory records: a wrong key can cause a duplicate or a missed
+  duplicate, and cannot approve, version or activate anything.
 - **An owner correction is never deduplicated.** Its key contains its own `DISPOSE` task, so every correction is its
   own row and takes the highest `seq` in its scope (section 9.3 rule 1), even when its text repeats an earlier
   correction. It is bounded at one row per `DISPOSE` task.
@@ -758,7 +882,33 @@ The owner's route around a sticky proposal is an operator `PROPOSE` under `ident
 
 ### 11.4 Support bound and replay
 
-- **Support is bounded.** `reflection_support` has `unique (subject_id, reflection_task_id)`: at most one support row
+**The support row (P8-R22-SUPPORT-PROVENANCE).** Immutable `public.reflection_support`:
+
+| Column | Meaning |
+|---|---|
+| `id` | deterministic: `stableId` over the contract name `kerneljson:reflection-support/v1`, the subject id and the reflection task id |
+| `tenant_id` | same-tenant composite keys on every reference (section 23) |
+| `proposal_id` or `observation_id` | the existing subject; exactly one is set (CHECK) |
+| `reflection_task_id` | the `REFLECT` task whose output repeated the record |
+| `record_ordinal` | the position of the repeat in that task's structured output (`P0` to `P2`, `O0` to `O2`) |
+| `matched_key`, `key_contract` | the dedupe key that matched and its key contract name; must equal the subject's key (trigger) |
+| `evidence_refs` | 1 to 8 (proposal) or 1 to 10 (observation) packet entries cited by the repeat, each `{source_task_id, evidence_id, digest, code}`; every entry must belong to this task's qualified packet |
+| `packet_digest` | the domain-separated digest of this task's source manifest |
+| `structured_result_digest` | the digest of this task's canonical structured result, the same value bound in its runtime evidence (section 15.1) |
+| `evaluator_call_id` | the evaluator call that judged the repeat |
+| `created_at` | set by the trigger to `clock_timestamp()` |
+
+- **A support row is written only when the evaluator's verdict on the repeat is `SUPPORT` with no concerns.**
+  Otherwise no row is written and evidence records the ordinal with the factual code `REPEAT_NOT_SUPPORTED`. A
+  repeat the evaluator opposed never raises confidence.
+- **The repeated surface text is not stored**, in this row or anywhere else. What matched is proved by
+  `matched_key`; that the task really produced it is proved by `record_ordinal` together with
+  `structured_result_digest`, which the task's own evidence binds; what it rested on is proved by `evidence_refs` and
+  `packet_digest`.
+- Confidence is reconstructed from these rows by the rule in section 9.5.
+
+- **Support is bounded.** `reflection_support` has `unique (subject_id, reflection_task_id)`, realised as one unique
+  key per typed subject column (`proposal_id` or `observation_id`) with the task: at most one support row
   per subject per reflection task. Its row id is deterministic from that pair. Only `REFLECT` tasks write support. One
   task emits at most 3 proposals and 3 observations, and each can match at most one existing key, so one task writes
   at most 6 support rows. With the admission quota of 6 tasks, a tenant gains at most 36 support rows per rolling 24
@@ -932,11 +1082,17 @@ runtime evidence (evidence holds the record id and digest).
 | `OBSERVE` | allowed | allowed | refused | allowed |
 | `PROPOSE_IDENTITY` | allowed | allowed | allowed (HELD only) | allowed |
 
-- **Raising** the mode is deployment authority only: a function run in an authorised change window.
-- **Lowering** to `DISABLED` is also available to the HUMAN owner through a `FREEZE` task, because freezing is safe.
-- **The insert trigger refuses any non-`DISABLED` row** unless the deployment function inserts it, recognised by a
-  transaction-local setting that only that function sets. While the worker is `postgres` this stops a code path, not
-  a determined worker; see B1 (section 22).
+- **No runtime role can write this table.** `kj_worker` and `kj_door` have SELECT on it and nothing else. Rows are
+  written only by two functions owned by the deployment owner:
+  - `kernel_private.set_reflection_mode(tenant, mode, reason, authorisation_ref)`: **raising** the mode. It is run by
+    the deployment owner in an authorised change window. The runtime roles have no EXECUTE on it.
+  - `kernel_private.freeze_reflection(task_id)`: **lowering** to `DISABLED`. It is `security definer`, executable by
+    `kj_worker`, and writes only a `DISABLED` row. It refuses unless the task is a `FREEZE` task of recipe
+    `identity-reflection/v1` whose principal is the HUMAN identity owner. Freezing is safe, so the owner can always
+    do it.
+- Revision 2.2 recognised the deployment function by a transaction-local setting. That is withdrawn: any role can
+  set a custom setting, so it separated nothing. Authority now rests on EXECUTE privilege and table grants, which a
+  non-owner role cannot give itself (section 27).
 - **When the mode becomes `DISABLED`:**
   - an in-flight reflection fails closed at `REFLECT_RECORD` with evidence;
   - pending proposals and HELD candidates stay as they are, auditable;
@@ -986,7 +1142,8 @@ every committed open and close.
 
 **OPEN** (BEFORE INSERT trigger): take the lock; set `opened_at`; if any effective window exists for the identity at
 `opened_at`, refuse `GROWTH_WINDOW_ALREADY_OPEN`. Because every open for an identity serialises on the lock, there is
-at most one effective, non-expired, unclosed window per identity. Opening is deployment authority only.
+at most one effective, non-expired, unclosed window per identity. Opening is deployment authority only: the runtime
+roles have no INSERT on the table and no EXECUTE on `kernel_private.open_growth_window`.
 
 **CLOSE** (BEFORE INSERT trigger): take the lock; set `closed_at`.
 - If no closure exists, insert it. Closing a window that has already expired is permitted and changes nothing.
@@ -994,8 +1151,11 @@ at most one effective, non-expired, unclosed window per identity. Opening is dep
   the existing row (idempotent replay).
 - If a closure exists with any different value, refuse `GROWTH_WINDOW_ALREADY_CLOSED`.
 
-Closing is available to deployment authority and to the HUMAN owner through `FREEZE`. In P8B a `FREEZE` task writes
-the `DISABLED` mode row and closes any effective window in one transaction.
+Closing is available to deployment authority and to the HUMAN owner through `FREEZE`. The runtime roles have no
+INSERT on the closure table. `kj_worker` may execute one `security definer` function,
+`kernel_private.close_growth_window_by_owner(task_id, window_id)`, which refuses unless the task is a `FREEZE` task
+of the HUMAN identity owner. In P8B a `FREEZE` task writes the `DISABLED` mode row and closes any effective window in
+one transaction, through the two definer functions.
 
 **Expiry needs no write.** An expired window is simply not effective.
 
@@ -1162,16 +1322,34 @@ candidate state on its own:
 
 ## 19. Rollout
 
-The authoritative sequence is `docs/operations/KJ_P8_IMPLEMENTATION_SEQUENCE.md`. In summary:
+The authoritative sequence is `docs/operations/KJ_P8_IMPLEMENTATION_SEQUENCE.md`. The production order is fixed:
+
+**B1, then P8A-0, then B2, then P8A-1, then P8A-2, then P8B.**
+
+**The rule above every step:** production acquires no P8 table, function, trigger, recipe or mode row while any
+runtime process connects as the database owner. There is no fallback to `postgres`, no temporary owner mode and no
+degraded mode that widens authority. If B1 cannot be established and qualified, P8 stays unavailable.
+
+Repository preparation is separate from production deployment. Contracts, schema and tests for a later step may be
+written and qualified in an isolated non-production environment, under the runtime roles, before the earlier step is
+live. Nothing from P8 is applied to the production database out of order.
+
+**B1: runtime database roles** (section 27). First in both orders: P8A-0's grants and its qualification depend on
+the roles existing. Dedicated `kj_worker` and `kj_door` roles, a reviewed grant manifest, explicit row level security
+policies, full P1 to P7 requalification and a production cutover in its own change window. It changes no behaviour
+and adds no P8 object.
 
 **P8A-0: substrate, feature off.** Implementation and deployment; no live reflection and no model call.
 - Contracts and schema: the reflection tables, evaluations, dispositions, support, Class E table and the
   `self_model_current` view.
+- The key normalisation contract with its Unicode pin and vectors (section 11.1) and the candidate construction
+  contract with its vectors (section 10.1).
 - The atomic admission reservation and quota (section 5.4), and the neutral scanner module with the pure
   pre-admission function (section 5.3).
-- The reflection governance mode, default `DISABLED`.
+- The reflection governance mode, default `DISABLED`, with its two functions (section 17.1).
 - The candidate unique index and cap triggers, the replaced version and transition guards (sections 8 and 10), the
-  composite keys of section 23, health rows, fences and the mutation harness.
+  composite keys of section 23, the runtime-role guard and P8 grants (section 27.5), health rows, fences and the
+  mutation harness.
 - The door does **not** accept the recipe.
 
 **B2: Class B faculty-version review** (section 6.4), before P8A-1.
@@ -1182,15 +1360,21 @@ The authoritative sequence is `docs/operations/KJ_P8_IMPLEMENTATION_SEQUENCE.md`
 **P8A-2: HELD model candidates.** A separate authorisation; mode `PROPOSE_IDENTITY`. A `MODEL_PROPOSAL` still cannot
 be approved (the P7A CHECK is unchanged), cannot produce a version (section 10 item 7) and cannot be activated.
 
-**B1: dedicated least-privilege worker database role**, with full P1 to P7 requalification (section 22).
-
-**P8B: controlled growth.** A separate ADR addendum, its own hostile review and explicit HUMAN authorisation; never
-before B1. The adoption binding, the static CHECK revision, the dynamic approval trigger, the two growth-window
-tables, the `ADOPT` workflow and controlled activation. **There is no auto-adoption at any class.**
+**P8B: controlled growth.** A separate ADR addendum, its own hostile review and explicit HUMAN authorisation. The
+adoption binding, the static CHECK revision, the dynamic approval trigger, the two growth-window tables and their
+functions, the `ADOPT` workflow and controlled activation. **There is no auto-adoption at any class.**
 
 ## 20. Acceptance gates
 
-**P8A-0** (qualification, no production reflection):
+**B1** (before any P8 object reaches production; detail in section 27.6):
+1. The catalogue equals the grant manifest exactly, for both runtime roles: no privilege more, none fewer.
+2. The complete existing suite, the mutation suites and the real-Restate tests pass with the worker as `kj_worker`
+   and the door as `kj_door`, with zero permission-denied errors and unchanged pass counts.
+3. Every denied operation of section 27.6 fails on purpose.
+4. In production, after cutover: the running worker and door report `current_user` as their runtime roles, a P1 to
+   P7 live proof passes, and `database.runtimeRolesLeastPrivilege` is green.
+
+**P8A-0** (qualification under the runtime roles, no production reflection):
 1. Two concurrent `REFLECT` admissions at 5 of 6 against real Postgres: exactly one admitted, in both orderings.
 2. Six admitted tasks that all FAIL still refuse a seventh.
 3. A replayed idempotency key consumes no second slot.
@@ -1199,6 +1383,9 @@ tables, the `ADOPT` workflow and controlled activation. **There is no auto-adopt
    in no log.
 5. A version insert for a `MODEL_PROPOSAL` candidate is refused.
 6. Every check has a negative case that fails on purpose, in the same change.
+7. Every golden vector of sections 10.1 and 11.1 passes, and the Unicode conformance digest is reproduced.
+8. A P8 write attempted while the session role is the owner is refused (`P8_OWNER_ROLE_REFUSED`).
+9. `kj_worker` cannot insert a `reflection_governance` row, and cannot execute `set_reflection_mode`.
 
 **P8A-1 and P8A-2** (live, with production mode raised in its window):
 1. An admitted reflection task completes normally; a non-owner HUMAN is refused before admission.
@@ -1223,7 +1410,8 @@ tables, the `ADOPT` workflow and controlled activation. **There is no auto-adopt
 17. Health is clean, with NO_OBSERVATION where expected.
 
 **P8B:**
-1. B1 is closed: the worker is not `postgres`, and it cannot execute the mode-raise or window-open functions.
+1. B1 still holds: the runtime roles are unchanged, the catalogue still equals the manifest including the P8B
+   objects, and `kj_worker` cannot insert a window or a closure or execute `open_growth_window`.
 2. Explicit HUMAN authorisation is recorded.
 3. One approved C or D model candidate is adopted through `ADOPT`, inside an effective window.
 4. A direct `UPDATE` of a model candidate to APPROVED is refused; a `SHARED_BRAIN` candidate cannot be APPROVED.
@@ -1256,6 +1444,8 @@ tables, the `ADOPT` workflow and controlled activation. **There is no auto-adopt
 | `reflection.recordsHaveEvidence` | every record has 1 or more qualified refs, and a CURRENT model observation has a supportive evaluation | P2 |
 | `reflection.evidenceCarriesNoModelText` | reflection runtime evidence matches the section 15.1 contract | P2 |
 | `reflection.adoptedChangeUnreviewed` | no adopted model change older than the alerting default (14 days) without a `POST_CHANGE` reflection | P3, notified |
+
+| `database.runtimeRolesLeastPrivilege` | the worker and the door are connected as `kj_worker` and `kj_door`; neither role is superuser, owner of any object, member of any role, `BYPASSRLS`, `CREATEDB` or `CREATEROLE`; the catalogue grants and policies equal the manifest | **P0** |
 
 - The P0 and P1 rows are detection behind database prevention; each also has a database constraint or trigger.
 - A Class E behavioural-consumer or topology breach is a **qualification failure** in CI (section 16). It is not
@@ -1295,7 +1485,7 @@ tables, the `ADOPT` workflow and controlled activation. **There is no auto-adopt
 15. **Can it write to the Shared Brain?** No. There is no connector, credential or code.
 16. **Can it bypass the C/D freeze?** No. P8A changes no activation guard; P8B needs an effective window.
 17. **Who opens a growth window?** Deployment authority in an authorised change window, naming the HUMAN
-    authorisation, and only after B1.
+    authorisation. The runtime roles cannot: they have no INSERT on the table and no EXECUTE on the function.
 18. **How is an opening audited?** An immutable OPEN row, plus release-window evidence.
 19. **How does the human freeze immediately?** A `FREEZE` task: it writes `DISABLED` and, in P8B, closes any effective
     window. Both take effect for the next transaction.
@@ -1322,8 +1512,12 @@ tables, the `ADOPT` workflow and controlled activation. **There is no auto-adopt
 | 14 | model observation overrides a HUMAN correction | cannot become CURRENT | derivation rule 1; kernel disposition `OPERATOR_CORRECTED_SCOPE` |
 | 15b | trivially reworded repeat (case, spacing, compatibility characters) mints a second record | matches the existing key; support only | `reflection-key-normalise/v1` with golden vectors (section 11.1) |
 | 15 | replay appends duplicate support | absorbed | `unique (subject_id, reflection_task_id)` and a deterministic id; at most 6 rows per task, 36 per tenant per 24h |
-| 16 | worker as `postgres` in P8A | residual accepted, bounded and stated | B1 below |
-| 17 | worker as `postgres` in P8B | not permitted | P8B cannot be implemented or deployed before B1 |
+| 16 | worker as `postgres` in P8A | not permitted | B1 is the first production step; P8 writes refuse under the owner (section 27.5) |
+| 17 | worker as `postgres` in P8B | not permitted | the same |
+| 18 | runtime role raises the reflection mode | refused | no INSERT on the table, no EXECUTE on `set_reflection_mode`; the setting-based recognition is withdrawn (17.1) |
+| 19 | operations fall back to the owner after an incident | P8 stops working; P0 alert | runtime-role guard on P8 writes; `database.runtimeRolesLeastPrivilege` (27.5, 27.7) |
+| 20 | two implementations build different candidate bytes for a list edit | impossible | exact construction contract and golden vectors (10.1) |
+| 21 | a runtime Unicode upgrade changes a `v1` key | refused at start | Unicode 15.1.0 pin, assigned-only input, conformance digest (11.1) |
 
 **Findings of this self-review that changed the design:**
 - A model candidate could have produced an identity version, moving `identity_head`, without activation
@@ -1343,25 +1537,20 @@ READ COMMITTED snapshot behaviour inside triggers, the same-transaction id techn
 triggers are INFERENCE from Postgres semantics and from existing patterns in this repository, and each is an
 acceptance gate in section 20.
 
-### 22.3 Blocking items
+### 22.3 Prerequisites and gates
 
-**B1: dedicated least-privilege worker database role. Blocks P8B. Does not block P8A.**
+**B1: runtime database roles. A prerequisite for every P8 production stage, not an accepted residual.**
 
-The residual, stated plainly: while the worker connects as the `postgres` owner, database privileges cannot prevent
-malicious or defective worker code from raising the reflection mode or from writing advisory reflection state
-directly. Triggers constrain the shape of what is written; they do not constrain who writes it.
+Revision 2.2 accepted the worker running as the `postgres` owner during P8A and deferred the dedicated role to
+before P8B. The hostile re-seal rejected that, and revision 2.3 withdraws it. Owner-role execution is not acceptable
+for any live P8 stage. B1 is fully specified in section 27 and is the first step of the rollout.
 
-P8A accepts this existing owner-role trust boundary only because:
-- P8A cannot approve a `MODEL_PROPOSAL` (the P7A CHECK is unchanged);
-- P8A cannot create a version for, or activate, a `MODEL_PROPOSAL` (section 10 item 7 and the P7A guard);
-- the Class C/D freeze remains;
-- reflection state has no behavioural consumer;
-- health and topology checks provide detection.
-
-Before P8B the dedicated role is **mandatory**. P8B cannot be implemented or deployed while the worker remains the
-`postgres` owner. The role gets only the table privileges its writes need, and no EXECUTE on the mode-raise function,
-the window-open function or any deployment function. The role migration must requalify every existing P1 to P7 worker
-operation. B1 needs its own design and review.
+What remains true after B1, stated plainly:
+- the deployment owner, used by a human operator in a change window, can still do anything to the database. That is
+  the deployment trust boundary and is unchanged;
+- a defective `kj_worker` can still write advisory reflection records that pass the triggers, including a wrong
+  dedupe key. It cannot raise the mode, open a window, alter an object, disable a trigger, approve, or write a
+  version or activation outside the governed transaction and its guards.
 
 **B2: Class B faculty-version change. Blocks P8A-1, by design.** Section 6.4. It is a separate review gate. This ADR
 specifies what B2 must contain; it does not author the faculty versions.
@@ -1432,7 +1621,12 @@ migration; no applied migration is edited.
 
 No authority-critical ambiguity is known to remain. Open, and not authority-critical:
 
-- B1 and B2 are sequencing blockers with their own reviews (section 22.3).
+- B1 is a specified prerequisite step, not an open question: no P8 object reaches production before it is
+  qualified (section 27). B2 is a separate review gate before P8A-1 (section 6.4).
+- The grant manifest's P1 to P7 baseline in section 27.4 comes from a static survey and is INFERENCE until the B1
+  inventory completes and freezes it. The P8 grants in section 27.5 are exact.
+- The door's current database role was not observed. B1 gives it a dedicated role whatever it is today.
+- The hexadecimal value of the Unicode conformance digest is fixed at implementation, by the procedure in 11.1.
 - One narrowing for the re-seal to confirm: only `REFLECT` consumes an admission slot (section 22.2).
 - RECOMMENDATION, out of scope here: apply the pre-admission scan to `identity-change/v1` `PROPOSE` and `ROLLBACK`
   under a separate authorisation (section 5.3).
@@ -1440,3 +1634,149 @@ No authority-critical ambiguity is known to remain. Open, and not authority-crit
 - The 14-day `POST_CHANGE` figure is a tunable alerting default with no authority.
 - The complete text of the hostile review was not found on disk in this worktree, the main checkout or the
   new-system docs. Revision 2 was written against the binding blocker statements in the remediation brief.
+
+## 27. Runtime database roles (B1; P8-R22-B1-LP)
+
+### 27.1 Rule
+
+No runtime process connects to the production database as an owner or a superuser. Production acquires no P8 object
+until that is true and qualified. This is a design requirement of P8, placed first in the rollout.
+
+### 27.2 Roles
+
+| Role | Used by | Attributes |
+|---|---|---|
+| deployment owner (the existing `postgres` role) | a human operator in an authorised change window; never a running service | owns every object in `public` and `kernel_private`; applies migrations; runs the deployment functions |
+| `kj_worker` | the kernel worker (workflows, ledger, scheduler, channel adapters) | `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT`, a connection limit, a password held only in the vault |
+| `kj_door` | the admission door (gateway) | the same attributes |
+
+For both runtime roles:
+- **Ownership:** they own nothing, in any schema, including every P8 table, view and function.
+- **Membership:** they are members of no role and no role is a member of them, so `SET ROLE` and
+  `SET SESSION AUTHORIZATION` to another role fail. They cannot assume the owner.
+- **Schemas:** USAGE on `public` and `kernel_private` only. No CREATE on any schema (CREATE on `public` is revoked
+  from `PUBLIC`), no TEMPORARY on the database. They have no privilege on the migration ledger schema, on the
+  vault, or on any other schema.
+- A read-only reporting process, if one connects separately, gets a third role with SELECT only, under the same
+  attribute rules. Health and Mission Control read paths that run inside the worker or door use those roles.
+
+### 27.3 What the runtime roles can never do
+
+Each line is enforced by Postgres privilege rules for a non-owner, non-superuser role and is a negative test in
+section 27.6:
+
+| Operation | `kj_worker` | `kj_door` |
+|---|---|---|
+| ALTER, DROP or CREATE any table, view, function, trigger, type or schema | no | no |
+| disable or enable a trigger; `SET session_replication_role` | no | no |
+| enable, disable or force row level security; create, alter or drop a policy | no | no |
+| TRUNCATE any table | no | no |
+| GRANT or REVOKE anything | no | no |
+| apply or record a migration | no | no |
+| execute `activate_release`, or write `release_epoch` or `release_activations` | no | no |
+| execute `set_identity_freeze` | no | no |
+| execute `set_reflection_mode`; insert into `reflection_governance` | no | no |
+| execute `open_growth_window` or the deployment close; insert into either window table | no | no |
+| UPDATE or DELETE on any append-only table (also refused by `reject_ledger_mutation`) | no | no |
+| assume another role; bypass row level security | no | no |
+
+**Approval and adoption.** `kj_worker` has no way to approve or adopt directly. It may insert an
+`identity_model_adoptions` row and update a candidate's state, but only rows that pass the section 18 triggers,
+which it cannot alter or disable. **Identity versions and activations:** it may insert them, as it does today, and
+only rows that pass the existing and replaced guards; there is no ungoverned write.
+
+### 27.4 Grant manifest
+
+One file in the repository is the single source of the grants: for each role, each object, the verbs, the columns
+for column-level UPDATE, the functions executable, and the row level security policy. The B1 migration is generated
+from it or checked against it, and a test compares the live catalogue with it in both directions.
+
+**Row level security.** Every table already has it enabled and no policy exists. A non-owner role therefore sees
+nothing until policies are added. The B1 migration adds, per table and per verb in the manifest, one explicit policy
+`to kj_worker` or `to kj_door`. It does not grant `BYPASSRLS` and does not disable row level security. Tenant
+isolation continues to be enforced where it is today, by `withTenant` and the composite keys; the policies do not
+weaken it. Views keep `security_invoker`.
+
+**`kj_worker`, P1 to P7 baseline** (static survey of the code at `750d5b7`; INFERENCE until the inventory of 27.6
+step 1 completes and freezes it):
+
+| Verb | Objects |
+|---|---|
+| SELECT | every table and view in `public` and `kernel_private`. Triggers are `security invoker` and read widely (tasks, admissions, approvals, task events, identity tables), so the worker's reads are not narrowed further |
+| INSERT | the tables the worker writes today: `tasks`, `task_steps`, `task_events`, `evidence`, `artifacts`, `outcomes`, `approvals`, `evaluations`, `observations`, `entities`, `relationships`, the capability tables, the memory tables, the schedule tables, `faculty_pins`, the identity tables, `principals`, `tenant_memberships`, and in `kernel_private` `execution_bindings`, `task_admissions`, `dispatch_events`, `effect_receipts`, `control_events`, `control_assertions`, `identity_cognition_latches`, `alert_state`, `terminal_results`, the notification tables and the Telegram tables |
+| UPDATE | only where the code updates today: `tasks`, `approvals`, `schedule_fires`, `identity_candidates` (columns `state`, `resolved_at`), `memory_candidates`, `kernel_private.telegram_approval_cards`, and the upsert targets of the alert state store, the ledger and the scheduler store |
+| DELETE | `kernel_private.control_assertions` (nonce retention) and `schedule_leases` |
+| EXECUTE | the non-trigger private functions the code calls today (`identity_cognition_source_v1`, `identity_core_digest_v1` and those the inventory finds). Trigger functions need no EXECUTE grant |
+
+**`kj_door`, P1 to P7 baseline:** SELECT on what admission, status and the read views need; INSERT on
+`kernel_private.execution_bindings`, `kernel_private.task_admissions` and `kernel_private.dispatch_events`; no UPDATE
+and no DELETE. The inventory fixes the exact SELECT list.
+
+Nothing is revoked from a path production needs: the baseline is derived from what the code does, completed by the
+inventory, and proved by the full suite before cutover.
+
+### 27.5 P8 grants (exact)
+
+| Object | `kj_worker` | `kj_door` |
+|---|---|---|
+| `kernel_private.reflection_admission_reservations` | SELECT | SELECT, INSERT |
+| `kernel_private.reflection_governance` | SELECT | SELECT |
+| `public.reflection_proposals`, `reflection_evaluations`, `reflection_dispositions`, `reflection_support` | SELECT, INSERT | none |
+| `public.self_model_observations`, view `self_model_current` | SELECT, INSERT (table); SELECT (view) | none |
+| `public.identity_candidates` | as the baseline (model-origin inserts from P8A-2) | none |
+| `public.identity_profiles` | as the baseline | SELECT (owner check) |
+| `kernel_private.identity_model_adoptions` (P8B) | SELECT, INSERT | none |
+| `kernel_private.identity_growth_windows`, `identity_growth_window_closures` (P8B) | SELECT | none |
+| `kernel_private.freeze_reflection` | EXECUTE | none |
+| `kernel_private.close_growth_window_by_owner` (P8B) | EXECUTE | none |
+| `kernel_private.set_reflection_mode`, `open_growth_window`, deployment close | none | none |
+
+- No UPDATE, DELETE or TRUNCATE on any P8 table, for either role.
+- The `security definer` functions are owned by the deployment owner, set `search_path = ''`, take only ids, validate
+  the task as section 17 states, and are revoked from `PUBLIC`.
+- **Runtime-role guard.** Every trigger on a runtime-written P8 table (reservations, proposals, evaluations,
+  dispositions, support, observations, model-origin candidates and adoption bindings) first checks `session_user`.
+  If it is not `kj_worker` or `kj_door`, the write is refused `P8_OWNER_ROLE_REFUSED`. `session_user` is used, not
+  `current_user`, so the check holds inside a definer function. P8 therefore cannot operate under the owner at all:
+  a return to `postgres` makes P8 stop, it does not make P8 run with wider authority. This is a guard against an
+  operational fallback. It is not a defence against a hostile owner, who can alter anything.
+
+### 27.6 Qualification method
+
+1. **Inventory.** A script extracts every SQL statement in `services`, `apps` and `packages` and every table a
+   trigger function reads or writes, and produces the object, verb and column list. That list, reviewed, becomes the
+   grant manifest. The static baseline in 27.4 is its starting point, not its substitute.
+2. **Catalogue equality.** After the B1 migration, role attributes, memberships, table and column grants, function
+   grants, ownership and policies read from the catalogue equal the manifest exactly. An extra privilege fails the
+   check, as a missing one does.
+3. **Positive requalification, P1 to P7.** The complete existing suite, the faculty, identity and cognition mutation
+   suites and the real-Restate tests run with the worker connected as `kj_worker` and the door as `kj_door`, against
+   a database migrated by the owner. Required: the same pass and skip counts as the baseline run at the same commit,
+   and zero `42501` (insufficient privilege) errors in the database log for the whole run.
+4. **Negative qualification.** Connected as each runtime role, every operation of section 27.3 is attempted and must
+   fail, with `42501` or the named refusal. From P8A-0 the list also covers the P8 denials of 27.5. A check that has
+   not been seen to fail is not accepted.
+5. **Production cutover**, in its own change window: credentials provisioned through the vault tooling, value never
+   in an argument; worker and door restarted on the runtime roles; `current_user` read from each running process;
+   a P1 to P7 live proof (a mission, a scheduled fire, an approval, a Telegram round trip); health green.
+6. **Soak.** P8A-0 is not applied to production until B1 has run through at least one full scheduler cycle and one
+   live mission with zero insufficient-privilege errors.
+
+### 27.7 Fail-closed semantics
+
+- If B1 cannot be established or does not qualify, P8 stays unavailable. Nothing in P8 is deployed.
+- A missing grant found after cutover is fixed forward: a reviewed manifest change and a migration in a change
+  window. It is never fixed by connecting a service as the owner.
+- Before any P8 object exists in production, reverting the role change is an ordinary P1 to P7 rollback and returns
+  the system to its recorded pre-B1 state, with P8 still absent.
+- Once a P8 object exists in production, running a runtime process as the owner is prohibited. If it happens, the
+  runtime-role guard refuses every P8 write and `database.runtimeRolesLeastPrivilege` raises P0. Existing P1 to P7
+  paths are not made to depend on P8, so they are not broken by P8 refusing.
+- There is no temporary owner mode, no break-glass switch for P8 and no degraded mode that widens authority.
+
+### 27.8 What B1 does not change
+
+- No P1 to P7 behaviour, contract, trigger or migration file changes. Applied migrations are not edited; B1 is a new
+  migration.
+- No table changes owner. No row level security setting is relaxed.
+- The deployment owner and the change-window process are unchanged.
