@@ -1,0 +1,1867 @@
+{
+  "contract": "kerneljson:b1-static-inventory/v1",
+  "migrations": [
+    "20260905153656_identity.sql",
+    "20260905153700_task_ledger.sql",
+    "20260905153704_intelligence_metadata.sql",
+    "20260905153708_world_model.sql",
+    "20260905173500_memory_provenance.sql",
+    "20260905173800_world_provenance.sql",
+    "20260905174200_evaluation_history.sql",
+    "20260908233816_qualification_gate_1.sql",
+    "20260908234518_qualification_terminal_results.sql",
+    "20260908234711_qualification_membership_lifecycle.sql",
+    "20260908234849_qualification_ingress_receipts.sql",
+    "20260910180000_scheduler.sql",
+    "20260915220000_alert_state.sql",
+    "20260916205049_release_provenance.sql",
+    "20260917120000_notification_outbox.sql",
+    "20260920120000_telegram_operator.sql",
+    "20260920150000_telegram_approvals.sql",
+    "20260920180000_control_assertions.sql",
+    "20260921180000_canonical_memory.sql",
+    "20260923150000_core_team_faculties.sql",
+    "20260925120000_primary_identity.sql",
+    "20260929120000_identity_cognition_binding.sql",
+    "20261002090000_runtime_least_privilege_roles.sql"
+  ],
+  "catalogue": {
+    "tables": [
+      "kernel_private.alert_state",
+      "kernel_private.control_assertions",
+      "kernel_private.control_events",
+      "kernel_private.dispatch_events",
+      "kernel_private.effect_receipts",
+      "kernel_private.execution_bindings",
+      "kernel_private.identity_cognition_contract_v1",
+      "kernel_private.identity_cognition_latches",
+      "kernel_private.identity_governance_state",
+      "kernel_private.membership_events",
+      "kernel_private.notification_delivery_events",
+      "kernel_private.notification_outbox",
+      "kernel_private.release_activations",
+      "kernel_private.release_epoch",
+      "kernel_private.task_admissions",
+      "kernel_private.telegram_approval_cards",
+      "kernel_private.telegram_approval_handles",
+      "kernel_private.telegram_callback_inbox",
+      "kernel_private.telegram_inbox",
+      "kernel_private.telegram_operator_state",
+      "kernel_private.terminal_results",
+      "public.approvals",
+      "public.artifacts",
+      "public.capabilities",
+      "public.capability_runs",
+      "public.capability_versions",
+      "public.channels",
+      "public.entities",
+      "public.evaluations",
+      "public.evidence",
+      "public.faculty_pins",
+      "public.faculty_versions",
+      "public.identity_activations",
+      "public.identity_candidates",
+      "public.identity_pins",
+      "public.identity_profiles",
+      "public.identity_versions",
+      "public.memory_candidates",
+      "public.memory_context_assemblies",
+      "public.memory_items",
+      "public.memory_promotions",
+      "public.memory_relations",
+      "public.memory_versions",
+      "public.observations",
+      "public.outcomes",
+      "public.principals",
+      "public.relationships",
+      "public.schedule_backfill_requests",
+      "public.schedule_fires",
+      "public.schedule_leases",
+      "public.schedule_observations",
+      "public.schedule_specs",
+      "public.schedule_state",
+      "public.task_events",
+      "public.task_steps",
+      "public.tasks",
+      "public.tenant_memberships",
+      "public.tenants"
+    ],
+    "views": [
+      "public.faculty_current",
+      "public.identity_current",
+      "public.identity_head",
+      "public.memory_current"
+    ],
+    "functions": [
+      "kernel_private.activate_release",
+      "kernel_private.identity_cognition_source_v1",
+      "kernel_private.identity_core_canonical_v1",
+      "kernel_private.identity_core_digest_v1",
+      "kernel_private.identity_json_string_v1",
+      "kernel_private.set_identity_freeze"
+    ],
+    "triggerFunctions": [
+      "kernel_private.identity_cognition_contract_guard",
+      "kernel_private.identity_cognition_latch_guard",
+      "kernel_private.identity_latch_pin_consistency",
+      "kernel_private.membership_change",
+      "kernel_private.record_terminal_result",
+      "kernel_private.stamp_binding_provenance",
+      "public.check_task_completion",
+      "public.check_task_transition",
+      "public.faculty_pin_guard",
+      "public.faculty_version_guard",
+      "public.identity_activation_guard",
+      "public.identity_candidate_classify",
+      "public.identity_candidate_transition_guard",
+      "public.identity_owner_guard",
+      "public.identity_pin_guard_v1",
+      "public.identity_version_digest_parity_v1",
+      "public.identity_version_guard",
+      "public.memory_candidate_guard",
+      "public.memory_promotion_guard",
+      "public.memory_relation_guard",
+      "public.memory_version_guard",
+      "public.reject_ledger_mutation",
+      "public.schedule_fire_bind_once"
+    ],
+    "securityDefinerFunctions": []
+  },
+  "entryPoints": {
+    "kj_worker": [
+      "services/kernel/src/index.ts",
+      "services/kernel/src/health/cli.ts",
+      "services/kernel/src/alerting/cli.ts",
+      "services/kernel/src/alerting/outbox-gate-cli.ts",
+      "services/kernel/src/alerting/test-notification-cli.ts"
+    ],
+    "kj_door": [
+      "apps/gateway/src/main.ts"
+    ]
+  },
+  "deploymentModules": [
+    {
+      "file": "services/kernel/src/tools/canary-runner.ts",
+      "operations": []
+    },
+    {
+      "file": "services/kernel/src/scheduler/canary-seed.ts",
+      "operations": [
+        {
+          "verb": "SELECT",
+          "object": "public.principals",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/scheduler/canary-seed.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.tenant_memberships",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/scheduler/canary-seed.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.tenants",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/scheduler/canary-seed.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "services/kernel/src/identity/provisioning-pg.ts",
+      "operations": [
+        {
+          "verb": "INSERT",
+          "object": "public.principals",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/identity/provisioning-pg.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.principals",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/identity/provisioning-pg.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.tenant_memberships",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/identity/provisioning-pg.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.tenant_memberships",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/identity/provisioning-pg.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.tenants",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/identity/provisioning-pg.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "services/kernel/src/approval-test-cli.ts",
+      "operations": []
+    },
+    {
+      "file": "services/evaluator/src/cli.ts",
+      "operations": []
+    }
+  ],
+  "roles": {
+    "kj_worker": {
+      "reachableFilesWithSql": [
+        "packages/identity/src/index.ts",
+        "services/kernel/src/alerting/outbox-gate.ts",
+        "services/kernel/src/alerting/pg-outbox-store.ts",
+        "services/kernel/src/alerting/pg-state-store.ts",
+        "services/kernel/src/approval-store.ts",
+        "services/kernel/src/capability-store.ts",
+        "services/kernel/src/channel/telegram/pg-card-store.ts",
+        "services/kernel/src/channel/telegram/pg-inbox-store.ts",
+        "services/kernel/src/channel/telegram/status.ts",
+        "services/kernel/src/control-signing.ts",
+        "services/kernel/src/execution-binding.ts",
+        "services/kernel/src/faculty/registry.ts",
+        "services/kernel/src/golden-workflow.ts",
+        "services/kernel/src/health/collect.ts",
+        "services/kernel/src/health/evaluate.ts",
+        "services/kernel/src/health/release-provenance.ts",
+        "services/kernel/src/identity/cognition-binding.ts",
+        "services/kernel/src/identity/complete.ts",
+        "services/kernel/src/identity/store.ts",
+        "services/kernel/src/ledger.ts",
+        "services/kernel/src/provenance.ts",
+        "services/kernel/src/scheduler/pg-store.ts",
+        "services/kernel/src/terminal.ts",
+        "services/kernel/src/verification-store.ts",
+        "services/memory/src/canonical/approval-binding.ts",
+        "services/memory/src/canonical/service.ts"
+      ],
+      "operations": [
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.alert_state",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/alerting/pg-state-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.alert_state",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/alerting/pg-state-store.ts",
+            "services/kernel/src/channel/telegram/status.ts"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.alert_state",
+          "kind": "table",
+          "columns": [
+            "current_state",
+            "first_seen_at",
+            "last_notified_at",
+            "last_seen_at",
+            "occurrence_count",
+            "recovered_at",
+            "severity"
+          ],
+          "sources": [
+            "services/kernel/src/alerting/pg-state-store.ts"
+          ]
+        },
+        {
+          "verb": "DELETE",
+          "object": "kernel_private.control_assertions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/control-signing.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.control_assertions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/control-signing.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.control_assertions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/control-signing.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.effect_receipts",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/terminal.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.effect_receipts",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/terminal.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.execution_bindings",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/execution-binding.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.execution_bindings",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/execution-binding.ts",
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/health/release-provenance.ts",
+            "services/kernel/src/identity/cognition-binding.ts",
+            "services/kernel/src/ledger.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.identity_cognition_contract_v1",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/cognition-binding.ts",
+            "services/kernel/src/ledger.ts",
+            "trigger:kernel_private.identity_cognition_latches:kernel_private.identity_cognition_latch_guard"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.identity_cognition_latches",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/identity/cognition-binding.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.identity_cognition_latches",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/cognition-binding.ts",
+            "services/kernel/src/ledger.ts",
+            "trigger:kernel_private.identity_cognition_latches:kernel_private.identity_latch_pin_consistency",
+            "trigger:public.identity_pins:kernel_private.identity_latch_pin_consistency"
+          ]
+        },
+        {
+          "verb": "EXECUTE",
+          "object": "kernel_private.identity_cognition_source_v1",
+          "kind": "function",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/identity/cognition-binding.ts"
+          ]
+        },
+        {
+          "verb": "EXECUTE",
+          "object": "kernel_private.identity_core_canonical_v1",
+          "kind": "function",
+          "columns": [],
+          "sources": [
+            "function:kernel_private.identity_core_canonical_v1",
+            "function:kernel_private.identity_core_digest_v1",
+            "trigger:public.identity_pins:public.identity_pin_guard_v1"
+          ]
+        },
+        {
+          "verb": "EXECUTE",
+          "object": "kernel_private.identity_core_digest_v1",
+          "kind": "function",
+          "columns": [],
+          "sources": [
+            "function:kernel_private.identity_cognition_source_v1",
+            "services/kernel/src/health/collect.ts",
+            "trigger:public.identity_pins:public.identity_pin_guard_v1",
+            "trigger:public.identity_versions:public.identity_version_digest_parity_v1"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.identity_governance_state",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "trigger:public.identity_activations:public.identity_activation_guard"
+          ]
+        },
+        {
+          "verb": "EXECUTE",
+          "object": "kernel_private.identity_json_string_v1",
+          "kind": "function",
+          "columns": [],
+          "sources": [
+            "function:kernel_private.identity_core_canonical_v1"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.notification_delivery_events",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/alerting/pg-outbox-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.notification_delivery_events",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/alerting/outbox-gate.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.notification_outbox",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/alerting/pg-outbox-store.ts",
+            "services/kernel/src/alerting/pg-state-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.notification_outbox",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/alerting/outbox-gate.ts",
+            "services/kernel/src/alerting/pg-outbox-store.ts",
+            "services/kernel/src/alerting/pg-state-store.ts",
+            "services/kernel/src/channel/telegram/status.ts"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.notification_outbox",
+          "kind": "table",
+          "columns": [
+            "attempt_count",
+            "delivered_at",
+            "last_attempt_at",
+            "last_error",
+            "next_attempt_at",
+            "status"
+          ],
+          "sources": [
+            "services/kernel/src/alerting/pg-outbox-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.release_activations",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/channel/telegram/status.ts",
+            "services/kernel/src/health/release-provenance.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.release_epoch",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/channel/telegram/status.ts",
+            "services/kernel/src/health/release-provenance.ts",
+            "trigger:kernel_private.execution_bindings:kernel_private.stamp_binding_provenance"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.release_epoch",
+          "kind": "table",
+          "columns": [
+            "epoch"
+          ],
+          "sources": [
+            "trigger:kernel_private.execution_bindings:kernel_private.stamp_binding_provenance"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.task_admissions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/health/collect.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.telegram_approval_cards",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "kernel_private.telegram_approval_cards",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.telegram_approval_cards",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.telegram_approval_cards",
+          "kind": "table",
+          "columns": [
+            "attempt_count",
+            "claimed_at",
+            "message_id",
+            "resolved_at",
+            "sent_at",
+            "state"
+          ],
+          "sources": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.telegram_approval_handles",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.telegram_approval_handles",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.telegram_callback_inbox",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.telegram_callback_inbox",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.telegram_callback_inbox",
+          "kind": "table",
+          "columns": [
+            "approval_id",
+            "completed_at",
+            "disposition",
+            "pressed",
+            "state"
+          ],
+          "sources": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.telegram_inbox",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/channel/telegram/pg-inbox-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.telegram_inbox",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/channel/telegram/pg-inbox-store.ts"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.telegram_inbox",
+          "kind": "table",
+          "columns": [
+            "command",
+            "completed_at",
+            "disposition",
+            "mission",
+            "reply_notification_id",
+            "state",
+            "task_id"
+          ],
+          "sources": [
+            "services/kernel/src/channel/telegram/pg-inbox-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.telegram_operator_state",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/channel/telegram/pg-inbox-store.ts"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.telegram_operator_state",
+          "kind": "table",
+          "columns": [
+            "next_offset",
+            "unauthorised_total",
+            "updated_at"
+          ],
+          "sources": [
+            "services/kernel/src/channel/telegram/pg-inbox-store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.terminal_results",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "trigger:public.tasks:kernel_private.record_terminal_result"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.terminal_results",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/terminal.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.approvals",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/approval-store.ts"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.approvals",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/verification-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.approvals",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/channel/telegram/pg-card-store.ts",
+            "services/kernel/src/verification-store.ts",
+            "services/memory/src/canonical/approval-binding.ts",
+            "trigger:public.identity_activations:public.identity_activation_guard"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.approvals",
+          "kind": "table",
+          "columns": [
+            "evidence_id",
+            "resolved_at",
+            "status"
+          ],
+          "sources": [
+            "services/kernel/src/approval-store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.capabilities",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/capability-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.capabilities",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/capability-store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.capability_runs",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/capability-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.capability_runs",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/verification-store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.capability_versions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/capability-store.ts"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.capability_versions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/capability-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.capability_versions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/verification-store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.evidence",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/ledger.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.evidence",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/provenance.ts",
+            "services/kernel/src/terminal.ts",
+            "services/kernel/src/verification-store.ts",
+            "trigger:public.tasks:public.check_task_completion"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.faculty_current",
+          "kind": "view",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/faculty/registry.ts",
+            "trigger:public.faculty_pins:public.faculty_pin_guard"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.faculty_pins",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/faculty/registry.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.faculty_pins",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/faculty/registry.ts",
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/ledger.ts",
+            "trigger:kernel_private.identity_cognition_latches:kernel_private.identity_cognition_latch_guard",
+            "trigger:public.identity_pins:public.identity_pin_guard_v1"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.faculty_versions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/ledger.ts",
+            "trigger:public.faculty_pins:public.faculty_pin_guard",
+            "view:public.faculty_current"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.identity_activations",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/identity/complete.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.identity_activations",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/complete.ts",
+            "trigger:public.identity_activations:public.identity_activation_guard",
+            "view:public.identity_current"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.identity_candidates",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/identity/store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.identity_candidates",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/identity/store.ts",
+            "trigger:public.identity_activations:public.identity_activation_guard",
+            "trigger:public.identity_versions:public.identity_version_guard"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.identity_candidates",
+          "kind": "table",
+          "columns": [
+            "resolved_at",
+            "state"
+          ],
+          "sources": [
+            "services/kernel/src/identity/store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.identity_current",
+          "kind": "view",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/cognition-binding.ts",
+            "services/kernel/src/identity/store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.identity_head",
+          "kind": "view",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/identity/store.ts",
+            "trigger:public.identity_candidates:public.identity_candidate_classify"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.identity_pins",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/identity/cognition-binding.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.identity_pins",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/cognition-binding.ts",
+            "services/kernel/src/ledger.ts",
+            "trigger:kernel_private.identity_cognition_latches:kernel_private.identity_latch_pin_consistency",
+            "trigger:public.identity_pins:kernel_private.identity_latch_pin_consistency"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.identity_profiles",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/identity/store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.identity_profiles",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/store.ts",
+            "trigger:public.identity_candidates:public.identity_candidate_classify"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.identity_versions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/identity/complete.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.identity_versions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "function:kernel_private.identity_cognition_source_v1",
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/identity/store.ts",
+            "trigger:public.identity_activations:public.identity_activation_guard",
+            "trigger:public.identity_candidates:public.identity_candidate_classify",
+            "trigger:public.identity_pins:public.identity_pin_guard_v1",
+            "trigger:public.identity_versions:public.identity_version_guard",
+            "view:public.identity_current",
+            "view:public.identity_head"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.memory_candidates",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/memory/src/canonical/service.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.memory_candidates",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/memory/src/canonical/service.ts",
+            "trigger:public.memory_promotions:public.memory_promotion_guard",
+            "trigger:public.memory_versions:public.memory_version_guard"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.memory_candidates",
+          "kind": "table",
+          "columns": [
+            "decided_at",
+            "state",
+            "state_reason"
+          ],
+          "sources": [
+            "services/memory/src/canonical/service.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.memory_context_assemblies",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/memory/src/canonical/service.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.memory_context_assemblies",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/memory/src/canonical/service.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.memory_current",
+          "kind": "view",
+          "columns": [],
+          "sources": [
+            "services/memory/src/canonical/service.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.memory_promotions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/memory/src/canonical/service.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.memory_promotions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/memory/src/canonical/service.ts",
+            "trigger:public.memory_relations:public.memory_relation_guard",
+            "trigger:public.memory_versions:public.memory_version_guard"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.memory_relations",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/memory/src/canonical/service.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.memory_relations",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/memory/src/canonical/service.ts",
+            "view:public.memory_current"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.memory_versions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/memory/src/canonical/service.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.memory_versions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/memory/src/canonical/service.ts",
+            "trigger:public.memory_relations:public.memory_relation_guard",
+            "trigger:public.memory_versions:public.memory_version_guard",
+            "view:public.memory_current"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.outcomes",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/verification-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.outcomes",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/provenance.ts",
+            "services/kernel/src/terminal.ts",
+            "services/kernel/src/verification-store.ts",
+            "trigger:public.tasks:public.check_task_completion"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.principals",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "packages/identity/src/index.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.principals",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "packages/identity/src/index.ts",
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/ledger.ts",
+            "trigger:public.identity_profiles:public.identity_owner_guard"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.schedule_backfill_requests",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.schedule_fires",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.schedule_fires",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/channel/telegram/status.ts",
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/scheduler/pg-store.ts"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.schedule_fires",
+          "kind": "table",
+          "columns": [
+            "admission_request_id",
+            "admitted_at",
+            "admitted_child_task_id",
+            "state"
+          ],
+          "sources": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ]
+        },
+        {
+          "verb": "DELETE",
+          "object": "public.schedule_leases",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.schedule_leases",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.schedule_leases",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.schedule_leases",
+          "kind": "table",
+          "columns": [
+            "acquired_at",
+            "epoch",
+            "expires_at",
+            "owner"
+          ],
+          "sources": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.schedule_observations",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.schedule_observations",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.schedule_specs",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.schedule_specs",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.schedule_state",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.schedule_state",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/health/evaluate.ts",
+            "services/kernel/src/scheduler/pg-store.ts"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.schedule_state",
+          "kind": "table",
+          "columns": [
+            "active_version",
+            "state",
+            "updated_at",
+            "updated_by"
+          ],
+          "sources": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.task_events",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/verification-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.task_events",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/channel/telegram/pg-card-store.ts",
+            "services/kernel/src/faculty/registry.ts",
+            "services/kernel/src/golden-workflow.ts",
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/verification-store.ts",
+            "trigger:public.faculty_pins:public.faculty_pin_guard",
+            "trigger:public.identity_activations:public.identity_activation_guard",
+            "trigger:public.tasks:public.check_task_completion"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.task_steps",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/ledger.ts"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.task_steps",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/verification-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.task_steps",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/verification-store.ts",
+            "services/memory/src/canonical/approval-binding.ts"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.task_steps",
+          "kind": "table",
+          "columns": [
+            "contract",
+            "status"
+          ],
+          "sources": [
+            "services/kernel/src/ledger.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.tasks",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/ledger.ts"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.tasks",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/terminal.ts",
+            "services/kernel/src/verification-store.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.tasks",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/channel/telegram/pg-card-store.ts",
+            "services/kernel/src/channel/telegram/status.ts",
+            "services/kernel/src/faculty/registry.ts",
+            "services/kernel/src/golden-workflow.ts",
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/health/evaluate.ts",
+            "services/kernel/src/identity/cognition-binding.ts",
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/provenance.ts",
+            "services/kernel/src/terminal.ts",
+            "services/kernel/src/verification-store.ts",
+            "services/memory/src/canonical/approval-binding.ts",
+            "trigger:public.faculty_pins:public.faculty_pin_guard",
+            "trigger:public.identity_candidates:public.identity_candidate_classify",
+            "trigger:public.identity_versions:public.identity_version_guard"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.tasks",
+          "kind": "table",
+          "columns": [
+            "contract",
+            "status",
+            "updated_at"
+          ],
+          "sources": [
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/verification-store.ts"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.tenant_memberships",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "packages/identity/src/index.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.tenant_memberships",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "packages/identity/src/index.ts",
+            "services/kernel/src/health/collect.ts",
+            "trigger:public.identity_profiles:public.identity_owner_guard"
+          ]
+        }
+      ]
+    },
+    "kj_door": {
+      "reachableFilesWithSql": [
+        "apps/gateway/src/index.ts",
+        "apps/gateway/src/server.ts",
+        "apps/mission-control/src/store.ts",
+        "packages/identity/src/index.ts",
+        "services/kernel/src/control-signing.ts",
+        "services/kernel/src/execution-binding.ts",
+        "services/kernel/src/provenance.ts",
+        "services/kernel/src/terminal.ts",
+        "services/memory/src/index.ts",
+        "services/world-model/src/index.ts"
+      ],
+      "operations": [
+        {
+          "verb": "DELETE",
+          "object": "kernel_private.control_assertions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/control-signing.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.control_assertions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/control-signing.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.control_assertions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/control-signing.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.control_events",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "apps/gateway/src/index.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.control_events",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "apps/mission-control/src/store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.dispatch_events",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "apps/gateway/src/server.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.dispatch_events",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "apps/gateway/src/server.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.effect_receipts",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/terminal.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.effect_receipts",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "apps/gateway/src/server.ts",
+            "services/kernel/src/terminal.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.execution_bindings",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/execution-binding.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.execution_bindings",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/execution-binding.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.release_epoch",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "trigger:kernel_private.execution_bindings:kernel_private.stamp_binding_provenance"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.release_epoch",
+          "kind": "table",
+          "columns": [
+            "epoch"
+          ],
+          "sources": [
+            "trigger:kernel_private.execution_bindings:kernel_private.stamp_binding_provenance"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.task_admissions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "apps/gateway/src/server.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.task_admissions",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "apps/gateway/src/server.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.terminal_results",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/terminal.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.approvals",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "apps/gateway/src/index.ts",
+            "apps/mission-control/src/store.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.entities",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/world-model/src/index.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.entities",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/world-model/src/index.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.evidence",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "apps/mission-control/src/store.ts",
+            "services/kernel/src/provenance.ts",
+            "services/kernel/src/terminal.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.memory_items",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/memory/src/index.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.memory_items",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/memory/src/index.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.observations",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/world-model/src/index.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.observations",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/world-model/src/index.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.outcomes",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/provenance.ts",
+            "services/kernel/src/terminal.ts"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.principals",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "packages/identity/src/index.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.principals",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "packages/identity/src/index.ts"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.relationships",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/world-model/src/index.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.relationships",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/world-model/src/index.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.task_events",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "apps/gateway/src/index.ts",
+            "apps/mission-control/src/store.ts"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.tasks",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "services/kernel/src/terminal.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.tasks",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "apps/gateway/src/index.ts",
+            "apps/gateway/src/server.ts",
+            "apps/mission-control/src/store.ts",
+            "services/kernel/src/provenance.ts",
+            "services/kernel/src/terminal.ts"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.tenant_memberships",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "packages/identity/src/index.ts"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.tenant_memberships",
+          "kind": "table",
+          "columns": [],
+          "sources": [
+            "apps/mission-control/src/store.ts",
+            "packages/identity/src/index.ts"
+          ]
+        }
+      ]
+    }
+  },
+  "filesWithSqlNotReachableFromAnyRuntimeEntry": [
+    "services/evaluator/src/store.ts",
+    "services/kernel/src/routing.ts",
+    "services/kernel/src/schedule-store.ts"
+  ]
+}

@@ -1,0 +1,1453 @@
+{
+  "contract": "kerneljson:b1-negative-probes/v1",
+  "results": [
+    {
+      "role": "kj_worker",
+      "probe": "session is the role itself",
+      "sql": "do $$ begin if current_user <> session_user then raise exception 'x'; end if; end $$",
+      "expected": "OK",
+      "observed": "OK",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "CREATE TABLE in public",
+      "sql": "create table public.kj_b1_x (i int)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "CREATE TABLE in kernel_private",
+      "sql": "create table kernel_private.kj_b1_x (i int)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "CREATE SCHEMA",
+      "sql": "create schema kj_b1_x",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "CREATE TEMPORARY TABLE",
+      "sql": "create temporary table kj_b1_x (i int)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "CREATE VIEW",
+      "sql": "create view public.kj_b1_v as select 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "CREATE FUNCTION",
+      "sql": "create function public.kj_b1_f() returns int language sql as 'select 1'",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "replace a guard function",
+      "sql": "create or replace function public.reject_ledger_mutation() returns trigger language plpgsql as $f$ begin return new; end $f$",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "ALTER TABLE add column",
+      "sql": "alter table public.tasks add column kj_b1_x int",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "ALTER TABLE owner",
+      "sql": "alter table public.tasks owner to current_user",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "DROP TABLE",
+      "sql": "drop table public.tasks",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "DROP FUNCTION",
+      "sql": "drop function public.reject_ledger_mutation()",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "TRUNCATE",
+      "sql": "truncate public.task_events",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "DISABLE TRIGGER",
+      "sql": "alter table public.task_events disable trigger all",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "CREATE TRIGGER",
+      "sql": "create trigger kj_b1_t before insert on public.tasks for each row execute function public.reject_ledger_mutation()",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "DROP TRIGGER",
+      "sql": "drop trigger identity_activation_guard on public.identity_activations",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "session_replication_role",
+      "sql": "set session_replication_role = replica",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "DISABLE ROW LEVEL SECURITY",
+      "sql": "alter table public.tasks disable row level security",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "FORCE ROW LEVEL SECURITY",
+      "sql": "alter table public.tasks force row level security",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "CREATE POLICY",
+      "sql": "create policy kj_b1_p on public.tasks for all using (true)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "DROP POLICY",
+      "sql": "drop policy kj_worker_select on public.tasks",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "ALTER POLICY",
+      "sql": "alter policy kj_worker_select on public.tasks using (false)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "row_security off does not bypass",
+      "sql": "set row_security = off; select 1 from public.task_events limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "CREATE ROLE",
+      "sql": "create role kj_b1_r",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "ALTER ROLE own attribute",
+      "sql": "alter role current_user createdb",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "ALTER ROLE other",
+      "sql": "alter role kj_b1_probe_target login",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "DROP ROLE",
+      "sql": "drop role kj_b1_probe_target",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "SET ROLE postgres",
+      "sql": "set role postgres",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "SET SESSION AUTHORIZATION postgres",
+      "sql": "set session authorization postgres",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "GRANT membership to self",
+      "sql": "grant postgres to current_user",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "ALTER SYSTEM",
+      "sql": "alter system set log_statement = 'none'",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "COPY TO PROGRAM",
+      "sql": "copy (select 1) to program 'true'",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "read password hashes",
+      "sql": "select rolpassword from pg_authid limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "CREATE EXTENSION",
+      "sql": "create extension if not exists pgcrypto",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "activate a release",
+      "sql": "select kernel_private.activate_release('00000000-0000-4000-8000-000000000001', 'kj-b1-probe', 1, '{\"probe\":true}'::jsonb)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "write release_activations",
+      "sql": "insert into kernel_private.release_activations(epoch, request_id, release_id, activated_at, created_by, evidence) values (999999, '00000000-0000-4000-8000-000000000001', 'x', now(), 'x', '{\"x\":1}')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "delete release history",
+      "sql": "delete from kernel_private.release_activations",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "write the release epoch",
+      "sql": "update kernel_private.release_epoch set epoch = epoch",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "advance the release epoch",
+      "sql": "update kernel_private.release_epoch set epoch = epoch + 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "unfreeze identity",
+      "sql": "select kernel_private.set_identity_freeze('00000000-0000-4000-8000-000000000001', false, 'kj-b1-probe')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "write identity governance state",
+      "sql": "insert into kernel_private.identity_governance_state(identity_id, frozen) values ('00000000-0000-4000-8000-000000000001', false)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "rewrite history: task_events",
+      "sql": "update public.task_events set type = type",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "erase history: task_events",
+      "sql": "delete from public.task_events",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "erase history: evidence",
+      "sql": "delete from public.evidence",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "rewrite an identity version",
+      "sql": "update public.identity_versions set version = version",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "erase an identity activation",
+      "sql": "delete from public.identity_activations",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "launder candidate origin",
+      "sql": "update public.identity_candidates set origin = 'OPERATOR_INSTRUCTION'",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "rewrite faculty versions",
+      "sql": "update public.faculty_versions set version = version",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "change tenant membership",
+      "sql": "update public.tenant_memberships set role = 'owner'",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "create a principal",
+      "sql": "insert into public.principals(id, kind) values ('00000000-0000-4000-8000-000000000001', 'HUMAN')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "create a tenant",
+      "sql": "insert into public.tenants(id) values ('00000000-0000-4000-8000-000000000001')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "grant/revoke has no effect",
+      "sql": "grant select on public.identity_versions to kj_door",
+      "expected": "OK|42501 and no change",
+      "observed": "OK",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "grant/revoke has no effect",
+      "sql": "grant all on all tables in schema public to kj_b1_probe_target",
+      "expected": "OK|42501 and no change",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "grant/revoke has no effect",
+      "sql": "grant execute on function kernel_private.set_identity_freeze(uuid, boolean, text) to kj_worker",
+      "expected": "OK|42501 and no change",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "grant/revoke has no effect",
+      "sql": "revoke select on public.tasks from kj_worker",
+      "expected": "OK|42501 and no change",
+      "observed": "OK",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.control_events limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.dispatch_events limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.membership_events limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.artifacts limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.channels limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.entities limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.evaluations limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.memory_items limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.observations limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.relationships limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.tenants limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "function outside manifest",
+      "sql": "has_function_privilege(kernel_private.activate_release)",
+      "expected": "false",
+      "observed": "false",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "function outside manifest",
+      "sql": "has_function_privilege(kernel_private.set_identity_freeze)",
+      "expected": "false",
+      "observed": "false",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "session is the role itself",
+      "sql": "do $$ begin if current_user <> session_user then raise exception 'x'; end if; end $$",
+      "expected": "OK",
+      "observed": "OK",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "CREATE TABLE in public",
+      "sql": "create table public.kj_b1_x (i int)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "CREATE TABLE in kernel_private",
+      "sql": "create table kernel_private.kj_b1_x (i int)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "CREATE SCHEMA",
+      "sql": "create schema kj_b1_x",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "CREATE TEMPORARY TABLE",
+      "sql": "create temporary table kj_b1_x (i int)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "CREATE VIEW",
+      "sql": "create view public.kj_b1_v as select 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "CREATE FUNCTION",
+      "sql": "create function public.kj_b1_f() returns int language sql as 'select 1'",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "replace a guard function",
+      "sql": "create or replace function public.reject_ledger_mutation() returns trigger language plpgsql as $f$ begin return new; end $f$",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "ALTER TABLE add column",
+      "sql": "alter table public.tasks add column kj_b1_x int",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "ALTER TABLE owner",
+      "sql": "alter table public.tasks owner to current_user",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "DROP TABLE",
+      "sql": "drop table public.tasks",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "DROP FUNCTION",
+      "sql": "drop function public.reject_ledger_mutation()",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "TRUNCATE",
+      "sql": "truncate public.task_events",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "DISABLE TRIGGER",
+      "sql": "alter table public.task_events disable trigger all",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "CREATE TRIGGER",
+      "sql": "create trigger kj_b1_t before insert on public.tasks for each row execute function public.reject_ledger_mutation()",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "DROP TRIGGER",
+      "sql": "drop trigger identity_activation_guard on public.identity_activations",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "session_replication_role",
+      "sql": "set session_replication_role = replica",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "DISABLE ROW LEVEL SECURITY",
+      "sql": "alter table public.tasks disable row level security",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "FORCE ROW LEVEL SECURITY",
+      "sql": "alter table public.tasks force row level security",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "CREATE POLICY",
+      "sql": "create policy kj_b1_p on public.tasks for all using (true)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "DROP POLICY",
+      "sql": "drop policy kj_worker_select on public.tasks",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "ALTER POLICY",
+      "sql": "alter policy kj_worker_select on public.tasks using (false)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "row_security off does not bypass",
+      "sql": "set row_security = off; select 1 from public.task_events limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "CREATE ROLE",
+      "sql": "create role kj_b1_r",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "ALTER ROLE own attribute",
+      "sql": "alter role current_user createdb",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "ALTER ROLE other",
+      "sql": "alter role kj_b1_probe_target login",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "DROP ROLE",
+      "sql": "drop role kj_b1_probe_target",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "SET ROLE postgres",
+      "sql": "set role postgres",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "SET SESSION AUTHORIZATION postgres",
+      "sql": "set session authorization postgres",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "GRANT membership to self",
+      "sql": "grant postgres to current_user",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "ALTER SYSTEM",
+      "sql": "alter system set log_statement = 'none'",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "COPY TO PROGRAM",
+      "sql": "copy (select 1) to program 'true'",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "read password hashes",
+      "sql": "select rolpassword from pg_authid limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "CREATE EXTENSION",
+      "sql": "create extension if not exists pgcrypto",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "activate a release",
+      "sql": "select kernel_private.activate_release('00000000-0000-4000-8000-000000000001', 'kj-b1-probe', 1, '{\"probe\":true}'::jsonb)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "write release_activations",
+      "sql": "insert into kernel_private.release_activations(epoch, request_id, release_id, activated_at, created_by, evidence) values (999999, '00000000-0000-4000-8000-000000000001', 'x', now(), 'x', '{\"x\":1}')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "delete release history",
+      "sql": "delete from kernel_private.release_activations",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "write the release epoch",
+      "sql": "update kernel_private.release_epoch set epoch = epoch",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "advance the release epoch",
+      "sql": "update kernel_private.release_epoch set epoch = epoch + 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "unfreeze identity",
+      "sql": "select kernel_private.set_identity_freeze('00000000-0000-4000-8000-000000000001', false, 'kj-b1-probe')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "write identity governance state",
+      "sql": "insert into kernel_private.identity_governance_state(identity_id, frozen) values ('00000000-0000-4000-8000-000000000001', false)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "rewrite history: task_events",
+      "sql": "update public.task_events set type = type",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "erase history: task_events",
+      "sql": "delete from public.task_events",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "erase history: evidence",
+      "sql": "delete from public.evidence",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "rewrite an identity version",
+      "sql": "update public.identity_versions set version = version",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "erase an identity activation",
+      "sql": "delete from public.identity_activations",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "launder candidate origin",
+      "sql": "update public.identity_candidates set origin = 'OPERATOR_INSTRUCTION'",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "rewrite faculty versions",
+      "sql": "update public.faculty_versions set version = version",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "change tenant membership",
+      "sql": "update public.tenant_memberships set role = 'owner'",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "create a principal",
+      "sql": "insert into public.principals(id, kind) values ('00000000-0000-4000-8000-000000000001', 'HUMAN')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "create a tenant",
+      "sql": "insert into public.tenants(id) values ('00000000-0000-4000-8000-000000000001')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "grant/revoke has no effect",
+      "sql": "grant select on public.identity_versions to kj_door",
+      "expected": "OK|42501 and no change",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "grant/revoke has no effect",
+      "sql": "grant all on all tables in schema public to kj_b1_probe_target",
+      "expected": "OK|42501 and no change",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "grant/revoke has no effect",
+      "sql": "grant execute on function kernel_private.set_identity_freeze(uuid, boolean, text) to kj_door",
+      "expected": "OK|42501 and no change",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "grant/revoke has no effect",
+      "sql": "revoke select on public.tasks from kj_worker",
+      "expected": "OK|42501 and no change",
+      "observed": "OK",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.alert_state limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.control_assertions limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.identity_cognition_contract_v1 limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.identity_cognition_latches limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.identity_governance_state limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.membership_events limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.notification_delivery_events limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.notification_outbox limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.release_activations limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.telegram_approval_cards limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.telegram_approval_handles limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.telegram_callback_inbox limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.telegram_inbox limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from kernel_private.telegram_operator_state limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.artifacts limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.capabilities limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.capability_runs limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.capability_versions limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.channels limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.evaluations limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.faculty_current limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.faculty_pins limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.faculty_versions limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.identity_activations limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.identity_candidates limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.identity_current limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.identity_head limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.identity_pins limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.identity_profiles limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.identity_versions limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.memory_candidates limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.memory_context_assemblies limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.memory_current limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.memory_promotions limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.memory_relations limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.memory_versions limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.schedule_backfill_requests limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.schedule_fires limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.schedule_leases limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.schedule_observations limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.schedule_specs limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.schedule_state limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.task_steps limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "relation outside manifest",
+      "sql": "select 1 from public.tenants limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "function outside manifest",
+      "sql": "has_function_privilege(kernel_private.identity_core_digest_v1)",
+      "expected": "false",
+      "observed": "false",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "function outside manifest",
+      "sql": "has_function_privilege(kernel_private.activate_release)",
+      "expected": "false",
+      "observed": "false",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "function outside manifest",
+      "sql": "has_function_privilege(kernel_private.set_identity_freeze)",
+      "expected": "false",
+      "observed": "false",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "function outside manifest",
+      "sql": "has_function_privilege(kernel_private.identity_json_string_v1)",
+      "expected": "false",
+      "observed": "false",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "function outside manifest",
+      "sql": "has_function_privilege(kernel_private.identity_cognition_source_v1)",
+      "expected": "false",
+      "observed": "false",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "function outside manifest",
+      "sql": "has_function_privilege(kernel_private.identity_core_canonical_v1)",
+      "expected": "false",
+      "observed": "false",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "door cannot write the task ledger",
+      "sql": "insert into public.task_events(id) values ('00000000-0000-4000-8000-000000000001')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "door cannot write evidence",
+      "sql": "insert into public.evidence(id) values ('00000000-0000-4000-8000-000000000001')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "door cannot complete a task",
+      "sql": "insert into public.outcomes(task_id) values ('00000000-0000-4000-8000-000000000001')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "door cannot touch identity",
+      "sql": "insert into public.identity_activations(id) values ('00000000-0000-4000-8000-000000000001')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "door cannot read identity documents",
+      "sql": "select 1 from public.identity_versions limit 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "door cannot write approvals",
+      "sql": "update public.approvals set status = 'GRANTED'",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "worker cannot admit a task",
+      "sql": "insert into kernel_private.task_admissions(task_id) values ('00000000-0000-4000-8000-000000000001')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "worker cannot record a dispatch",
+      "sql": "insert into kernel_private.dispatch_events(id) values ('00000000-0000-4000-8000-000000000001')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    }
+  ]
+}

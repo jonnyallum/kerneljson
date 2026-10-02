@@ -1,0 +1,1587 @@
+{
+  "contract": "kerneljson:b1-dynamic-inventory/v1",
+  "events": 1544,
+  "roles": {
+    "kj_worker": {
+      "statements": 1436,
+      "byConnection": {
+        "login": 0,
+        "setRole": 1436
+      },
+      "observed": [
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.alert_state",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/alerting/pg-state-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.alert_state",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/alerting/pg-state-store.ts",
+            "services/kernel/src/channel/telegram/status.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.alert_state",
+          "columns": [
+            "current_state",
+            "first_seen_at",
+            "last_notified_at",
+            "last_seen_at",
+            "occurrence_count",
+            "recovered_at",
+            "severity"
+          ],
+          "callers": [
+            "services/kernel/src/alerting/pg-state-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "DELETE",
+          "object": "kernel_private.control_assertions",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/control-signing.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.control_assertions",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/control-signing.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.control_assertions",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/control-signing.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.effect_receipts",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/terminal.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.effect_receipts",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/terminal.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.execution_bindings",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/execution-binding.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.execution_bindings",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/execution-binding.ts",
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/cognition-binding.ts",
+            "services/kernel/src/ledger.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.identity_cognition_contract_v1",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/cognition-binding.ts",
+            "services/kernel/src/ledger.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.identity_cognition_latches",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/identity/cognition-binding.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.identity_cognition_latches",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/cognition-binding.ts",
+            "services/kernel/src/ledger.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "EXECUTE",
+          "object": "kernel_private.identity_cognition_source_v1",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/identity/cognition-binding.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "EXECUTE",
+          "object": "kernel_private.identity_core_digest_v1",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/health/collect.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.notification_delivery_events",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/alerting/pg-outbox-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.notification_delivery_events",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/alerting/outbox-gate.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.notification_outbox",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/alerting/pg-outbox-store.ts",
+            "services/kernel/src/alerting/pg-state-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.notification_outbox",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/alerting/outbox-gate.ts",
+            "services/kernel/src/alerting/pg-outbox-store.ts",
+            "services/kernel/src/alerting/pg-state-store.ts",
+            "services/kernel/src/channel/telegram/status.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.notification_outbox",
+          "columns": [
+            "attempt_count",
+            "delivered_at",
+            "last_attempt_at",
+            "last_error",
+            "next_attempt_at",
+            "status"
+          ],
+          "callers": [
+            "services/kernel/src/alerting/pg-outbox-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.release_activations",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/channel/telegram/status.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.release_epoch",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/channel/telegram/status.ts",
+            "services/kernel/src/health/release-provenance.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.task_admissions",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/health/collect.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.telegram_approval_cards",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "kernel_private.telegram_approval_cards",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.telegram_approval_cards",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.telegram_approval_cards",
+          "columns": [
+            "attempt_count",
+            "claimed_at",
+            "message_id",
+            "resolved_at",
+            "sent_at",
+            "state"
+          ],
+          "callers": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.telegram_approval_handles",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.telegram_approval_handles",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.telegram_callback_inbox",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.telegram_callback_inbox",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.telegram_callback_inbox",
+          "columns": [
+            "approval_id",
+            "completed_at",
+            "disposition",
+            "pressed",
+            "state"
+          ],
+          "callers": [
+            "services/kernel/src/channel/telegram/pg-card-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.telegram_inbox",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/channel/telegram/pg-inbox-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.telegram_inbox",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/channel/telegram/pg-inbox-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.telegram_inbox",
+          "columns": [
+            "command",
+            "completed_at",
+            "disposition",
+            "mission",
+            "reply_notification_id",
+            "state",
+            "task_id"
+          ],
+          "callers": [
+            "services/kernel/src/channel/telegram/pg-inbox-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.telegram_operator_state",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/channel/telegram/pg-inbox-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.telegram_operator_state",
+          "columns": [
+            "next_offset",
+            "unauthorised_total",
+            "updated_at"
+          ],
+          "callers": [
+            "services/kernel/src/channel/telegram/pg-inbox-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.terminal_results",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/terminal.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.approvals",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/approval-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.approvals",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/verification-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.approvals",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/channel/telegram/pg-card-store.ts",
+            "services/kernel/src/verification-store.ts",
+            "services/memory/src/canonical/approval-binding.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.approvals",
+          "columns": [
+            "evidence_id",
+            "resolved_at",
+            "status"
+          ],
+          "callers": [
+            "services/kernel/src/approval-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.capabilities",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/capability-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.capabilities",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/capability-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.capability_runs",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/capability-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.capability_runs",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/verification-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.capability_versions",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/capability-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.capability_versions",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/capability-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.capability_versions",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/verification-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.evidence",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/schedule-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.evidence",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/approval-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.evidence",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/provenance.ts",
+            "services/kernel/src/terminal.ts",
+            "services/kernel/src/verification-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.faculty_current",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/faculty/registry.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.faculty_pins",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/faculty/registry.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.faculty_pins",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/faculty/registry.ts",
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/ledger.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.faculty_versions",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/ledger.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.identity_activations",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/identity/complete.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.identity_activations",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/complete.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.identity_candidates",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/identity/store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.identity_candidates",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/identity/store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.identity_candidates",
+          "columns": [
+            "resolved_at",
+            "state"
+          ],
+          "callers": [
+            "services/kernel/src/identity/store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.identity_current",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/cognition-binding.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.identity_head",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/identity/store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.identity_pins",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/identity/cognition-binding.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.identity_pins",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/cognition-binding.ts",
+            "services/kernel/src/ledger.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.identity_profiles",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/identity/store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.identity_profiles",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.identity_versions",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/identity/complete.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.identity_versions",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/identity/store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.memory_candidates",
+          "columns": [],
+          "callers": [
+            "services/memory/src/canonical/service.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.memory_candidates",
+          "columns": [],
+          "callers": [
+            "services/memory/src/canonical/service.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.memory_candidates",
+          "columns": [],
+          "callers": [
+            "services/memory/src/canonical/service.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.memory_candidates",
+          "columns": [
+            "decided_at",
+            "state",
+            "state_reason"
+          ],
+          "callers": [
+            "services/memory/src/canonical/service.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.memory_context_assemblies",
+          "columns": [],
+          "callers": [
+            "services/memory/src/canonical/service.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.memory_context_assemblies",
+          "columns": [],
+          "callers": [
+            "services/memory/src/canonical/service.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.memory_current",
+          "columns": [],
+          "callers": [
+            "services/memory/src/canonical/service.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.memory_promotions",
+          "columns": [],
+          "callers": [
+            "services/memory/src/canonical/service.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.memory_promotions",
+          "columns": [],
+          "callers": [
+            "services/memory/src/canonical/service.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.memory_relations",
+          "columns": [],
+          "callers": [
+            "services/memory/src/canonical/service.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.memory_relations",
+          "columns": [],
+          "callers": [
+            "services/memory/src/canonical/service.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.memory_versions",
+          "columns": [],
+          "callers": [
+            "services/memory/src/canonical/service.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.memory_versions",
+          "columns": [],
+          "callers": [
+            "services/memory/src/canonical/service.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.memory_versions",
+          "columns": [],
+          "callers": [
+            "services/memory/src/canonical/service.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.outcomes",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/schedule-store.ts",
+            "services/kernel/src/verification-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.outcomes",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/provenance.ts",
+            "services/kernel/src/schedule-store.ts",
+            "services/kernel/src/terminal.ts",
+            "services/kernel/src/verification-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.principals",
+          "columns": [],
+          "callers": [
+            "packages/identity/src/index.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.principals",
+          "columns": [],
+          "callers": [
+            "packages/identity/src/index.ts",
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/ledger.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.schedule_fires",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/channel/telegram/status.ts",
+            "services/kernel/src/health/collect.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.schedule_specs",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.schedule_specs",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.schedule_state",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.schedule_state",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.schedule_state",
+          "columns": [
+            "active_version",
+            "state",
+            "updated_at",
+            "updated_by"
+          ],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.task_events",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/schedule-store.ts",
+            "services/kernel/src/verification-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.task_events",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/approval-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.task_events",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/channel/telegram/pg-card-store.ts",
+            "services/kernel/src/faculty/registry.ts",
+            "services/kernel/src/golden-workflow.ts",
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/schedule-store.ts",
+            "services/kernel/src/verification-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.task_steps",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/ledger.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.task_steps",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/verification-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.task_steps",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/schedule-store.ts",
+            "services/kernel/src/verification-store.ts",
+            "services/memory/src/canonical/approval-binding.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.task_steps",
+          "columns": [
+            "contract",
+            "status"
+          ],
+          "callers": [
+            "services/kernel/src/ledger.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.tasks",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/ledger.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.tasks",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/schedule-store.ts",
+            "services/kernel/src/terminal.ts",
+            "services/kernel/src/verification-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.tasks",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/approval-store.ts",
+            "services/kernel/src/capability-store.ts",
+            "services/kernel/src/channel/telegram/pg-card-store.ts",
+            "services/kernel/src/channel/telegram/status.ts",
+            "services/kernel/src/faculty/registry.ts",
+            "services/kernel/src/golden-workflow.ts",
+            "services/kernel/src/health/collect.ts",
+            "services/kernel/src/identity/cognition-binding.ts",
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/provenance.ts",
+            "services/kernel/src/schedule-store.ts",
+            "services/kernel/src/terminal.ts",
+            "services/kernel/src/verification-store.ts",
+            "services/memory/src/canonical/approval-binding.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.tasks",
+          "columns": [
+            "contract",
+            "status",
+            "updated_at"
+          ],
+          "callers": [
+            "services/kernel/src/identity/complete.ts",
+            "services/kernel/src/ledger.ts",
+            "services/kernel/src/schedule-store.ts",
+            "services/kernel/src/verification-store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.tenant_memberships",
+          "columns": [],
+          "callers": [
+            "packages/identity/src/index.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.tenant_memberships",
+          "columns": [],
+          "callers": [
+            "packages/identity/src/index.ts",
+            "services/kernel/src/health/collect.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        }
+      ],
+      "observedNotInManifest": [],
+      "inManifestNeverObserved": [
+        "DELETE public.schedule_leases",
+        "EXECUTE kernel_private.identity_core_canonical_v1",
+        "EXECUTE kernel_private.identity_json_string_v1",
+        "INSERT kernel_private.terminal_results",
+        "INSERT public.schedule_backfill_requests",
+        "INSERT public.schedule_fires",
+        "INSERT public.schedule_leases",
+        "INSERT public.schedule_observations",
+        "SELECT kernel_private.identity_governance_state",
+        "SELECT public.schedule_leases",
+        "SELECT public.schedule_observations",
+        "UPDATE public.schedule_fires",
+        "UPDATE public.schedule_leases"
+      ],
+      "denied": []
+    },
+    "kj_door": {
+      "statements": 108,
+      "byConnection": {
+        "login": 0,
+        "setRole": 108
+      },
+      "observed": [
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.control_events",
+          "columns": [],
+          "callers": [
+            "apps/gateway/src/index.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.control_events",
+          "columns": [],
+          "callers": [
+            "apps/mission-control/src/store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.dispatch_events",
+          "columns": [],
+          "callers": [
+            "apps/gateway/src/server.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.dispatch_events",
+          "columns": [],
+          "callers": [
+            "apps/gateway/src/server.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.effect_receipts",
+          "columns": [],
+          "callers": [
+            "apps/gateway/src/server.ts",
+            "services/kernel/src/terminal.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.execution_bindings",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/execution-binding.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.execution_bindings",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/execution-binding.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.task_admissions",
+          "columns": [],
+          "callers": [
+            "apps/gateway/src/server.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.task_admissions",
+          "columns": [],
+          "callers": [
+            "apps/gateway/src/server.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.terminal_results",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/terminal.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.approvals",
+          "columns": [],
+          "callers": [
+            "apps/gateway/src/index.ts",
+            "apps/mission-control/src/store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.evidence",
+          "columns": [],
+          "callers": [
+            "apps/mission-control/src/store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.outcomes",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/terminal.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.principals",
+          "columns": [],
+          "callers": [
+            "packages/identity/src/index.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.principals",
+          "columns": [],
+          "callers": [
+            "packages/identity/src/index.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.task_events",
+          "columns": [],
+          "callers": [
+            "apps/gateway/src/index.ts",
+            "apps/mission-control/src/store.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.tasks",
+          "columns": [],
+          "callers": [
+            "apps/gateway/src/index.ts",
+            "apps/gateway/src/server.ts",
+            "apps/mission-control/src/store.ts",
+            "services/kernel/src/terminal.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.tenant_memberships",
+          "columns": [],
+          "callers": [
+            "packages/identity/src/index.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.tenant_memberships",
+          "columns": [],
+          "callers": [
+            "apps/mission-control/src/store.ts",
+            "packages/identity/src/index.ts"
+          ],
+          "via": [
+            "set-role"
+          ]
+        }
+      ],
+      "observedNotInManifest": [],
+      "inManifestNeverObserved": [
+        "SELECT kernel_private.release_epoch",
+        "SELECT public.entities",
+        "SELECT public.memory_items",
+        "SELECT public.observations",
+        "SELECT public.relationships"
+      ],
+      "denied": []
+    }
+  }
+}

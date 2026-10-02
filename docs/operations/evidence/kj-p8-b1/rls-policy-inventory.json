@@ -1,0 +1,1045 @@
+{
+  "contract": "kerneljson:b1-rls-policy-inventory/v1",
+  "policies": [
+    {
+      "table": "kernel_private.alert_state",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.alert_state",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.alert_state",
+      "policy": "kj_worker_update",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.control_assertions",
+      "policy": "kj_worker_delete",
+      "role": "kj_worker",
+      "command": "DELETE",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.control_assertions",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.control_assertions",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.control_events",
+      "policy": "kj_door_insert",
+      "role": "kj_door",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.control_events",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.dispatch_events",
+      "policy": "kj_door_insert",
+      "role": "kj_door",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.dispatch_events",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.effect_receipts",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.effect_receipts",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.effect_receipts",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.execution_bindings",
+      "policy": "kj_door_insert",
+      "role": "kj_door",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.execution_bindings",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.execution_bindings",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.execution_bindings",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.identity_cognition_contract_v1",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.identity_cognition_latches",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.identity_cognition_latches",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.identity_governance_state",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.notification_delivery_events",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.notification_delivery_events",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.notification_outbox",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.notification_outbox",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.notification_outbox",
+      "policy": "kj_worker_update",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.release_activations",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.release_epoch",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.release_epoch",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.task_admissions",
+      "policy": "kj_door_insert",
+      "role": "kj_door",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.task_admissions",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.task_admissions",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.telegram_approval_cards",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.telegram_approval_cards",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.telegram_approval_cards",
+      "policy": "kj_worker_update",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.telegram_approval_handles",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.telegram_approval_handles",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.telegram_callback_inbox",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.telegram_callback_inbox",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.telegram_callback_inbox",
+      "policy": "kj_worker_update",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.telegram_inbox",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.telegram_inbox",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.telegram_inbox",
+      "policy": "kj_worker_update",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.telegram_operator_state",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.telegram_operator_state",
+      "policy": "kj_worker_update",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.terminal_results",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "kernel_private.terminal_results",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "kernel_private.terminal_results",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.approvals",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.approvals",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.approvals",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.approvals",
+      "policy": "kj_worker_update",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "true"
+    },
+    {
+      "table": "public.capabilities",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.capabilities",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.capability_runs",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.capability_runs",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.capability_versions",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.capability_versions",
+      "policy": "kj_worker_rowlock",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "false"
+    },
+    {
+      "table": "public.capability_versions",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.entities",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.evidence",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.evidence",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.evidence",
+      "policy": "kj_worker_rowlock",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "false"
+    },
+    {
+      "table": "public.evidence",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.faculty_pins",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.faculty_pins",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.faculty_versions",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.identity_activations",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.identity_activations",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.identity_candidates",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.identity_candidates",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.identity_candidates",
+      "policy": "kj_worker_update",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "true"
+    },
+    {
+      "table": "public.identity_pins",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.identity_pins",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.identity_profiles",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.identity_profiles",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.identity_versions",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.identity_versions",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.memory_candidates",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.memory_candidates",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.memory_candidates",
+      "policy": "kj_worker_update",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "true"
+    },
+    {
+      "table": "public.memory_context_assemblies",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.memory_context_assemblies",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.memory_items",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.memory_promotions",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.memory_promotions",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.memory_relations",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.memory_relations",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.memory_versions",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.memory_versions",
+      "policy": "kj_worker_rowlock",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "false"
+    },
+    {
+      "table": "public.memory_versions",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.observations",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.outcomes",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.outcomes",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.outcomes",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.principals",
+      "policy": "kj_door_rowlock",
+      "role": "kj_door",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "false"
+    },
+    {
+      "table": "public.principals",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.principals",
+      "policy": "kj_worker_rowlock",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "false"
+    },
+    {
+      "table": "public.principals",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.relationships",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.schedule_backfill_requests",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.schedule_fires",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.schedule_fires",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.schedule_fires",
+      "policy": "kj_worker_update",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "true"
+    },
+    {
+      "table": "public.schedule_leases",
+      "policy": "kj_worker_delete",
+      "role": "kj_worker",
+      "command": "DELETE",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.schedule_leases",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.schedule_leases",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.schedule_leases",
+      "policy": "kj_worker_update",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "true"
+    },
+    {
+      "table": "public.schedule_observations",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.schedule_observations",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.schedule_specs",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.schedule_specs",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.schedule_state",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.schedule_state",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.schedule_state",
+      "policy": "kj_worker_update",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "true"
+    },
+    {
+      "table": "public.task_events",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.task_events",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.task_events",
+      "policy": "kj_worker_rowlock",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "false"
+    },
+    {
+      "table": "public.task_events",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.task_steps",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.task_steps",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.task_steps",
+      "policy": "kj_worker_update",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "true"
+    },
+    {
+      "table": "public.tasks",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.tasks",
+      "policy": "kj_worker_insert",
+      "role": "kj_worker",
+      "command": "INSERT",
+      "using": null,
+      "withCheck": "true"
+    },
+    {
+      "table": "public.tasks",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.tasks",
+      "policy": "kj_worker_update",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "true"
+    },
+    {
+      "table": "public.tenant_memberships",
+      "policy": "kj_door_rowlock",
+      "role": "kj_door",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "false"
+    },
+    {
+      "table": "public.tenant_memberships",
+      "policy": "kj_door_select",
+      "role": "kj_door",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    },
+    {
+      "table": "public.tenant_memberships",
+      "policy": "kj_worker_rowlock",
+      "role": "kj_worker",
+      "command": "UPDATE",
+      "using": "true",
+      "withCheck": "false"
+    },
+    {
+      "table": "public.tenant_memberships",
+      "policy": "kj_worker_select",
+      "role": "kj_worker",
+      "command": "SELECT",
+      "using": "true",
+      "withCheck": null
+    }
+  ]
+}

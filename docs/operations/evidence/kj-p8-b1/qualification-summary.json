@@ -1,0 +1,301 @@
+{
+  "contract": "kerneljson:b1-qualification-summary/v1",
+  "design": "ADR-0023 revision 2.3, section 27, sealed at 679e3a3dfc7a33f9106ed77913d49cdac19166d5",
+  "manifest": {
+    "path": "infrastructure/database/runtime-role-manifest.json",
+    "sha256": "f79426d6b5f1f2e1c5b84bef801d7b83305a4aa1970296c7c304df599ec8fab3",
+    "decisions": {
+      "path": "infrastructure/database/runtime-role-decisions.json",
+      "sha256": "dedd929314dd0d541c0fa00dba6e068daf12ee39be603465cc8788122f0d7ce8"
+    },
+    "entryCounts": {
+      "kj_worker": {
+        "SELECT": 50,
+        "INSERT": 38,
+        "UPDATE": 14,
+        "DELETE": 2,
+        "ROWLOCK": 6,
+        "EXECUTE": 4,
+        "relations": 51
+      },
+      "kj_door": {
+        "SELECT": 18,
+        "INSERT": 4,
+        "UPDATE": 0,
+        "DELETE": 0,
+        "ROWLOCK": 2,
+        "EXECUTE": 0,
+        "relations": 18
+      }
+    },
+    "securityDefinerTriggers": [
+      "kernel_private.stamp_binding_provenance"
+    ]
+  },
+  "migrations": {
+    "added": [
+      {
+        "file": "20261002090000_runtime_least_privilege_roles.sql",
+        "sha256": "e62bb8d9cdf73a428d6160370a70508f411b0d9f0ed1c65c244e50bc0d0ee11e"
+      }
+    ],
+    "total": 23,
+    "existingUnchanged": [
+      {
+        "file": "20260905153656_identity.sql",
+        "sha256": "a823ffe06a30346a60a1cdb4f66a0a20be78baea1ae6149ede7adc698d199180"
+      },
+      {
+        "file": "20260905153700_task_ledger.sql",
+        "sha256": "bf8bbdda51b993772fa508affbcb29253837309dd439c7ed3b584a7242af79d8"
+      },
+      {
+        "file": "20260905153704_intelligence_metadata.sql",
+        "sha256": "faca4c9a822f3bcec6d138854d3c656e071311ac1ce0518fe517f93af7acb839"
+      },
+      {
+        "file": "20260905153708_world_model.sql",
+        "sha256": "dc3d6aa735dd371cce77f79f411c73e99e15a12a872555379f7e28ce344eaf98"
+      },
+      {
+        "file": "20260905173500_memory_provenance.sql",
+        "sha256": "bdf06db6e660204e7c5b25fca38cb747dcc2c6292f33e9d37498a42c0e1075db"
+      },
+      {
+        "file": "20260905173800_world_provenance.sql",
+        "sha256": "6b280f80e20d41bb7663742c509f428ecd9c0b9e9f06df3f24b4d6e481d7d92d"
+      },
+      {
+        "file": "20260905174200_evaluation_history.sql",
+        "sha256": "13c86bd02b51561d0dde674a120b54544dfb9c4008c173fabe8921cd1a39cf2c"
+      },
+      {
+        "file": "20260908233816_qualification_gate_1.sql",
+        "sha256": "9e77b0da5fcf62125349a6fd60a638434b588dbade6782480983f5c8493ea228"
+      },
+      {
+        "file": "20260908234518_qualification_terminal_results.sql",
+        "sha256": "c042e6b17773cba3210e9b3408e479655ca622c4294badaa6e98147b661f6f2f"
+      },
+      {
+        "file": "20260908234711_qualification_membership_lifecycle.sql",
+        "sha256": "337492c777605f72318ce397d58023b27dffdae365b5656e66d9769b50005693"
+      },
+      {
+        "file": "20260908234849_qualification_ingress_receipts.sql",
+        "sha256": "fda79abe80cca21aea754a6683cd5d1daee9307acc6493f3502e93bc2a4ca86b"
+      },
+      {
+        "file": "20260910180000_scheduler.sql",
+        "sha256": "ca372fa85392d02eb614e3fb3f6351e5881472bccb8705d560f32fc656abd2b9"
+      },
+      {
+        "file": "20260915220000_alert_state.sql",
+        "sha256": "ce8041a3348d42a1cad0ef20bf86fdf34019917a7bc1928b93279eb829b9ebd6"
+      },
+      {
+        "file": "20260916205049_release_provenance.sql",
+        "sha256": "e3fbad228b7798f12d59404587564e2854f3fff3e325c534bb43112884b5be2e"
+      },
+      {
+        "file": "20260917120000_notification_outbox.sql",
+        "sha256": "2163f11eb70c16c36debb79bfbd50db53ddd96fe47b55e9d77e8970d45ae2ca0"
+      },
+      {
+        "file": "20260920120000_telegram_operator.sql",
+        "sha256": "28df27f717c484a5293efcd74991322110bcb3e01da82f9b6648fcc72b091633"
+      },
+      {
+        "file": "20260920150000_telegram_approvals.sql",
+        "sha256": "e87fe7ec5fcd92753686c07df2b158cdd59f1c88064fc22ca652caa994e9100c"
+      },
+      {
+        "file": "20260920180000_control_assertions.sql",
+        "sha256": "87c1505406e8787aaa97f755ddc627dcef0d0d354cc90bc79dd3f8c0c2826ae9"
+      },
+      {
+        "file": "20260921180000_canonical_memory.sql",
+        "sha256": "15f6ca5660692a47f0ecb35bcad336ea7573a89b04507fa2829734cfc54b4c75"
+      },
+      {
+        "file": "20260923150000_core_team_faculties.sql",
+        "sha256": "79da952fa3b51d530991fe75b414b33275c9b73bc56533984b90910da01944ba"
+      },
+      {
+        "file": "20260925120000_primary_identity.sql",
+        "sha256": "85ead096f6a5d7d28ab87bbc9ef9bf57f2efff7a6c108ee23b2d21807b6c45c2"
+      },
+      {
+        "file": "20260929120000_identity_cognition_binding.sql",
+        "sha256": "29eb36204b4d9f49a47a0ad4d908d26c4ed968213153da09b5580971defa770a"
+      }
+    ]
+  },
+  "rlsPolicies": {
+    "count": 130
+  },
+  "suites": {
+    "baselineOwnerAtBaseCommit": {
+      "total": 1861,
+      "passed": 1799,
+      "failed": 0,
+      "skipped": 62,
+      "files": 101,
+      "success": true
+    },
+    "discover": {
+      "total": 2016,
+      "passed": 1953,
+      "failed": 0,
+      "skipped": 63,
+      "files": 105,
+      "success": true,
+      "split": {
+        "preExistingFiles": {
+          "passed": 1805,
+          "skipped": 62
+        },
+        "b1Files": {
+          "passed": 148,
+          "skipped": 1
+        }
+      }
+    },
+    "enforce": {
+      "total": 2016,
+      "passed": 1954,
+      "failed": 0,
+      "skipped": 62,
+      "files": 105,
+      "success": true,
+      "split": {
+        "preExistingFiles": {
+          "passed": 1805,
+          "skipped": 62
+        },
+        "b1Files": {
+          "passed": 149
+        }
+      }
+    },
+    "gatedFilesOwnerAtBaseCommit": {
+      "total": 43,
+      "passed": 43,
+      "failed": 0,
+      "skipped": 0,
+      "files": 6,
+      "success": true
+    },
+    "gatedFilesEnforce": {
+      "total": 43,
+      "passed": 43,
+      "failed": 0,
+      "skipped": 0,
+      "files": 6,
+      "success": true
+    }
+  },
+  "dynamicInventory": {
+    "discover": {
+      "kj_worker": {
+        "distinctStatements": 1436,
+        "byConnection": {
+          "login": 0,
+          "setRole": 1436
+        },
+        "observedOperations": 106,
+        "observedNotInManifest": [],
+        "refusals": [],
+        "inManifestNeverObserved": [
+          "DELETE public.schedule_leases",
+          "EXECUTE kernel_private.identity_core_canonical_v1",
+          "EXECUTE kernel_private.identity_json_string_v1",
+          "INSERT kernel_private.terminal_results",
+          "INSERT public.schedule_backfill_requests",
+          "INSERT public.schedule_fires",
+          "INSERT public.schedule_leases",
+          "INSERT public.schedule_observations",
+          "SELECT kernel_private.identity_governance_state",
+          "SELECT public.schedule_leases",
+          "SELECT public.schedule_observations",
+          "UPDATE public.schedule_fires",
+          "UPDATE public.schedule_leases"
+        ]
+      },
+      "kj_door": {
+        "distinctStatements": 108,
+        "byConnection": {
+          "login": 0,
+          "setRole": 108
+        },
+        "observedOperations": 19,
+        "observedNotInManifest": [],
+        "refusals": [],
+        "inManifestNeverObserved": [
+          "SELECT kernel_private.release_epoch",
+          "SELECT public.entities",
+          "SELECT public.memory_items",
+          "SELECT public.observations",
+          "SELECT public.relationships"
+        ]
+      }
+    },
+    "enforce": {
+      "kj_worker": {
+        "distinctStatements": 702,
+        "byConnection": {
+          "login": 672,
+          "setRole": 30
+        },
+        "observedOperations": 102,
+        "observedNotInManifest": [],
+        "refusals": [],
+        "inManifestNeverObserved": [
+          "DELETE public.schedule_leases",
+          "EXECUTE kernel_private.identity_core_canonical_v1",
+          "EXECUTE kernel_private.identity_json_string_v1",
+          "INSERT kernel_private.terminal_results",
+          "INSERT public.identity_candidates",
+          "INSERT public.identity_profiles",
+          "INSERT public.schedule_backfill_requests",
+          "INSERT public.schedule_fires",
+          "INSERT public.schedule_leases",
+          "INSERT public.schedule_observations",
+          "SELECT kernel_private.identity_governance_state",
+          "SELECT public.identity_candidates",
+          "SELECT public.schedule_leases",
+          "SELECT public.schedule_observations",
+          "UPDATE public.identity_candidates",
+          "UPDATE public.schedule_fires",
+          "UPDATE public.schedule_leases"
+        ]
+      },
+      "kj_door": {
+        "distinctStatements": 116,
+        "byConnection": {
+          "login": 116,
+          "setRole": 0
+        },
+        "observedOperations": 19,
+        "observedNotInManifest": [],
+        "refusals": [],
+        "inManifestNeverObserved": [
+          "SELECT kernel_private.release_epoch",
+          "SELECT public.entities",
+          "SELECT public.memory_items",
+          "SELECT public.observations",
+          "SELECT public.relationships"
+        ]
+      }
+    }
+  },
+  "negativeProbes": {
+    "total": 181,
+    "passed": 181,
+    "failed": [],
+    "byRole": {
+      "kj_worker": 70,
+      "kj_door": 111
+    }
+  }
+}
