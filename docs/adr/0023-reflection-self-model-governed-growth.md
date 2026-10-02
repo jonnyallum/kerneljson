@@ -1,6 +1,6 @@
 # ADR-0023: Reflection, self-model and governed identity growth (KJ-P8)
 
-Status: PROPOSED, revision 2.3 (design only). Nothing here is implemented, migrated or deployed.
+Status: PROPOSED, revision 2.4 (design only). Nothing here is implemented, migrated or deployed.
 Date: 01/10/2026.
 Base: canonical `main` `750d5b7926f320d8e9d3f64789b8f7035eaa4f3d`. Production: epoch 13, release `cebbb0d`, cognition
 ON, Class C/D frozen (docs/operations/KJ_P7B_LIVE_RESULT_2026-09-30.md).
@@ -69,6 +69,23 @@ Two further changes were made by the author for determinism while closing these:
 
 Section 27 is new and is placed last so that no earlier section is renumbered.
 
+Revision 2.4 is a narrow docs-only delta on top of revision 2.3. Revision 2.3
+(`679e3a3dfc7a33f9106ed77913d49cdac19166d5`) was independently sealed APPROVE and is not rewritten.
+
+**Trigger.** Implementing B1 under non-owner roles found a fact revision 2.3 did not model: the existing P1.3 trigger
+function `kernel_private.stamp_binding_provenance()` performs a real `UPDATE` of `kernel_private.release_epoch`. As
+`SECURITY INVOKER` it would force both runtime roles to hold a write that section 27.3 forbids. Changing a function
+from invoker to definer is a security-authority change even when its body, signature, callers, stored values and
+observable behaviour are unchanged, so it is resolved here in the design and not as an implementation erratum.
+
+| Item | Revision 2.3 text | Resolved in |
+|---|---|---|
+| P8-R23-DEFINER | section 27.8 said B1 changes no P1 to P7 trigger, and section 27.4 described triggers as `security invoker`; neither can hold together with section 27.3 for this one function | section 27.9 (new), with sections 1, 20, 21, 26, 27.3, 27.4, 27.6 and 27.8 and the sequence document made consistent |
+
+This does **not** invalidate the B1 least-privilege objective. It makes one previously implicit P1 to P7 capability
+boundary explicit. Nothing else in the design changes: P8A-0, B2, reflection, Class E, model proposals, dedupe, the
+Unicode pin, support provenance, growth windows, adoption, approval, the scheduler and the Shared Brain are untouched.
+
 Section numbers changed from revision 1: section 18 (P8B adoption mechanics) and section 23 (same-tenant references)
 are new, and the later sections moved down.
 
@@ -121,6 +138,11 @@ These facts constrain the design. Each was read in this worktree; none was exerc
     Every table has row level security enabled and **no migration creates a policy** (OBSERVED by search), so today
     only an owner, which bypasses row level security, can read or write them. Existing private functions such as
     `activate_release` and `set_identity_freeze` are `security invoker` and are revoked only from the API roles.
+    The trigger function `kernel_private.stamp_binding_provenance()` (BEFORE INSERT on
+    `kernel_private.execution_bindings`) is also `security invoker` and performs
+    `update kernel_private.release_epoch set epoch = epoch where singleton returning epoch`, a deliberate no-op write
+    that locks the epoch row so binding persistence serialises with release activation (OBSERVED in migration
+    `20260916205049_release_provenance.sql`; found during B1 implementation). Section 27.9 governs it.
     This drives prerequisite B1 (section 27): no P8 object may reach production while any runtime process is the
     owner.
 12. **Secret screen.** The pattern set is `looksLikeSecret` in `services/memory/src/canonical/policy.ts`.
@@ -1371,6 +1393,8 @@ functions, the `ADOPT` workflow and controlled activation. **There is no auto-ad
 2. The complete existing suite, the mutation suites and the real-Restate tests pass with the worker as `kj_worker`
    and the door as `kj_door`, with zero permission-denied errors and unchanged pass counts.
 3. Every denied operation of section 27.6 fails on purpose.
+3a. The section 27.9 exception holds exactly: the catalogue assertions of 27.9.4 pass, each has a negative case, and
+    every probe of 27.9.5 is refused or overwritten as stated.
 4. In production, after cutover: the running worker and door report `current_user` as their runtime roles, a P1 to
    P7 live proof passes, and `database.runtimeRolesLeastPrivilege` is green.
 
@@ -1445,7 +1469,7 @@ functions, the `ADOPT` workflow and controlled activation. **There is no auto-ad
 | `reflection.evidenceCarriesNoModelText` | reflection runtime evidence matches the section 15.1 contract | P2 |
 | `reflection.adoptedChangeUnreviewed` | no adopted model change older than the alerting default (14 days) without a `POST_CHANGE` reflection | P3, notified |
 
-| `database.runtimeRolesLeastPrivilege` | the worker and the door are connected as `kj_worker` and `kj_door`; neither role is superuser, owner of any object, member of any role, `BYPASSRLS`, `CREATEDB` or `CREATEROLE`; the catalogue grants and policies equal the manifest | **P0** |
+| `database.runtimeRolesLeastPrivilege` | the worker and the door are connected as `kj_worker` and `kj_door`; neither role is superuser, owner of any object, member of any role, `BYPASSRLS`, `CREATEDB` or `CREATEROLE`; the catalogue grants and policies equal the manifest; the `SECURITY DEFINER` functions are exactly the section 27.9 exception, with its owner, `search_path`, ACL, source digest and trigger attachment as pinned | **P0** |
 
 - The P0 and P1 rows are detection behind database prevention; each also has a database constraint or trigger.
 - A Class E behavioural-consumer or topology breach is a **qualification failure** in CI (section 16). It is not
@@ -1626,6 +1650,9 @@ No authority-critical ambiguity is known to remain. Open, and not authority-crit
 - The grant manifest's P1 to P7 baseline in section 27.4 comes from a static survey and is INFERENCE until the B1
   inventory completes and freezes it. The P8 grants in section 27.5 are exact.
 - The door's current database role was not observed. B1 gives it a dedicated role whatever it is today.
+- The hexadecimal value of the `stamp_binding_provenance()` source digest is fixed at B1 implementation by the
+  procedure in section 27.9.3, in the same way as the Unicode conformance digest. The procedure is sealed; the value
+  is an implementation artefact that the B1 review checks.
 - The hexadecimal value of the Unicode conformance digest is fixed at implementation, by the procedure in 11.1.
 - One narrowing for the re-seal to confirm: only `REFLECT` consumes an admission slot (section 22.2).
 - RECOMMENDATION, out of scope here: apply the pre-admission scan to `identity-change/v1` `PROPOSE` and `ROLLBACK`
@@ -1673,7 +1700,7 @@ section 27.6:
 | TRUNCATE any table | no | no |
 | GRANT or REVOKE anything | no | no |
 | apply or record a migration | no | no |
-| execute `activate_release`, or write `release_epoch` or `release_activations` | no | no |
+| execute `activate_release`, or write `release_epoch` or `release_activations` (no INSERT, UPDATE or DELETE grant; the lock-and-stamp of section 27.9 is performed by the trigger function with the owner's rights, never by a grant) | no | no |
 | execute `set_identity_freeze` | no | no |
 | execute `set_reflection_mode`; insert into `reflection_governance` | no | no |
 | execute `open_growth_window` or the deployment close; insert into either window table | no | no |
@@ -1702,7 +1729,7 @@ step 1 completes and freezes it):
 
 | Verb | Objects |
 |---|---|
-| SELECT | every table and view in `public` and `kernel_private`. Triggers are `security invoker` and read widely (tasks, admissions, approvals, task events, identity tables), so the worker's reads are not narrowed further |
+| SELECT | every table and view in `public` and `kernel_private`. Trigger functions are `security invoker`, with the single enumerated exception of section 27.9, and read widely (tasks, admissions, approvals, task events, identity tables), so the worker's reads are not narrowed further |
 | INSERT | the tables the worker writes today: `tasks`, `task_steps`, `task_events`, `evidence`, `artifacts`, `outcomes`, `approvals`, `evaluations`, `observations`, `entities`, `relationships`, the capability tables, the memory tables, the schedule tables, `faculty_pins`, the identity tables, `principals`, `tenant_memberships`, and in `kernel_private` `execution_bindings`, `task_admissions`, `dispatch_events`, `effect_receipts`, `control_events`, `control_assertions`, `identity_cognition_latches`, `alert_state`, `terminal_results`, the notification tables and the Telegram tables |
 | UPDATE | only where the code updates today: `tasks`, `approvals`, `schedule_fires`, `identity_candidates` (columns `state`, `resolved_at`), `memory_candidates`, `kernel_private.telegram_approval_cards`, and the upsert targets of the alert state store, the ledger and the scheduler store |
 | DELETE | `kernel_private.control_assertions` (nonce retention) and `schedule_leases` |
@@ -1748,14 +1775,15 @@ inventory, and proved by the full suite before cutover.
    grant manifest. The static baseline in 27.4 is its starting point, not its substitute.
 2. **Catalogue equality.** After the B1 migration, role attributes, memberships, table and column grants, function
    grants, ownership and policies read from the catalogue equal the manifest exactly. An extra privilege fails the
-   check, as a missing one does.
+   check, as a missing one does. The same check asserts every item of section 27.9.4 for the one `SECURITY DEFINER`
+   function, and fails if any other `SECURITY DEFINER` function exists in `public` or `kernel_private`.
 3. **Positive requalification, P1 to P7.** The complete existing suite, the faculty, identity and cognition mutation
    suites and the real-Restate tests run with the worker connected as `kj_worker` and the door as `kj_door`, against
    a database migrated by the owner. Required: the same pass and skip counts as the baseline run at the same commit,
    and zero `42501` (insufficient privilege) errors in the database log for the whole run.
 4. **Negative qualification.** Connected as each runtime role, every operation of section 27.3 is attempted and must
-   fail, with `42501` or the named refusal. From P8A-0 the list also covers the P8 denials of 27.5. A check that has
-   not been seen to fail is not accepted.
+   fail, with `42501` or the named refusal. From P8A-0 the list also covers the P8 denials of 27.5. The committed
+   negative suite includes every probe of section 27.9.5. A check that has not been seen to fail is not accepted.
 5. **Production cutover**, in its own change window: credentials provisioned through the vault tooling, value never
    in an argument; worker and door restarted on the runtime roles; `current_user` read from each running process;
    a P1 to P7 live proof (a mission, a scheduled fire, an approval, a Telegram round trip); health green.
@@ -1774,9 +1802,130 @@ inventory, and proved by the full suite before cutover.
   paths are not made to depend on P8, so they are not broken by P8 refusing.
 - There is no temporary owner mode, no break-glass switch for P8 and no degraded mode that widens authority.
 
-### 27.8 What B1 does not change
+### 27.8 What B1 does not change, and the one thing it may
 
-- No P1 to P7 behaviour, contract, trigger or migration file changes. Applied migrations are not edited; B1 is a new
-  migration.
-- No table changes owner. No row level security setting is relaxed.
-- The deployment owner and the change-window process are unchanged.
+**Unchanged by B1:**
+
+- externally observable P1 to P7 behaviour;
+- application contracts;
+- every function body;
+- trigger topology: no trigger is created, dropped, altered, enabled, disabled or re-attached;
+- table ownership: no table changes owner;
+- row level security settings: none is relaxed;
+- deployment authority, and release and change-window authority;
+- applied migration files: none is edited; B1 is a new migration.
+
+**Permitted security-mechanism change, exactly one:**
+
+- `kernel_private.stamp_binding_provenance()` may change from `SECURITY INVOKER` to `SECURITY DEFINER`, under every
+  constraint of section 27.9.
+
+There is no other. The general rule stands: an existing P1 to P7 function stays `SECURITY INVOKER` unless this
+design enumerates it by exact identity. A change to any other function's security attribute is outside this design
+and needs its own revision and seal.
+
+### 27.9 The release-provenance definer exception (P8-R23-DEFINER)
+
+#### 27.9.1 Decision
+
+The existing `execution_bindings` INSERT path must keep performing its bounded release-provenance lock-and-stamp
+without either runtime role holding any direct authority over `kernel_private.release_epoch`. The trigger function
+therefore runs with the deployment owner's rights.
+
+**Option B, granting the runtime roles `UPDATE` on `release_epoch`, is rejected.** It is the direct write that
+section 27.3 forbids, and a row policy cannot restrict an UPDATE to "value unchanged". No direct INSERT, UPDATE or
+DELETE on `release_epoch` or `release_activations` is granted to `kj_worker` or `kj_door`.
+
+This is not a general permission to convert P1 to P7 functions. It is one function, named exactly.
+
+#### 27.9.2 Constraints
+
+All of these hold, and each is asserted by 27.9.4 or probed by 27.9.5.
+
+1. **Exact identity.** `kernel_private.stamp_binding_provenance()`: zero arguments, returns `trigger`, exactly one
+   function of that name in any schema. No overload, no family, no wildcard.
+2. **Body immutability.** The B1 migration changes only security attributes of this function. It contains no
+   `CREATE FUNCTION` or `CREATE OR REPLACE FUNCTION` for it. The source stays identical to the pre-B1 definition,
+   proved by the digest of 27.9.3.
+3. **Owner.** The function stays owned by the deployment owner. The runtime roles own nothing.
+4. **Search path.** `search_path = ''` is set on the function, re-asserted by the B1 migration and read from the
+   catalogue. Every object the body names is schema-qualified.
+5. **EXECUTE ACL.** EXECUTE is revoked from `PUBLIC`. Neither `kj_worker` nor `kj_door` is granted EXECUTE. The
+   runtime reaches the function only because its existing trigger fires.
+6. **Trigger topology.** The function is attached to exactly one trigger: `execution_bindings_provenance`, BEFORE
+   INSERT, FOR EACH ROW, on `kernel_private.execution_bindings`. Qualification fails if it is attached anywhere else,
+   or if that trigger differs. The runtime roles cannot create or alter a trigger, attach the function elsewhere, or
+   replace or alter the function.
+7. **No caller-controlled input.** The function takes no argument, contains no dynamic SQL (`EXECUTE`), no
+   caller-controlled identifier, no `SET ROLE`, no session authorization, and calls no unqualified or replaceable
+   helper. The only function it calls is `clock_timestamp()` from `pg_catalog`.
+8. **Write ceiling.** With the owner's rights it does exactly what it does today and nothing more:
+   - one `UPDATE kernel_private.release_epoch SET epoch = epoch WHERE singleton RETURNING epoch`, which leaves the
+     value unchanged;
+   - assignment of `release_epoch` and `persisted_at` on the row being inserted.
+
+   It cannot change the epoch's value, activate a release, write `release_activations` or any other table, perform a
+   deployment or migration action, or touch any reflection or P8 object.
+9. **Direct table authority.** As 27.9.1: none.
+10. **Release authority.** `activate_release` stays unavailable to the runtime roles. Deployment and change-window
+    authority are unchanged.
+11. **Concurrency is preserved, not altered.** The no-op UPDATE takes the `release_epoch` row lock for the life of
+    the inserting transaction, exactly as before. A transaction that has inserted a binding can therefore make
+    `activate_release` wait, or fail under a lock timeout, until it ends. That is an existing P1.3 property. B1 does
+    not introduce it and revision 2.4 does not change it.
+
+#### 27.9.3 Source digest
+
+- **Definition.** The digest is the lowercase hexadecimal SHA-256 of `pg_proc.prosrc` for the function, encoded as
+  UTF-8, after replacing every CRLF with LF. Nothing else is normalised.
+- **Pin.** The value is recorded in the B1 frozen manifest beside the function's identity.
+- **Two independent derivations must agree** before the value is accepted:
+  1. from the catalogue of a database migrated from `main` without the B1 migration;
+  2. from the text between the dollar quotes of the function's definition in applied migration
+     `20260916205049_release_provenance.sql`.
+- **After the B1 migration** the catalogue value must still equal the pin. A different value fails catalogue
+  equality and the health check.
+- Any later change to this function's body is a new design revision, a new pin and a new seal.
+
+#### 27.9.4 Catalogue assertions
+
+The B1 catalogue check asserts, for this function, and fails on any difference:
+
+| Fact | Required value |
+|---|---|
+| identity and signature | `kernel_private.stamp_binding_provenance()`, returns `trigger`, one overload |
+| `prosecdef` | true |
+| owner | the deployment owner |
+| `proconfig` | contains `search_path=""` and nothing that widens it |
+| ACL | EXECUTE for the owner only; none for `PUBLIC`, `kj_worker` or `kj_door` |
+| source digest | equals the manifest pin (27.9.3) |
+| trigger attachment | exactly `execution_bindings_provenance`, BEFORE INSERT, row-level, on `kernel_private.execution_bindings` |
+| other `SECURITY DEFINER` functions in `public` or `kernel_private` | none beyond the frozen manifest's list, which in B1 is this one function |
+
+Each assertion ships with a negative case that makes it fail on purpose.
+
+#### 27.9.5 Negative probes
+
+Committed, automated, run on genuine login sessions of **both** `kj_worker` and `kj_door`, each with a pinned result:
+
+| Probe | Required result |
+|---|---|
+| call the function directly | refused |
+| `UPDATE` of `release_epoch`, both the no-op form and one that changes the value | refused |
+| `INSERT` into and `DELETE` from `release_epoch` | refused |
+| execute `activate_release` | refused |
+| `CREATE OR REPLACE` the function | refused |
+| `ALTER FUNCTION` on it | refused |
+| create a trigger that attaches it to another table | refused |
+| create a temporary table, or a table in `public`, named `release_epoch` | refused, so name resolution cannot be redirected |
+| change the session `search_path`, then insert a binding | the stamp is unaffected |
+| insert a binding with forged `release_epoch` and `persisted_at` values | the insert succeeds and both columns are overwritten with the canonical epoch and a fresh timestamp |
+| insert bindings repeatedly | the release epoch's value does not change |
+
+#### 27.9.6 What the B1 review must verify
+
+A green suite is not sufficient for B1 to pass. The independent B1 hostile review must itself inspect, for this
+exception: the function source; its owner; its ACL; its `search_path`; the direct table grants on `release_epoch` and
+`release_activations` (none); the trigger topology; the source digest and both of its derivations; the negative
+probes and their results; and the separation of `activate_release` from the runtime roles. If any of these is not
+as section 27.9 states, B1 does not pass.
