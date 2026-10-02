@@ -1,5 +1,5 @@
 import { pathToFileURL } from "node:url";
-import pg from "pg";
+import { runtimePool } from "../database/runtime-roles.js";
 import { evaluateOutboxGate, readOutboxGateInput } from "./outbox-gate.js";
 
 /**
@@ -23,7 +23,7 @@ async function main(): Promise<number> {
   const { baselinePoison } = parseArgs(process.argv.slice(2));
   const databaseUrl = process.env["DATABASE_URL"];
   if (!databaseUrl) throw new GateUsageError("DATABASE_URL is required");
-  const pool = new pg.Pool({ connectionString: databaseUrl, max: 1 });
+  const pool = runtimePool({ connectionString: databaseUrl, max: 1 }, "kj_worker");
   try {
     const input = await readOutboxGateInput(pool);
     const verdict = evaluateOutboxGate(input, { baselinePoison });

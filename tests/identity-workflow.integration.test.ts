@@ -159,7 +159,8 @@ it("an interrupted bootstrap ends its task FAILED, is surfaced by health, and th
   // profile - exactly the state a bootstrap refused or crashed part-way leaves behind.
   await pool.query("create table public.p7a_refuse_candidate(identity_id uuid primary key)");
   await pool.query(
-    "create function public.p7a_refuse_candidate() returns trigger language plpgsql as $f$ begin " +
+    // KJ-P8 B1: test sabotage reads a test-only table, so it runs with the owner's rights, not kj_worker's.
+    "create function public.p7a_refuse_candidate() returns trigger language plpgsql security definer set search_path = '' as $f$ begin " +
       "if exists (select 1 from public.p7a_refuse_candidate where identity_id = new.identity_id) then " +
       "raise exception 'simulated bootstrap interruption' using errcode = '23514'; end if; return new; end $f$",
   );

@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 import * as restate from "@restatedev/restate-sdk";
-import pg from "pg";
+import { runtimePool } from "./database/runtime-roles.js";
 import { Ledger } from "./ledger.js";
 import { createTaskWorkflow } from "./workflow.js";
 import { createKernelWorkflow } from "./executor/workflow.js";
@@ -23,7 +23,8 @@ if (!connectionString)
   throw new Error(
     "Inject DATABASE_URL at runtime from jVault project kerneljson",
   );
-const pool = new pg.Pool({ connectionString });
+// KJ-P8 B1: the worker is kj_worker or it does not touch the database. No owner fallback.
+const pool = runtimePool({ connectionString }, "kj_worker");
 
 // Canary executor is enabled only when a repository root is configured. Then the
 // approved digest + recipe are loaded from the environment (fail-closed) and the

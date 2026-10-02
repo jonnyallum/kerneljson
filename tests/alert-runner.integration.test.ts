@@ -264,7 +264,8 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
           {
             env: {
               ...process.env,
-              DATABASE_URL: dbUrl,
+              // KJ-P8 B1: the alert CLI is a runtime process; it refuses any session that is not kj_worker.
+              DATABASE_URL: dbUrl.replace("//postgres@", "//kj_worker@"),
               ALERT_STATE_STORE: "postgres",
             },
             stdio: ["ignore", "pipe", "pipe"],

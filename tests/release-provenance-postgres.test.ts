@@ -168,6 +168,13 @@ it("migration baselines preexisting immutable bindings without inventing their i
     expect(await collectBindingProvenance(f.pool)).toBeNull();
     await db.query("begin");
     await db.query(await readFile("supabase/migrations/20260916205049_release_provenance.sql", "utf8"));
+    // KJ-P8 B1: replaying this older migration recreates its three objects without the runtime-role state that the
+    // B1 migration (always applied after it in a real database) gives them. This reconstructed schema lacks later
+    // tables, so restore exactly those three objects' B1 state instead of replaying the whole B1 migration.
+    await db.query(`alter function kernel_private.stamp_binding_provenance() security definer;
+      grant select on kernel_private.release_epoch, kernel_private.release_activations to kj_worker;
+      create policy kj_worker_select on kernel_private.release_epoch for select to kj_worker using (true);
+      create policy kj_worker_select on kernel_private.release_activations for select to kj_worker using (true);`);
     await db.query("commit");
     expect(await row(old.taskId)).toEqual({ release_epoch: "0", persisted_at: null });
     const target = "d5abf22ec176d16932af5cfcd77a8ce3098027bc";

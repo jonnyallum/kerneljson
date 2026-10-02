@@ -11,6 +11,8 @@ import { createKernelWorkflow } from "../../services/kernel/src/executor/workflo
 import { createModelProbe } from "./model-probe.js";
 import { createCapabilityProbe } from "./capability-probe.js";
 import { createPolicyProbe } from "./policy-probe.js";
+// KJ-P8 B1 discovery run only: record refused privileges instead of failing at the first (see runtime-roles.ts).
+if (process.env["KJ_RUNTIME_ROLES"] === "discover") await import("./runtime-roles.js");
 const ledger = new Ledger(
   new pg.Pool({ connectionString: process.env["DATABASE_URL"] }),
   async (key, taskId) => {
@@ -20,7 +22,8 @@ const ledger = new Ledger(
     }
     if(key==='verify' && existsSync('/tmp/kerneljson-corrupt-step-once')) {
       unlinkSync('/tmp/kerneljson-corrupt-step-once');
-      const db=new pg.Pool({connectionString:process.env['DATABASE_URL']});
+      // Deliberate corruption is test sabotage, not a worker capability: it uses the owner, never kj_worker.
+      const db=new pg.Pool({connectionString:process.env['KJ_TEST_OWNER_DATABASE_URL']});
       try { await db.query("update task_steps set contract=jsonb_set(contract,'{output}','\"forged\"') where task_id=$1 and contract->>'kind'='DETERMINISTIC_FUNCTION'",[taskId]); } finally { await db.end(); }
     }
     if(key==='complete:verification-failed' && existsSync('/tmp/kerneljson-failed-crash-once')) {

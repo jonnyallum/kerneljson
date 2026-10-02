@@ -854,7 +854,8 @@ describe("D8: completion, version and activation are one transaction (finding 1)
     // Restate retries it), never be turned into a governance refusal that would FAIL the task.
     await db.pool.query("create table if not exists public.p7a_fail_activation(task_id uuid primary key)");
     await db.pool.query(
-      "create or replace function public.p7a_fail_activation() returns trigger language plpgsql as $f$ " +
+      // KJ-P8 B1: test sabotage reads a test-only table, so it runs with the owner's rights, not kj_worker's.
+      "create or replace function public.p7a_fail_activation() returns trigger language plpgsql security definer set search_path = '' as $f$ " +
         "begin if exists (select 1 from public.p7a_fail_activation where task_id = new.request_task_id) then " +
         "raise exception 'simulated transient activation failure' using errcode = '40001'; end if; return new; end $f$",
     );

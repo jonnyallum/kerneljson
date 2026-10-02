@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createHash, timingSafeEqual } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import pg from "pg";
+import { runtimePool } from "../../../services/kernel/src/database/runtime-roles.js";
 import { TenantContext } from "../../../packages/contracts/src/index.js";
 import {
   createGateway,
@@ -235,7 +236,8 @@ export function buildDoorHandler(
 
 /** Start the door: pool + server + listen + graceful shutdown. Logs only non-secret summary. */
 export function startDoor(config: DoorConfig): { server: Server; pool: pg.Pool } {
-  const pool = new pg.Pool({ connectionString: config.databaseUrl });
+  // KJ-P8 B1: the door is kj_door or it does not touch the database. No owner fallback.
+  const pool = runtimePool({ connectionString: config.databaseUrl }, "kj_door");
   const handler = buildDoorHandler(pool, config);
   const server = createServer((req, res) => handler(req, res));
   server.listen(config.port, () => {

@@ -101,7 +101,7 @@ function healthySnapshot(): HealthSnapshot {
         },
       ],
     },
-    database: { reachable: true, scheduleReadOk: true, taskReadOk: true },
+    database: { reachable: true, scheduleReadOk: true, taskReadOk: true, runtimeRoles: { available: true, problems: [] } },
     evidence: {
       dbReachable: true,
       mostRecentScheduledTaskId: TASK_ID,
@@ -429,7 +429,7 @@ describe("evidence missing", () => {
 describe("unknown/unreachable source (database)", () => {
   it("database unreachable is CRITICAL for reachability and every dependent read", () => {
     const snapshot = healthySnapshot();
-    snapshot.database = { reachable: false, scheduleReadOk: false, taskReadOk: false };
+    snapshot.database = { reachable: false, scheduleReadOk: false, taskReadOk: false, runtimeRoles: { available: false, reason: "database unreachable" } };
     const report = evaluateHealthSnapshot(snapshot, baseExpectations());
     expect(report.domains.database.status).toBe("CRITICAL");
     expect(report.overall).toBe("CRITICAL");
@@ -441,7 +441,7 @@ describe("unknown/unreachable source (database)", () => {
 
   it("a real bug found via manual smoke-testing before shipping: dbReachable=false must degrade dependent domains to UNKNOWN, never a fabricated confirmed-negative CRITICAL", () => {
     const snapshot = healthySnapshot();
-    snapshot.database = { reachable: false, scheduleReadOk: false, taskReadOk: false };
+    snapshot.database = { reachable: false, scheduleReadOk: false, taskReadOk: false, runtimeRoles: { available: false, reason: "database unreachable" } };
     snapshot.scheduler.dbReachable = false;
     snapshot.authority.dbReachable = false;
     snapshot.admission.dbReachable = false;
@@ -587,5 +587,39 @@ describe("KJ-P7A identity orphan detector (ADR-0021 D8)", () => {
   it("selftest: the healthy fixture itself proves the check can fail - an empty list is never trivially CRITICAL", () => {
     const report = evaluateHealthSnapshot(healthySnapshot(), baseExpectations());
     expect(report.domains.identity.status).toBe("HEALTHY");
+  });
+});
+
+describe("KJ-P8 B1 runtime roles (database.runtimeRolesLeastPrivilege)", () => {
+  const dbCheck = (snapshot: ReturnType<typeof healthySnapshot>) =>
+    evaluateHealthSnapshot(snapshot, baseExpectations()).domains.database.checks.find((c) => c.id === "database.runtimeRolesLeastPrivilege")!;
+
+  it("is HEALTHY when the session is the sealed role and the grants equal the manifest", () => {
+    expect(dbCheck(healthySnapshot()).status).toBe("HEALTHY");
+  });
+
+  it("is CRITICAL, with the violations listed, when anything differs - the check fails on purpose", () => {
+    const snapshot = healthySnapshot();
+    snapshot.database.runtimeRoles = {
+      available: true,
+      problems: ["RUNTIME_DATABASE_ROLE_REFUSED: this process must connect as kj_worker", "kj_door holds unlisted relation:public.task_events:DELETE"],
+    };
+    const c = dbCheck(snapshot);
+    expect(c.status).toBe("CRITICAL");
+    expect(c.message).toContain("2 runtime-role violation(s)");
+    expect(c.observed).toEqual(snapshot.database.runtimeRoles.problems);
+    expect(evaluateHealthSnapshot(snapshot, baseExpectations()).overall).toBe("CRITICAL");
+  });
+
+  it("is UNKNOWN, never HEALTHY, when the catalogue could not be read", () => {
+    const snapshot = healthySnapshot();
+    snapshot.database.runtimeRoles = { available: false, reason: "manifest unreadable" };
+    expect(dbCheck(snapshot).status).toBe("UNKNOWN");
+  });
+
+  it("is absent when the database is unreachable: reachability owns that failure", () => {
+    const snapshot = healthySnapshot();
+    snapshot.database = { reachable: false, scheduleReadOk: false, taskReadOk: false, runtimeRoles: { available: false, reason: "database unreachable" } };
+    expect(evaluateHealthSnapshot(snapshot, baseExpectations()).domains.database.checks.map((c) => c.id)).toEqual(["database.reachable"]);
   });
 });

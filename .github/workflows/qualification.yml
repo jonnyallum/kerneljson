@@ -29,10 +29,14 @@ jobs:
         run: |
           test -z "$DOCKER_HOST"
           test "$(docker context show)" = default
-          mkdir -p artifacts/local
+          mkdir -p artifacts/local artifacts/local/b1-trace
           git rev-parse HEAD > artifacts/local/tested-commit.txt
+          # KJ-P8 B1: the suite runs production code as kj_worker / kj_door (tests/support/runtime-roles.ts).
+          node scripts/b1/build-manifest.mjs --check
           pnpm test --reporter=default --reporter=json --outputFile=artifacts/local/tests.json
           pnpm test:baseline
+          # Statement trace of the run above against the frozen manifest; a refusal of a runtime statement fails.
+          node scripts/b1/analyse-trace.mjs artifacts/local/b1-trace artifacts/local/b1-dynamic-inventory.json --fail-on-refusal
       - run: pnpm build
       - name: Faculty authority mutation checks
         run: node scripts/mutation-check-faculties.mjs

@@ -615,6 +615,24 @@ export function evaluateDatabase(s: DatabaseSnapshot, checkedAt: string): Domain
         checkedAt,
       ),
     );
+    // KJ-P8 B1 (ADR-0023 section 27): the runtime must be exactly its least-privilege role, and the database grants
+    // must equal the frozen manifest in both directions. A widened or owner session is a CRITICAL authority fault.
+    const r = s.runtimeRoles;
+    const evidence = "current_user/session_user, pg_roles, has_*_privilege and pg_policies against the frozen runtime-role manifest";
+    checks.push(
+      !r.available
+        ? check("database.runtimeRolesLeastPrivilege", "UNKNOWN", evidence, `evidence unavailable: ${r.reason}`, checkedAt)
+        : check(
+            "database.runtimeRolesLeastPrivilege",
+            r.problems.length === 0 ? "HEALTHY" : "CRITICAL",
+            evidence,
+            r.problems.length === 0
+              ? "this session is kj_worker and the runtime-role grants equal the frozen manifest"
+              : `${r.problems.length} runtime-role violation(s): ${r.problems.slice(0, 3).join("; ")}`,
+            checkedAt,
+            r.problems.length ? { observed: r.problems.slice(0, 50) } : undefined,
+          ),
+    );
   }
   return aggregateDomain(checks);
 }

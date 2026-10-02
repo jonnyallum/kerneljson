@@ -1,5 +1,5 @@
 import { pathToFileURL } from "node:url";
-import pg from "pg";
+import { runtimePool } from "../database/runtime-roles.js";
 import { collectHealthSnapshot } from "../health/collect.js";
 import {
   loadConnectionConfig,
@@ -46,7 +46,7 @@ async function main(): Promise<void> {
   const jsonOnly = process.argv.includes("--json");
   const connection = loadConnectionConfig(process.env);
   const expectations = loadHealthExpectations(process.env);
-  const pool = new pg.Pool({ connectionString: connection.databaseUrl });
+  const pool = runtimePool({ connectionString: connection.databaseUrl }, "kj_worker");
   try {
     const execute = async (store: AlertStateStore, outbox: NotificationOutboxStore) => {
       const snapshot = await collectHealthSnapshot({

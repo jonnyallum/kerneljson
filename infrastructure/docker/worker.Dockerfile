@@ -7,7 +7,10 @@ COPY tsconfig*.json ./
 COPY packages ./packages
 COPY services/kernel ./services/kernel
 COPY services/memory ./services/memory
+# KJ-P8 B1: the frozen runtime-role manifest, read by the health check to compare the live catalogue against it.
+COPY infrastructure/database/runtime-role-manifest.json ./infrastructure/database/runtime-role-manifest.json
 COPY tests/support/worker.ts ./tests/support/worker.ts
+COPY tests/support/runtime-roles.ts ./tests/support/runtime-roles.ts
 COPY tests/support/model-probe.ts ./tests/support/model-probe.ts
 COPY tests/support/capability-probe.ts ./tests/support/capability-probe.ts
 COPY tests/support/policy-probe.ts ./tests/support/policy-probe.ts

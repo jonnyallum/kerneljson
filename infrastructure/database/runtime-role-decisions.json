@@ -1,0 +1,63 @@
+{
+  "contract": "kerneljson:runtime-role-decisions/v1",
+  "note": "Reviewed departures from the static inventory. Every entry needs a reason. build-manifest.mjs applies them; nothing else may edit the manifest.",
+  "connectionLimit": { "kj_worker": 40, "kj_door": 20 },
+  "deny": [
+    {
+      "role": "kj_door", "object": "kernel_private.control_assertions", "verb": "*",
+      "reason": "The door only signs control assertions (createControlSigner). The replay store in the same file is used by the worker's verifier. Never observed for the door in the dynamic trace."
+    },
+    {
+      "role": "kj_door", "object": "kernel_private.effect_receipts", "verb": "INSERT",
+      "reason": "The door reads effect receipts for task status. Writing them is the worker's terminal path, which shares services/kernel/src/terminal.ts. Never observed for the door."
+    },
+    {
+      "role": "kj_door", "object": "public.tasks", "verb": "ROWLOCK",
+      "reason": "The row lock in terminal.ts belongs to the worker's completion path. The door only reads tasks. Never observed for the door."
+    },
+    {
+      "role": "kj_door", "object": "public.entities", "verb": "INSERT",
+      "reason": "The door exposes GET /v1/world only. WorldStore's write methods are in the same module but on no door route."
+    },
+    {
+      "role": "kj_door", "object": "public.observations", "verb": "INSERT",
+      "reason": "The door exposes GET /v1/world only. WorldStore's write methods are on no door route."
+    },
+    {
+      "role": "kj_door", "object": "public.relationships", "verb": "INSERT",
+      "reason": "The door exposes GET /v1/world only. WorldStore's write methods are on no door route."
+    },
+    {
+      "role": "kj_door", "object": "public.memory_items", "verb": "INSERT",
+      "reason": "The door exposes GET /v1/memory only. MemoryStore's write method is on no door route."
+    },
+    {
+      "role": "kj_door", "object": "kernel_private.release_epoch", "verb": "UPDATE",
+      "reason": "ADR-0023 section 27.3: a runtime role never writes release_epoch. See securityDefinerTriggers."
+    },
+    {
+      "role": "kj_worker", "object": "kernel_private.release_epoch", "verb": "UPDATE",
+      "reason": "ADR-0023 section 27.3: a runtime role never writes release_epoch. See securityDefinerTriggers."
+    }
+  ],
+  "allow": [
+    {
+      "role": "kj_worker", "object": "public.evidence", "verb": "ROWLOCK",
+      "reason": "approval-store.ts locks the evidence row (FOR UPDATE/SHARE); the statement is assembled across string literals, so the static extractor does not see the lock. Observed in the dynamic trace."
+    },
+    {
+      "role": "kj_worker", "object": "public.task_events", "verb": "ROWLOCK",
+      "reason": "approval-store.ts locks the policy event row; assembled across string literals. Observed in the dynamic trace."
+    },
+    {
+      "role": "kj_worker", "object": "public.memory_versions", "verb": "ROWLOCK",
+      "reason": "canonical memory service locks the head version row; assembled across string literals. Observed in the dynamic trace."
+    }
+  ],
+  "securityDefinerTriggers": [
+    {
+      "function": "kernel_private.stamp_binding_provenance",
+      "reason": "This existing BEFORE INSERT trigger on kernel_private.execution_bindings performs a real UPDATE of kernel_private.release_epoch (epoch = epoch) to lock it and stamp the binding. As SECURITY INVOKER it would force both runtime roles to hold UPDATE on release_epoch, which section 27.3 forbids. As SECURITY DEFINER it does exactly the same work with the owner's rights and the roles hold nothing on the table. The body is unchanged, it already sets search_path = '', and a trigger function cannot be called directly. THIS IS A DEVIATION from the letter of section 27.8 ('no trigger changes') and needs an explicit ruling."
+    }
+  ]
+}

@@ -121,6 +121,8 @@ export interface DatabaseSnapshot {
   reachable: boolean;
   scheduleReadOk: boolean;
   taskReadOk: boolean;
+  /** KJ-P8 B1: this session's role and the catalogue against the frozen runtime-role manifest. `problems` empty = sealed. */
+  runtimeRoles: { available: true; problems: string[] } | { available: false; reason: string };
 }
 
 export interface EvidenceSnapshot {

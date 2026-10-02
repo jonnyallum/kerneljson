@@ -1,5 +1,5 @@
 import { pathToFileURL } from "node:url";
-import pg from "pg";
+import { runtimePool } from "../database/runtime-roles.js";
 import { PgNotificationOutboxStore } from "./pg-outbox-store.js";
 import { loadTransportConfig } from "./transport-config.js";
 import { assertValidTestLabel, enqueueTestNotification } from "./test-notification.js";
@@ -50,7 +50,7 @@ async function main(): Promise<void> {
   if (mode !== "telegram") throw new UsageError("ALERT_TRANSPORT must be telegram to queue a Telegram test notification");
   const databaseUrl = process.env["DATABASE_URL"];
   if (!databaseUrl) throw new UsageError("DATABASE_URL is required");
-  const pool = new pg.Pool({ connectionString: databaseUrl, max: 1 });
+  const pool = runtimePool({ connectionString: databaseUrl, max: 1 }, "kj_worker");
   try {
     const outbox = new PgNotificationOutboxStore(pool);
     await outbox.probe();

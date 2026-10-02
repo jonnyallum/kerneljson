@@ -1,3 +1,4 @@
+import { RUNTIME_ROLES, RuntimeRoleRefusal, assertRuntimeRole, compareDefinerFunctions, compareRoleToManifest, loadManifest } from "../database/runtime-roles.js";
 import { collectBindingProvenance } from "./release-provenance.js";
 import type pg from "pg";
 import { createRestateAdminClient, type RestateAdminClient } from "./restate-client.js";
@@ -308,6 +309,31 @@ export interface CollectDeps {
   now?: () => Date;
 }
 
+/** KJ-P8 B1: is this session exactly kj_worker, and do both runtime roles hold exactly the frozen manifest? */
+export async function fetchRuntimeRoles(pool: pg.Pool): Promise<HealthSnapshot["database"]["runtimeRoles"]> {
+  try {
+    const manifest = loadManifest();
+    const problems: string[] = [];
+    try {
+      await assertRuntimeRole(pool, "kj_worker");
+    } catch (error) {
+      if (!(error instanceof RuntimeRoleRefusal)) throw error;
+      problems.push(error.code);
+    }
+    for (const role of RUNTIME_ROLES) {
+      const diff = await compareRoleToManifest(pool, manifest, role);
+      for (const f of diff.missing) problems.push(`${role} lacks ${f}`);
+      for (const f of diff.extra) problems.push(`${role} holds unlisted ${f}`);
+    }
+    const definer = await compareDefinerFunctions(pool, manifest);
+    for (const f of definer.missing) problems.push(`${f} is not SECURITY DEFINER as the manifest requires`);
+    for (const f of definer.extra) problems.push(`unlisted SECURITY DEFINER function ${f}`);
+    return { available: true, problems };
+  } catch (error) {
+    return { available: false, reason: error instanceof Error ? error.message.slice(0, 200) : "runtime role catalogue unreadable" };
+  }
+}
+
 export async function collectHealthSnapshot(deps: CollectDeps): Promise<HealthSnapshot> {
   const { pool, connection, expectations, selfEnv } = deps;
   const fetchImpl = deps.fetchImpl ?? fetch;
@@ -388,6 +414,7 @@ export async function collectHealthSnapshot(deps: CollectDeps): Promise<HealthSn
       reachable: dbReachable,
       scheduleReadOk: dbReachable, // fetchScheduleState/fetchFires above did not throw
       taskReadOk: dbReachable,
+      runtimeRoles: dbReachable ? await fetchRuntimeRoles(pool) : { available: false, reason: "database unreachable" },
     },
     evidence: {
       dbReachable,

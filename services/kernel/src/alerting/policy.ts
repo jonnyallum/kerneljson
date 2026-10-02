@@ -171,6 +171,11 @@ export const ALERT_POLICY: readonly AlertPolicyEntry[] = [
     { CRITICAL: "P1" },
     "Task reads failing is a critical execution-path fault, P1.",
   ),
+  simple(
+    "database.runtimeRolesLeastPrivilege",
+    { CRITICAL: "P0" },
+    "A runtime process that is not exactly its sealed least-privilege role, or a database whose runtime grants differ from the frozen manifest, is an authority-boundary breach (ADR-0023 section 27) - P0. UNKNOWN (catalogue unreadable) stays silent: the database domain owns reachability.",
+  ),
 
   // ---- evidence ------------------------------------------------------------
   simple(

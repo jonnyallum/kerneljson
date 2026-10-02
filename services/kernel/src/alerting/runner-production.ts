@@ -1,4 +1,4 @@
-import pg from "pg";
+import { runtimePool } from "../database/runtime-roles.js";
 import { collectHealthSnapshot } from "../health/collect.js";
 import {
   loadConnectionConfig,
@@ -22,13 +22,13 @@ export function productionAlertMonitor(env: NodeJS.ProcessEnv) {
   // values — never a silent console fallback for an explicit request.
   const { notifier, transport } = selectNotifier(loadTransportConfig(env));
   // Separate bounded pool: monitoring cannot consume the task worker's pool.
-  const pool = new pg.Pool({
+  const pool = runtimePool({
     connectionString: connection.databaseUrl,
     max: 3,
     connectionTimeoutMillis: 5000,
     statement_timeout: 10000,
     query_timeout: 15000,
-  });
+  }, "kj_worker");
   pool.on("error", () => console.error("alert_monitor_pool_error"));
   return createAlertMonitorService(config, () =>
     runMonitor({

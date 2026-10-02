@@ -1,4 +1,4 @@
-import pg from "pg";
+import { runtimePool } from "../../database/runtime-roles.js";
 import { deliverRows } from "../../alerting/delivery-worker.js";
 import { isOperatorReplyCheckId } from "../../alerting/operator-reply.js";
 import { PgNotificationOutboxStore } from "../../alerting/pg-outbox-store.js";
@@ -28,13 +28,13 @@ export function productionTelegramOperator(env: NodeJS.ProcessEnv) {
   if (!config) return undefined;
   const { notifier, transport } = selectNotifier(loadTransportConfig(env));
   // A separate bounded pool, like the monitor's: the channel cannot starve the task worker.
-  const pool = new pg.Pool({
+  const pool = runtimePool({
     connectionString: config.databaseUrl,
     max: 3,
     connectionTimeoutMillis: 5000,
     statement_timeout: 10000,
     query_timeout: 15000,
-  });
+  }, "kj_worker");
   pool.on("error", () => console.error("telegram_operator_pool_error"));
   const outbox = new PgNotificationOutboxStore(pool);
   const delivery = { outbox, notifier, transport };

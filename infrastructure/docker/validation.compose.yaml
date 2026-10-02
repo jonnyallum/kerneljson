@@ -23,12 +23,20 @@ services:
       context: ../..
       dockerfile: infrastructure/docker/worker.Dockerfile
     environment:
-      DATABASE_URL: postgresql://postgres@db:5432/kerneljson
+      # KJ-P8 B1: the worker is a genuine kj_worker session. The discovery run alone overrides this with the owner
+      # and loads tests/support/runtime-roles.ts, which records refused privileges instead of stopping at the first.
+      DATABASE_URL: ${KJ_WORKER_DATABASE_URL:-postgresql://kj_worker@db:5432/kerneljson}
+      # Test-only: fault injection that deliberately corrupts a row needs the owner. Never read by production code.
+      KJ_TEST_OWNER_DATABASE_URL: postgresql://postgres@db:5432/kerneljson
+      KJ_RUNTIME_ROLES: ${KJ_RUNTIME_ROLES:-enforce}
+      KJ_RUNTIME_ROLE_FIXED: kj_worker
+      KJ_B1_TRACE_DIR: /trace
       PORT: 9080
       KERNELJSON_RELEASE_ID: ${KERNELJSON_RELEASE_ID:-unreleased-development}
     ports: ["127.0.0.1:19080:9080"]
     depends_on:
       db: {condition: service_healthy}
+    volumes: ["../../artifacts/local/b1-trace:/trace"]
     command: ["node", "--import", "tsx", "tests/support/worker.ts"]
 volumes:
   restate-test-data:
