@@ -1,0 +1,1178 @@
+# KJ-MOD-1: agent session capability and shadow admission (design revision 3)
+
+Status: PROPOSED DESIGN, revision 3. Not implemented, migrated or deployed.
+
+This document is the complete design. Nothing in a chat transcript, an earlier revision or a review is normative. Where
+this document and any other source disagree, this document governs until it is superseded by a sealed ADR. It is not
+the final ADR and assigns no ADR number.
+
+The key words MUST, MUST NOT, SHOULD and MAY are normative.
+
+## 0. Provenance and scope
+
+### 0.1 Canonical state this design was written against
+
+| Item | SHA |
+|---|---|
+| `main` (base of this branch) | `20e39f797be9c4c982bc32fb40b6aa1427b5c09c` |
+| P8 design, ADR-0023 R2.4 | `8a17de18b26edd12a9f3af7ab6179552ff0cd20e` |
+| B1 candidate | `108db1b0db5923993eb17888d3039c5a32890c2c` |
+| MOD-0, draft PR #51 (unmerged) | `c8ce383520457149652e2ee508f954838cf2be61` |
+| Claude Code release the grammar is pinned to | 2.1.289 |
+
+This design changes none of them.
+
+### 0.2 What MOD-1 is
+
+MOD-1 extends the MOD-0 read-only Claude Code console (`kj-console`) so that a Claude Code session can:
+
+1. be bound to one bounded, KernelJSON-issued **agent session capability**;
+2. classify each tool call into a stable, agent-neutral **action class** with the sealed grammar G1;
+3. send a frozen, bounded **shadow observation** to KernelJSON, which answers what its shadow policy *would* say;
+4. display `WOULD_ALLOW`, `WOULD_DENY`, `WOULD_REQUIRE_APPROVAL`, `WOULD_REQUIRE_REVIEW` or `SHADOW_UNKNOWN`, together
+   with session and coverage state.
+
+### 0.3 What MOD-1 is not
+
+- It does not enforce. It never denies, rewrites, delays or replaces a tool call or a result. It never answers a
+  permission prompt and never approves anything.
+- It is not part of ADR-0023 and does not enter the P8 rollout (section 22).
+- Nothing it produces is KernelJSON task authority (section 3).
+- An enforcing successor (MOD-2) needs its own design and seal and may not reuse MOD-1 artefacts as authority
+  (section 21).
+
+### 0.4 Review history
+
+| Revision | Review verdict | Blockers |
+|---|---|---|
+| 1 | BLOCK | MOD1-B1 to MOD1-B6 |
+| 2 | BLOCK | reviewer passed MOD1-B1, B3, B4, B5, B6; claimed MOD1-B2 open; raised MOD1-R2-B1, R2-B2, R2-B3 |
+| 3 | (this document) | see section 2 |
+
+## 1. G1 POSITIVE SET
+
+This section is self-contained. It lists every input that G1 classifies as anything other than
+`UNKNOWN_TOOL_ACTION`. **Every input not listed here is `UNKNOWN_TOOL_ACTION` with confidence `NONE`.** Section 12
+holds the full rules that decide membership; this section is the catalogue of what membership can produce.
+
+### 1.1 Structured tools (confidence `EXACT`)
+
+| Tool name (exact, case-sensitive) | Class(es) it can produce | Target sent |
+|---|---|---|
+| `Read` | `READ_REPOSITORY`, `READ_LOCAL_OUTSIDE_WORKTREE`, `SECRET_READ` (by path zone, 12.3) | none (zone only) |
+| `Glob` | `READ_REPOSITORY`, `READ_LOCAL_OUTSIDE_WORKTREE` (by zone of `path`, or of the session working directory if absent) | none |
+| `Grep` | `READ_REPOSITORY`, `READ_LOCAL_OUTSIDE_WORKTREE`, `SECRET_READ`; always flag `BROAD_CONTENT_READ` | none |
+| `Edit` | `WRITE_WORKTREE`, `WRITE_OUTSIDE_WORKTREE`, `SECRET_WRITE` | none |
+| `Write` | `WRITE_WORKTREE`, `WRITE_OUTSIDE_WORKTREE`, `SECRET_WRITE` | none |
+| `NotebookEdit` | `WRITE_WORKTREE`, `WRITE_OUTSIDE_WORKTREE`, `SECRET_WRITE` | none |
+| `WebFetch` | `NETWORK_REQUEST` | URL host |
+| `WebSearch` | `NETWORK_REQUEST` | none |
+| `Agent` | `AGENT_DELEGATE` | none |
+| `Bash` | only via the shell productions in 1.2 | as 1.2 |
+| `PowerShell` | only via the shell productions in 1.2 marked "Bash or PowerShell" | as 1.2 |
+
+### 1.2 Shell productions (confidence `PATTERN`)
+
+The `command` string of `Bash` or `PowerShell`, after S1 to S4 (section 12.5), MUST equal one of these argv sequences
+exactly. `BRANCH`, `PR`, `PATHTOK` and `URL` are the token classes of S4.
+
+| # | argv (exact) | Shell | Class | Target sent |
+|---|---|---|---|---|
+| P1 | `git status` | Bash or PowerShell | `READ_REPOSITORY` | none |
+| P2 | `git status --short` | Bash or PowerShell | `READ_REPOSITORY` | none |
+| P3 | `git diff` | Bash or PowerShell | `READ_REPOSITORY` | none |
+| P4 | `git diff --stat` | Bash or PowerShell | `READ_REPOSITORY` | none |
+| P5 | `git diff --cached` | Bash or PowerShell | `READ_REPOSITORY` | none |
+| P6 | `git log --oneline` | Bash or PowerShell | `READ_REPOSITORY` | none |
+| P7 | `git branch --show-current` | Bash or PowerShell | `READ_REPOSITORY` | none |
+| P8 | `git rev-parse HEAD` | Bash or PowerShell | `READ_REPOSITORY` | none |
+| P9 | `git add` followed by 1 to 8 `PATHTOK` | Bash or PowerShell | `GIT_STAGE` | none |
+| P10 | `git switch -c BRANCH` | Bash or PowerShell | `GIT_BRANCH_CREATE` | branch |
+| P11 | `git checkout -b BRANCH` | Bash or PowerShell | `GIT_BRANCH_CREATE` | branch |
+| P12 | `git fetch origin` | Bash or PowerShell | `FORGE_READ` | none |
+| P13 | `git push origin BRANCH` | Bash or PowerShell | `GIT_PUSH_BRANCH` | branch |
+| P14 | `git push -u origin BRANCH` | Bash or PowerShell | `GIT_PUSH_BRANCH` | branch |
+| P15 | `git push --force origin BRANCH` | Bash or PowerShell | `GIT_FORCE_PUSH` | branch |
+| P16 | `git push -f origin BRANCH` | Bash or PowerShell | `GIT_FORCE_PUSH` | branch |
+| P17 | `gh pr view PR` | Bash or PowerShell | `FORGE_READ` | none |
+| P18 | `gh pr checks PR` | Bash or PowerShell | `FORGE_READ` | none |
+| P19 | `gh pr list` | Bash or PowerShell | `FORGE_READ` | none |
+| P20 | `gh pr create --fill` | Bash or PowerShell | `OPEN_PR` | none |
+| P21 | `gh pr create --fill --draft` | Bash or PowerShell | `OPEN_PR` | none |
+| P22 | `gh pr merge PR --squash` | Bash or PowerShell | `MERGE_PR` | none |
+| P23 | `gh pr merge PR --merge` | Bash or PowerShell | `MERGE_PR` | none |
+| P24 | `gh pr merge PR --rebase` | Bash or PowerShell | `MERGE_PR` | none |
+| P25 | `vercel` | Bash or PowerShell | `DEPLOY_PREVIEW` | none |
+| P26 | `vercel deploy` | Bash or PowerShell | `DEPLOY_PREVIEW` | none |
+| P27 | `vercel --prod` | Bash or PowerShell | `DEPLOY_PRODUCTION` | none |
+| P28 | `vercel deploy --prod` | Bash or PowerShell | `DEPLOY_PRODUCTION` | none |
+| P29 | `supabase db push --local` | Bash or PowerShell | `DATABASE_LOCAL_MUTATION` | none |
+| P30 | `supabase db push` | Bash or PowerShell | `DATABASE_PRODUCTION_MUTATION`, flag `TARGET_ENV_UNVERIFIED` | none |
+| P31 | `curl URL` | Bash only | `NETWORK_REQUEST` | URL host |
+| P32 | `curl -s URL` | Bash only | `NETWORK_REQUEST` | URL host |
+| P33 | `curl -I URL` | Bash only | `NETWORK_REQUEST` | URL host |
+| P34 | `printenv` | Bash only | `ENVIRONMENT_READ` | none |
+| P35 | `env` | Bash only | `ENVIRONMENT_READ` | none |
+
+There are 35 shell productions and 11 structured tool entries. No other input is in G1.
+
+### 1.3 Meaning of a G1 result (normative)
+
+A G1 result describes **the classified argv or tool-call preimage**, as captured before the engine ran the call. It
+does not describe the actual side effect. For example, a P13 result for `git push origin main` means "the captured argv
+matched the `GIT_PUSH_BRANCH` production targeting branch `main`". It does not prove:
+
+- which executable ultimately ran (aliases, shell functions, `PATH`, `PATHEXT`, `.ps1` shims);
+- which git configuration, hooks or helpers ran (`core.fsmonitor`, `diff.external`, hooks, credential helpers);
+- what other configuration applied (`~/.curlrc`, Vercel and Supabase link files);
+- that the call ran at all, succeeded, or changed `main`.
+
+These are telemetry residuals (section 25), not defects of G1.
+
+## 2. Blocker closure
+
+### 2.1 Revision 1 blockers (closed by revision 2, preserved here)
+
+| Blocker | Revision 2 decision, preserved in this revision | Where |
+|---|---|---|
+| MOD1-B1 grant-shaped semantics | No copied allow-list in the capability; live shadow policy is the only evaluator; policy-identity mismatch is `SESSION_STALE`; wire verdicts are only `WOULD_*` or `SHADOW_UNKNOWN`; lifecycle states separately typed; non-authority clause in every response; enforcing successor needs a different contract and endpoint | sections 4, 8, 14, 21 |
+| MOD1-B2 classifier rule | Sealed rule R0 to R5; G1 closed grammar; UNKNOWN catalogue | sections 1, 11, 12 |
+| MOD1-B3 pre-next observation and coverage | Synchronous frozen observation before `next(e)`; key-based correlation; coverage counters and latch; crash gap visible | sections 13 to 15 |
+| MOD1-B4 non-canonical namespace | `kj_shadow` schema, no cross-boundary foreign keys, no canonical role access, idempotency, side-effect classes separated | sections 16, 17 |
+| MOD1-B5 truth model and digests | Three origin tiers, HEAD descendant semantics, no secrecy-by-digest | sections 9, 18 |
+| MOD1-B6 issuance ceremony | One issuer path, HUMAN owner, separate confirmation, reissue creates new capability | sections 5, 6 |
+
+### 2.2 MOD1-B2: CLOSED_BY_R2
+
+The second review claimed the exact G1 production catalogue was absent. Revision 2 contained it in full: the
+structured tool table, the path rule, the URL rule, S1 (character set), S2 (argv splitting), S3 (exact executable list
+per shell), S4 (token classes), S5 (exact argv productions) and the explicit UNKNOWN catalogue. Revision 3 does not
+redesign G1. It copies the grammar unchanged into section 12, adds the self-contained catalogue in section 1 and the
+preimage semantics in 1.3, and moves the design into a committed file so that review targets exact bytes rather than
+chat context. The productions in section 1.2 are exactly the S5 productions of revision 2, numbered P1 to P35 for
+reference.
+
+### 2.3 Revision 2 blockers
+
+| Blocker | Revision 2 defect | Revision 3 decision | Where |
+|---|---|---|---|
+| MOD1-R2-B1 | `kj_shadow.owner_confirmation` was a generically named "human said yes" record that could be reused for other ceremonies | Replaced by the single-purpose relation `kj_shadow.agent_session_issuance_confirmation`, whose only possible subject is one pending issuance request and its digest, enforced by a composite foreign key; decision vocabulary `CONFIRM`/`REFUSE`; 60-second expiry; one-time consumption made structural by `UNIQUE(confirmation_id)` on the capability; no generic discriminator, payload or foreign resource column; canonical roles and code structurally excluded; static topology check; reuse for any other ceremony requires a new design revision | 5.4, 16.6, 16.7 |
+| MOD1-R2-B2 | `canonicality = NON_CANONICAL` was overloaded to mean both "not trusted" and "not evidence" | Three independent closed dimensions: `authority_domain` (`SHADOW_ONLY` or `NONE`), `evidence_canonicality` (always `NON_CANONICAL`), `assertion_origin` (`SERVER_WRITTEN`, `CLIENT_ASSERTED`, `FORGE_VERIFIED`). The capability is trusted for shadow authentication and evaluation and is non-canonical for everything else. Expiry and revocation are mandatory inside the shadow domain | 3.2, 16 |
+| MOD1-R2-B3 | "Returned exactly once" with an undefined retrieval nonce | The token is minted inside the authenticated completion request and returned in its response body only. A client-generated completion proof binds completion to the requesting client; its plaintext never leaves the CLI except in that request body and is never stored server-side. Once the mint commits, plaintext token material is never stored; loss is unrecoverable and is handled by revocation and a new ceremony. Memory lifetime defined | 6 |
+
+## 3. Authority model and record vocabulary
+
+### 3.1 Authority model
+
+- **KernelJSON is the only authority.** For MOD-1 it decides one narrow thing: whether a token may ask shadow questions
+  about one mission, and what the shadow policy would say. That decision has no standing in task authority.
+- **The Claude Code process is untrusted.** That includes MOD-1, every other mod, the engine's state, its configuration
+  storage and the model.
+- **The model is adversarial input.** Its free text, including the Bash `description` field, never feeds
+  classification or binding.
+- **The shadow evaluator** is a pure function inside KernelJSON:
+  `(capability record, live mission state, live shadow policy, request) -> verdict`. It is the only evaluator.
+- **Dependency direction:** Claude adapter (inside the mod) -> neutral `agent-actions` library (vendored into the mod
+  folder, digest-checked against its single source in `packages/`) -> KernelJSON shadow endpoint. KernelJSON core
+  imports nothing from the mod or from any Claude type.
+
+**Invariant A1.** Nothing MOD-1 produces or stores can authorise execution, satisfy an approval, satisfy an admission,
+satisfy task completion, activate an identity or a release, authorise a deployment, drive the scheduler, or be consumed
+as enforcement authority.
+
+### 3.2 Three independent record dimensions
+
+Every `kj_shadow` relation carries all three as constrained columns (section 16). They are independent: no value of
+one implies a value of another.
+
+| Dimension | Closed vocabulary | Meaning |
+|---|---|---|
+| `authority_domain` | `SHADOW_ONLY` | KernelJSON trusts the record for the narrowly defined shadow operation (authenticating a shadow token, evaluating shadow policy, completing an issuance). It grants nothing outside that domain. |
+| | `NONE` | Telemetry and operational data. Trusted for nothing, including shadow authentication. |
+| `evidence_canonicality` | `NON_CANONICAL` (the only legal value in `kj_shadow`) | The row can never satisfy task evidence, admission, approval, completion, identity activation, release activation, deployment authority or scheduler authority. |
+| `assertion_origin` | `SERVER_WRITTEN` | Written by KernelJSON from its own validated state or from a validated HUMAN request. |
+| | `CLIENT_ASSERTED` | Reported by the agent process; telemetry only. |
+| | `FORGE_VERIFIED` | Established by KernelJSON through a trusted server-side forge integration. |
+
+Assignment:
+
+| Relation | `authority_domain` | `evidence_canonicality` | `assertion_origin` |
+|---|---|---|---|
+| `agent_session_capability` | `SHADOW_ONLY` | `NON_CANONICAL` | `SERVER_WRITTEN` |
+| `agent_session_capability_event` | `SHADOW_ONLY` | `NON_CANONICAL` | `SERVER_WRITTEN` |
+| `agent_session_issuance_request` | `SHADOW_ONLY` | `NON_CANONICAL` | `SERVER_WRITTEN` |
+| `agent_session_issuance_confirmation` | `SHADOW_ONLY` | `NON_CANONICAL` | `SERVER_WRITTEN` |
+| `agent_action_shadow_policy` | `SHADOW_ONLY` | `NON_CANONICAL` | `SERVER_WRITTEN` |
+| `agent_shadow_observer_stream` | `NONE` | `NON_CANONICAL` | `SERVER_WRITTEN` (stream bookkeeping) |
+| `agent_shadow_observation` | `NONE` | `NON_CANONICAL` | per column group: `client` and `action` are `CLIENT_ASSERTED`; `verdict` group is `SERVER_WRITTEN`; `head_relation` is `FORGE_VERIFIED` only when verified |
+| `agent_shadow_rate_counter`, `agent_shadow_access_meta` | `NONE` | `NON_CANONICAL` | `SERVER_WRITTEN` |
+
+**Invariant A2.** `NON_CANONICAL` never means "untrusted, so ignore". Inside the shadow domain, expiry, revocation,
+supersession, mission state and policy identity MUST be checked on every request and every failure MUST fail closed
+(no shadow answer). `NON_CANONICAL` only means the record is outside canonical task authority and evidence.
+
+**Invariant A3.** A capability is trusted by KernelJSON for `SHADOW_ONLY` authentication and evaluation and is
+`NON_CANONICAL` for every canonical authority or evidence purpose.
+
+## 4. Session capability v3
+
+Contract `kerneljson:agent-session-capability/v3`. One row in `kj_shadow.agent_session_capability` per completed
+issuance ceremony.
+
+| Field | Origin | Notes |
+|---|---|---|
+| `capability_id` | SERVER_WRITTEN | UUID, new for every ceremony |
+| `generation` | SERVER_WRITTEN | 1 for a new capability; predecessor's generation + 1 for a replacement |
+| `supersedes_capability_id` | SERVER_WRITTEN | null, or the one capability this replaces (section 7) |
+| `tenant_id`, `mission_id` | SERVER_WRITTEN | copied after validation; no foreign key leaves `kj_shadow` |
+| `mission_digest` | SERVER_WRITTEN | SHA-256 of the mission's canonical identity at issuance, so a recreated mission with the same id is detectable |
+| `issued_by_principal_id` | SERVER_WRITTEN | the HUMAN requesting principal |
+| `issuance_request_id` | SERVER_WRITTEN | the request it completed |
+| `confirmation_id` | SERVER_WRITTEN | `UNIQUE NOT NULL`; the confirmation consumed to mint it |
+| `issuance_digest` | SERVER_WRITTEN | equals the request's and the confirmation's |
+| `agent_shell` | SERVER_WRITTEN label | `claude-code`, `openai-harness`, `deepseek-harness`, `grokbot`, `antigravity`; audit only, never matched by policy |
+| `repo_id` | SERVER_WRITTEN | must be in KernelJSON's configured repository registry, e.g. `github:jonnyallum/kerneljson` |
+| `bound_branch` | SERVER_WRITTEN as a record | existence on the forge is `FORGE_VERIFIED` or unverified |
+| `base_sha` | SERVER_WRITTEN as a record, immutable anchor | existence in the repo is `FORGE_VERIFIED` or unverified |
+| `policy_version`, `policy_digest` | SERVER_WRITTEN | identity of the live shadow policy at mint |
+| `production_ceiling` | SERVER_WRITTEN | v3 permits only `NONE` |
+| `issued_at`, `expires_at` | SERVER_WRITTEN | `expires_at - issued_at` is at most 30 minutes (CHECK) |
+| `revoked_at`, `revoked_by_principal_id`, `revocation_reason` | SERVER_WRITTEN | null until revoked; reason in `REVOKED_BY_HUMAN`, `REVOKED_ALL_FOR_MISSION`, `SUPERSEDED`, `DELIVERY_LOST` |
+| `credential_digest` | SERVER_WRITTEN, server-only | SHA-256 of the token; `UNIQUE`; never returned |
+| `authority_domain`, `evidence_canonicality`, `assertion_origin` | constants | `SHADOW_ONLY`, `NON_CANONICAL`, `SERVER_WRITTEN` |
+
+Not present, by design: any allow-list or copied rule, `protectedBranches`, `expectedHead`, `validUntil` in any form.
+
+The client view, `GET /v1/agent-shadow/session`, returns the public record without `credential_digest`, plus
+`canonicalRemotes` (the URL forms of the bound repository that the mod compares `origin` against) and
+`observerStreams` (section 15).
+
+## 5. Issuance, replacement and revocation
+
+### 5.1 One issuer path
+
+There is exactly one operation family that can create or end a capability: the **shadow issuance module** of the
+KernelJSON gateway. It authenticates callers through the existing door authentication boundary and writes only through
+the role `kj_shadow_issuer` (section 16.4). CLI and Telegram are interfaces onto it. Neither can mint by itself.
+
+The following can never mint, replace or extend a capability: a Telegram bot credential alone, any Claude Code mod, a
+shadow token (refused at every issuance route), a general task credential, a SERVICE principal, an admission bearer
+lacking the issuance scope or lacking a fresh confirmation, or any model action.
+
+Operations:
+
+| Operation | Route (proposed) | Authentication | Confirmation |
+|---|---|---|---|
+| Issue new | `POST /v1/agent-session-issuance-requests`, then `POST /v1/agent-session-issuance-requests/{id}/complete` | HUMAN door principal with scope `agent_session:issue` | required |
+| Replace one capability | as Issue, with `supersedesCapabilityId` | same, and the principal must be the predecessor's issuer, same tenant and mission | required |
+| Revoke one | `POST /v1/agent-session-capabilities/{id}/revoke` | HUMAN door principal with scope `agent_session:revoke`, same tenant | not required (only removes authority) |
+| Revoke all for a mission | `POST /v1/agent-session-capabilities/revoke-all` with `{missionId}` | same as revoke | not required; explicit human action |
+| List own capabilities | `GET /v1/agent-session-capabilities?missionId=` | HUMAN door principal | not required; returns public records only, never a token |
+| Read own issuance request | `GET /v1/agent-session-issuance-requests/{id}` | the requesting principal | returns state and, once minted, `capabilityId`; never a token or proof |
+
+If the existing door bearer model has no scopes, the later ADR MUST add the two scopes or a separate HUMAN issuance
+credential before implementation; general admission credentials MUST NOT gain the ability to issue.
+
+### 5.2 Issue: request
+
+1. The CLI, run by the HUMAN in their own terminal (not inside Claude Code), generates a **completion proof**: 32 bytes
+   from the operating system CSPRNG, held only in CLI process memory (section 6.2).
+2. It sends `POST /v1/agent-session-issuance-requests` with `missionId`, `repoId`, `boundBranch`, `baseSha`,
+   `ttlMinutes`, `agentShell`, optional `supersedesCapabilityId`, and `completionProofDigest` (SHA-256 of the proof).
+   The proof itself is not sent.
+3. The module validates, before writing anything: principal kind `HUMAN`; scope present; tenant matches; mission exists,
+   belongs to the tenant and is open; `repoId` in the registry; `boundBranch` matches `BRANCH` (S4); `baseSha` is 40 or 64
+   lowercase hex; `ttlMinutes` is 1 to 30; for a replacement, the predecessor exists, is unrevoked, unexpired, not
+   already superseded, and has the same tenant, mission and issuer. Failure is a typed refusal with nothing stored.
+4. It writes one `agent_session_issuance_request` row in state `PENDING` with `issuance_digest` = SHA-256 of the RFC 8785
+   canonical serialisation of `{tenantId, requestingPrincipalId, missionId, missionDigest, repoId, boundBranch, baseSha,
+   ttlMinutes, agentShell, supersedesCapabilityId, issuanceRequestId}` and `expires_at = created_at + 5 minutes`.
+5. It responds `201 {issuanceRequestId, issuanceDigestPrefix, expiresAt}`.
+
+### 5.3 Issue: confirmation
+
+1. The Telegram interface shows the HUMAN owner the request parameters and the first 12 hex characters of the
+   issuance digest. It never shows or carries the token or the completion proof.
+2. The owner answers `CONFIRM` or `REFUSE`. Telegram carries that answer to the shadow issuance module using the same
+   signed hop assertion mechanism ADR-0019 uses for approval answers, bound to the issuance request id and full
+   issuance digest.
+3. The module verifies the assertion, verifies the confirming principal is a HUMAN owner of the tenant, verifies the
+   request is `PENDING` and unexpired and that the digest matches, then writes one
+   `agent_session_issuance_confirmation` row (5.4) and moves the request to `CONFIRMED` or `REFUSED`.
+
+Telegram cannot create, alter or consume a confirmation by itself. It only transports the HUMAN's answer; the module
+writes the row after verification, and only the mint transaction consumes it.
+
+### 5.4 The single-purpose confirmation relation
+
+`kj_shadow.agent_session_issuance_confirmation`. Its only possible subject is one pending agent-session issuance request
+and that request's issuance digest.
+
+| Column | Type and constraint |
+|---|---|
+| `confirmation_id` | uuid, primary key |
+| `tenant_id` | uuid, not null |
+| `issuance_request_id` | uuid, not null, **UNIQUE** (one decision per request) |
+| `issuance_digest` | bytea, not null, length 32 |
+| `requesting_principal_id` | uuid, not null |
+| `confirming_principal_id` | uuid, not null |
+| `decision` | text, not null, `CHECK (decision IN ('CONFIRM','REFUSE'))` |
+| `assertion_key_id` | text, not null; key id of the verified hop assertion |
+| `assertion_digest` | bytea, not null, length 32; digest of the verified assertion, for audit |
+| `created_at` | timestamptz, not null |
+| `expires_at` | timestamptz, not null, `CHECK (expires_at = created_at + interval '60 seconds')` |
+| `consumed_at` | timestamptz, null |
+| `consumed_by_capability_id` | uuid, null; `CHECK ((consumed_at IS NULL) = (consumed_by_capability_id IS NULL))`; `CHECK (consumed_at IS NULL OR decision = 'CONFIRM')` |
+| `authority_domain` | `CHECK (= 'SHADOW_ONLY')` |
+| `evidence_canonicality` | `CHECK (= 'NON_CANONICAL')` |
+| `assertion_origin` | `CHECK (= 'SERVER_WRITTEN')` |
+
+Structural binding:
+
+- Composite foreign key `(issuance_request_id, tenant_id, issuance_digest, requesting_principal_id)` references the
+  `UNIQUE` tuple of the same columns in `agent_session_issuance_request`. A confirmation therefore cannot name another
+  request, tenant, digest or principal, and cannot be copied to another tenant, principal or mission (the mission is
+  inside the digest).
+- `agent_session_capability.confirmation_id` is `UNIQUE NOT NULL` with composite foreign key
+  `(confirmation_id, tenant_id, issuance_digest)` into this relation. One confirmation can mint at most one capability,
+  whatever happens to `consumed_at`.
+- A `BEFORE UPDATE` trigger (security invoker, pinned `search_path`) refuses any update other than setting
+  `consumed_at` and `consumed_by_capability_id` from null to non-null once. `kj_shadow_issuer` has column-level UPDATE on
+  those two columns only, and no DELETE.
+
+Forbidden columns, by design and checked by the topology test (16.7): no `subject_type`, no action or type
+discriminator, no payload or JSON column, no resource id, no task id, no approval id, no identity candidate id, no
+release id, no deployment id, no growth-window id, no operation field.
+
+**Invariant C-CONF.** Reuse of this confirmation mechanism, its relation, or a copy of its pattern for any other yes/no
+authority ceremony requires a new design revision with its own review. No such reuse is authorised by this design.
+
+### 5.5 Issue: completion and mint
+
+The CLI polls `POST /v1/agent-session-issuance-requests/{id}/complete` with body `{completionProof}` (the plaintext
+proof), authenticated as the same requesting principal, every 2 seconds until a terminal answer or the request expiry.
+
+| Request state | Answer | Effect |
+|---|---|---|
+| `PENDING` | `202 PENDING` | none; proof verified but not consumed |
+| `REFUSED` | `409 REFUSED` | none |
+| expired, or confirmation expired unconsumed | `410 EXPIRED` | request moves to `EXPIRED` |
+| `MINTED` | `409 ALREADY_COMPLETED` | none; the token is not revealed again |
+| `CONFIRMED` and proof valid | `200` with public record and token | mint transaction below |
+
+Proof checks: the authenticated principal equals `requesting_principal_id`; SHA-256 of the presented proof is compared
+in constant time with `completion_proof_digest`; five wrong proofs move the request to `EXPIRED`.
+
+The mint transaction, in one database transaction under `kj_shadow_issuer`:
+
+1. lock the request row; require `CONFIRMED`, unexpired;
+2. consume the confirmation: `UPDATE ... SET consumed_at = now(), consumed_by_capability_id = $new WHERE
+   issuance_request_id = $req AND decision = 'CONFIRM' AND consumed_at IS NULL AND expires_at > now() AND
+   issuance_digest = $digest RETURNING confirmation_id`; exactly one row or abort;
+3. re-read the live shadow policy identity and the mission state; abort if the mission is no longer open;
+4. insert the capability with `credential_digest` (the token was generated before the transaction, section 6.3);
+5. for a replacement: revoke the predecessor with reason `SUPERSEDED`, conditional on it still being unrevoked, else
+   abort;
+6. insert `issued` (and, for a replacement, `superseded`) events into `agent_session_capability_event`;
+7. move the request to `MINTED` with `minted_capability_id`;
+8. commit.
+
+The mint cannot create an admission, task, approval, evidence or identity row, and cannot change a mission, policy or
+identity: `kj_shadow_issuer` holds no such grant (16.4).
+
+## 6. Token model and one-time delivery
+
+### 6.1 Token
+
+- Shape: `kjsc_` followed by 43 base64url characters encoding 32 bytes from the gateway's CSPRNG; 48 characters in total
+  (length check: 48, regex `^kjsc_[A-Za-z0-9_-]{43}$`).
+- At rest: only SHA-256, in `credential_digest`. Plaintext is never stored, encrypted or otherwise.
+- Audience `kerneljson-agent-shadow/v3`: accepted only by `GET /v1/agent-shadow/session` and
+  `POST /v1/agent-shadow/observations`. Every other route refuses a `kjsc_` credential before any lookup.
+- TTL: default 15 minutes, maximum 30, set per issuance, enforced by CHECK. No refresh, no extension. The default is
+  short because expiry costs only a display state (Claude continues; the console shows `CAPABILITY_EXPIRED`) while
+  bounding a stolen token's useful life to about one edit-and-test burst; reissue is one CLI command and one
+  confirmation.
+
+### 6.2 Completion proof: why it exists and its exact properties
+
+Because the HUMAN confirms asynchronously through Telegram, the request that starts issuance cannot simply wait for the
+mint without holding an HTTP connection open for up to 5 minutes through the reverse proxy. Completion is therefore a
+second authenticated request. Without a binding between the two, any other holder of the same door credential could
+complete a request the HUMAN confirmed for themselves and receive the token. The completion proof closes that: only the
+CLI process that started the request holds the proof.
+
+It is a bearer secret, and is bounded so that it adds no standing authority:
+
+| Property | Value |
+|---|---|
+| Generation | 32 bytes from the OS CSPRNG, in the CLI process |
+| Server storage | SHA-256 only (`completion_proof_digest`), never plaintext |
+| Scope | one issuance request id, and the authenticated requesting HUMAN principal |
+| Validity | the request's lifetime (at most 5 minutes) and the confirmation's 60-second window |
+| Comparison | constant-time digest comparison |
+| Consumption | atomic with the mint; a minted request never accepts it again |
+| Transport | only the body of the completion request over TLS; never a URL, query parameter, HTTP header, redirect, Telegram message, log, trace, telemetry record, repository file or KernelJSON evidence |
+| Useless alone | it completes nothing without the principal's door credential and a valid `CONFIRM` |
+
+It is not a retrieval nonce: no token exists before completion, so there is nothing to retrieve. The token is minted
+inside the completion request and appears only in that request's response.
+
+### 6.3 Exact lifetime of plaintext token material
+
+Server side, inside the completion handler:
+
+1. generate 32 bytes and encode the token, in handler-local memory;
+2. compute `credential_digest`;
+3. run the mint transaction (5.5) with the digest only; if it fails or aborts, the handler drops the token and returns
+   an error; the token never left the process;
+4. after commit, serialise the `200` response body with the token and write it to the socket;
+5. drop every reference when the handler returns.
+
+The token MUST NOT be passed to the logger, error reporter, tracer, metrics, cache or any persistence path. The route is
+excluded from request and response body tracing. JavaScript cannot zero memory, so the plaintext persists in gateway
+memory until garbage collection; that residual is stated in section 25.
+
+Client side, inside the CLI:
+
+1. parse the response in memory;
+2. write the token to the per-worktree token file (6.5) by creating a temporary file readable only by the current user
+   in the same directory, writing, flushing and atomically renaming;
+3. drop the in-memory value; never print the token to the terminal.
+
+### 6.4 Loss semantics (normative)
+
+Once the mint transaction commits, plaintext token material is never stored anywhere by KernelJSON. If the response is
+lost in transit, the client crashes before writing the file, or the file write fails:
+
+- the token is unrecoverable;
+- no GET endpoint reveals it, and there is no "retry reveal";
+- the capability MUST be revoked: the CLI calls revoke itself with reason `DELIVERY_LOST` when it knows the capability
+  id; otherwise the HUMAN reads the issuance request (which shows `MINTED` and the capability id) and revokes it;
+- an unrevoked lost capability expires on its own within its TTL;
+- the HUMAN repeats issuance.
+
+The token is never returned through Telegram, never logged, never placed in a URL, query parameter or redirect, and
+never written to application traces.
+
+### 6.5 Local storage of the token
+
+- The mod declares one non-sensitive `userConfig` option, `agentSessionDir`: a directory path chosen by the HUMAN.
+- The token file for a worktree is `<agentSessionDir>/<worktreeKey>.token`, where `worktreeKey` is the lowercase hex
+  SHA-256 of the worktree root after the path normalisation of 12.3. The key is a lookup name, not a secret.
+- The mod reads only that file, only if it is at most 64 bytes; it strips one trailing LF, refuses a UTF-8 BOM or any
+  other byte, and requires the 48-character regex exactly. Anything else is `CAPABILITY_UNKNOWN` locally.
+- The file sits outside every repository. The mod never writes it.
+- This is best-effort storage inside an untrusted environment: any process or mod with the user's permissions can read
+  it. The security property comes from the token's low authority, short TTL, revocation, audience restriction and the
+  pinned endpoint origin, not from local secrecy.
+
+Revision 2 stored the token in a sensitive `userConfig` field. That would make the HUMAN copy plaintext through another
+interface, so revision 3 replaces it with the CLI-written file.
+
+## 7. Concurrent sessions
+
+- One capability per issuance ceremony. Issuing a new capability never affects any other capability.
+- A HUMAN may hold several active capabilities for the same mission (for example two worktrees). They do not invalidate
+  one another.
+- Replacement affects exactly the one capability named by `supersedesCapabilityId`, in the same mint transaction.
+- "Revoke all for this mission" is a separate, explicit HUMAN operation (5.1).
+- There is no session-sharing system. Two Claude Code sessions in the same worktree read the same token file and so
+  share a capability; KernelJSON sees two observer epochs and the console shows `CAPABILITY_SHARED_OR_RESTARTED`
+  (section 15). Child agents never inherit a capability (section 20).
+
+## 8. Shadow policy identity, ceiling and consumer fence
+
+### 8.1 Shadow policy
+
+Contract `kerneljson:agent-action-shadow-policy/v1`, stored in `kj_shadow.agent_action_shadow_policy`, written only by
+reviewed migration under the migration owner. `policy_digest` is SHA-256 of the RFC 8785 canonical serialisation of the
+rule set. The name is deliberately shadow-specific: it is not KernelJSON's policy engine and shares no table, type or
+code path with `policy-gate`.
+
+### 8.2 Evaluation (every request)
+
+1. Load the capability (by `credential_digest`), the live mission state, and the live shadow policy version and digest.
+2. If the capability is unknown, expired or revoked: lifecycle response (14.4), nothing stored.
+3. If the live digest differs from `capability.policy_digest`: `SESSION_STALE (POLICY_CHANGED)`, verdict
+   `SHADOW_UNKNOWN`. A new ceremony is required. Nothing remains "allowed until expiry".
+4. If the mission is no longer open: `SESSION_STALE (MISSION_NOT_OPEN)`, verdict `SHADOW_UNKNOWN`.
+5. Rebinding checks (section 9): on failure `REBOUND_REQUIRED (reason)`, verdict `SHADOW_UNKNOWN`.
+6. Otherwise apply rules in explicit priority order. Rules may match action class, server-side target facts (for
+   example a protected-branch list held in the shadow policy, or protection reported by a trusted forge) and live mission
+   attributes. Rules never match capability copies or `agent_shell`.
+
+Fixed evaluator constants that policy cannot override:
+
+- class `UNKNOWN_TOOL_ACTION`, or confidence `NONE`, gives `WOULD_REQUIRE_REVIEW`;
+- no matching rule gives `WOULD_REQUIRE_REVIEW`;
+- `WOULD_ALLOW` is impossible at confidence `NONE`.
+
+### 8.3 Ceiling
+
+Applied after rules; it can only lower a verdict. With `production_ceiling = NONE`, `DATABASE_PRODUCTION_MUTATION` and
+`DEPLOY_PRODUCTION` give `WOULD_DENY (PRODUCTION_CEILING)` whatever the rule said.
+
+### 8.4 Consumer fence
+
+The only consumer of the shadow policy is the MOD-1 shadow evaluator. Forbidden consumers: admission, scheduler,
+identity, task execution, approval, release, deployment, faculty, P8 reflection or adoption, and any future MOD-2
+enforcement. The shadow policy produces `WOULD_*` telemetry only and cannot grant a tool or a capability. Enforcement of
+the fence: canonical roles have no `USAGE` on `kj_shadow` (16.5), and the topology check (16.7) refuses any reference to
+the policy relation or contract name outside the shadow module.
+
+## 9. Repository truth
+
+| Origin | Values | Use |
+|---|---|---|
+| `SERVER_WRITTEN` | capability id, generation, tenant, mission, mission state, issuer, confirmation, policy identity, ceiling, expiry, revocation, and `repo_id`/`bound_branch`/`base_sha` as recorded at issuance | evaluator inputs |
+| `FORGE_VERIFIED` | only through a trusted server-side forge integration: a SHA exists in the bound repository; `base_sha` is an ancestor of the claimed HEAD; branch protection; canonical repository identity | evaluator inputs only when present. This design assumes no such integration exists unless the later ADR adds one, so these are reported unverified |
+| `CLIENT_ASSERTED` | local branch, local HEAD, detached state, worktree root, `remoteMatch` (`CANONICAL`, `OTHER`, `NONE`, computed locally against `canonicalRemotes`), Claude Code version, platform, `agentLoop`, every classification output | telemetry only |
+
+HEAD semantics, returned as `headRelation`:
+
+| Value | Meaning | Effect |
+|---|---|---|
+| `EQUAL_BASE` | claimed HEAD equals `base_sha` | valid |
+| `VERIFIED_DESCENDANT` | the forge proves `base_sha` is an ancestor of the claimed HEAD in the bound repository | valid |
+| `UNVERIFIED` | no forge, or the forge does not know the SHA (for example an unpushed commit) | valid as telemetry; the console shows "repo facts client-asserted, unverified" |
+| `VERIFIED_NOT_DESCENDANT` | the forge proves the claimed HEAD does not descend from `base_sha` | `REBOUND_REQUIRED (HEAD_NOT_DESCENDANT)` |
+
+Legitimate commits during a session never make it stale by themselves. A claimed branch other than `bound_branch`, a
+detached HEAD, or `remoteMatch` other than `CANONICAL` gives `REBOUND_REQUIRED` with reason `BRANCH_MISMATCH`,
+`DETACHED` or `REPO_MISMATCH`. A matching branch proves nothing and grants nothing.
+
+## 10. Generic action taxonomy
+
+Contract `kerneljson:agent-action-class/v2`. Names are agent-neutral. `riskClass` uses KernelJSON's existing
+`RiskClass` vocabulary and is a fixed function of the class.
+
+Classes with a G1 production:
+
+| Class | Risk |
+|---|---|
+| `READ_REPOSITORY` | LOW |
+| `READ_LOCAL_OUTSIDE_WORKTREE` | MEDIUM |
+| `SECRET_READ` | CRITICAL |
+| `WRITE_WORKTREE` | MEDIUM |
+| `WRITE_OUTSIDE_WORKTREE` | HIGH |
+| `SECRET_WRITE` | CRITICAL |
+| `GIT_STAGE` | LOW |
+| `GIT_BRANCH_CREATE` | LOW |
+| `GIT_PUSH_BRANCH` | MEDIUM (protection is a server-side fact, not a class) |
+| `GIT_FORCE_PUSH` | CRITICAL |
+| `FORGE_READ` | LOW |
+| `OPEN_PR` | MEDIUM |
+| `MERGE_PR` | HIGH |
+| `DEPLOY_PREVIEW` | HIGH |
+| `DEPLOY_PRODUCTION` | CRITICAL |
+| `DATABASE_LOCAL_MUTATION` | HIGH |
+| `DATABASE_PRODUCTION_MUTATION` | CRITICAL |
+| `NETWORK_REQUEST` | HIGH |
+| `ENVIRONMENT_READ` | HIGH |
+| `AGENT_DELEGATE` | HIGH |
+| `UNKNOWN_TOOL_ACTION` | HIGH |
+
+Reserved, with no G1 production (such actions are `UNKNOWN_TOOL_ACTION` until a sealed grammar exists): `RUN_TEST`,
+`RUN_LOCAL_COMMAND`, `PROCESS_SPAWN`, `PACKAGE_INSTALL`, `DELETE_FILE`, `GIT_COMMIT`, `FORGE_MUTATION`, `DATABASE_READ`,
+`EXTERNAL_MESSAGE`.
+
+Sealed class order, for tie-breaking under R2 (later wins): the order of the table above, then the reserved list in the
+order given, with `UNKNOWN_TOOL_ACTION` last.
+
+## 11. Sealed classifier rule
+
+**R0.** An observation's components are the tool name and every input field that the tool's closed key set declares
+consequential. The non-consequential fields are named per tool and nothing else is non-consequential: `Bash` and
+`PowerShell`: `description`, `timeout`; `Read`: `offset`, `limit`, `pages`.
+
+**R1.** If any consequential component falls outside the sealed closed grammar, the whole observation is
+`UNKNOWN_TOOL_ACTION` with confidence `NONE`. This includes an unlisted tool, an unknown input key, a wrong value type, a
+string outside its token class, an unmatched production, input above 64 KiB, and a classifier exception.
+
+**R2.** Only when every consequential component is in grammar, the class is the highest-risk class any component
+produces; ties go to the later class in the sealed class order. G1 has no multi-segment form, so R2 never changes a G1
+result. It exists for future sealed grammars only.
+
+**R3.** Confidence: `EXACT` for a structured tool matched through the closed table; `PATTERN` for a G1 shell
+production; `NONE` otherwise.
+
+**R4.** Flags never change the class. Closed flag set: `SECRET_SHAPED`, `ENV_REFERENCE`, `CREDENTIAL_URL`,
+`BACKGROUND`, `SANDBOX_DISABLED`, `TARGET_ENV_UNVERIFIED`, `BROAD_CONTENT_READ`, `INPUT_TOO_LARGE`, `CLASSIFIER_ERROR`.
+`ENV_REFERENCE` is set when the raw command contains `$` followed by `[A-Za-z_]`.
+
+**R5.** The sealed vector file is normative. An implementation that disagrees with any vector is nonconformant.
+
+## 12. G1 closed grammar (pinned to Claude Code 2.1.289 tool declarations)
+
+### 12.1 Closed tool table
+
+Any tool not listed is `UNKNOWN_TOOL_ACTION`, including every MCP tool, `Skill`, `Workflow`, `TaskCreate`,
+`TaskStop`, `SendMessage`, `SendFile`, `PushNotification`, `Artifact`, `RemoteTrigger`, `CronCreate`, `Monitor`, `LSP`,
+`EnterWorktree`, and any renamed, aliased or proxied tool.
+
+| Tool | Consequential keys (closed set; any other key, other than the R0 non-consequential keys, is UNKNOWN) | Rule |
+|---|---|---|
+| `Read` | `file_path` | path zone (12.3): `WORKTREE` gives `READ_REPOSITORY`, `OUTSIDE` gives `READ_LOCAL_OUTSIDE_WORKTREE`, `SECRET` gives `SECRET_READ` |
+| `Glob` | `pattern`, `path` (optional) | zone of `path`, or of the session working directory if absent: `READ_REPOSITORY` or `READ_LOCAL_OUTSIDE_WORKTREE` |
+| `Grep` | `pattern`, `path`, `glob`, and the option keys declared by the pinned tool schema | as Glob; if `path` or `glob` matches the secret list, `SECRET_READ`; always `BROAD_CONTENT_READ` |
+| `Edit`, `Write`, `NotebookEdit` | the tool's path key | zone: `WRITE_WORKTREE`, `WRITE_OUTSIDE_WORKTREE`, `SECRET_WRITE` |
+| `WebFetch` | `url`, `prompt` | URL rule (12.4); `NETWORK_REQUEST`, target host; `prompt` is screened and never sent |
+| `WebSearch` | `query`, `allowed_domains`, `blocked_domains` | `NETWORK_REQUEST`, no target; the query is never sent |
+| `Agent` | the type keys declared by the pinned schema | `AGENT_DELEGATE`, no target |
+| `Bash` | `command`, `run_in_background` (sets `BACKGROUND`), `dangerouslyDisableSandbox` (sets `SANDBOX_DISABLED`) | shell grammar 12.5 |
+| `PowerShell` | as `Bash` | shell grammar 12.5 |
+
+### 12.2 Value types
+
+Every consequential value MUST be a string, number or boolean as declared by the pinned schema. Any other type is
+UNKNOWN. Strings are capped individually by the rule that consumes them and in total at 64 KiB.
+
+### 12.3 Path rule
+
+Applied in order; failing any step gives UNKNOWN.
+
+1. Length 1 to 1024, with no NUL or other control character.
+2. Replace `\` with `/`.
+3. The path MUST start with `[A-Za-z]:/` or `/`. A leading `//` (UNC, `//?/`, `//./`) fails.
+4. Lowercase the drive letter.
+5. Split on `/`. A segment fails if it is empty, `.` or `..`; ends in `.` or a space; contains `:`; matches `~[0-9]`
+   anywhere (8.3 short name); or is a reserved device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1` to `COM9`, `LPT1` to
+   `LPT9`, case-insensitive, with or without an extension).
+6. Zone `WORKTREE` if and only if the client-asserted worktree root, normalised by steps 1 to 5, is a segment prefix of
+   the path. Comparison is case-insensitive on `win32` and case-sensitive elsewhere. Otherwise zone `OUTSIDE`.
+7. Zone `SECRET` (overriding 6) if any segment matches the sealed secret list, case-insensitively: `.env`, `.env.*`,
+   `.ssh`, `.aws`, `.gnupg`, `.docker`, `.npmrc`, `.pypirc`, `.netrc`, `_netrc`, `.git-credentials`, `id_rsa*`,
+   `id_ed25519*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `credentials*`, `secrets*`, `jvault*`, `.vault*`. `*` matches any
+   run of characters within one segment.
+
+### 12.4 URL rule (structured tools)
+
+1. Scheme `https` or `http`, case-insensitive; anything else is UNKNOWN.
+2. The authority is everything after `://` up to the first `/`, `?` or `#`.
+3. If the authority contains `@`: UNKNOWN, flag `CREDENTIAL_URL`; the userinfo is discarded and never processed,
+   stored, displayed or sent.
+4. The host, lowercased, MUST match `HOST` (12.5, S4) with an optional `:port` of 1 to 5 digits; otherwise UNKNOWN.
+5. Only the host is sent.
+
+### 12.5 Shell grammar G1 (the `command` of `Bash` or `PowerShell`)
+
+**S1, characters.** The command MUST be ASCII, 1 to 512 bytes, and every byte MUST be in `[A-Za-z0-9]`, space (0x20),
+`-`, `_`, `.`, `/` or `:`. Therefore all of these are excluded and any command containing one is UNKNOWN: `"`, `'`, `\`,
+`$`, backtick, `;`, `&`, `|`, `<`, `>`, `(`, `)`, `{`, `}`, `[`, `]`, `*`, `?`, `~`, `!`, `#`, `%`, `^`, `,`, `@`, `+`,
+`=`, tab, CR, LF and every non-ASCII byte.
+
+**S2, tokens.** Trim leading and trailing 0x20; split on runs of 0x20. The result is argv, 1 to 16 tokens.
+
+**S3, executable.** argv[0] MUST be exactly, case-sensitive, with no path and no extension:
+
+- `Bash`: `git`, `gh`, `vercel`, `supabase`, `curl`, `printenv`, `env`;
+- `PowerShell`: `git`, `gh`, `vercel`, `supabase` (`curl` and `wget` are built-in aliases in Windows PowerShell 5.1).
+
+**S4, token classes.**
+
+| Class | Rule |
+|---|---|
+| `BRANCH` | `^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$`; MUST NOT contain `..`, `//` or `/.`; MUST NOT end in `/`, `.` or `.lock`; MUST NOT equal `HEAD` |
+| `PR` | `^[1-9][0-9]{0,6}$` |
+| `PATHTOK` | `^[A-Za-z0-9_][A-Za-z0-9._/-]{0,199}$`; no `..` segment; relative only |
+| `HOST` | `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$` |
+| `URL` | `^https://HOST(/[A-Za-z0-9._/-]{0,200})?$`; no port, no query |
+
+**S5, productions.** argv MUST equal one of P1 to P35 in section 1.2 exactly. Anything else is UNKNOWN.
+
+### 12.6 Explicit UNKNOWN catalogue
+
+Each of these is `UNKNOWN_TOOL_ACTION`, confidence `NONE`, because S1, S3 or S5 excludes it:
+
+- pipelines, `&&`, `||`, `;`, redirection, here-docs, command substitution;
+- nested shells: `bash -c`, `sh -c`, `pwsh -Command`, `pwsh -EncodedCommand`, `powershell`, `cmd /c`;
+- `eval`, `source`, `.`, indirect script execution (`./x.sh`, `node x.js`, `python x.py`), variable-as-command,
+  environment assignments (`FOO=1 cmd`), shell aliases and functions;
+- git: `git -C`, `git -c` and every other git global option; refspecs containing `:` or `+`; `HEAD` as a push target;
+  `--force-with-lease`; submodules; `git worktree`; symbolic refs; bare `git push`; every `git commit`;
+- credential-bearing URLs; `gh api`; `ssh`, `scp`, `rsync`;
+- `node -e`, `python -c`, `npx`, `pnpm dlx`, every `npm` and `pnpm` command (including `npm install` and `npm test`);
+- `docker`, `docker compose`, `docker-compose`;
+- response files (`@file`);
+- `git.exe`, any path-qualified executable, any case variant (`Git`);
+- unlisted MCP tools; renamed or proxied tools.
+
+### 12.7 Behaviour caveats (not defects)
+
+- G1 assumes argv[0] names the standard program. A user-defined shell function or alias of that name, a `PATH` or
+  `PATHEXT` substitution, or a shim cannot be detected lexically.
+- git honours local configuration and hooks that can run programs; G1 classifies the git operation requested.
+- `curl` reads `~/.curlrc`; `vercel` and `supabase` read local link files. G1 does not read them.
+- Symlinks and junctions inside the worktree can point outside it; the path rule is lexical.
+
+All of these follow from 1.3: a G1 result describes the preimage, not the effect.
+
+## 13. Immutable pre-next observation
+
+In the `tool.call` hook, all synchronous, in module memory, with no `$` engine call before `next(e)`:
+
+1. **Sequence.** `n = ++counter`. Each module instance has a random 128-bit `observerEpoch` created when it registers;
+   every module load, including a hot reload, starts a new epoch at `n = 1`. Both are immutable for the observation.
+2. **Copy.** Copy only the tool's consequential keys, as primitives, into a fresh object; reject non-primitives;
+   stop at 64 KiB in total. Either failure is UNKNOWN.
+3. **Classify** the copy with the pure G1 classifier.
+4. **Screen** every string in the copy with the sealed local secret screen: prefixes `sb_secret_`, `sb_publishable_`,
+   `sk-or-v1-`, `ghp_`, `github_pat_`, `kjsc_`, `AKIA`; PEM headers; JWT shape; `Bearer` or `Authorization`; URL userinfo;
+   base64 or hex runs of 32 or more characters. Output is flags only.
+5. **Derive** bounded metadata: class, risk, confidence, flags, `targetKind`; the clear target (branch or host) only if
+   screening flagged nothing on it, otherwise `WITHHELD`; `toolName` (18.4); `agentLoop`; and the repository facts from
+   the module's cache (branch, HEAD, detached, `remoteMatch`, `repoFactsAsOfSeq`). The cache is refreshed after calls,
+   outside the tool path; no file is read before `next`.
+6. **Freeze** a `ShadowObservation` recursively, discard the raw copy, and append it to the in-module pending list in
+   state `QUEUED`.
+7. **Call `next(e)`** with the original `e`, unchanged.
+8. **Finally**, whether `next` resolved or threw: schedule delivery with `$.clock.after(0, flush)`, then return the
+   result unchanged or rethrow the error unchanged.
+
+If any of steps 1 to 6 throws, the observation is UNKNOWN with `CLASSIFIER_ERROR`; if that also fails, the drop is
+counted and coverage is incomplete. `next(e)` is always called. `next` cannot change the observation: it is frozen and
+built from a copy.
+
+## 14. Async shadow delivery and wire contracts
+
+### 14.1 Delivery
+
+- `flush` copies the pending list into `$.state` (session memory; never `$.store`, never disk), then sends.
+- At most 4 attempts in flight. Each attempt is raced against a 2,000 ms `$.clock.after` timer. `$.http.fetch` cannot be
+  aborted, so at most 16 fetches may be outstanding; beyond that no new attempt starts, the list fills, and overflow
+  is `DROPPED`.
+- A timed-out attempt is retried with the same key after 1 s and after 4 s, then marked `UNACKNOWLEDGED`.
+- A response is matched only by `(capabilityId, observerEpoch, n)`. Out-of-order responses are normal. A late response
+  for an `UNACKNOWLEDGED` entry is accepted for 60 s. A response for an unknown key is discarded and counted in
+  `strayIgnored`.
+- The token is sent only in the `Authorization` header and only to an `https` origin on a list compiled into the mod.
+
+### 14.2 Request
+
+`POST /v1/agent-shadow/observations`, contract `kerneljson:agent-action-shadow-request/v3`:
+
+```
+{ contract, capabilityId, observerEpoch, n,
+  observedAt,
+  client: { branch, head, detached, remoteMatch, repoFactsAsOfSeq, claudeCodeVersion, platform },
+  action: { actionClass, riskClass, confidence, flags, targetKind, target },
+  tool:   { toolKind, toolName },
+  agentLoop: "main" }
+```
+
+`observedAt` and the `client` and `action` groups are `CLIENT_ASSERTED`. `toolKind` is one of `READ`, `EDIT`, `WRITE`,
+`SHELL`, `FETCH`, `AGENT`, `MCP`, `MESSAGE`, `OTHER`. `target` is present only for `targetKind` `branch` or `host`.
+
+### 14.3 Verdict response
+
+Contract `kerneljson:agent-action-shadow-response/v3`. Strict parse: an unknown key, a bad enum, or a body above 2 KiB is
+`MALFORMED`.
+
+```
+{ contract, authority: "NONE", evidenceCanonicality: "NON_CANONICAL",
+  capabilityId, generation, observerEpoch, n, requestDigest,
+  sessionState: ACTIVE | SESSION_STALE | REBOUND_REQUIRED,
+  staleReason:   POLICY_CHANGED | MISSION_NOT_OPEN            (only with SESSION_STALE),
+  reboundReason: BRANCH_MISMATCH | DETACHED | REPO_MISMATCH | HEAD_NOT_DESCENDANT (only with REBOUND_REQUIRED),
+  shadowVerdict: WOULD_ALLOW | WOULD_DENY | WOULD_REQUIRE_APPROVAL | WOULD_REQUIRE_REVIEW | SHADOW_UNKNOWN,
+  reasonCode, ruleId, livePolicyVersion, livePolicyDigest,
+  headRelation: EQUAL_BASE | VERIFIED_DESCENDANT | UNVERIFIED | VERIFIED_NOT_DESCENDANT,
+  evaluatedAt }
+```
+
+If `sessionState` is not `ACTIVE`, `shadowVerdict` MUST be `SHADOW_UNKNOWN`; any other combination is `MALFORMED`.
+`reasonCode` is a closed enum: `CLASS_RULE_MATCHED`, `NO_RULE_MATCHED`, `UNKNOWN_ACTION`, `PROTECTED_TARGET`,
+`PRODUCTION_CEILING`, `POLICY_CHANGED`, `MISSION_NOT_OPEN`, `REBOUND`.
+
+### 14.4 Lifecycle response
+
+Contract `kerneljson:agent-shadow-session-state/v3`, sent with HTTP 401; nothing is stored:
+`{ contract, authority: "NONE", sessionState: CAPABILITY_EXPIRED | CAPABILITY_REVOKED | CAPABILITY_UNKNOWN }`.
+
+### 14.5 Non-authority clause (normative text in both response contracts)
+
+"This response cannot authorise execution, cannot satisfy an approval, cannot satisfy an admission, cannot satisfy task
+completion, and cannot be consumed as enforcement authority."
+
+## 15. Coverage accounting
+
+Per-observation states: `QUEUED`, `IN_FLIGHT`, `RETRY_WAIT`, `RESPONDED`, `REJECTED` (lifecycle response, sequence
+mismatch, or HTTP 429 after retries), `MALFORMED`, `UNACKNOWLEDGED`. A `DROPPED` observation never entered the list.
+
+Counters, per epoch, saturating at 2^31 - 1 (saturation makes coverage `UNPROVEN`): `classified`, `enqueued`,
+`dropped` (list full at 128 non-terminal entries, or a pre-`next` failure), `sent` (at least one attempt), `responded`,
+`rejected`, `malformed`, `unacknowledged`, `timedOut` (attempt timeouts, an event count), `strayIgnored`, and the gauges
+`queued`, `inFlight`, `retryWait`.
+
+Invariants, asserted after every transition; a failure is itself `UNPROVEN`:
+
+- I1: `classified = enqueued + dropped`
+- I2: `enqueued = queued + sent`
+- I3: `sent = inFlight + retryWait + responded + rejected + malformed + unacknowledged`
+
+Display:
+
+- `SHADOW_COVERAGE_INCOMPLETE` when `dropped`, `rejected`, `malformed` or `unacknowledged` is above zero, or there is an
+  epoch gap. This latches for the epoch; a late response updates counters but not the latch.
+- `PENDING` when `queued + inFlight + retryWait > 0`.
+- `COMPLETE` otherwise.
+
+The console never shows a clean summary while incomplete. `/kj-status` prints the counters and "Coverage incomplete:
+N observation(s) not acknowledged by KernelJSON."
+
+**Module reload.** A new module instance MAY treat an earlier epoch as `PROVEN` only if that epoch's counters and list
+are present in `$.state`, I1 to I3 reconcile, and every entry ends `RESPONDED`. Any reload that cannot prove continuity
+in exactly that way is equivalent to process restart: `PRIOR_COVERAGE_UNPROVEN`. A reload never silently inherits
+`COMPLETE`.
+
+**Process death** loses all session memory. On restart a new epoch begins. `GET /v1/agent-shadow/session` returns
+`observerStreams`: for each earlier epoch `{epoch, firstN, lastN, gapCount, lastReceivedAt}`. Whenever an earlier epoch
+exists the console shows `PRIOR_COVERAGE_UNPROVEN`, because the server sees only what it received. If the server is
+unreachable: "prior coverage: UNKNOWN". There is no disk journal and no fabricated history.
+
+Child-agent observations (section 20) are counted separately and are outside these invariants.
+
+## 16. Shadow-only storage model
+
+This is the storage contract for the later ADR. Nothing is built by this design.
+
+### 16.1 Schema
+
+Schema `kj_shadow`, schema comment `kerneljson:shadow/v1 authority_domain=SHADOW_ONLY|NONE
+evidence_canonicality=NON_CANONICAL`. Relations:
+
+| Relation | Purpose |
+|---|---|
+| `agent_session_issuance_request` | pending, confirmed, refused, minted and expired issuance requests; holds `completion_proof_digest`, `issuance_digest`, `minted_capability_id`; `UNIQUE (issuance_request_id, tenant_id, issuance_digest, requesting_principal_id)` |
+| `agent_session_issuance_confirmation` | section 5.4 |
+| `agent_session_capability` | section 4 |
+| `agent_session_capability_event` | append-only `issued`, `superseded`, `revoked` events |
+| `agent_action_shadow_policy` | section 8.1 |
+| `agent_shadow_observer_stream` | one row per observer epoch |
+| `agent_shadow_observation` | shadow observations |
+| `agent_shadow_rate_counter` | operational rate limits |
+| `agent_shadow_access_meta` | last-used time and access metadata |
+
+Every row carries `authority_domain`, `evidence_canonicality` and `assertion_origin` with CHECK constraints fixing the
+values in 3.2.
+
+### 16.2 Foreign keys
+
+- Foreign keys inside `kj_shadow` are permitted (they are how 5.4 binds confirmations to requests and capabilities).
+- No foreign key leaves `kj_shadow`: none into missions, tasks, approvals, admissions, evidence, identity, release,
+  deployment, growth windows or the scheduler. Mission id and mission digest are values checked at issuance and at every
+  evaluation.
+- No foreign key from any canonical relation into `kj_shadow`.
+
+### 16.3 Side-effect classes on the shadow endpoint
+
+1. **Evaluation**: pure and deterministic; no I/O inside the function.
+2. **Telemetry storage**: inserts into `agent_shadow_observer_stream` and `agent_shadow_observation`; idempotent;
+   `authority_domain = NONE`; purged after 14 days.
+3. **Operational data**: `agent_shadow_rate_counter` (120 requests per minute per capability, burst 240, then HTTP
+   429), `agent_shadow_access_meta`, and access-log metadata. All inside `kj_shadow` (or, for process logs, never
+   containing the token or a request body), `authority_domain = NONE`, `NON_CANONICAL`, purgeable.
+
+None of the three can become mission or task evidence.
+
+### 16.4 Shadow roles
+
+Two future runtime roles, `kj_shadow_door` and `kj_shadow_issuer`, each:
+
+- `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT`;
+- own nothing; are members of no role; have no members; therefore cannot `SET ROLE` to any canonical role or the
+  migration owner;
+- cannot change any schema, function, trigger or policy ownership or definition;
+- have no canonical write grant, no migration authority, no release, identity, admission or approval authority.
+
+Grants:
+
+| Role | Grants |
+|---|---|
+| `kj_shadow_door` | SELECT on `agent_session_capability`, `agent_action_shadow_policy`; INSERT and SELECT on `agent_shadow_observer_stream`, `agent_shadow_observation`; INSERT and UPDATE on `agent_shadow_rate_counter`, `agent_shadow_access_meta`; outside the schema, column-scoped SELECT on mission id, tenant and state through a `security_invoker` view |
+| `kj_shadow_issuer` | INSERT, SELECT and column-limited UPDATE on `agent_session_issuance_request`; INSERT, SELECT and UPDATE of (`consumed_at`, `consumed_by_capability_id`) only on `agent_session_issuance_confirmation`; INSERT, SELECT and UPDATE of revocation columns only on `agent_session_capability`; INSERT on `agent_session_capability_event`; SELECT on `agent_action_shadow_policy`; the same mission view |
+
+Neither role has DELETE anywhere. MOD-1 introduces no SECURITY DEFINER function. ADR-0023 section 27.9 remains unrelated
+and unchanged. Any shadow function or trigger is SECURITY INVOKER, pins `SET search_path = pg_catalog, kj_shadow`, and
+has `EXECUTE` revoked from `PUBLIC`; the later ADR states each one's privileges.
+
+### 16.5 Structural exclusion of canonical paths
+
+- `kj_worker` has no `USAGE` on `kj_shadow`.
+- `kj_door` has no `USAGE` on `kj_shadow`.
+- No canonical role has SELECT on any `kj_shadow` relation, including `agent_session_issuance_confirmation`.
+- No canonical function, view or trigger references `kj_shadow`.
+
+Consequently no approval consumer, identity-change code, deployment or release path, growth-window path, scheduler path,
+admission path, completion path or evidence verifier can read a shadow row: the database refuses.
+
+No promotion: no function, trigger or role holds both SELECT on `kj_shadow` and INSERT on a canonical evidence,
+approval or admission relation, apart from the migration owner.
+
+The gateway authenticates the HUMAN through the existing door authentication code, then performs every shadow write with
+a separate `kj_shadow_issuer` pool and every shadow read with a separate `kj_shadow_door` pool, each with its own
+runtime guard in the style of B1's `runtimePool`.
+
+### 16.6 Privilege checks (each with a planted negative case)
+
+- `has_schema_privilege` for `kj_worker`, `kj_door` and every other canonical role on `kj_shadow` with `USAGE` is false;
+  fails when a grant is planted.
+- `has_table_privilege` for every canonical role on `agent_session_issuance_confirmation` is false for every privilege;
+  fails when a grant is planted.
+- Shadow roles have the attributes in 16.4, no memberships, no members, no owned objects, and no write grant outside
+  `kj_shadow`; each fails when planted.
+- A catalogue query finds no foreign key crossing the `kj_shadow` boundary in either direction; fails when one is
+  planted.
+- CHECK constraints refuse `evidence_canonicality = 'CANONICAL'`, an `authority_domain` outside the vocabulary, and a
+  confirmation `decision` outside `CONFIRM`/`REFUSE`.
+
+### 16.7 Static topology check
+
+Only the MOD-1 shadow modules and their migrations may reference these identifiers: `kj_shadow`,
+`agent_session_issuance_confirmation`, `agent_session_issuance_request`, `agent_session_capability`,
+`agent_action_shadow_policy`, `agent-action-shadow-policy`, `agent-action-shadow-request`,
+`agent-action-shadow-response`, `kjsc_`. The later ADR names the allowed paths; proposed: `packages/agent-shadow/`,
+`apps/gateway/src/agent-shadow/`, and migrations whose names contain `kj_shadow`. A planted reference from any other path
+MUST fail qualification. The same check refuses any column named in the forbidden list of 5.4 inside
+`agent_session_issuance_confirmation`.
+
+## 17. Idempotency and replay
+
+- Key `(capabilityId, observerEpoch, n)`, unique in `agent_shadow_observation`.
+- `requestDigest` is SHA-256 of the RFC 8785 canonical request body.
+- Same key and same digest: return the stored response byte for byte, without re-evaluation, even if policy changed.
+- Same key and different digest: HTTP 409 `SHADOW_SEQUENCE_MISMATCH`; nothing stored; the client marks `REJECTED`.
+- At most 64 epochs per capability and `n` at most 1,000,000 per epoch; beyond either, HTTP 409.
+- An expired, revoked or unknown token stores nothing.
+- A replay by a thief returns only answers the token already earned; after expiry, only the lifecycle response.
+
+## 18. Secret and target handling
+
+1. Revision 3 sends no target digest and holds no salt. Correlation uses `observerEpoch`, a random 128-bit value. The
+   only hash of a client value is `worktreeKey` (6.5), a local file-name key that is never sent.
+2. Sent in clear only after bounding and screening: branch (MUST match `BRANCH`, else `INVALID`; screened, else
+   `WITHHELD`), HEAD (40 or 64 hex, else `INVALID`), URL host (`HOST`, after userinfo refusal), tool name.
+3. Never sent: raw tool input, commands, paths (only the zone), URL paths or queries, prompts, model output, source,
+   environment values, remote URLs (only `remoteMatch`), the completion proof.
+4. Tool names: built-in names MUST match `^[A-Za-z][A-Za-z0-9_]{0,63}$`; MCP names `^mcp__[A-Za-z0-9_-]{1,123}$`; both
+   are screened. Malformed or flagged names are sent as `MALFORMED` and the observation is UNKNOWN.
+5. Local retention: a display ring of the last 50 terminal entries `{epoch, n, toolKind, actionClass, flags,
+   shadowVerdict, reasonCode, sessionState}`, the counters, and the public capability record. No token in `$.state`.
+   Nothing in `$.store`, the transcript or any file written by the mod.
+
+## 19. Failure states
+
+None grants anything, and in every case `next(e)` runs unchanged.
+
+| Condition | Shown |
+|---|---|
+| No token file for this worktree | `UNBOUND`; classified locally, nothing sent, coverage N/A |
+| Token file malformed (length, BOM, regex) | `CAPABILITY_UNKNOWN`; nothing sent |
+| KernelJSON unreachable, 5xx, or timeout after retries | `SHADOW_UNKNOWN`, entry `UNACKNOWLEDGED`, coverage incomplete |
+| Malformed response | `SHADOW_UNKNOWN (malformed)`, coverage incomplete |
+| Token expired, revoked or unknown | `CAPABILITY_EXPIRED`, `CAPABILITY_REVOKED`, `CAPABILITY_UNKNOWN`; sending stops; coverage incomplete |
+| Live policy digest differs | `SESSION_STALE (POLICY_CHANGED)` |
+| Mission not open | `SESSION_STALE (MISSION_NOT_OPEN)` |
+| Capability replaced | `CAPABILITY_REVOKED` (reason `SUPERSEDED` on the public record) |
+| Branch mismatch, detached, `remoteMatch` not canonical, HEAD proven not descendant | `REBOUND_REQUIRED (reason)` |
+| HEAD unverifiable | normal verdict, labelled "repo facts UNVERIFIED" |
+| List full | `SHADOW_DROPPED`, coverage incomplete |
+| Idempotency mismatch | `REJECTED`, coverage incomplete |
+| Rate limited after retries | `REJECTED`, coverage incomplete |
+| Restart, or reload without proven continuity | `PRIOR_COVERAGE_UNPROVEN` |
+| Concurrent epochs on one capability | `CAPABILITY_SHARED_OR_RESTARTED` |
+| Unknown action | `WOULD_REQUIRE_REVIEW` |
+
+## 20. Child agent boundary
+
+**Invariant C1.** A delegated agent, subagent, teammate, workflow agent or engine fork does not inherit the parent's
+KernelJSON session capability.
+
+- The parent's `Agent` call is the parent's own action and is observed as `AGENT_DELEGATE`.
+- A `tool.call` whose `AgentLoop.agentId` is present (Claude Code 2.1.289: absent on the main loop, present for
+  subagents, teammates, workflow agents and engine forks) is classified locally and recorded as `UNBOUND_CHILD`. It is
+  never sent under the parent's token. It has its own counter `childObserved`, outside the coverage invariants. The
+  console shows "N child-agent actions observed, unbound."
+- If a future engine makes the loop undeterminable, the adapter treats the call as `UNBOUND_CHILD`, never as main.
+- `agentLoop` and `agentId` are `CLIENT_ASSERTED` telemetry, not identity.
+- Child-capability issuance is not designed in MOD-1.
+
+## 21. MOD-1 / MOD-2 non-reuse fence
+
+**Invariant F1.** Any enforcing adapter MUST use a different versioned contract namespace (not
+`agent-action-shadow`), a different endpoint, a different token audience and prefix, and its own sealed policy
+evaluated fresh at decision time.
+
+MOD-2 MUST NOT reuse any of the following as authority. Each may serve only as research input to a new MOD-2 design:
+
+| MOD-1 artefact | Status |
+|---|---|
+| G1 classifier and grammar | SHADOW_ONLY |
+| G1 confidence levels | SHADOW_ONLY |
+| shadow request schema | SHADOW_ONLY |
+| shadow verdict response schema and lifecycle response schema | SHADOW_ONLY |
+| shadow token (`kjsc_`) and its audience | SHADOW_ONLY |
+| shadow endpoints | SHADOW_ONLY |
+| retrospective ordering (observe, run, report) | SHADOW_ONLY |
+| tolerance of dropped telemetry | SHADOW_ONLY |
+| `CLIENT_ASSERTED` git facts | SHADOW_ONLY |
+| coverage counters and the epoch model | SHADOW_ONLY |
+| ring state | SHADOW_ONLY |
+| `kj_shadow` observation rows and all `kj_shadow` storage | SHADOW_ONLY |
+| shadow policy (`agent-action-shadow-policy`) | SHADOW_ONLY |
+| issuance ceremony, completion proof and `agent_session_issuance_confirmation` | SHADOW_ONLY (and invariant C-CONF) |
+| abstract action class names | POTENTIALLY_REUSABLE_AFTER_NEW_REVIEW |
+| opaque token shape (prefix pattern, entropy, digest-only storage) | POTENTIALLY_REUSABLE_AFTER_NEW_REVIEW |
+| audience-restriction principle | POTENTIALLY_REUSABLE_AFTER_NEW_REVIEW |
+| "UNKNOWN means not understood" | POTENTIALLY_REUSABLE_AFTER_NEW_REVIEW |
+| path, URL and secret-screen rules | POTENTIALLY_REUSABLE_AFTER_NEW_REVIEW |
+
+Enforcement: shadow tokens are refused at every non-shadow route; a type-level test asserts no shadow response type is
+assignable to any authority input type (`Decision`, approval, admission) and fails on purpose when one is made
+assignable; MOD-2 cannot begin without its own design and seal.
+
+## 22. P8 / B1 separation
+
+- P8 and B1 proceed on their existing programme: B1 -> P8A-0 -> B2 -> P8A-1 -> P8A-2 -> P8B. MOD-1 enters none of
+  these steps and P8 does not wait for MOD-1.
+- The B1 candidate `108db1b0db5923993eb17888d3039c5a32890c2c` and its frozen grant manifest are unchanged. No MOD-1
+  schema, role or grant enters B1. ADR-0023 is unchanged.
+- MOD-1 track: MOD-0 (draft PR #51) -> MOD-1 design (this document) -> independent hostile review of this exact
+  document SHA -> a separately numbered ADR (not ADR-0023) defining `kj_shadow`, its roles and a delta manifest, plus
+  privilege checks asserting the B1 roles have no access to `kj_shadow` -> implementation only once B1 is merged, its
+  least-privilege health check is green where it runs, and no P8 change window is open.
+
+## 23. Hostile attack tables
+
+### 23.1 Classification examples under G1
+
+| Input (tool) | G1 result | Reason | Expected display |
+|---|---|---|---|
+| `git push origin main` (Bash or PowerShell) | `GIT_PUSH_BRANCH`, `PATTERN`, target `main` | P13 | per live shadow policy; with `main` protected in that policy, `WOULD_DENY (PROTECTED_TARGET)`. Preimage only (1.3) |
+| `git push origin feature/x` | `GIT_PUSH_BRANCH`, target `feature/x` | P13 | per policy |
+| `git push --force origin feature/x` | `GIT_FORCE_PUSH` | P15 | per policy |
+| `git push --force-with-lease origin HEAD:main` | UNKNOWN / NONE | no production; `HEAD:main` fails `BRANCH` | `WOULD_REQUIRE_REVIEW` |
+| `git -C .. push origin main` | UNKNOWN | git global option | `WOULD_REQUIRE_REVIEW` |
+| `bash -c "git push origin main"` | UNKNOWN | S1 (`"`), S3 | `WOULD_REQUIRE_REVIEW` |
+| `pwsh -EncodedCommand ...` | UNKNOWN | S3 | `WOULD_REQUIRE_REVIEW` |
+| `node -e ...` | UNKNOWN | S3 | `WOULD_REQUIRE_REVIEW` |
+| `python -c ...` | UNKNOWN | S3 | `WOULD_REQUIRE_REVIEW` |
+| `npm install package` | UNKNOWN | S3; lifecycle scripts are indirect execution | `WOULD_REQUIRE_REVIEW` |
+| package with postinstall | UNKNOWN | same | `WOULD_REQUIRE_REVIEW` |
+| `npx some-tool` | UNKNOWN | S3 | `WOULD_REQUIRE_REVIEW` |
+| `curl https://example.com` (Bash) | `NETWORK_REQUEST`, host `example.com` | P31 | per policy; `~/.curlrc` residual |
+| `curl https://example.com` (PowerShell) | UNKNOWN | S3 | `WOULD_REQUIRE_REVIEW` |
+| curl with an `Authorization` header | UNKNOWN, `SECRET_SHAPED` | S1, no `-H` production | `WOULD_REQUIRE_REVIEW`; header never retained or sent |
+| `gh api -X DELETE ...` | UNKNOWN | no production | `WOULD_REQUIRE_REVIEW` |
+| `supabase db push` | `DATABASE_PRODUCTION_MUTATION`, `TARGET_ENV_UNVERIFIED` | P30 | `WOULD_DENY (PRODUCTION_CEILING)` |
+| `supabase db push --linked` | UNKNOWN | no production | `WOULD_REQUIRE_REVIEW` |
+| `psql "$DATABASE_URL" -c ...` | UNKNOWN, `ENV_REFERENCE` | S1, S3 | `WOULD_REQUIRE_REVIEW` |
+| `vercel --prod` | `DEPLOY_PRODUCTION` | P27 | `WOULD_DENY (PRODUCTION_CEILING)` |
+| unknown MCP wrapper | UNKNOWN | 12.1 | `WOULD_REQUIRE_REVIEW` |
+| `FOO=1 git push origin main` | UNKNOWN | S1 (`=`) | `WOULD_REQUIRE_REVIEW` |
+| `git push` | UNKNOWN | no production | `WOULD_REQUIRE_REVIEW` |
+| `git.exe push origin main`, `Git push origin main` | UNKNOWN | S3 | `WOULD_REQUIRE_REVIEW` |
+| `git  push  origin  main` (repeated spaces) | as `git push origin main` | S2 collapses runs | as P13 |
+| `git commit -m "..."` | UNKNOWN | S1; no `GIT_COMMIT` production | `WOULD_REQUIRE_REVIEW` |
+| `git push origin main` with `description: "harmless read"` | as P13 | `description` is non-consequential (R0) | as P13 |
+| Read `C:\Users\x\.ssh\id_rsa` | `SECRET_READ`, `EXACT` | 12.3 step 7 | per policy |
+| Read `C:/repo/PROGRA~1/x` | UNKNOWN | 12.3 step 5 | `WOULD_REQUIRE_REVIEW` |
+| WebFetch `https://user:tok@host/` | UNKNOWN, `CREDENTIAL_URL` | 12.4 step 3 | `WOULD_REQUIRE_REVIEW`; userinfo discarded |
+| Bash with an unknown extra input key | UNKNOWN | 12.1 closed key set | `WOULD_REQUIRE_REVIEW` |
+
+### 23.2 Design threats
+
+| # | Threat | Guard | Residual |
+|---|---|---|---|
+| 1 | Malicious mod reads the token file | shadow-only audience, 15-minute default TTL, revocation, pinned origin | theft possible by design; impact is read-only shadow questions for one mission |
+| 2 | Token used in another repo or branch | `remoteMatch` and branch give `REBOUND_REQUIRED` | client-asserted; a lying client gains nothing |
+| 3 | Replay after expiry | lifecycle response, nothing stored | none |
+| 4 | Mission closes mid-session | live check, `SESSION_STALE` | one request of lag |
+| 5 | Classifier understates; nested shell hides a mutation | closed G1 and R1 | preimage caveats, 12.7 |
+| 6 | Tool renamed or proxied through MCP | closed table | none |
+| 7 | KernelJSON unavailable | nothing on the tool path; coverage incomplete | none |
+| 8 | Stale policy | digest checked live | none |
+| 9 | Model influences classification | R0, argv-exact matching | command text is model-written |
+| 10 | Raw secret in tool input | never sent; flags only | secret remains in Claude's own transcript |
+| 11 | Response tampered | strict schema; nothing consumes it as authority | display falsification only |
+| 12 | MOD-2 trusts MOD-1 | F1 and the type fence | discipline at the MOD-2 gate |
+| 13 | Confirmation reused for another ceremony | single-purpose relation, composite FK, `UNIQUE(confirmation_id)` on capability, topology check, C-CONF | none within this design |
+| 14 | Confirmation copied to another tenant, principal or mission | composite FK to the request tuple; mission inside the digest | none |
+| 15 | Confirmation consumed twice | `UNIQUE(confirmation_id)` on capability; trigger; conditional UPDATE | none |
+| 16 | Canonical code reads a confirmation as "human approved" | no `USAGE`, no SELECT, topology check, planted negatives | none |
+| 17 | Co-holder of the door credential claims a confirmed token | completion proof bound to the requesting CLI | an attacker holding both the door credential and the CLI process memory |
+| 18 | Token lost after mint | unrecoverable; revoke `DELIVERY_LOST`; expiry bounds it | none |
+| 19 | Token leaks through logs or traces | route excluded from body tracing; static test that the token value is never passed to logger, tracer or error reporter | garbage-collection lifetime in gateway memory |
+| 20 | New issuance silently kills a parallel session | one capability per ceremony; replacement names exactly one predecessor | none |
+| 21 | `NON_CANONICAL` read as "ignore revocation" | A2: shadow-domain checks are mandatory and fail closed | none |
+| 22 | Telegram forges or replays a confirmation | signed hop assertion bound to request id and full digest; `UNIQUE(issuance_request_id)`; 60-second expiry | single-owner deployment: requester and confirmer are the same person |
+
+## 24. Test and mutation requirements
+
+Every check has a negative case that fails on purpose, added in the same change.
+
+- **Normative vectors**, at least 300: every S1 excluded character alone and embedded; every S3 program on each shell;
+  every production P1 to P35 and one-character variants of each; every item in 12.6; every path-rule step; the secret
+  list; URL userinfo; 64 KiB and 64 KiB plus one byte; unknown keys and wrong types for every tool; every row of 23.1.
+- **Two implementations**: an independent Python implementation of G1 MUST agree with the TypeScript implementation on
+  every vector and on a 100,000-case grammar-aware fuzz corpus; any difference fails.
+- **Classifier mutations to kill**: remove R1; allow R2 with an UNKNOWN component; add `+`, `=` or `"` to S1; add `npm`
+  to S3; accept `HEAD:main`; drop the 8.3 rule; read `description`; give `PowerShell` `curl`; add a production not in
+  1.2.
+- **Ordering**: `next` receives the identical `e`; result or exception unchanged under every verdict, outage, hang and
+  malformed response; zero `$` calls before `next`; the observation is deep-equal after `next`; a hung fetch adds no tool
+  latency. Mutations: build after `next`; await the fetch before `next`; reuse a sequence.
+- **Coverage**: I1 to I3 after every transition in a randomised stream; overflow latches incomplete with the console
+  text; a late response does not clear the latch; restart and unproven reload show `PRIOR_COVERAGE_UNPROVEN`; proven
+  reload handover; out-of-order matching. Mutations: silent drop; clear the latch; match by arrival order; inherit
+  `COMPLETE` across an unproven reload.
+- **Secrets**: fixtures for each prefix appear nowhere in requests, state, ring or display; the token appears only in
+  the `Authorization` header; userinfo discarded; the token file reader refuses a BOM, a 47- or 49-character value and
+  trailing junk. Mutation: persist the raw command.
+- **Evaluator**: purity; policy-digest mismatch is `SESSION_STALE`; `UNKNOWN` never becomes `WOULD_ALLOW`; ceiling only
+  lowers; idempotency (same digest returns stored result, different digest 409); lifecycle response stores nothing;
+  shadow token refused at every other route.
+- **Issuance**: refuses a SERVICE principal, a missing scope, a missing, refused, expired or digest-mismatched
+  confirmation, TTL above 30, a mission not open, a replacement of another principal's or an already superseded
+  capability; a wrong completion proof returns no token and five end the request; a second completion returns
+  `ALREADY_COMPLETED` without the token; a confirmation cannot mint twice even with `consumed_at` reset; a
+  confirmation row for another request, tenant or principal is refused by the composite FK; concurrent issuance for the
+  same mission leaves both capabilities active; replacement revokes exactly the named predecessor; the token never
+  appears in logs, traces, the database or Telegram payloads (planted logging call fails the test).
+- **Structural**: every check in 16.6; the topology check in 16.7 with a planted canonical reference; the forbidden
+  confirmation columns with a planted column.
+- **Type fence**: no shadow response type is assignable to `Decision` or to any approval or admission input; fails when
+  aligned.
+- **Mod CI**: `claude plugin validate --strict` and `claude plugin test` pinned to a Claude Code release, plus the
+  vendored-library digest check.
+
+## 25. Residual risks
+
+1. A malicious mod or process with the user's permissions can read the token file and fake the display. Impact is
+   bounded by audience, TTL and revocation.
+2. G1 results describe the preimage only (1.3, 12.7): aliases, functions, `PATH`/`PATHEXT`, git configuration and
+   hooks, `~/.curlrc`, link files, symlinks and junctions.
+3. Coverage of benign work is low by design: most commits, tests and installs are `WOULD_REQUIRE_REVIEW` until a sealed
+   grammar revision widens G1.
+4. Without a forge integration every HEAD relation is `UNVERIFIED` and rebinding rests on client assertions.
+5. Single-owner deployment: requester and confirmer are the same person, as ADR-0019 records.
+6. Plaintext token material lives in gateway and CLI memory until garbage collection; JavaScript cannot zero it.
+7. The Mod API is early access; G1 is pinned to the 2.1.289 tool declarations and an engine update requires re-sealing
+   the closed key sets.
+8. Verdicts are retrospective; acceptable only because MOD-1 is shadow (SHADOW_ONLY, section 21).
+9. Process death loses unsent telemetry; this is shown, never hidden.
+
+## 26. Implementation preconditions and open items
+
+Not blockers on this design; required before implementation:
+
+1. Independent hostile review of this exact document SHA.
+2. A separately numbered ADR, sealed, defining `kj_shadow`, the two roles, the delta manifest, the door scopes or HUMAN
+   issuance credential, the Telegram confirmation transport, and the allowed paths for 16.7.
+3. B1 merged, with its least-privilege health check green where it runs, and no P8 change window open.
+4. A mod CI job for validate and test, pinned to a Claude Code release.
+5. The neutral `agent-actions` package with the normative vector file and the second implementation.
+6. No production use until a separate change window.
+
+Unresolved blockers in this design: none known.
