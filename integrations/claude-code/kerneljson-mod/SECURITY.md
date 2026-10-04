@@ -29,7 +29,7 @@ loosening the status parser, trusting a malformed HEAD) fails at least one test 
 
 ## Residual risks
 
-- **Early-access API.** The Mod API may change between Claude Code releases. MOD-0 is qualified on 2.1.287 only.
+- **Early-access API.** The Mod API may change between Claude Code releases. MOD-0 is qualified on 2.1.289 only.
 - **A mod is code with the process's reach.** These guarantees hold for this code. Any change to it needs the same
   validation, tests and review; a future mod that talks to KernelJSON must use a separately designed, short-lived,
   narrowly scoped capability, never a long-lived credential.

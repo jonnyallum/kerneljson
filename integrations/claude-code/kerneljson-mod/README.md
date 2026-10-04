@@ -4,7 +4,7 @@ A first-party Claude Code Mod that shows, inside Claude Code, which KernelJSON r
 is working in, and what the local status document says. It is a substrate proof. It observes; it never decides.
 
 Status: EXPERIMENT (MOD-0). Not installed globally. Claude Code Mods are early access; this mod is qualified against
-Claude Code **2.1.287** only (see `KJ_MOD0_QUALIFICATION.md`).
+Claude Code **2.1.289** only (see `KJ_MOD0_QUALIFICATION.md`).
 
 ## What it does
 
