@@ -1,7 +1,7 @@
 # ADR-0023: Reflection, self-model and governed identity growth (KJ-P8)
 
-Status: PROPOSED, revision 2.4 (design only). Nothing here is implemented, migrated or deployed.
-Date: 01/10/2026.
+Status: PROPOSED, revision 2.5 (design only). Nothing here is implemented, migrated or deployed.
+Date: 05/10/2026 (revision 2.5). Revision 2.3 is dated 01/10/2026 and revision 2.4 02/10/2026.
 Base: canonical `main` `750d5b7926f320d8e9d3f64789b8f7035eaa4f3d`. Production: epoch 13, release `cebbb0d`, cognition
 ON, Class C/D frozen (docs/operations/KJ_P7B_LIVE_RESULT_2026-09-30.md).
 
@@ -85,6 +85,36 @@ observable behaviour are unchanged, so it is resolved here in the design and not
 This does **not** invalidate the B1 least-privilege objective. It makes one previously implicit P1 to P7 capability
 boundary explicit. Nothing else in the design changes: P8A-0, B2, reflection, Class E, model proposals, dedupe, the
 Unicode pin, support provenance, growth windows, adoption, approval, the scheduler and the Shared Brain are untouched.
+
+Revision 2.5 is a narrow docs-only delta on top of revision 2.4 (`8a17de18b26edd12a9f3af7ab6179552ff0cd20e`). The
+independent hostile re-seal of 2.4 passed the section 27.9 exception itself and returned BLOCK on one item. Revision 2.4
+is not rewritten.
+
+| Finding | Revision 2.4 defect | Resolved in |
+|---|---|---|
+| P8-R24-B1 | sections 21, 27.6 step 2 and 27.9.4 required the `SECURITY DEFINER` functions to be only the section 27.9 exception, contradicting the definer functions sealed revision 2.3 already authorises at P8A-0 (`freeze_reflection`) and P8B (`close_growth_window_by_owner`); and the inventory scanned only `public` and `kernel_private`, while 27.9.2 requires the stamp function's name to be unique in any schema | section 27.10 (new, the single stage-aware inventory rule), with sections 17.1, 17.2, 20, 21, 26, 27.6, 27.9.2, 27.9.4 and 27.9.5 and the sequence document made consistent |
+
+Revision 2.5's semantic changes are exactly three, all required by that repair:
+
+1. **Stage-aware inventory.** At every rollout stage the complete `SECURITY DEFINER` inventory outside the excluded
+   PostgreSQL schemas equals the frozen platform baseline together with the KernelJSON stage manifest for the stages
+   applied so far (section 27.10). It is one rule, referenced by sections 20, 21, 27.6 and 27.9.4.
+2. **Exact signatures of the two later definer functions.** Sealed revision 2.3 named them only by parameter names.
+   Revision 2.5 pins them as new precision, not as something revision 2.3 already fixed:
+   `kernel_private.freeze_reflection(task_id uuid) returns void`;
+   `kernel_private.close_growth_window_by_owner(task_id uuid, window_id uuid) returns
+   kernel_private.identity_growth_window_closures`; and `window_id` is `uuid` in both window tables (sections 17.1,
+   17.2, 27.10.3). Rationale: `public.tasks.id` is `uuid`; sealed P8B behaviour returns the existing closure row on an
+   idempotent replay; `freeze_reflection` has no return payload.
+3. **Platform definers are inventoried, not ignored.** Definer functions in platform-owned schemas are not hidden by a
+   guessed schema exclusion. A read-only catalogue snapshot taken before B1 freezes them as an explicit, reviewed
+   baseline (section 27.10.4).
+
+The catalogue, ACL, configuration, trigger-topology and negative-probe wording of sections 27.9.2, 27.9.4 and 27.9.5 is
+tightened as hardening of the same boundary; it adds no authority. The section 27.9 decision, body, digest procedure,
+owner, empty `search_path`, EXECUTE ACL, trigger topology, write ceiling, release authority and concurrency semantics
+are unchanged. Reflection, Class E, proposals, dedupe, the Unicode pin, support provenance, growth-window behaviour,
+adoption, approval, the scheduler, the Shared Brain and the rollout order are untouched.
 
 Section numbers changed from revision 1: section 18 (P8B adoption mechanics) and section 23 (same-tenant references)
 are new, and the later sections moved down.
@@ -1111,7 +1141,7 @@ runtime evidence (evidence holds the record id and digest).
   - `kernel_private.freeze_reflection(task_id)`: **lowering** to `DISABLED`. It is `security definer`, executable by
     `kj_worker`, and writes only a `DISABLED` row. It refuses unless the task is a `FREEZE` task of recipe
     `identity-reflection/v1` whose principal is the HUMAN identity owner. Freezing is safe, so the owner can always
-    do it.
+    do it. Exact signature (revision 2.5 precision): `kernel_private.freeze_reflection(task_id uuid) returns void`.
 - Revision 2.2 recognised the deployment function by a transaction-local setting. That is withdrawn: any role can
   set a custom setting, so it separated nothing. Authority now rests on EXECUTE privilege and table grants, which a
   non-owner role cannot give itself (section 27).
@@ -1129,7 +1159,7 @@ No row is ever updated. Both tables reject update, delete and truncate through `
 
 | Column | Rule |
 |---|---|
-| `window_id` | primary key |
+| `window_id` | `uuid` (revision 2.5 precision), primary key |
 | `tenant_id`, `identity_id` | composite foreign key to `identity_profiles(id, tenant_id)` |
 | `authorisation_ref` | the change-window record and the HUMAN authorisation; not null |
 | `reason` | not null |
@@ -1140,7 +1170,7 @@ No row is ever updated. Both tables reject update, delete and truncate through `
 
 | Column | Rule |
 |---|---|
-| `window_id` | primary key, so a window has at most one closure |
+| `window_id` | `uuid` (revision 2.5 precision), primary key, so a window has at most one closure |
 | `tenant_id`, `identity_id` | composite foreign key `(window_id, tenant_id, identity_id)` to the window's unique key |
 | `closed_by_kind` | `HUMAN_OWNER` or `DEPLOYMENT` |
 | `close_task_id` | for `HUMAN_OWNER`: the `FREEZE` task, composite foreign key to `tasks(id, tenant_id)`; null for `DEPLOYMENT` |
@@ -1174,10 +1204,13 @@ roles have no INSERT on the table and no EXECUTE on `kernel_private.open_growth_
 - If a closure exists with any different value, refuse `GROWTH_WINDOW_ALREADY_CLOSED`.
 
 Closing is available to deployment authority and to the HUMAN owner through `FREEZE`. The runtime roles have no
-INSERT on the closure table. `kj_worker` may execute one `security definer` function,
+INSERT on the closure table. For closing, `kj_worker` may execute one `security definer` function,
 `kernel_private.close_growth_window_by_owner(task_id, window_id)`, which refuses unless the task is a `FREEZE` task
 of the HUMAN identity owner. In P8B a `FREEZE` task writes the `DISABLED` mode row and closes any effective window in
-one transaction, through the two definer functions.
+one transaction, through the two definer functions. Exact signature (revision 2.5 precision):
+`kernel_private.close_growth_window_by_owner(task_id uuid, window_id uuid) returns
+kernel_private.identity_growth_window_closures`; it returns the inserted closure row, or the existing row on an
+idempotent replay.
 
 **Expiry needs no write.** An expired window is simply not effective.
 
@@ -1395,6 +1428,8 @@ functions, the `ADOPT` workflow and controlled activation. **There is no auto-ad
 3. Every denied operation of section 27.6 fails on purpose.
 3a. The section 27.9 exception holds exactly: the catalogue assertions of 27.9.4 pass, each has a negative case, and
     every probe of 27.9.5 is refused or overwritten as stated.
+3b. The `SECURITY DEFINER` inventory equals `EXPECTED(B1)` of section 27.10, with the platform baseline frozen and
+    reviewed as section 27.10.4 requires.
 4. In production, after cutover: the running worker and door report `current_user` as their runtime roles, a P1 to
    P7 live proof passes, and `database.runtimeRolesLeastPrivilege` is green.
 
@@ -1469,7 +1504,7 @@ functions, the `ADOPT` workflow and controlled activation. **There is no auto-ad
 | `reflection.evidenceCarriesNoModelText` | reflection runtime evidence matches the section 15.1 contract | P2 |
 | `reflection.adoptedChangeUnreviewed` | no adopted model change older than the alerting default (14 days) without a `POST_CHANGE` reflection | P3, notified |
 
-| `database.runtimeRolesLeastPrivilege` | the worker and the door are connected as `kj_worker` and `kj_door`; neither role is superuser, owner of any object, member of any role, `BYPASSRLS`, `CREATEDB` or `CREATEROLE`; the catalogue grants and policies equal the manifest; the `SECURITY DEFINER` functions are exactly the section 27.9 exception, with its owner, `search_path`, ACL, source digest and trigger attachment as pinned | **P0** |
+| `database.runtimeRolesLeastPrivilege` | the worker and the door are connected as `kj_worker` and `kj_door`; neither role is superuser, owner of any object, member of any role, `BYPASSRLS`, `CREATEDB` or `CREATEROLE`; the catalogue grants and policies equal the manifest; the `SECURITY DEFINER` inventory equals `EXPECTED(stage)` of section 27.10 for the stage the running release declares (so after B1 and before P8A-0 it is the platform baseline plus the section 27.9 exception only; from P8A-0 it adds `freeze_reflection`; from P8B it adds `close_growth_window_by_owner`), and every attribute 27.10 pins for each expected function holds, including for the section 27.9 exception every assertion of 27.9.4; an unlisted, missing or mismatched definer is P0 at every stage | **P0** |
 
 - The P0 and P1 rows are detection behind database prevention; each also has a database constraint or trigger.
 - A Class E behavioural-consumer or topology breach is a **qualification failure** in CI (section 16). It is not
@@ -1654,6 +1689,19 @@ No authority-critical ambiguity is known to remain. Open, and not authority-crit
   procedure in section 27.9.3, in the same way as the Unicode conformance digest. The procedure is sealed; the value
   is an implementation artefact that the B1 review checks.
 - The hexadecimal value of the Unicode conformance digest is fixed at implementation, by the procedure in 11.1.
+- The platform `SECURITY DEFINER` baseline of section 27.10.4 is an engineering artefact of B1 qualification, frozen
+  from a read-only catalogue snapshot of the target environment by the sealed procedure. Its entries are not values
+  of this ADR; the B1 review checks them.
+- Implementation that predates revision 2.5 (not edited by this revision): at the frozen B1 candidate
+  `108db1b0db5923993eb17888d3039c5a32890c2c`, `services/kernel/src/database/runtime-roles.ts` excludes only
+  `pg_catalog`, `information_schema` and `pg_toast` from its definer query, compares only `schema.name`, and has no
+  platform baseline; `compareDefinerFunctions()` does not implement section 27.10. It is to be remediated only after
+  revision 2.5 is hostile-sealed.
+- The B1 entry brief on `main` (`docs/operations/KJ_P8_B1_ENTRY_BRIEF.md`) still states the revision 2.3 position:
+  B1 changes no P1 to P7 trigger, and the worker's triggers are `security invoker`. It does not know the section
+  27.9 exception or the section 27.10 inventory. After revision 2.5 is hostile-sealed, that brief must be
+  reconciled to the sealed revision 2.5 contract before B1 remediation is authorised. Where they differ, this ADR
+  governs.
 - One narrowing for the re-seal to confirm: only `REFLECT` consumes an admission slot (section 22.2).
 - RECOMMENDATION, out of scope here: apply the pre-admission scan to `identity-change/v1` `PROPOSE` and `ROLLBACK`
   under a separate authorisation (section 5.3).
@@ -1775,8 +1823,9 @@ inventory, and proved by the full suite before cutover.
    grant manifest. The static baseline in 27.4 is its starting point, not its substitute.
 2. **Catalogue equality.** After the B1 migration, role attributes, memberships, table and column grants, function
    grants, ownership and policies read from the catalogue equal the manifest exactly. An extra privilege fails the
-   check, as a missing one does. The same check asserts every item of section 27.9.4 for the one `SECURITY DEFINER`
-   function, and fails if any other `SECURITY DEFINER` function exists in `public` or `kernel_private`.
+   check, as a missing one does. The same check asserts the `SECURITY DEFINER` inventory rule of section 27.10 for the
+   stage being qualified (at B1: `EXPECTED(B1)`, the frozen platform baseline plus the section 27.9 exception), and
+   every item of section 27.9.4 for the section 27.9 exception.
 3. **Positive requalification, P1 to P7.** The complete existing suite, the faculty, identity and cognition mutation
    suites and the real-Restate tests run with the worker connected as `kj_worker` and the door as `kj_door`, against
    a database migrated by the owner. Required: the same pass and skip counts as the baseline run at the same commit,
@@ -1843,22 +1892,28 @@ This is not a general permission to convert P1 to P7 functions. It is one functi
 All of these hold, and each is asserted by 27.9.4 or probed by 27.9.5.
 
 1. **Exact identity.** `kernel_private.stamp_binding_provenance()`: zero arguments, returns `trigger`, exactly one
-   function of that name in any schema. No overload, no family, no wildcard.
+   function of that name in any schema outside the excluded PostgreSQL schemas of section 27.10.2, whatever its
+   arguments, owner or security attribute (section 27.10.6). No second schema copy, no overload, no shadow function,
+   no family, no wildcard.
 2. **Body immutability.** The B1 migration changes only security attributes of this function. It contains no
    `CREATE FUNCTION` or `CREATE OR REPLACE FUNCTION` for it. The source stays identical to the pre-B1 definition,
    proved by the digest of 27.9.3.
 3. **Owner.** The function stays owned by the deployment owner. The runtime roles own nothing.
 4. **Search path.** `search_path = ''` is set on the function, re-asserted by the B1 migration and read from the
-   catalogue. Every object the body names is schema-qualified.
+   catalogue, where `proconfig` must equal exactly the value of 27.9.4. Every relation reference in the body is
+   schema-qualified (the body names one relation, `kernel_private.release_epoch`).
 5. **EXECUTE ACL.** EXECUTE is revoked from `PUBLIC`. Neither `kj_worker` nor `kj_door` is granted EXECUTE. The
    runtime reaches the function only because its existing trigger fires.
 6. **Trigger topology.** The function is attached to exactly one trigger: `execution_bindings_provenance`, BEFORE
-   INSERT, FOR EACH ROW, on `kernel_private.execution_bindings`. Qualification fails if it is attached anywhere else,
-   or if that trigger differs. The runtime roles cannot create or alter a trigger, attach the function elsewhere, or
+   INSERT, FOR EACH ROW, on `kernel_private.execution_bindings`, enabled normally, with no `WHEN` condition (the
+   exact catalogue values are in 27.9.4). Qualification fails if it is attached anywhere else, or if that trigger
+   differs. The runtime roles cannot create or alter a trigger, attach the function elsewhere, or
    replace or alter the function.
 7. **No caller-controlled input.** The function takes no argument, contains no dynamic SQL (`EXECUTE`), no
-   caller-controlled identifier, no `SET ROLE`, no session authorization, and calls no unqualified or replaceable
-   helper. The only function it calls is `clock_timestamp()` from `pg_catalog`.
+   caller-controlled identifier, no `SET ROLE`, no session authorization, and calls no replaceable helper. The only
+   function call in the body is `pg_catalog.clock_timestamp()`. The source writes it as `clock_timestamp()`; with the
+   function's empty `search_path`, only `pg_catalog` can supply it, and PostgreSQL never resolves a function name
+   from a temporary schema. The source digest of 27.9.3 remains the ultimate pin of the body.
 8. **Write ceiling.** With the owner's rights it does exactly what it does today and nothing more:
    - one `UPDATE kernel_private.release_epoch SET epoch = epoch WHERE singleton RETURNING epoch`, which leaves the
      value unchanged;
@@ -1893,34 +1948,59 @@ The B1 catalogue check asserts, for this function, and fails on any difference:
 
 | Fact | Required value |
 |---|---|
-| identity and signature | `kernel_private.stamp_binding_provenance()`, returns `trigger`, one overload |
+| identity and signature | schema `kernel_private`, name `stamp_binding_provenance`, no arguments (`pronargs = 0`), return type `pg_catalog.trigger`, `proretset = false`, `prokind = 'f'` |
+| name uniqueness | exactly one `pg_proc` row named `stamp_binding_provenance` in all schemas outside the excluded PostgreSQL schemas of 27.10.2, whatever its schema, arguments, owner or security attribute, and it is this function (27.10.6); no platform-baseline entry can legitimise a second |
 | `prosecdef` | true |
 | owner | the deployment owner |
-| `proconfig` | contains `search_path=""` and nothing that widens it |
-| ACL | EXECUTE for the owner only; none for `PUBLIC`, `kj_worker` or `kj_door` |
+| `proconfig` | exactly a one-element `text[]` whose element is the 14-character text `search_path=""` (SQL literal `'{"search_path=\"\""}'::text[]`); no other element |
+| ACL (catalogue) | `proacl` is not null and is exactly one `aclitem`: the owner, privilege EXECUTE, granted by the owner (`{<owner>=X/<owner>}`). So there is no EXECUTE for `PUBLIC`, `kj_worker`, `kj_door` or any other role; and `has_function_privilege` is false for both runtime roles. A null `proacl` fails, because it means the default, which grants EXECUTE to `PUBLIC` |
 | source digest | equals the manifest pin (27.9.3) |
-| trigger attachment | exactly `execution_bindings_provenance`, BEFORE INSERT, row-level, on `kernel_private.execution_bindings` |
-| other `SECURITY DEFINER` functions in `public` or `kernel_private` | none beyond the frozen manifest's list, which in B1 is this one function |
+| trigger attachment | exactly one `pg_trigger` row has `tgfoid` equal to this function, and in it: `tgname = 'execution_bindings_provenance'`; `tgrelid` is `kernel_private.execution_bindings`; `tgtype = 7` (row-level 1 + BEFORE 2 + INSERT 4: BEFORE INSERT FOR EACH ROW); `tgenabled = 'O'`; `tgqual` is null (no `WHEN` condition); `tgisinternal = false`; `tgnargs = 0`; `tgattr` empty |
+| `SECURITY DEFINER` inventory | at B1 the KernelJSON stage manifest contains only this function; at every stage the inventory follows section 27.10 (`EXPECTED(stage)`) |
 
 Each assertion ships with a negative case that makes it fail on purpose.
 
 #### 27.9.5 Negative probes
 
-Committed, automated, run on genuine login sessions of **both** `kj_worker` and `kj_door`, each with a pinned result:
+Committed, automated, run on genuine login sessions of **both** `kj_worker` and `kj_door`, each with a pinned result.
+"Refused" means two things, both required: the statement fails with the SQLSTATE given, and a catalogue or table
+re-read made by the owner afterwards shows nothing changed. A statement that completes with only a warning is not a
+refusal.
 
 | Probe | Required result |
 |---|---|
-| call the function directly | refused |
-| `UPDATE` of `release_epoch`, both the no-op form and one that changes the value | refused |
-| `INSERT` into and `DELETE` from `release_epoch` | refused |
-| execute `activate_release` | refused |
-| `CREATE OR REPLACE` the function | refused |
-| `ALTER FUNCTION` on it | refused |
-| create a trigger that attaches it to another table | refused |
-| create a temporary table, or a table in `public`, named `release_epoch` | refused, so name resolution cannot be redirected |
-| change the session `search_path`, then insert a binding | the stamp is unaffected |
+| `select kernel_private.stamp_binding_provenance()` | refused, `42501` (insufficient privilege). Any other SQLSTATE fails the probe, in particular `0A000` ("trigger functions can only be called as triggers"), which would mean the privilege check passed. This probe corroborates the ACL; it is not the proof. The proof is the independent `proacl` assertion of 27.9.4 |
+| `UPDATE kernel_private.release_epoch` in the no-op form (`set epoch = epoch`) | refused, `42501`; epoch unchanged |
+| `UPDATE kernel_private.release_epoch` changing the value | refused, `42501`; epoch unchanged |
+| `INSERT` into `kernel_private.release_epoch` | refused, `42501` |
+| `DELETE` from `kernel_private.release_epoch` | refused, `42501`; the row remains |
+| `INSERT` into `kernel_private.release_activations` | refused, `42501` |
+| `UPDATE` of `kernel_private.release_activations` | refused, `42501`; rows unchanged |
+| `DELETE` from `kernel_private.release_activations` | refused, `42501`; rows unchanged |
+| execute `kernel_private.activate_release(...)` | refused, `42501`; epoch and activations unchanged |
+| `CREATE OR REPLACE FUNCTION kernel_private.stamp_binding_provenance()` | refused, `42501`; source digest unchanged |
+| `ALTER FUNCTION ... OWNER TO` either runtime role | refused, `42501`; owner unchanged |
+| `ALTER FUNCTION ... SECURITY INVOKER` | refused, `42501`; `prosecdef` still true |
+| `ALTER FUNCTION ... SET search_path = public` | refused, `42501`; `proconfig` unchanged |
+| `ALTER FUNCTION ... RESET search_path` | refused, `42501`; `proconfig` unchanged |
+| `GRANT EXECUTE ON FUNCTION ... TO` either runtime role or `PUBLIC` | refused, `42501` (the role holds no privilege on the function); `proacl` unchanged |
+| `CREATE TRIGGER` attaching the function to another table | refused, `42501`; trigger topology unchanged |
+| `CREATE TRIGGER` attaching it a second time to `kernel_private.execution_bindings` | refused, `42501`; still exactly one attachment |
+| `DROP TRIGGER execution_bindings_provenance` | refused, `42501`; trigger present |
+| `ALTER TRIGGER execution_bindings_provenance ... RENAME TO ...` | refused, `42501`; name unchanged |
+| `ALTER TABLE kernel_private.execution_bindings DISABLE TRIGGER execution_bindings_provenance` (and `DISABLE TRIGGER ALL`, `ENABLE REPLICA TRIGGER`) | refused, `42501`; `tgenabled` still `'O'` |
+| `CREATE FUNCTION public.stamp_binding_provenance() returns trigger ...`, and the same in `kernel_private` | refused, `42501` (no CREATE on any schema); name uniqueness of 27.10.6 still holds |
+| `CREATE SCHEMA` (any name), then create a function in it | refused, `42501` (no CREATE on the database) |
+| create a temporary table named `release_epoch` | refused, `42501` (no TEMPORARY on the database) |
+| create a table in `public` named `release_epoch` | refused, `42501`; so name resolution cannot be redirected |
+| change the session `search_path` (for example to `public, pg_temp`), then insert a binding | the stamp is unaffected: the canonical epoch and a fresh timestamp |
 | insert a binding with forged `release_epoch` and `persisted_at` values | the insert succeeds and both columns are overwritten with the canonical epoch and a fresh timestamp |
 | insert bindings repeatedly | the release epoch's value does not change |
+
+The SQLSTATE values are INFERENCE from PostgreSQL's privilege rules (a non-owner without the privilege gets `42501`;
+the EXECUTE check on a function runs at executor start, before the language handler that raises `0A000`). They were
+not executed in revision 2.5. B1 qualification must observe each one. If PostgreSQL returns a different SQLSTATE for
+a refusal, B1 stops and the probe is re-specified by a design revision; it is never relaxed to "any error".
 
 #### 27.9.6 What the B1 review must verify
 
@@ -1929,3 +2009,182 @@ exception: the function source; its owner; its ACL; its `search_path`; the direc
 `release_activations` (none); the trigger topology; the source digest and both of its derivations; the negative
 probes and their results; and the separation of `activate_release` from the runtime roles. If any of these is not
 as section 27.9 states, B1 does not pass.
+
+### 27.10 The stage-aware `SECURITY DEFINER` inventory (P8-R24-B1)
+
+#### 27.10.1 One rule
+
+This section is the single normative definition of the `SECURITY DEFINER` inventory. Sections 20 (B1 gate 3b), 21
+(`database.runtimeRolesLeastPrivilege`), 27.6 step 2 and 27.9.4 refer to it and add nothing to it. Its contract
+identity is `kerneljson:security-definer-stage-manifest/v1`. It is repository-controlled and is specified here only;
+it is implemented in its authorised stage (the B1 remediation for the B1 entry and the platform baseline, P8A-0 and
+P8B for theirs). The invariant is not "there is one `SECURITY DEFINER` function forever". It is:
+
+> At every rollout stage, the complete set of `SECURITY DEFINER` functions in every governed schema is exactly the
+> frozen platform baseline together with the KernelJSON functions this design authorises for all stages applied so
+> far.
+
+```
+EXPECTED(stage) = PLATFORM_BASELINE  UNION  KERNELJSON_STAGE_MANIFEST(stage)
+ACTUAL          = { every pg_proc row with prosecdef = true whose schema is governed (27.10.2) }
+```
+
+`ACTUAL` must equal `EXPECTED(stage)` in both directions, under the identity and attributes of 27.10.3 and 27.10.4:
+
+| Difference | Result |
+|---|---|
+| a function in `ACTUAL` and not in `EXPECTED(stage)` (extra) | fail |
+| a function in `EXPECTED(stage)` and not in `ACTUAL` (missing) | fail |
+| an expected function present with a different identity: other schema, name or argument types | fail (it is both missing and extra) |
+| owner differs | fail |
+| return type differs | fail |
+| any other pinned attribute differs (configuration, ACL, source digest, language) | fail |
+
+In runtime health every failure is P0. No stage authorises itself: the inventory follows the rollout order of
+section 19 and the sequence document, and grants no stage.
+
+#### 27.10.2 Governed and excluded schemas
+
+The only schemas excluded from the inventory are PostgreSQL's own internal and transient schemas, selected by this
+exact predicate over `pg_namespace.nspname`:
+
+```
+EXCLUDED(nspname) :=  nspname IN ('pg_catalog', 'information_schema', 'pg_toast')
+                   OR nspname ~ '^pg_temp_[0-9]+$'
+                   OR nspname ~ '^pg_toast_temp_[0-9]+$'
+```
+
+Every schema for which `EXCLUDED` is false is **governed**, whatever its name and whatever role owns it. That
+includes `public`, `kernel_private` and every platform-owned schema present in the target environment. No phrase such
+as "system", "platform" or "relevant" schemas has any other meaning in this design.
+
+Why this cannot be widened by an application: PostgreSQL reserves the `pg_` prefix, refusing `CREATE SCHEMA` with
+such a name (SQLSTATE `42939`) unless `allow_system_table_mods` is on, which only a superuser can set; and it names
+each backend's temporary schemas `pg_temp_<n>` and `pg_toast_temp_<n>` with `<n>` a decimal number. Both facts are
+INFERENCE from PostgreSQL behaviour, not executed in revision 2.5. B1 qualification must observe them: read
+`pg_namespace` after the owner creates a temporary table in a qualification session, and attempt
+`CREATE SCHEMA pg_kj_probe` as the owner without `allow_system_table_mods`. If either differs, B1 stops and this
+predicate is re-specified by a design revision.
+
+#### 27.10.3 The KernelJSON stage manifest
+
+**Identity** of a function is its schema name, its function name and its ordered input argument types, each type
+written as `<type schema>.<type name>` from `pg_type` and `pg_namespace` (for example `pg_catalog.uuid`). This is
+PostgreSQL's own function identity, which is defined by input argument types and not by return type. It is read
+without depending on the session `search_path`. The **return type** is asserted separately, as
+`<type schema>.<type name>` of `prorettype`, together with `proretset`.
+
+| Function identity | Return type | In the manifest from | Contract |
+|---|---|---|---|
+| `kernel_private.stamp_binding_provenance()` | `pg_catalog.trigger` | B1 | section 27.9 (authoritative for every attribute) |
+| `kernel_private.freeze_reflection(pg_catalog.uuid)` | `pg_catalog.void` | P8A-0 | sections 17.1 and 27.5 |
+| `kernel_private.close_growth_window_by_owner(pg_catalog.uuid, pg_catalog.uuid)` | `kernel_private.identity_growth_window_closures` | P8B | sections 17.2 and 27.5 |
+
+The stage sets are exact:
+
+| Stage | `KERNELJSON_STAGE_MANIFEST(stage)` |
+|---|---|
+| B1 | `stamp_binding_provenance()` |
+| P8A-0 | `stamp_binding_provenance()`, `freeze_reflection(uuid)` |
+| B2 | the same as P8A-0 |
+| P8A-1 | the same as P8A-0 |
+| P8A-2 | the same as P8A-0 |
+| P8B | `stamp_binding_provenance()`, `freeze_reflection(uuid)`, `close_growth_window_by_owner(uuid, uuid)` |
+
+No stage contains anything else. There is no inferred future entry and no wildcard. B2, P8A-1 and P8A-2 add no
+`SECURITY DEFINER` function: no sealed section authorises one. Any further KernelJSON `SECURITY DEFINER` function
+needs its exact identity, a sealed design revision or addendum, an entry in this manifest and a hostile review, all
+before it is deployed.
+
+**Attributes asserted for each KernelJSON entry**, in addition to identity and return type (`proretset = false` and
+`prokind = 'f'` for all three):
+
+| Attribute | `stamp_binding_provenance()` | `freeze_reflection(uuid)` and `close_growth_window_by_owner(uuid, uuid)` |
+|---|---|---|
+| `prosecdef` | true | true |
+| owner | the deployment owner (27.9.2 item 3) | the deployment owner (27.5) |
+| `proconfig` | exactly the value of 27.9.4 | exactly the same value: one element, `search_path=""` (27.5: `search_path = ''`) |
+| ACL | exactly the 27.9.4 value: owner EXECUTE only | exactly two `aclitem`s: the owner's EXECUTE and EXECUTE for `kj_worker`; nothing for `PUBLIC` or `kj_door` (27.5) |
+| source digest | equals the 27.9.3 pin | the 27.9.3 procedure applied to the function's source at that stage's implementation, recorded in this manifest by that stage and compared from then on |
+| trigger topology | 27.9.4 | not a trigger function; attached to no trigger |
+
+Each KernelJSON function's own stage contract (sections 17 and 27.5 for the two P8 functions, section 27.9 for the
+stamp function) keeps every authority boundary it already has. This section adds none and removes none.
+
+#### 27.10.4 The frozen platform baseline
+
+Platform functions in governed schemas are not ignored. They are listed, exactly, in a frozen baseline.
+
+**Artefact.** `kerneljson:security-definer-platform-baseline/v1`, a repository-controlled engineering artefact of B1
+qualification, reviewed by the B1 hostile review and committed with the B1 remediation. It is not a value of this
+ADR and is not fabricated in it.
+
+**Snapshot procedure.** Before the B1 migration is applied to the target environment, the deployment owner runs, in
+one `READ ONLY` transaction with `search_path = ''`, the same inventory query as `ACTUAL` over the governed schemas of
+27.10.2. Nothing is written. The artefact records, as provenance:
+- the environment's name, `system_identifier` from `pg_control_system()`, `current_database()` and `version()`;
+- the server time `clock_timestamp()` and `current_user` of the snapshot;
+- the head of the applied migration ledger, showing the B1 migration is not yet applied, so every entry existed
+  before B1;
+- the SHA-256 of the exact query text;
+- the SHA-256 of the canonical serialisation of the entries (RFC 8785 JSON, entries sorted by schema, name and
+  argument types).
+
+**Each entry** pins: schema; function name; ordered input argument types and return type, both as in 27.10.3;
+`proretset`; owner role name; `prosecdef = true`; language name (`pg_language.lanname`); `proconfig` exactly
+(including null); and a source digest by this deterministic rule, all SHA-256 over UTF-8 after replacing every CRLF
+with LF, lowercase hexadecimal:
+1. language `internal` or `c` (where `prosrc` is only a symbol name): the digest of
+   `lanname || LF || coalesce(probin, '') || LF || prosrc`;
+2. otherwise, if `prosqlbody` is not null (a SQL-standard body, where `prosrc` is empty): the digest of
+   `pg_get_function_sqlbody(oid)`;
+3. otherwise: the digest of `prosrc`, which is the 27.9.3 rule.
+
+**Eligibility.** The baseline may contain no function whose schema is `public` or `kernel_private`, no function named
+`stamp_binding_provenance`, and no function whose identity appears in any stage of 27.10.3. If the snapshot finds
+such a function, it is not baselined: B1 does not qualify, and the finding goes to a design revision.
+
+**Immutability.** The baseline is fixed for a qualification run and for the release that carries it. The health check
+compares against the baseline in the running release. If the platform later adds, removes or changes a definer
+function, `database.runtimeRolesLeastPrivilege` goes red at P0 and B1 qualification fails, until a new snapshot is
+taken by the same procedure, reviewed, and committed as a deliberate refresh. There is no silent learning and no
+automatic acceptance.
+
+#### 27.10.5 Which stage is applied
+
+The stage used for `EXPECTED(stage)` is the stage declared by the stage manifest in the running release. A release
+declares a stage only if it carries that stage's migrations. A database behind its release, or a release behind its
+database, therefore fails equality and is P0. An earlier-stage database never requires a later-stage function, and a
+later-stage database never fails because a function sealed for that stage exists.
+
+#### 27.10.6 Global uniqueness of the stamp function name
+
+Independently of the baseline and of `prosecdef`: there is exactly one `pg_proc` row named
+`stamp_binding_provenance` in all governed schemas, and it is `kernel_private.stamp_binding_provenance()`, with zero
+input arguments, returning `pg_catalog.trigger`. A second schema copy, an overload, or a shadow function of that name
+fails, whether it is a definer or not. No baseline entry can legitimise one (27.10.4, eligibility).
+
+#### 27.10.7 No schema escape hatch
+
+Because the inventory covers every governed schema:
+- creating a new application schema cannot hide a definer: the schema is governed, and the runtime roles cannot
+  create one (no CREATE on the database);
+- moving a function into another schema cannot hide it: its identity changes, so it is both missing and extra;
+- a duplicate `stamp_binding_provenance` in any other schema fails (27.10.6);
+- a schema whose name looks like a platform schema, or that a platform role owns, exempts nothing: only `EXCLUDED`
+  exempts, and membership in the baseline is per function, never per schema;
+- the runtime roles have no CREATE on any schema (27.2);
+- KernelJSON migrations must not create KernelJSON-owned application objects inside a schema that holds a baseline
+  entry unless a separately sealed design explicitly allows it.
+
+Each of these ships with a negative case that makes it fail on purpose: an extra definer in `public`, one in a new
+schema created by the owner, a moved function, a second `stamp_binding_provenance`, a baseline entry with a changed
+digest, a missing stage function, and a stage function with a wrong return type, owner or ACL.
+
+#### 27.10.8 Existing implementation
+
+The frozen B1 candidate `108db1b0db5923993eb17888d3039c5a32890c2c` predates revision 2.5 and is not changed by it. Its
+`services/kernel/src/database/runtime-roles.ts` excludes only `pg_catalog`, `information_schema` and `pg_toast` from
+the definer query, has no platform baseline, and its `compareDefinerFunctions()` compares only `schema.name` against
+its manifest. It does not implement this section and is to be remediated only after revision 2.5 is hostile-sealed,
+together with the reconciliation of `docs/operations/KJ_P8_B1_ENTRY_BRIEF.md` noted in section 26.
