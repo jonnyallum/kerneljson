@@ -192,7 +192,8 @@ describe("27.10.1 ACTUAL equals EXPECTED(B1) = PLATFORM_BASELINE UNION { stamp_b
     const observed = await fetchRuntimeRoles(pool, { baseline: null });
     expect(observed.available && observed.problems).toContain("TARGET_PLATFORM_BASELINE_PENDING: no frozen platform SECURITY DEFINER baseline for this environment");
   });
-  it("27.11: a platform function executable by PUBLIC in a schema the roles cannot USAGE is not a runtime fact", async () => {
+  // Like the green check above, this needs a genuine kj_worker session, so it runs in the enforce run only.
+  it.skipIf(process.env["KJ_RUNTIME_ROLES"] === "discover")("27.11: a platform function executable by PUBLIC in a schema the roles cannot USAGE is not a runtime fact", async () => {
     await pool.query(`grant execute on function auth.kj_platform_uid() to public`);
     try {
       expect(await fetchRuntimeRoles(pool, { baseline })).toEqual({ available: true, problems: [] });
