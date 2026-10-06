@@ -1,7 +1,8 @@
 # ADR-0023: Reflection, self-model and governed identity growth (KJ-P8)
 
-Status: PROPOSED, revision 2.5 (design only). Nothing here is implemented, migrated or deployed.
-Date: 05/10/2026 (revision 2.5). Revision 2.3 is dated 01/10/2026 and revision 2.4 02/10/2026.
+Status: PROPOSED, revision 2.6 (design only). Nothing here is implemented, migrated or deployed.
+Date: 06/10/2026 (revision 2.6). Revision 2.3 is dated 01/10/2026, revision 2.4 02/10/2026 and revision 2.5
+05/10/2026.
 Base: canonical `main` `750d5b7926f320d8e9d3f64789b8f7035eaa4f3d`. Production: epoch 13, release `cebbb0d`, cognition
 ON, Class C/D frozen (docs/operations/KJ_P7B_LIVE_RESULT_2026-09-30.md).
 
@@ -115,6 +116,22 @@ tightened as hardening of the same boundary; it adds no authority. The section 2
 owner, empty `search_path`, EXECUTE ACL, trigger topology, write ceiling, release authority and concurrency semantics
 are unchanged. Reflection, Class E, proposals, dedupe, the Unicode pin, support provenance, growth-window behaviour,
 adoption, approval, the scheduler, the Shared Brain and the rollout order are untouched.
+
+Revision 2.6 is a narrow docs-only ruling on top of revision 2.5 (`424f85c283a543ba00a650ecc2ecc3a4346623df`), which was
+independently hostile-sealed APPROVE and is not rewritten. The B1 implementation `54a469cb9daab043c72db4d7908439a8dad24248`
+was then hostile-reviewed. Every engineering surface passed except one blocker:
+
+| Finding | Defect | Resolved in |
+|---|---|---|
+| B1-R25-B1 | the design did not define when a catalogue privilege is a runtime capability fact. Read as raw ACLs, privileges and policies inherited through `PUBLIC` inside schemas the runtime role cannot USAGE appear as runtime facts, and the B1 cutover plan offered two unsealed workarounds (revoke platform grants, or add target-specific platform grants to the runtime manifest) | section 27.11 (new), with sections 21, 26, 27.4, 27.6 step 2 and 27.7 and the sequence document made consistent |
+
+Revision 2.6's only authority-relevant change is the capability fact model of section 27.11: an object privilege is a
+runtime capability fact only inside a governed schema on which the role has effective USAGE. **It grants nothing.** It
+defines when an existing catalogue ACL is actually usable by a runtime role. The runtime roles still have USAGE on
+`public` and `kernel_private` only, no CREATE on any schema, no TEMPORARY, no membership and no owner fallback; schema
+facts stay exact, so any new schema USAGE is itself an unexpected fact. The section 27.10 `SECURITY DEFINER` inventory
+is unchanged and remains global over every governed schema. Section 27.11.6 records five implementation hardenings of
+the sealed mechanism from the same review; they add no authority. Nothing else in the design changes.
 
 Section numbers changed from revision 1: section 18 (P8B adoption mechanics) and section 23 (same-tenant references)
 are new, and the later sections moved down.
@@ -1504,7 +1521,7 @@ functions, the `ADOPT` workflow and controlled activation. **There is no auto-ad
 | `reflection.evidenceCarriesNoModelText` | reflection runtime evidence matches the section 15.1 contract | P2 |
 | `reflection.adoptedChangeUnreviewed` | no adopted model change older than the alerting default (14 days) without a `POST_CHANGE` reflection | P3, notified |
 
-| `database.runtimeRolesLeastPrivilege` | the worker and the door are connected as `kj_worker` and `kj_door`; neither role is superuser, owner of any object, member of any role, `BYPASSRLS`, `CREATEDB` or `CREATEROLE`; the catalogue grants and policies equal the manifest; the `SECURITY DEFINER` inventory equals `EXPECTED(stage)` of section 27.10 for the stage the running release declares (so after B1 and before P8A-0 it is the platform baseline plus the section 27.9 exception only; from P8A-0 it adds `freeze_reflection`; from P8B it adds `close_growth_window_by_owner`), and every attribute 27.10 pins for each expected function holds, including for the section 27.9 exception every assertion of 27.9.4; an unlisted, missing or mismatched definer is P0 at every stage | **P0** |
+| `database.runtimeRolesLeastPrivilege` | the worker and the door are connected as `kj_worker` and `kj_door`; neither role is superuser, owner of any object, member of any role, `BYPASSRLS`, `CREATEDB` or `CREATEROLE`; the catalogue grants and policies, as runtime capability facts under section 27.11, equal the manifest; the `SECURITY DEFINER` inventory equals `EXPECTED(stage)` of section 27.10 for the stage the running release declares (so after B1 and before P8A-0 it is the platform baseline plus the section 27.9 exception only; from P8A-0 it adds `freeze_reflection`; from P8B it adds `close_growth_window_by_owner`), and every attribute 27.10 pins for each expected function holds, including for the section 27.9 exception every assertion of 27.9.4; an unlisted, missing or mismatched definer is P0 at every stage | **P0** |
 
 - The P0 and P1 rows are detection behind database prevention; each also has a database constraint or trigger.
 - A Class E behavioural-consumer or topology breach is a **qualification failure** in CI (section 16). It is not
@@ -1692,6 +1709,11 @@ No authority-critical ambiguity is known to remain. Open, and not authority-crit
 - The platform `SECURITY DEFINER` baseline of section 27.10.4 is an engineering artefact of B1 qualification, frozen
   from a read-only catalogue snapshot of the target environment by the sealed procedure. Its entries are not values
   of this ADR; the B1 review checks them.
+- Implementation that predates revision 2.6 (not edited by this revision): the B1 candidate
+  `54a469cb9daab043c72db4d7908439a8dad24248` reads object privileges and policies in every governed schema without the
+  schema-USAGE gate of section 27.11, keys function facts by `schema.name`, and its cutover plan offers the two
+  workarounds section 27.11.5 rules out. It also lacks the five hardenings of section 27.11.6. It stays frozen until
+  revision 2.6 is hostile-sealed, and is then remediated to section 27.11.
 - Implementation that predates revision 2.5 (not edited by this revision): at the frozen B1 candidate
   `108db1b0db5923993eb17888d3039c5a32890c2c`, `services/kernel/src/database/runtime-roles.ts` excludes only
   `pg_catalog`, `information_schema` and `pg_toast` from its definer query, compares only `schema.name`, and has no
@@ -1764,7 +1786,8 @@ only rows that pass the existing and replaced guards; there is no ungoverned wri
 
 One file in the repository is the single source of the grants: for each role, each object, the verbs, the columns
 for column-level UPDATE, the functions executable, and the row level security policy. The B1 migration is generated
-from it or checked against it, and a test compares the live catalogue with it in both directions.
+from it or checked against it, and a test compares the live catalogue with it in both directions. What counts as a
+runtime capability fact on the catalogue side is defined once, by section 27.11.
 
 **Row level security.** Every table already has it enabled and no policy exists. A non-owner role therefore sees
 nothing until policies are added. The B1 migration adds, per table and per verb in the manifest, one explicit policy
@@ -1822,8 +1845,8 @@ inventory, and proved by the full suite before cutover.
    trigger function reads or writes, and produces the object, verb and column list. That list, reviewed, becomes the
    grant manifest. The static baseline in 27.4 is its starting point, not its substitute.
 2. **Catalogue equality.** After the B1 migration, role attributes, memberships, table and column grants, function
-   grants, ownership and policies read from the catalogue equal the manifest exactly. An extra privilege fails the
-   check, as a missing one does. The same check asserts the `SECURITY DEFINER` inventory rule of section 27.10 for the
+   grants, ownership and policies read from the catalogue, as runtime capability facts under section 27.11, equal the
+   manifest exactly. An extra privilege fails the check, as a missing one does. The same check asserts the `SECURITY DEFINER` inventory rule of section 27.10 for the
    stage being qualified (at B1: `EXPECTED(B1)`, the frozen platform baseline plus the section 27.9 exception), and
    every item of section 27.9.4 for the section 27.9 exception.
 3. **Positive requalification, P1 to P7.** The complete existing suite, the faculty, identity and cognition mutation
@@ -1850,6 +1873,10 @@ inventory, and proved by the full suite before cutover.
   runtime-role guard refuses every P8 write and `database.runtimeRolesLeastPrivilege` raises P0. Existing P1 to P7
   paths are not made to depend on P8, so they are not broken by P8 refusing.
 - There is no temporary owner mode, no break-glass switch for P8 and no degraded mode that widens authority.
+- **An unexpected runtime capability fact found in target qualification stops B1** (section 27.11.5). It is classified
+  and reported. A platform grant is not revoked without separate authority, and target-specific authority is not added
+  to the repository manifest to make health green. A genuinely required new runtime capability is a reviewed manifest
+  change under the design authority, as the second bullet above already requires.
 
 ### 27.8 What B1 does not change, and the one thing it may
 
@@ -2188,3 +2215,99 @@ The frozen B1 candidate `108db1b0db5923993eb17888d3039c5a32890c2c` predates revi
 the definer query, has no platform baseline, and its `compareDefinerFunctions()` compares only `schema.name` against
 its manifest. It does not implement this section and is to be remediated only after revision 2.5 is hostile-sealed,
 together with the reconciliation of `docs/operations/KJ_P8_B1_ENTRY_BRIEF.md` noted in section 26.
+
+### 27.11 The runtime capability fact model (B1-R25-B1)
+
+#### 27.11.1 One rule
+
+This section is the single definition of a runtime-role capability fact: the catalogue side of the grant manifest's
+equality in sections 21, 27.4 and 27.6 step 2. It is not the `SECURITY DEFINER` inventory rule (27.11.4).
+
+For a database object inside a schema, a runtime capability fact exists for a runtime role if and only if:
+
+```
+EFFECTIVE_OBJECT_CAPABILITY(role, object, privilege) :=
+      GOVERNED(schema_of(object))                                   -- section 27.10.2
+  AND has_schema_privilege(role, schema_of(object), 'USAGE')        -- effective: direct or through PUBLIC
+  AND <the PostgreSQL effective privilege predicate for the object> -- effective: direct or through PUBLIC
+```
+
+where the object predicate is `has_table_privilege` for a table, view, materialised view, foreign table or partitioned
+table and its partitions; `has_column_privilege` for a column privilege not already held on the whole table;
+`has_sequence_privilege` for a sequence; and `has_function_privilege(..., 'EXECUTE')` for an ordinary callable function.
+
+Rationale (FACT of PostgreSQL privilege semantics): an object inside a schema can be reached only by a role holding
+USAGE on that schema, so an object ACL inherited through `PUBLIC` inside a schema the role cannot USAGE is not runtime
+authority. This rule grants nothing. It states when an existing ACL is usable.
+
+#### 27.11.2 Facts the gate does not apply to
+
+These remain exact, independent facts, with nothing filtered:
+- role attributes; role memberships, in both directions; ownership of any object;
+- database CONNECT, CREATE and TEMPORARY;
+- schema USAGE and schema CREATE, for **every** governed schema, effective (direct or through `PUBLIC`).
+
+Because schema facts are exact, a new USAGE grant on any schema other than `public` and `kernel_private`, including a
+platform schema, is immediately an unexpected `schema:<schema>:USAGE` fact: qualification fails and health raises P0.
+Once that USAGE exists, the object privileges inside that schema are effective and become facts as well. That is the
+intended tripwire: the gate cannot hide authority, because the authority it gates is itself a manifest fact.
+
+#### 27.11.3 Function identity and policy facts
+
+- **Function facts** are keyed by exact PostgreSQL function identity: schema, function name and ordered input argument
+  types, each type written `<type schema>.<type name>`, read without depending on `search_path` (equivalent to a
+  search-path-independent `regprocedure`). Return type is not part of overload identity. Keying by `schema.name`
+  alone is not conforming: it collapses overloads.
+- **Policy facts.** A row level security policy is not itself a grant of authority. A policy is a runtime-role policy
+  fact if and only if:
+  - it applies to the role, by name or through `PUBLIC`;
+  - its relation's schema is governed and has effective USAGE for the role; and
+  - the operation it governs (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, or each of them for `ALL`) is represented by an
+    effective relation or column capability fact of the role on that relation (27.11.1).
+
+  Every KernelJSON-managed policy generated from the runtime manifest in `public` and `kernel_private` remains under
+  exact equality. A policy on a relation the role cannot reach, or for an operation it holds no privilege for, is
+  inert: it is not a fact and is not added to the runtime manifest. If the schema or object authority later becomes
+  effective, the unexpected schema or object fact already makes health red, and the policy is then evaluated as part
+  of the newly reachable surface. An unexpected policy never creates authority by itself.
+
+#### 27.11.4 The `SECURITY DEFINER` inventory is not narrowed
+
+Section 27.10 is unchanged. The definer inventory continues over every governed schema regardless of whether
+`kj_worker` or `kj_door` has USAGE on it: `EXPECTED(stage) = PLATFORM_BASELINE UNION KERNELJSON_STAGE_MANIFEST(stage)`
+against every governed `SECURITY DEFINER` function. A definer in `auth`, `storage`, `extensions`, a new application
+schema or any other governed schema remains inventoried and fingerprinted. The schema-USAGE gate of 27.11.1 is never
+applied to section 27.10.
+
+#### 27.11.5 The manifest stays environment-independent; target qualification fails closed
+
+- The runtime-role manifest stays repository-controlled and environment-independent. It does not list target-only
+  objects (for example `auth.*`, `storage.*`, `extensions.*`, `graphql.*` or `pg_stat_statements`) merely because they
+  carry `PUBLIC` ACLs on the hosted platform. There is no target-specific runtime grant baseline. The platform
+  `SECURITY DEFINER` baseline of 27.10.4 remains target-specific, exactly as sealed.
+- **In target qualification, if an unexpected runtime capability fact exists after applying 27.11: stop.** Classify it
+  and report it. Do not revoke a platform grant without separate authority. Do not add target-specific authority to the
+  repository manifest to make health green. A genuinely required new runtime capability is a reviewed manifest change
+  under the design authority (section 27.7).
+
+#### 27.11.6 Required B1 implementation hardening (no new authority)
+
+These make the sealed mechanism exact. They are required in the B1 remediation and add no authority:
+
+1. Function capability facts use exact overload identity (27.11.3), not `schema.name`.
+2. The target snapshot tool refuses an empty connection-string file, so the PostgreSQL client can never fall back to
+   `PG*` environment variables or a local default.
+3. The snapshot requires that the migration ledger exists, that its head equals the final base migration of canonical
+   `main` expected before B1, and that `kernel_private.stamp_binding_provenance()` exists. Otherwise it refuses.
+4. Runtime health verifies that the committed target baseline's `systemIdentifier` equals the live database's system
+   identifier; a different database is a P0 baseline mismatch.
+5. Cutover wording must state the real transaction behaviour. Checks that run after the B1 migration has committed
+   cannot roll it back: they either move inside the migration before COMMIT, or the plan states the actual forward or
+   abort behaviour (a failed post-commit check stops the window and invokes the recorded rollback procedure).
+
+#### 27.11.7 Negative cases
+
+Each ships with a negative case that makes it fail on purpose: a `PUBLIC` table and function grant in a governed
+schema without USAGE (no fact); the same after a USAGE grant on that schema (unexpected schema fact and object facts);
+an overload of a manifest function (separate fact); a `PUBLIC` policy on an unreachable relation (no fact) and on a
+reachable one (fact); and a definer in a schema without USAGE (still inventoried by 27.10).
