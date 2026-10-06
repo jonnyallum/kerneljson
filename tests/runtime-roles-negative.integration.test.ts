@@ -32,6 +32,11 @@ beforeAll(async () => {
   owner.on("error", () => {});
   await migrate(owner);
   await owner.query(`create role kj_b1_probe_target nologin`).catch(() => undefined);
+  // Section 27.9.5 binding probes: a tenant and a principal to bind against, and a canonical epoch distinct from the
+  // column default so that a forged or defaulted value cannot pass for a stamped one.
+  await owner.query(`insert into public.tenants(id, name) values ($1, 'kj-b1-probe')`, [TENANT]);
+  await owner.query(`insert into public.principals(id, kind) values ($1, 'SERVICE')`, [PRINCIPAL]);
+  await owner.query(`update kernel_private.release_epoch set epoch = 7`);
   for (const role of RUNTIME_ROLES) {
     session[role] = new pg.Client({ connectionString: url(role) });
     await session[role].connect();
@@ -54,6 +59,7 @@ async function attempt(role: RuntimeRole, sql: string): Promise<string> {
   try { await session[role].query(sql); return "OK"; } catch (error) { return (error as { code?: string }).code ?? "NO_SQLSTATE"; }
 }
 const UUID = "00000000-0000-4000-8000-000000000001";
+const TENANT = "00000000-0000-4000-8000-0000000000b1", PRINCIPAL = "00000000-0000-4000-8000-0000000000b2";
 
 /** Powers no runtime role may hold. [probe name, statement, pinned SQLSTATE]. */
 const FORBIDDEN: [string, string, string][] = [
@@ -181,4 +187,117 @@ describe("B1 role separation", () => {
     results.push({ role, probe, sql, expected: "42501", observed, pass: observed === "42501" });
     expect(observed).toBe("42501");
   });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// ADR-0023 revision 2.5, section 27.9.5: the release-provenance definer exception. "Refused" means both the SQLSTATE
+// and an owner re-read showing nothing changed. The SQLSTATE is the one the sealed design requires; a different one
+// (for the direct call, 0A000 "trigger functions can only be called as triggers") fails the probe and is a
+// DESIGN_MISMATCH to adjudicate, never a reason to relax it. The ACL proof is the catalogue assertion of
+// tests/runtime-roles-definers.integration.test.ts, not this probe.
+const STAMP = "kernel_private.stamp_binding_provenance()";
+const state = {
+  stamp: async () => (await owner.query(
+    `select p.prosecdef, p.proconfig, p.proacl::text[] as acl, pg_get_userbyid(p.proowner) as owner, md5(p.prosrc) as src
+       from pg_proc p where p.oid = '${STAMP}'::regprocedure`)).rows,
+  triggers: async () => (await owner.query(
+    `select t.tgname, t.tgrelid::regclass::text as rel, t.tgenabled, t.tgtype, t.tgqual is null as noqual from pg_trigger t
+      where t.tgfoid = '${STAMP}'::regprocedure order by 1, 2`)).rows,
+  epoch: async () => (await owner.query(`select epoch::text from kernel_private.release_epoch`)).rows,
+  activations: async () => (await owner.query(`select count(*)::int as n, coalesce(md5(string_agg(epoch::text || release_id, ',' order by epoch)), '') as h from kernel_private.release_activations`)).rows,
+  names: async () => (await owner.query(
+    `select n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' as f from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where p.proname = 'stamp_binding_provenance' order by 1`)).rows,
+  shadows: async () => (await owner.query(
+    `select n.nspname || '.' || c.relname as rel from pg_class c join pg_namespace n on n.oid = c.relnamespace where c.relname = 'release_epoch' order by 1`)).rows,
+  schemas: async () => (await owner.query(`select nspname from pg_namespace where nspname like 'kj_b1_%' order by 1`)).rows,
+};
+type Probe = [number, string, string, string, (keyof typeof state)[]];
+/** [sealed row, probe, statement, required SQLSTATE, state that must be unchanged]. `$ROLE` is the probing role. */
+const PROBES: Probe[] = [
+  [1, "call the stamp function directly", `select ${STAMP}`, "42501", ["stamp", "epoch"]],
+  [2, "UPDATE release_epoch, no-op form", `update kernel_private.release_epoch set epoch = epoch`, "42501", ["epoch"]],
+  [3, "UPDATE release_epoch, value-changing form", `update kernel_private.release_epoch set epoch = epoch + 1`, "42501", ["epoch"]],
+  [4, "INSERT into release_epoch", `insert into kernel_private.release_epoch(singleton, epoch) values (true, 99)`, "42501", ["epoch"]],
+  [5, "DELETE from release_epoch", `delete from kernel_private.release_epoch`, "42501", ["epoch"]],
+  [6, "INSERT into release_activations",
+    `insert into kernel_private.release_activations(epoch, request_id, release_id, activated_at, created_by, evidence) values (999999, '${UUID}', 'x', now(), 'x', '{"x":1}')`, "42501", ["activations"]],
+  [7, "UPDATE release_activations", `update kernel_private.release_activations set release_id = release_id`, "42501", ["activations"]],
+  [8, "DELETE from release_activations", `delete from kernel_private.release_activations`, "42501", ["activations"]],
+  [9, "execute activate_release", `select kernel_private.activate_release('${UUID}', 'kj-b1-probe', 7, '{"probe":true}'::jsonb)`, "42501", ["epoch", "activations"]],
+  [10, "CREATE OR REPLACE the stamp function",
+    `create or replace function ${STAMP} returns trigger language plpgsql security invoker as $f$ begin return new; end $f$`, "42501", ["stamp"]],
+  [11, "ALTER FUNCTION OWNER TO the probing role", `alter function ${STAMP} owner to $ROLE`, "42501", ["stamp"]],
+  [12, "ALTER FUNCTION SECURITY INVOKER", `alter function ${STAMP} security invoker`, "42501", ["stamp"]],
+  [13, "ALTER FUNCTION SET search_path = public", `alter function ${STAMP} set search_path = public`, "42501", ["stamp"]],
+  [14, "ALTER FUNCTION RESET search_path", `alter function ${STAMP} reset search_path`, "42501", ["stamp"]],
+  [15, "GRANT EXECUTE to the probing role", `grant execute on function ${STAMP} to $ROLE`, "42501", ["stamp"]],
+  [15, "GRANT EXECUTE to PUBLIC", `grant execute on function ${STAMP} to public`, "42501", ["stamp"]],
+  [16, "CREATE TRIGGER attaching it to another table",
+    `create trigger kj_b1_attach before insert on kernel_private.dispatch_events for each row execute function ${STAMP}`, "42501", ["triggers"]],
+  [17, "CREATE TRIGGER attaching it a second time to execution_bindings",
+    `create trigger kj_b1_second before insert on kernel_private.execution_bindings for each row execute function ${STAMP}`, "42501", ["triggers"]],
+  [18, "DROP TRIGGER execution_bindings_provenance", `drop trigger execution_bindings_provenance on kernel_private.execution_bindings`, "42501", ["triggers"]],
+  [19, "ALTER TRIGGER ... RENAME", `alter trigger execution_bindings_provenance on kernel_private.execution_bindings rename to kj_b1_renamed`, "42501", ["triggers"]],
+  [20, "DISABLE TRIGGER execution_bindings_provenance", `alter table kernel_private.execution_bindings disable trigger execution_bindings_provenance`, "42501", ["triggers"]],
+  [20, "DISABLE TRIGGER ALL", `alter table kernel_private.execution_bindings disable trigger all`, "42501", ["triggers"]],
+  [20, "ENABLE REPLICA TRIGGER", `alter table kernel_private.execution_bindings enable replica trigger execution_bindings_provenance`, "42501", ["triggers"]],
+  [21, "CREATE FUNCTION public.stamp_binding_provenance()",
+    `create function public.stamp_binding_provenance() returns trigger language plpgsql as $f$ begin return new; end $f$`, "42501", ["names"]],
+  [21, "CREATE FUNCTION kernel_private.stamp_binding_provenance(integer)",
+    `create function kernel_private.stamp_binding_provenance(integer) returns trigger language plpgsql as $f$ begin return new; end $f$`, "42501", ["names"]],
+  [22, "CREATE SCHEMA (to hold a function)", `create schema kj_b1_escape`, "42501", ["schemas"]],
+  [23, "a temporary table named release_epoch", `create temporary table release_epoch (singleton boolean, epoch bigint)`, "42501", ["shadows"]],
+  [24, "a table in public named release_epoch", `create table public.release_epoch (singleton boolean, epoch bigint)`, "42501", ["shadows"]],
+];
+const probeResults: Record<string, unknown>[] = [];
+
+describe.each(RUNTIME_ROLES)("ADR-0023 27.9.5 release-provenance probes: %s", (role: RuntimeRole) => {
+  it.each(PROBES)("row %i: %s", async (row, probe, statement, expected, unchanged) => {
+    const sql = statement.replaceAll("$ROLE", role);
+    const before = await Promise.all(unchanged.map((k) => state[k]()));
+    const observed = await attempt(role, sql);
+    const after = await Promise.all(unchanged.map((k) => state[k]()));
+    const stateUnchanged = JSON.stringify(after) === JSON.stringify(before);
+    probeResults.push({ role, row, probe, sql, expected, observed, stateUnchanged, pass: observed === expected && stateUnchanged });
+    results.push({ role, probe: `27.9.5 row ${row}: ${probe}`, sql, expected, observed, pass: observed === expected && stateUnchanged });
+    expect(observed).toBe(expected);
+    expect(after).toEqual(before);
+  });
+
+  const bind = async (extra: { epoch?: number; persistedAt?: string } = {}) => {
+    const id = randomUUID();
+    const contract = JSON.stringify({ taskId: id, tenantId: TENANT, principal: { id: PRINCIPAL } });
+    const columns = ["task_id", "tenant_id", "principal_id", "contract", ...(extra.epoch !== undefined ? ["release_epoch"] : []), ...(extra.persistedAt ? ["persisted_at"] : [])];
+    const values = [id, TENANT, PRINCIPAL, contract, ...(extra.epoch !== undefined ? [extra.epoch] : []), ...(extra.persistedAt ? [extra.persistedAt] : [])];
+    await session[role].query(`insert into kernel_private.execution_bindings(${columns.join(", ")}) values (${values.map((_, i) => `$${i + 1}`).join(", ")})`, values);
+    return (await owner.query<{ epoch: string; persisted: string | null; recent: boolean }>(
+      `select release_epoch::text as epoch, persisted_at::text as persisted, persisted_at > now() - interval '5 minutes' as recent
+         from kernel_private.execution_bindings where task_id = $1`, [id])).rows[0]!;
+  };
+
+  it("row 25: a changed session search_path does not affect the stamp", async () => {
+    await session[role].query(`set search_path = public, pg_temp`);
+    try {
+      const stamped = await bind();
+      probeResults.push({ role, row: 25, probe: "search_path manipulation then insert", observed: stamped, pass: stamped.epoch === "7" && stamped.recent });
+      expect(stamped).toMatchObject({ epoch: "7", recent: true });
+    } finally { await session[role].query(`reset search_path`); }
+  });
+  it("row 26: forged release_epoch and persisted_at are overwritten with the canonical epoch and a fresh timestamp", async () => {
+    const stamped = await bind({ epoch: 999999, persistedAt: "2000-01-01T00:00:00Z" });
+    probeResults.push({ role, row: 26, probe: "forged release_epoch / persisted_at", observed: stamped, pass: stamped.epoch === "7" && stamped.recent });
+    expect(stamped).toMatchObject({ epoch: "7", recent: true });
+  });
+  it("row 27: repeated binding inserts do not change the release epoch's value", async () => {
+    const before = await state.epoch();
+    for (let i = 0; i < 3; i++) expect((await bind()).epoch).toBe("7");
+    expect(await state.epoch()).toEqual(before);
+    probeResults.push({ role, row: 27, probe: "repeated binding inserts", observed: await state.epoch(), pass: true });
+  });
+});
+
+afterAll(() => {
+  mkdirSync("artifacts/local", { recursive: true });
+  writeFileSync("artifacts/local/b1-definer-probes.json", JSON.stringify({ contract: "kerneljson:b1-definer-probes/v1", design: "424f85c283a543ba00a650ecc2ecc3a4346623df", results: probeResults }, null, 2) + "\n");
 });

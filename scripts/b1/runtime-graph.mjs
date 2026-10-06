@@ -28,6 +28,8 @@ export const DEPLOYMENT_MODULES = [
   "services/kernel/src/identity/provisioning-pg.ts",
   "services/kernel/src/approval-test-cli.ts",
   "services/evaluator/src/cli.ts",
+  // ADR-0023 revision 2.5 section 27.10.4: the read-only pre-B1 platform baseline snapshot, run by the deployment owner.
+  "services/kernel/src/database/platform-baseline-snapshot.ts",
 ];
 
 // ---------------------------------------------------------------------------------------------------------------

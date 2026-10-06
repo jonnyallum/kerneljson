@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { excludedSchemaSql } from "./security-definers.js";
 
 /**
- * KJ-P8 B1 (ADR-0023 revision 2.3, section 27) - least-privilege runtime database roles.
+ * KJ-P8 B1 (ADR-0023 revision 2.5, section 27, sealed at 424f85c283a543ba00a650ecc2ecc3a4346623df) - least-privilege
+ * runtime database roles. The SECURITY DEFINER inventory of section 27.10 lives in ./security-definers.ts.
  *
  * Two things live here, and nothing else:
  *   1. `assertRuntimeRole`: every runtime process proves, before it serves anything, that its database session is
@@ -99,7 +101,7 @@ export interface RoleManifest {
 export interface RuntimeRoleManifest {
   contract: "kerneljson:runtime-role-manifest/v1";
   roles: Record<RuntimeRole, RoleManifest>;
-  /** Trigger functions that run with the owner's rights. Any other SECURITY DEFINER function is a failure. */
+  /** The section 27.9 exception, with its reason. The full inventory rule is the stage manifest of section 27.10. */
   securityDefinerTriggers: Record<string, string>;
 }
 export const MANIFEST_PATH = "infrastructure/database/runtime-role-manifest.json";
@@ -140,7 +142,8 @@ export function expectedFacts(manifest: RuntimeRoleManifest, role: RuntimeRole):
   return [...new Set(facts)].sort();
 }
 
-const SYSTEM_SCHEMAS = `('pg_catalog','information_schema','pg_toast')`;
+/** Section 27.10.2: the one exact predicate for schemas outside the catalogue comparisons. */
+const GOVERNED = (column: string): string => `not ${excludedSchemaSql(column)}`;
 /** The complete actual capability set of one role, read from the catalogues. Effective privileges, PUBLIC included. */
 export async function actualFacts(db: Db, role: RuntimeRole): Promise<string[]> {
   const facts: string[] = [];
@@ -166,7 +169,7 @@ export async function actualFacts(db: Db, role: RuntimeRole): Promise<string[]> 
     facts.push(`owns:${o.what}`);
   for (const s of await q<{ nspname: string; p: string }>(
     `select n.nspname, p from pg_namespace n, unnest(array['USAGE','CREATE']) p
-      where n.nspname not in ${SYSTEM_SCHEMAS} and n.nspname !~ '^pg_(temp|toast_temp)_' and has_schema_privilege($1, n.oid, p)`,
+      where ${GOVERNED("n.nspname")} and has_schema_privilege($1, n.oid, p)`,
   ))
     facts.push(`schema:${s.nspname}:${s.p}`);
   for (const d of await q<{ p: string }>(
@@ -177,7 +180,7 @@ export async function actualFacts(db: Db, role: RuntimeRole): Promise<string[]> 
     `select n.nspname || '.' || c.relname as name, p
        from pg_class c join pg_namespace n on n.oid = c.relnamespace,
             unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p
-      where c.relkind in ('r','v','m','p','f') and n.nspname not in ${SYSTEM_SCHEMAS} and has_table_privilege($1, c.oid, p)`,
+      where c.relkind in ('r','v','m','p','f') and ${GOVERNED("n.nspname")} and has_table_privilege($1, c.oid, p)`,
   ))
     facts.push(`relation:${t.name}:${t.p}`);
   for (const c of await q<{ name: string; p: string }>(
@@ -185,20 +188,20 @@ export async function actualFacts(db: Db, role: RuntimeRole): Promise<string[]> 
        from pg_class c join pg_namespace n on n.oid = c.relnamespace
        join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped,
             unnest(array['SELECT','INSERT','UPDATE','REFERENCES']) p
-      where c.relkind in ('r','v','m','p','f') and n.nspname not in ${SYSTEM_SCHEMAS}
+      where c.relkind in ('r','v','m','p','f') and ${GOVERNED("n.nspname")}
         and not has_table_privilege($1, c.oid, p) and has_column_privilege($1, c.oid, a.attnum, p)`,
   ))
     facts.push(`column:${c.name}:${c.p}`);
   for (const s of await q<{ name: string; p: string }>(
     `select n.nspname || '.' || c.relname as name, p
        from pg_class c join pg_namespace n on n.oid = c.relnamespace, unnest(array['USAGE','SELECT','UPDATE']) p
-      where c.relkind = 'S' and n.nspname not in ${SYSTEM_SCHEMAS} and has_sequence_privilege($1, c.oid, p)`,
+      where c.relkind = 'S' and ${GOVERNED("n.nspname")} and has_sequence_privilege($1, c.oid, p)`,
   ))
     facts.push(`sequence:${s.name}:${s.p}`);
   for (const f of await q<{ name: string }>(
     `select distinct n.nspname || '.' || p.proname as name
        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname not in ${SYSTEM_SCHEMAS} and p.prorettype <> 'trigger'::regtype and has_function_privilege($1, p.oid, 'EXECUTE')`,
+      where ${GOVERNED("n.nspname")} and p.prorettype <> 'trigger'::regtype and has_function_privilege($1, p.oid, 'EXECUTE')`,
   ))
     facts.push(`function:${f.name}:EXECUTE`);
   for (const p of await q<{ name: string; policyname: string; cmd: string; qual: string | null; with_check: string | null; permissive: string }>(
@@ -210,15 +213,6 @@ export async function actualFacts(db: Db, role: RuntimeRole): Promise<string[]> 
         (p.permissive === "PERMISSIVE" ? "" : ":restrictive"),
     );
   return [...new Set(facts)].sort();
-}
-
-/** SECURITY DEFINER functions in the application schemas: exactly the manifest's list, in both directions. */
-export async function compareDefinerFunctions(db: Db, manifest: RuntimeRoleManifest): Promise<CatalogueDiff> {
-  const { rows } = await db.query<{ name: string }>(
-    `select n.nspname || '.' || p.proname as name from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-      where p.prosecdef and n.nspname not in ${SYSTEM_SCHEMAS}`,
-  );
-  return diffFacts(Object.keys(manifest.securityDefinerTriggers).sort(), rows.map((r) => r.name).sort());
 }
 
 export interface CatalogueDiff { missing: string[]; extra: string[] }

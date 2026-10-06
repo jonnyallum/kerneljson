@@ -63,14 +63,15 @@ export async function until<T>(
   }
   throw new Error(`Local readiness timeout: ${String(last)}`);
 }
-export async function migrate(pool: pg.Pool): Promise<void> {
+/** Apply every migration in order. `options.exclude` leaves named files out (KJ-P8 B1: a database migrated from main without B1). */
+export async function migrate(pool: pg.Pool, options: { exclude?: readonly string[]; only?: readonly string[] } = {}): Promise<void> {
   await pool.query(`do $$ begin
     if not exists(select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
     if not exists(select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
     if not exists(select 1 from pg_roles where rolname='service_role') then create role service_role nologin bypassrls; end if;
   end $$`);
   for (const file of (await readdir("supabase/migrations"))
-    .filter((f) => f.endsWith(".sql"))
+    .filter((f) => f.endsWith(".sql") && !options.exclude?.includes(f) && (!options.only || options.only.includes(f)))
     .sort()) {
     const db = await pool.connect();
     try {

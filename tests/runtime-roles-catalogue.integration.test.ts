@@ -3,9 +3,8 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { DATABASE, compose, holdRuntime, migrate, until } from "./support/local.js";
-import { fetchRuntimeRoles } from "../services/kernel/src/health/collect.js";
 import {
-  RUNTIME_ROLES, actualFacts, compareDefinerFunctions, compareRoleToManifest, diffFacts, expectedFacts, loadManifest, type RuntimeRole,
+  RUNTIME_ROLES, actualFacts, compareRoleToManifest, diffFacts, expectedFacts, loadManifest, type RuntimeRole,
 } from "../services/kernel/src/database/runtime-roles.js";
 
 /**
@@ -112,37 +111,8 @@ describe.each(RUNTIME_ROLES)("B1 catalogue equality for %s", (role: RuntimeRole)
   });
 });
 
-describe("B1 security definer functions", () => {
-  it("are exactly the manifest's list", async () => {
-    expect(await compareDefinerFunctions(owner, manifest)).toEqual({ missing: [], extra: [] });
-  });
-  it("an unlisted definer function is reported", async () => {
-    await pool.query(`create function public.kj_b1_probe_definer() returns int language sql security definer as 'select 1'`);
-    try {
-      expect((await compareDefinerFunctions(owner, manifest)).extra).toEqual(["public.kj_b1_probe_definer"]);
-    } finally { await pool.query(`drop function public.kj_b1_probe_definer()`); }
-  });
-});
-
-describe("B1 health observation (database.runtimeRolesLeastPrivilege)", () => {
-  // The discovery run executes runtime statements on an owner session under SET ROLE, which the guard rightly
-  // refuses as "not kj_worker". This observation needs a genuine session, so it runs in the enforce run only.
-  it.skipIf(process.env["KJ_RUNTIME_ROLES"] === "discover")("reports no problem on a correctly migrated database, read as kj_worker", async () => {
-    expect(await fetchRuntimeRoles(pool)).toEqual({ available: true, problems: [] });
-  });
-  it("reports an unlisted privilege and an unlisted definer function", async () => {
-    await pool.query(`grant truncate on public.task_events to kj_door`);
-    await pool.query(`create function public.kj_b1_probe_definer2() returns int language sql security definer as 'select 1'`);
-    try {
-      const observed = await fetchRuntimeRoles(pool);
-      expect(observed.available && observed.problems).toEqual(
-        expect.arrayContaining(["kj_door holds unlisted relation:public.task_events:TRUNCATE", "unlisted SECURITY DEFINER function public.kj_b1_probe_definer2"]));
-    } finally {
-      await pool.query(`drop function public.kj_b1_probe_definer2()`);
-      await pool.query(`revoke truncate on public.task_events from kj_door`);
-    }
-  });
-});
+// The SECURITY DEFINER inventory (ADR-0023 revision 2.5, section 27.10) and the health observation that includes it
+// need a database snapshotted before B1, so they live in tests/runtime-roles-definers.integration.test.ts.
 
 describe("B1 comparison is a pure set difference", () => {
   it("reports each side independently", () => {

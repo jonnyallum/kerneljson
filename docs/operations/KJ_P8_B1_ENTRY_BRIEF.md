@@ -1,12 +1,20 @@
 # KJ-P8 B1 entry brief: least-privilege runtime database roles
 
-Status: BRIEF ONLY. B1 is **not authorised and not started**. This file extracts the B1 contract from the sealed
-design so the next engineering session starts from one place. It adds nothing to the design and changes nothing in
-it. Where this brief and the ADR differ, the ADR wins.
+Status: BRIEF ONLY, reconciled to ADR-0023 revision 2.5. It extracts the B1 contract from the sealed design so an
+engineering session starts from one place. It adds nothing to the design and changes nothing in it. Where this brief
+and the ADR differ, the ADR wins. B1 is authorised for remediation and qualification only; it is not merged, not
+deployed and not cut over.
 
-Source: ADR-0023 revision 2.3, section 27, at sealed commit `679e3a3dfc7a33f9106ed77913d49cdac19166d5`
-(`docs/adr/0023-reflection-self-model-governed-growth.md`, on branch `design/kjp8-reflection-governed-growth`).
-Seal: `docs/reviews/KJ_P8_ADR0023_R23_HOSTILE_SEAL_679e3a3.md`.
+Source: ADR-0023 revision 2.5, section 27 (including sections 27.9 and 27.10), at hostile-sealed commit
+`424f85c283a543ba00a650ecc2ecc3a4346623df` (verdict APPROVE; it closes P8-R24-B1), in
+`docs/adr/0023-reflection-self-model-governed-growth.md` on branch `design/kjp8-reflection-governed-growth`. Earlier
+seals: revision 2.3 at `679e3a3dfc7a33f9106ed77913d49cdac19166d5`
+(`docs/reviews/KJ_P8_ADR0023_R23_HOSTILE_SEAL_679e3a3.md`); revision 2.4 at `8a17de18b26edd12a9f3af7ab6179552ff0cd20e`
+was BLOCKED.
+
+Reconciliation note: the revision 2.3 version of this brief said B1 changes no P1 to P7 trigger and that trigger
+functions are `security invoker`. Revision 2.5 replaces that: B1 changes exactly one existing function to
+`SECURITY DEFINER` (section 15 of this brief), and the definer inventory is stage-aware (section 16).
 
 ## Rule
 
@@ -14,7 +22,10 @@ No runtime process connects to the production database as an owner or a superuse
 until that is true and qualified. B1 is first in both the implementation order and the production order:
 **B1, P8A-0, B2, P8A-1, P8A-2, P8B.**
 
-B1 changes no P1 to P7 behaviour, contract, trigger or applied migration file, and adds no P8 object.
+B1 changes no P1 to P7 behaviour, contract, trigger topology or applied migration file, and adds no P8 object. Its
+one permitted security-mechanism change is the section 27.9 exception: the existing
+`kernel_private.stamp_binding_provenance()` changes from `SECURITY INVOKER` to `SECURITY DEFINER`. No other B1
+function may become `SECURITY DEFINER`.
 
 ## 1. Runtime roles required
 
@@ -42,7 +53,9 @@ Neither role may, and each line is a negative test:
 - TRUNCATE any table;
 - GRANT or REVOKE anything;
 - apply or record a migration;
-- execute `activate_release`, or write `release_epoch` or `release_activations`;
+- execute `activate_release`, or INSERT, UPDATE or DELETE `release_epoch` or `release_activations` (the
+  lock-and-stamp of section 27.9 runs with the owner's rights, never through a grant);
+- execute, replace, alter, re-own, re-attach or grant `kernel_private.stamp_binding_provenance()`;
 - execute `set_identity_freeze`;
 - UPDATE or DELETE on any append-only table;
 - assume another role, or bypass row level security.
@@ -93,8 +106,8 @@ run P8 with wider authority. It is a guard against an operational fallback, not 
 The ADR's starting baseline (section 27.4) is a static survey of the code at `750d5b7` and is inference until this
 inventory completes and freezes it:
 
-- `kj_worker` SELECT: every table and view in `public` and `kernel_private` (triggers are `security invoker` and read
-  widely).
+- `kj_worker` SELECT: every table and view in `public` and `kernel_private` (trigger functions are `security
+  invoker`, with the single enumerated exception of ADR 27.9, and read widely).
 - `kj_worker` INSERT: the tables it writes today (the task ledger tables, evaluations, world-model tables, capability
   tables, memory tables, schedule tables, `faculty_pins`, identity tables, `principals`, `tenant_memberships`, and in
   `kernel_private` the binding, admission, dispatch, effect, control, latch, alert, terminal-result, notification and
@@ -118,7 +131,10 @@ and equality-test it. It is not written here.
 ## 8. Required negative privilege probes
 
 Connected as each runtime role, every operation in section 3 of this brief is attempted and must fail, with
-SQLSTATE `42501` or the named refusal. A check that has not been seen to fail is not accepted.
+SQLSTATE `42501` or the named refusal. A check that has not been seen to fail is not accepted. The committed negative
+suite also runs every probe of ADR 27.9.5 (27 rows) on genuine login sessions of both roles; "refused" means the
+SQLSTATE the design requires and an owner re-read showing nothing changed. A different SQLSTATE (for the direct call,
+`0A000` instead of `42501`) is a DESIGN_MISMATCH to adjudicate, never a reason to relax the probe.
 
 ## 9. Full P1 to P7 requalification
 
@@ -167,7 +183,13 @@ widens authority.
 4. The catalogue-equality test, passing in both directions.
 5. The positive requalification record: suite counts equal to baseline, zero `42501`.
 6. The negative probe record: every denied operation seen to fail, for both roles.
-7. The health check `database.runtimeRolesLeastPrivilege`, with a selftest fixture that makes it fail on purpose.
+7. The health check `database.runtimeRolesLeastPrivilege`, with a selftest fixture that makes it fail on purpose. It
+   includes the stage-aware `SECURITY DEFINER` inventory of section 16.
+7a. The section 27.9 exception, qualified: source digest pinned from two agreeing derivations, and the exact
+   catalogue values of 27.9.4 observed and recorded.
+7b. The KernelJSON stage manifest `kerneljson:security-definer-stage-manifest/v1`, declaring stage B1.
+7c. The frozen target platform baseline `kerneljson:security-definer-platform-baseline/v1`, taken read-only from the
+   target before the B1 migration. B1 cannot be cut over without it.
 8. The production cutover record: `current_user` of the running worker and door, the live proof, health.
 9. The soak record.
 10. B1's own review, as the sequence document requires.
@@ -177,5 +199,36 @@ widens authority.
 These were not observed during design and are not assumed:
 
 - the door's current database role in production;
+- the platform `SECURITY DEFINER` functions present in the target before B1 (the frozen baseline of section 16);
 - whether the hosting platform lets the owner create roles with exactly these attributes;
 - the complete list of upsert targets and private functions, which the inventory fixes.
+
+## 15. The one B1 `SECURITY DEFINER` exception (ADR 27.9)
+
+`kernel_private.stamp_binding_provenance()`: no arguments, returns `pg_catalog.trigger`. B1 changes only its security
+attributes: it becomes `SECURITY DEFINER`, keeps `search_path = ''` and keeps the deployment owner. The B1 migration
+contains no `CREATE FUNCTION` or `CREATE OR REPLACE FUNCTION` for it; its body is proved unchanged by the source digest
+of ADR 27.9.3 (SHA-256 of `pg_proc.prosrc`, UTF-8, CRLF replaced by LF), derived twice and the two derivations must
+agree: (A) from the catalogue of a database migrated from `main` without B1, and (B) from the text between the dollar
+quotes in applied migration `20260916205049_release_provenance.sql`. Exact catalogue values (27.9.4): `proconfig`
+exactly `{"search_path=\"\""}`; `proacl` exactly the owner's EXECUTE and nothing for `PUBLIC`, `kj_worker`, `kj_door`
+or any other role (a null `proacl` fails); exactly one trigger, `execution_bindings_provenance`, BEFORE INSERT FOR EACH
+ROW on `kernel_private.execution_bindings`, `tgtype = 7`, `tgenabled = 'O'`, no `WHEN`; and exactly one function in all
+governed schemas named `stamp_binding_provenance`.
+
+## 16. The stage-aware `SECURITY DEFINER` inventory (ADR 27.10)
+
+`EXPECTED(stage) = PLATFORM_BASELINE UNION KERNELJSON_STAGE_MANIFEST(stage)`; `ACTUAL` is every `pg_proc` row with
+`prosecdef = true` in a governed schema. Equality is in both directions; extra, missing, moved, wrong arguments, wrong
+return type, owner, language, `proconfig`, ACL (KernelJSON functions) or source digest all fail, and in health are P0.
+
+- Governed schemas: every schema except `pg_catalog`, `information_schema`, `pg_toast`, `^pg_temp_[0-9]+$` and
+  `^pg_toast_temp_[0-9]+$`. No platform-looking name or owner exempts a schema.
+- KernelJSON stage sets: B1 is `stamp_binding_provenance()` only. From P8A-0 the manifest adds
+  `kernel_private.freeze_reflection(pg_catalog.uuid)` returning `pg_catalog.void`; from P8B it adds
+  `kernel_private.close_growth_window_by_owner(pg_catalog.uuid, pg_catalog.uuid)` returning
+  `kernel_private.identity_growth_window_closures`. B1 creates neither later function; the manifest only knows them.
+- The declared stage is bound to the migrations the release carries; it is not a free label.
+- The platform baseline is a frozen, reviewed artefact from a read-only snapshot of the target before B1. It may not
+  contain anything in `public` or `kernel_private`, anything named `stamp_binding_provenance`, or any stage-manifest
+  function. A later platform change turns health red until a reviewed refresh; nothing is learned automatically.

@@ -1,4 +1,5 @@
-import { RUNTIME_ROLES, RuntimeRoleRefusal, assertRuntimeRole, compareDefinerFunctions, compareRoleToManifest, loadManifest } from "../database/runtime-roles.js";
+import { RUNTIME_ROLES, RuntimeRoleRefusal, assertRuntimeRole, compareRoleToManifest, loadManifest } from "../database/runtime-roles.js";
+import { definerInventoryProblems, loadPlatformBaseline, loadStageManifest, type PlatformBaseline } from "../database/security-definers.js";
 import { collectBindingProvenance } from "./release-provenance.js";
 import type pg from "pg";
 import { createRestateAdminClient, type RestateAdminClient } from "./restate-client.js";
@@ -309,10 +310,17 @@ export interface CollectDeps {
   now?: () => Date;
 }
 
-/** KJ-P8 B1: is this session exactly kj_worker, and do both runtime roles hold exactly the frozen manifest? */
-export async function fetchRuntimeRoles(pool: pg.Pool): Promise<HealthSnapshot["database"]["runtimeRoles"]> {
+/**
+ * KJ-P8 B1: is this session exactly kj_worker, do both runtime roles hold exactly the frozen manifest, and does the
+ * SECURITY DEFINER inventory equal EXPECTED(stage) of ADR-0023 section 27.10 for the stage this release declares?
+ * `baseline` defaults to the committed frozen platform baseline; while none is committed the check reports
+ * TARGET_PLATFORM_BASELINE_PENDING and stays red.
+ */
+export async function fetchRuntimeRoles(pool: pg.Pool, options: { baseline?: PlatformBaseline | null } = {}): Promise<HealthSnapshot["database"]["runtimeRoles"]> {
   try {
     const manifest = loadManifest();
+    const stages = loadStageManifest();
+    const baseline = options.baseline === undefined ? loadPlatformBaseline() : options.baseline;
     const problems: string[] = [];
     try {
       await assertRuntimeRole(pool, "kj_worker");
@@ -325,9 +333,7 @@ export async function fetchRuntimeRoles(pool: pg.Pool): Promise<HealthSnapshot["
       for (const f of diff.missing) problems.push(`${role} lacks ${f}`);
       for (const f of diff.extra) problems.push(`${role} holds unlisted ${f}`);
     }
-    const definer = await compareDefinerFunctions(pool, manifest);
-    for (const f of definer.missing) problems.push(`${f} is not SECURITY DEFINER as the manifest requires`);
-    for (const f of definer.extra) problems.push(`unlisted SECURITY DEFINER function ${f}`);
+    problems.push(...(await definerInventoryProblems(pool, stages, baseline)));
     return { available: true, problems };
   } catch (error) {
     return { available: false, reason: error instanceof Error ? error.message.slice(0, 200) : "runtime role catalogue unreadable" };
