@@ -233,6 +233,10 @@
     {
       "file": "services/evaluator/src/cli.ts",
       "operations": []
+    },
+    {
+      "file": "services/kernel/src/database/platform-baseline-snapshot.ts",
+      "operations": []
     }
   ],
   "roles": {

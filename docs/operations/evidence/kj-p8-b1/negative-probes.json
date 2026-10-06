@@ -1448,6 +1448,454 @@
       "expected": "42501",
       "observed": "42501",
       "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 1: call the stamp function directly",
+      "sql": "select kernel_private.stamp_binding_provenance()",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 2: UPDATE release_epoch, no-op form",
+      "sql": "update kernel_private.release_epoch set epoch = epoch",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 3: UPDATE release_epoch, value-changing form",
+      "sql": "update kernel_private.release_epoch set epoch = epoch + 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 4: INSERT into release_epoch",
+      "sql": "insert into kernel_private.release_epoch(singleton, epoch) values (true, 99)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 5: DELETE from release_epoch",
+      "sql": "delete from kernel_private.release_epoch",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 6: INSERT into release_activations",
+      "sql": "insert into kernel_private.release_activations(epoch, request_id, release_id, activated_at, created_by, evidence) values (999999, '00000000-0000-4000-8000-000000000001', 'x', now(), 'x', '{\"x\":1}')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 7: UPDATE release_activations",
+      "sql": "update kernel_private.release_activations set release_id = release_id",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 8: DELETE from release_activations",
+      "sql": "delete from kernel_private.release_activations",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 9: execute activate_release",
+      "sql": "select kernel_private.activate_release('00000000-0000-4000-8000-000000000001', 'kj-b1-probe', 7, '{\"probe\":true}'::jsonb)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 10: CREATE OR REPLACE the stamp function",
+      "sql": "create or replace function kernel_private.stamp_binding_provenance() returns trigger language plpgsql security invoker as $f$ begin return new; end $f$",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 11: ALTER FUNCTION OWNER TO the probing role",
+      "sql": "alter function kernel_private.stamp_binding_provenance() owner to kj_worker",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 12: ALTER FUNCTION SECURITY INVOKER",
+      "sql": "alter function kernel_private.stamp_binding_provenance() security invoker",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 13: ALTER FUNCTION SET search_path = public",
+      "sql": "alter function kernel_private.stamp_binding_provenance() set search_path = public",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 14: ALTER FUNCTION RESET search_path",
+      "sql": "alter function kernel_private.stamp_binding_provenance() reset search_path",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 15: GRANT EXECUTE to the probing role",
+      "sql": "grant execute on function kernel_private.stamp_binding_provenance() to kj_worker",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 15: GRANT EXECUTE to PUBLIC",
+      "sql": "grant execute on function kernel_private.stamp_binding_provenance() to public",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 16: CREATE TRIGGER attaching it to another table",
+      "sql": "create trigger kj_b1_attach before insert on kernel_private.dispatch_events for each row execute function kernel_private.stamp_binding_provenance()",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 17: CREATE TRIGGER attaching it a second time to execution_bindings",
+      "sql": "create trigger kj_b1_second before insert on kernel_private.execution_bindings for each row execute function kernel_private.stamp_binding_provenance()",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 18: DROP TRIGGER execution_bindings_provenance",
+      "sql": "drop trigger execution_bindings_provenance on kernel_private.execution_bindings",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 19: ALTER TRIGGER ... RENAME",
+      "sql": "alter trigger execution_bindings_provenance on kernel_private.execution_bindings rename to kj_b1_renamed",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 20: DISABLE TRIGGER execution_bindings_provenance",
+      "sql": "alter table kernel_private.execution_bindings disable trigger execution_bindings_provenance",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 20: DISABLE TRIGGER ALL",
+      "sql": "alter table kernel_private.execution_bindings disable trigger all",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 20: ENABLE REPLICA TRIGGER",
+      "sql": "alter table kernel_private.execution_bindings enable replica trigger execution_bindings_provenance",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 21: CREATE FUNCTION public.stamp_binding_provenance()",
+      "sql": "create function public.stamp_binding_provenance() returns trigger language plpgsql as $f$ begin return new; end $f$",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 21: CREATE FUNCTION kernel_private.stamp_binding_provenance(integer)",
+      "sql": "create function kernel_private.stamp_binding_provenance(integer) returns trigger language plpgsql as $f$ begin return new; end $f$",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 22: CREATE SCHEMA (to hold a function)",
+      "sql": "create schema kj_b1_escape",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 23: a temporary table named release_epoch",
+      "sql": "create temporary table release_epoch (singleton boolean, epoch bigint)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_worker",
+      "probe": "27.9.5 row 24: a table in public named release_epoch",
+      "sql": "create table public.release_epoch (singleton boolean, epoch bigint)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 1: call the stamp function directly",
+      "sql": "select kernel_private.stamp_binding_provenance()",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 2: UPDATE release_epoch, no-op form",
+      "sql": "update kernel_private.release_epoch set epoch = epoch",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 3: UPDATE release_epoch, value-changing form",
+      "sql": "update kernel_private.release_epoch set epoch = epoch + 1",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 4: INSERT into release_epoch",
+      "sql": "insert into kernel_private.release_epoch(singleton, epoch) values (true, 99)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 5: DELETE from release_epoch",
+      "sql": "delete from kernel_private.release_epoch",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 6: INSERT into release_activations",
+      "sql": "insert into kernel_private.release_activations(epoch, request_id, release_id, activated_at, created_by, evidence) values (999999, '00000000-0000-4000-8000-000000000001', 'x', now(), 'x', '{\"x\":1}')",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 7: UPDATE release_activations",
+      "sql": "update kernel_private.release_activations set release_id = release_id",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 8: DELETE from release_activations",
+      "sql": "delete from kernel_private.release_activations",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 9: execute activate_release",
+      "sql": "select kernel_private.activate_release('00000000-0000-4000-8000-000000000001', 'kj-b1-probe', 7, '{\"probe\":true}'::jsonb)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 10: CREATE OR REPLACE the stamp function",
+      "sql": "create or replace function kernel_private.stamp_binding_provenance() returns trigger language plpgsql security invoker as $f$ begin return new; end $f$",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 11: ALTER FUNCTION OWNER TO the probing role",
+      "sql": "alter function kernel_private.stamp_binding_provenance() owner to kj_door",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 12: ALTER FUNCTION SECURITY INVOKER",
+      "sql": "alter function kernel_private.stamp_binding_provenance() security invoker",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 13: ALTER FUNCTION SET search_path = public",
+      "sql": "alter function kernel_private.stamp_binding_provenance() set search_path = public",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 14: ALTER FUNCTION RESET search_path",
+      "sql": "alter function kernel_private.stamp_binding_provenance() reset search_path",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 15: GRANT EXECUTE to the probing role",
+      "sql": "grant execute on function kernel_private.stamp_binding_provenance() to kj_door",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 15: GRANT EXECUTE to PUBLIC",
+      "sql": "grant execute on function kernel_private.stamp_binding_provenance() to public",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 16: CREATE TRIGGER attaching it to another table",
+      "sql": "create trigger kj_b1_attach before insert on kernel_private.dispatch_events for each row execute function kernel_private.stamp_binding_provenance()",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 17: CREATE TRIGGER attaching it a second time to execution_bindings",
+      "sql": "create trigger kj_b1_second before insert on kernel_private.execution_bindings for each row execute function kernel_private.stamp_binding_provenance()",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 18: DROP TRIGGER execution_bindings_provenance",
+      "sql": "drop trigger execution_bindings_provenance on kernel_private.execution_bindings",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 19: ALTER TRIGGER ... RENAME",
+      "sql": "alter trigger execution_bindings_provenance on kernel_private.execution_bindings rename to kj_b1_renamed",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 20: DISABLE TRIGGER execution_bindings_provenance",
+      "sql": "alter table kernel_private.execution_bindings disable trigger execution_bindings_provenance",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 20: DISABLE TRIGGER ALL",
+      "sql": "alter table kernel_private.execution_bindings disable trigger all",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 20: ENABLE REPLICA TRIGGER",
+      "sql": "alter table kernel_private.execution_bindings enable replica trigger execution_bindings_provenance",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 21: CREATE FUNCTION public.stamp_binding_provenance()",
+      "sql": "create function public.stamp_binding_provenance() returns trigger language plpgsql as $f$ begin return new; end $f$",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 21: CREATE FUNCTION kernel_private.stamp_binding_provenance(integer)",
+      "sql": "create function kernel_private.stamp_binding_provenance(integer) returns trigger language plpgsql as $f$ begin return new; end $f$",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 22: CREATE SCHEMA (to hold a function)",
+      "sql": "create schema kj_b1_escape",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 23: a temporary table named release_epoch",
+      "sql": "create temporary table release_epoch (singleton boolean, epoch bigint)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
+    },
+    {
+      "role": "kj_door",
+      "probe": "27.9.5 row 24: a table in public named release_epoch",
+      "sql": "create table public.release_epoch (singleton boolean, epoch bigint)",
+      "expected": "42501",
+      "observed": "42501",
+      "pass": true
     }
   ]
 }

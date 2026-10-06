@@ -1,12 +1,14 @@
 # KJ-P8 B1 implementation report: least-privilege runtime database roles
 
-Status: ENGINEERING CANDIDATE, not merged, not deployed. **One open ruling blocks "ready for hostile review"; see
-section 3.** Production was not touched. No P8A-0 object exists in this candidate.
+Status: ENGINEERING CANDIDATE, not merged, not deployed. **Repository-qualified; target platform baseline pending
+(section 12).** Production was not touched. No P8A-0 object exists in this candidate.
 
-Design authority: ADR-0023 revision 2.3, section 27, sealed at `679e3a3dfc7a33f9106ed77913d49cdac19166d5`
-(branch `design/kjp8-reflection-governed-growth`; seal in `docs/reviews/KJ_P8_ADR0023_R23_HOSTILE_SEAL_679e3a3.md`).
-Entry contract: `docs/operations/KJ_P8_B1_ENTRY_BRIEF.md`. Base: `main` `20e39f797be9c4c982bc32fb40b6aa1427b5c09c`
-(CI green on that commit before this work began).
+Design authority: ADR-0023 revision 2.5, section 27 (including 27.9 and 27.10), hostile-sealed APPROVE at
+`424f85c283a543ba00a650ecc2ecc3a4346623df` on branch `design/kjp8-reflection-governed-growth`. It supersedes revision
+2.3 (`679e3a3`) for B1 and closes the ruling this report previously left open. Entry contract:
+`docs/operations/KJ_P8_B1_ENTRY_BRIEF.md`, reconciled to revision 2.5. Base: `main`
+`20e39f797be9c4c982bc32fb40b6aa1427b5c09c`. Candidate history: `4314858`, `108db1b` (the frozen candidate),
+`d1a7d97` (revision 2.5 remediation), `d2a2447` (fixture corrections), then the evidence commit.
 
 Tags used below: **FACT** was observed in this work; **INFERENCE** was reasoned and not exercised.
 
@@ -22,6 +24,10 @@ Tags used below: **FACT** was observed in this work; **INFERENCE** was reasoned 
 | Health check `database.runtimeRolesLeastPrivilege` (P0) | `services/kernel/src/health/{collect,evaluate,snapshot}.ts`, `alerting/policy.ts` |
 | Suite harness that runs production code as the runtime roles | `tests/support/runtime-roles.ts` (test-only) |
 | Catalogue equality, negative probes, connection guard, topology tests | `tests/runtime-roles-*.test.ts` |
+| Stage-aware `SECURITY DEFINER` inventory (ADR 27.10) and the 27.9 exception checks | `services/kernel/src/database/security-definers.ts`, `infrastructure/database/security-definer-stage-manifest.json` (generated) |
+| Read-only platform baseline snapshot (deployment authority) | `services/kernel/src/database/platform-baseline-snapshot.ts`, `scripts/b1/platform-baseline-snapshot.ts` |
+| Definer qualification and the 27.9.5 probe matrix | `tests/security-definers.test.ts`, `tests/runtime-roles-definers.integration.test.ts`, `tests/runtime-roles-negative.integration.test.ts` |
+| CI job running the discover run, inventories and gated files | `.github/workflows/qualification.yml` job `b1-qualification`, `scripts/b1/qualify-ci.sh` |
 | Evidence | `docs/operations/evidence/kj-p8-b1/` |
 | Cutover plan (not executed) | `docs/operations/KJ_P8_B1_PRODUCTION_CUTOVER_PLAN.md` |
 
@@ -35,40 +41,37 @@ commit if an attribute or a membership is not as sealed.
 FACT: `tests/runtime-roles-catalogue.integration.test.ts` reads the attributes, ownership and memberships from the
 catalogue for both roles and compares them with the manifest.
 
-## 3. OPEN RULING: one existing trigger needs the owner's rights
+## 3. The one `SECURITY DEFINER` exception (ADR 27.9), as ruled
 
-**This is the single blocker, and it is a question for the design authority, not something this candidate may decide.**
+The ruling this report previously left open is closed by ADR-0023 revision 2.5 section 27.9: the existing trigger
+function `kernel_private.stamp_binding_provenance()` becomes `SECURITY DEFINER`, the only such change B1 makes.
+FACT: as `SECURITY INVOKER` its real `UPDATE kernel_private.release_epoch SET epoch = epoch` would force both runtime
+roles to hold `UPDATE` on `release_epoch`, which section 27.3 forbids; the discovery run of the frozen candidate showed
+admission failing under `kj_door` without it (`permission denied for table release_epoch`).
 
-FACT: the existing trigger function `kernel_private.stamp_binding_provenance()` (P1.3 release provenance, a BEFORE
-INSERT trigger on `kernel_private.execution_bindings`) performs a real `UPDATE kernel_private.release_epoch SET
-epoch = epoch` to lock the epoch and stamp the binding. It is `SECURITY INVOKER`. Both runtime roles insert
-execution bindings (the door at admission, the worker for scheduled work), so under their own rights both would need
-`UPDATE` on `kernel_private.release_epoch`.
+What the B1 migration does to it, and nothing else: `ALTER FUNCTION ... SECURITY DEFINER`, `SET search_path = ''`,
+`REVOKE ALL ... FROM PUBLIC`, and a loop that revokes EXECUTE from every other non-owner grantee. It contains no
+`CREATE FUNCTION` for it. A pre-COMMIT block refuses to commit unless `prosecdef` is true, `proconfig` is exactly
+`{"search_path=\"\""}`, the ACL is exactly the owner's EXECUTE, the source digest equals the pin, exactly one function
+in all governed schemas is named `stamp_binding_provenance`, and `public` plus `kernel_private` hold exactly one
+definer.
 
-The sealed design says two things that cannot both hold here:
+FACT (CI run `37459729830` on `d2a2447`, `evidence/kj-p8-b1/b1-definers.json`):
 
-- section 27.3: a runtime role may never write `release_epoch`;
-- section 27.8: B1 makes no change to a P1 to P7 trigger.
-
-| Option | Effect | Conflict |
-|---|---|---|
-| A. Make that one function `SECURITY DEFINER` (**implemented in this candidate**) | the body is unchanged and runs with the owner's rights; the roles hold nothing on `release_epoch`; a direct write is refused | the letter of 27.8 |
-| B. Grant both roles `UPDATE (epoch)` on `release_epoch` | no function change | 27.3, and it is a real widening: a runtime role could change the release epoch |
-
-Why A was implemented for qualification: it is the only option that keeps the authority boundary of 27.3. The
-function already sets `search_path = ''`, takes no arguments, and as a trigger function cannot be called directly.
-The catalogue test fails if any other `SECURITY DEFINER` function appears in the application schemas, and two
-negative probes prove both roles are refused a direct write of `release_epoch`.
-
-FACT: with option A the complete suite passes under the runtime roles (section 7). Without A or B, admission cannot
-work under `kj_door` at all (observed in the discovery run: `permission denied for table release_epoch`).
-
-**Ruling needed:** accept option A as a B1 precondition fix, or direct a different resolution. If A is refused, the
-change is isolated to one entry in `runtime-role-decisions.json` (`securityDefinerTriggers`) and three generated
-lines of the migration.
-
-No other required P1 to P7 operation conflicts with the sealed forbidden list. That was established by the static
-closure through every invoker trigger, view and function, and confirmed by the discovery run.
+| Assertion | Observed |
+|---|---|
+| source digest pin (reviewed input, `runtime-role-decisions.json`) | `468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e439b` |
+| derivation A: `pg_proc.prosrc` of a database migrated from `main` without B1 (SQL `sha256` and Node, separately) | both `468979611a28...` |
+| derivation B: text between the dollar quotes in `20260916205049_release_provenance.sql` (`build-manifest.mjs`, and again in the test) | `468979611a28...` |
+| catalogue digest after B1 | `468979611a28...` (body unchanged) |
+| identity | `kernel_private.stamp_binding_provenance()`, `pronargs = 0`, returns `trigger`, `proretset = false`, `prokind = 'f'`, language `plpgsql` |
+| `prosecdef`, owner | true, `postgres` (the deployment owner; runtime roles own nothing) |
+| `proconfig` | `["search_path=\"\""]`: one element, the text `search_path=""`, exactly as sealed |
+| `proacl` | `["postgres=X/postgres"]`; `aclexplode` gives one row, grantor and grantee `postgres`, EXECUTE, not grantable; effective EXECUTE false for `kj_worker`, `kj_door`, `anon`, `authenticated`, `service_role` |
+| trigger topology | exactly one `pg_trigger` row: `execution_bindings_provenance` on `kernel_private.execution_bindings`, `tgtype = 7`, `tgenabled = 'O'`, no `WHEN`, `tgisinternal = false`, `tgnargs = 0`, `tgattr` empty |
+| name uniqueness | exactly one function named `stamp_binding_provenance` in all governed schemas |
+| migration refuses a tampered body | B1 applied over a body changed by one character: `23514`, "source digest ... is 8c4c...2637, pinned 4689...439b", whole transaction rolled back |
+| migration removes foreign grants | EXECUTE granted to `anon` and `authenticated` before B1: after B1 the ACL is exactly the owner's |
 
 ## 4. How the manifest was obtained (gates 1 and 2)
 
@@ -180,45 +183,49 @@ does not satisfy the guard; the message never contains the connection string.
 | alternate, owner or service-role database URL variable | none |
 | `SET ROLE`, `SET SESSION AUTHORIZATION`, `session_replication_role` in runtime code | none |
 | literal `postgres` credential in runtime code | none |
-| `SECURITY DEFINER` | exactly one function, section 3 |
+| `SECURITY DEFINER` | the KernelJSON half is exactly `stamp_binding_provenance()` (section 3); every governed schema is inventoried against the stage manifest and the frozen platform baseline (section 12) |
 | EXECUTE through `PUBLIC` | revoked for all functions in both schemas; catalogue equality reads effective privileges, so a future grant to `PUBLIC` fails the test |
 | dynamic SQL with interpolated identifiers in runtime queries | none found |
 | deployment modules imported by a runtime entry | none (tested) |
 
 ## 7. Qualification results (gates 6 to 9)
 
-All runs were local, in a Linux container with Postgres 17.6 and Restate 1.7.9, the same shape as the CI job. FACT.
+FACT. These runs are GitHub Actions CI (`ubuntu-24.04`, Postgres 17.6 and Restate 1.7.9 in docker compose), run
+`37459729830` on `d2a2447908a0b2588433c3f2580c11caf41d88a4`; the base row is `main`'s own CI run `36940075218` on
+`20e39f7`. Local Docker was not available for this remediation, so nothing below comes from a local run. The evidence
+in `docs/operations/evidence/kj-p8-b1/` was regenerated from those artefacts by `scripts/b1/summarise.mjs`.
 
 | Run | Total | Passed | Failed | Skipped |
 |---|---|---|---|---|
-| Baseline at `20e39f7`, everything as the owner | 1,861 | 1,799 | 0 | 62 |
-| B1, enforce mode (genuine `kj_worker` / `kj_door` sessions) | 2,016 | 1,954 | 0 | 62 |
-| B1, discovery mode (records refusals instead of stopping) | 2,016 | 1,953 | 0 | 63 |
-| Six environment-gated files, owner at base | 43 | 43 | 0 | 0 |
-| The same six files, B1 enforce mode | 43 | 43 | 0 | 0 |
+| Base `20e39f7`, everything as the owner (`main` CI) | 1,861 | 1,799 | 0 | 62 |
+| B1, enforce mode (`validate` job; genuine `kj_worker` / `kj_door` sessions) | 2,160 | 2,098 | 0 | 62 |
+| B1, discovery mode (`b1-qualification` job) | 2,160 | 2,097 | 0 | 63 |
+| Six environment-gated files, B1 enforce mode (`b1-qualification` job) | 43 | 43 | 0 | 0 |
 
-- The 62 skips are the same pre-existing environment-gated tests in both runs; `pnpm test:baseline` passes
-  (224/224 protected tests, recovery 31).
-- Every pre-existing test passes under the roles: the pre-existing test files give 1,805 passed and 62 skipped
-  (the 1,799 of the baseline plus 6 cases added to existing files, four of them the new health cases). The four new
-  B1 test files add 149 passing cases. The one extra skip in discovery mode is a B1 case that needs a genuine session.
-- In the enforce run the compose worker is a real `kj_worker` process; in the test process, production code that
-  takes its own connection gets a genuine role login, and the small remainder (a test handing its own owner
-  connection to production code) runs under `SET ROLE`, which applies the same privilege and policy checks. The
-  split is recorded per role in `dynamic-inventory-enforce.json`.
-- **Unexpected `42501`: 0.** The harness records every refusal of a runtime-attributed statement; the trace gate
-  (`analyse-trace.mjs --fail-on-refusal`) fails the run on any.
-- **Negative probes: all pass**, each with its pinned SQLSTATE, on genuine login sessions of both roles
-  (`evidence/kj-p8-b1/negative-probes.json`): object creation, ALTER, DROP, TRUNCATE, trigger disabling, row level
-  security changes, policy changes, role changes, `SET ROLE`, session authorization, `ALTER SYSTEM`, release
-  activation and epoch writes, identity freeze, history rewrites, role separation, and every relation and function
-  outside the manifest.
-- **Catalogue equality: pass in both directions for both roles**, with negative cases for an extra privilege, a
-  privilege through `PUBLIC`, a missing privilege, a membership, an ownership, an extra policy, a changed attribute
-  and an unlisted definer function.
-
-Not run locally: the three long mutation jobs (`mutation-check-identity`, `-identity-cognition`, `-faculties`). They
-run in CI on push. INFERENCE: unaffected, because they run the same suite files through the same harness.
+- Pre-existing test files under the roles: 1,805 passed and 62 skipped, in both modes. That is the 1,799 of the
+  base plus the 6 cases B1 adds to existing files; the 62 skips are the same environment-gated tests, and
+  `pnpm test:baseline` passes. B1 test files add 293 passing cases (one more is skipped in discovery mode because it
+  needs a genuine session).
+- **Unexpected `42501`: 0**, in the enforce run, the discovery run and the gated run (trace gate
+  `analyse-trace.mjs --fail-on-refusal`). Observed operations not in the manifest: 0 for both roles.
+- **Negative probes: 237 of 237 pass** (98 for `kj_worker`, 139 for `kj_door`), each with its pinned SQLSTATE.
+- **ADR 27.9.5 matrix: all 27 sealed rows, 62 of 62 probes pass** across both roles (`b1-definer-probes.json`).
+  Rows 15, 20 and 21 keep the design's grouping (two, three and two forms). The 56 refusals all returned `42501`,
+  including row 1, the direct call (`0A000` would have been a DESIGN_MISMATCH; it did not occur). Every refusal is
+  followed by an owner re-read showing nothing changed. Rows 25 to 27: with a changed `search_path`, with forged
+  `release_epoch` and `persisted_at`, and repeatedly, inserted bindings carry the canonical epoch and a fresh
+  timestamp, and the epoch's value does not change.
+- **Catalogue equality: pass in both directions for both roles**, with the existing negative cases.
+- **`SECURITY DEFINER` inventory: pass** against a qualification-fixture baseline (section 12). **28 deliberate
+  failures, 28 seen red and restored to green**: an extra platform definer after the snapshot, a missing one, changed
+  owner, return type, `proconfig` and digest, a platform-looking schema, a new application schema, a moved function, a
+  definer in `public`, a P8A-0 function present at B1, a second `stamp_binding_provenance` and an overload, the stamp
+  function back to invoker, executable by `kj_worker` or `PUBLIC`, a null `proacl`, a widened or missing
+  `search_path`, another owner, a changed body, the trigger disabled, replica-only, always, attached twice, attached
+  elsewhere, given a `WHEN`, and renamed.
+- **Schema predicate, observed:** temporary schemas are named `pg_temp_15` and `pg_toast_temp_15`; `CREATE SCHEMA
+  pg_kj_probe` is refused `42939` even for the owner.
+- **Mutation jobs:** faculty, identity and identity-cognition mutation checks are green in the same CI run.
 
 ## 8. Existing tests whose expectations changed (gate 9)
 
@@ -250,12 +257,16 @@ Stated so that nobody assumes otherwise:
 
 ## 10. Not verified, and must be at cutover
 
-- **Production was not inspected.** The door's current role, the pooler mode, platform schemas that grant to
-  `PUBLIC`, and whether revoking TEMPORARY from `PUBLIC` affects a platform role are all unknown. Each is a
-  precondition in the cutover plan. On the hosting platform the catalogue equality check is likely to report
-  platform-level `PUBLIC` grants as extra until they are revoked or listed.
+- **Production was not inspected, read or written.** The door's current role, the pooler mode, platform schemas
+  that grant to `PUBLIC`, and whether revoking TEMPORARY from `PUBLIC` affects a platform role are all unknown. Each
+  is a precondition in the cutover plan. FACT from the qualification fixture: a platform function executable by
+  `PUBLIC` is reported by the existing grant-manifest equality as a runtime-role grant (`kj_worker holds unlisted
+  function:auth...:EXECUTE`) and turns the health check red. On the hosting platform such functions are expected,
+  so cutover precondition 6 (revoke or list each by a reviewed change) is real work, not a formality.
+- **The target platform `SECURITY DEFINER` baseline has not been taken** (section 12).
 - The connection limits (40 and 20) are INFERENCE from pool sizes in the code (worker 10 + 3 + 3, door 10).
-- CI has not yet run on this branch when this report was written.
+- The environment-gated files were not re-run as the owner at the base commit in this remediation (the frozen
+  candidate's local run recorded 43 of 43); under the roles they pass 43 of 43 in CI.
 
 ## 11. Reproducing
 
@@ -265,8 +276,52 @@ node scripts/b1/build-manifest.mjs --check          # manifest and migration mat
 pnpm test                                           # enforce mode: production code runs as kj_worker / kj_door
 node scripts/b1/analyse-trace.mjs artifacts/local/b1-trace artifacts/local/b1-dynamic-inventory.json --fail-on-refusal
 KJ_RUNTIME_ROLES=discover KJ_WORKER_DATABASE_URL=postgresql://postgres@db:5432/kerneljson pnpm test   # discovery run
+bash scripts/b1/qualify-ci.sh                       # discovery run, inventories, gated files (CI job b1-qualification)
 node scripts/b1/summarise.mjs <artefact dir> docs/operations/evidence/kj-p8-b1
 ```
 
 To change a grant: edit `runtime-role-decisions.json` with a reason, run `node scripts/b1/build-manifest.mjs`, and
 commit the regenerated manifest and migration together.
+
+## 12. The stage-aware `SECURITY DEFINER` inventory (ADR 27.10) and the target baseline
+
+`EXPECTED(stage) = PLATFORM_BASELINE UNION KERNELJSON_STAGE_MANIFEST(stage)`, compared in both directions with every
+governed `pg_proc` row that has `prosecdef = true`. Identity is schema, name and ordered argument types (each
+`<schema>.<type>`); return type, `proretset`, `prokind`, owner, `prosecdef`, language, `proconfig`, ACL (KernelJSON
+functions) and source digest are compared separately. The schema predicate is exactly
+`not (nspname in ('pg_catalog', 'information_schema', 'pg_toast') or nspname ~ '^pg_temp_[0-9]+$' or nspname ~ '^pg_toast_temp_[0-9]+$')`.
+
+- **Stage manifest** (`kerneljson:security-definer-stage-manifest/v1`, generated, SHA-256
+  `418d47acd0413d3289bf044b46c2e03c49fd624e046e7a5fce9ba17652b397a4` LF-normalised): declared stage B1; B1 set
+  `kernel_private.stamp_binding_provenance() -> pg_catalog.trigger`. P8A-0 (and B2, P8A-1, P8A-2) add
+  `kernel_private.freeze_reflection(pg_catalog.uuid) -> pg_catalog.void`; P8B adds
+  `kernel_private.close_growth_window_by_owner(pg_catalog.uuid, pg_catalog.uuid) ->
+  kernel_private.identity_growth_window_closures`. Later stages are unimplemented, carry no migration and no source
+  pin, and B1 creates neither later function.
+- **Stage binding** (FACT, `tests/security-definers.test.ts`): the declared stage is checked against the migrations
+  the release carries, each pinned by SHA-256 (22 base migrations and the B1 migration). Removing or changing the B1
+  migration, changing a base migration, carrying an unlisted migration, relabelling the release as any later stage,
+  marking a later stage implemented, an unknown label, another design SHA or reordered stages each fail. A
+  database that disagrees with its release fails catalogue equality, and health (P0).
+- **Platform baseline** (`kerneljson:security-definer-platform-baseline/v1`): the qualification proves the machinery
+  on a fixture, a database migrated from `main` without B1 and given four platform-style definers in schema `auth`,
+  one per digest rule (`internal`, a SQL-standard body, plpgsql and SQL). The read-only snapshot recorded
+  `transaction.readOnly = true`, `searchPath = ""`, `stampSecurityDefiner = false`, and the query SHA-256; it refuses
+  once B1 is applied. **This fixture baseline is not the target baseline and is not committed as one.**
+
+**TARGET_PLATFORM_BASELINE_PENDING.** No target baseline is committed, and `database.runtimeRolesLeastPrivilege` reports
+`TARGET_PLATFORM_BASELINE_PENDING` and stays CRITICAL until one is. Reason it was not taken in this task: it is a
+read of the production database. It needs the deployment owner's credential and the target environment's identity,
+and the design requires the deployment owner to take it before the B1 migration. This task did not handle that
+credential. Remaining gate, for the deployment owner:
+
+```
+pnpm tsx scripts/b1/platform-baseline-snapshot.ts --environment <target name> \
+  --database-url-file <mode-600 file holding the owner URL> \
+  --out infrastructure/database/security-definer-platform-baseline.json
+```
+
+It opens one READ ONLY transaction with `search_path = ''`, writes nothing, and refuses if B1 is applied or an entry is
+ineligible. Delete the URL file afterwards. The artefact is reviewed and committed, which makes a new candidate SHA
+for review. If the platform role cannot execute `pg_control_system()`, the tool stops with a fixed message and the
+SQLSTATE; that would need a design ruling on the provenance field, not a weaker snapshot.

@@ -4,7 +4,8 @@ Status: PLAN ONLY. **Nothing in this document has been executed.** No production
 configuration or deployment was touched while preparing the B1 candidate. Executing this plan needs its own explicit
 authorisation and its own change window (new-system `docs/migration/CHANGE_WINDOWS.md`).
 
-Design: ADR-0023 revision 2.3, section 27, sealed at `679e3a3dfc7a33f9106ed77913d49cdac19166d5`.
+Design: ADR-0023 revision 2.5, section 27 (including 27.9 and 27.10), hostile-sealed APPROVE at
+`424f85c283a543ba00a650ecc2ecc3a4346623df`.
 Candidate: branch `feat/kjp8-b1-runtime-least-privilege` (see `KJ_P8_B1_IMPLEMENTATION_REPORT.md`).
 
 ## 1. What changes in production
@@ -15,7 +16,8 @@ Candidate: branch `feat/kjp8-b1-runtime-least-privilege` (see `KJ_P8_B1_IMPLEMEN
 | Door database session | not observed; assumed `postgres` until inspected | `kj_door` |
 | Runtime grants | none needed, the owner bypasses row level security | exactly `infrastructure/database/runtime-role-manifest.json` |
 | Row level security policies | none exist | one per table and verb in the manifest, scoped to the role |
-| `kernel_private.stamp_binding_provenance()` | `security invoker` | `security definer` (see the report, section 3) |
+| `kernel_private.stamp_binding_provenance()` | `security invoker` | `security definer`, the one ADR 27.9 exception; body, owner, `search_path = ''` and trigger unchanged; EXECUTE for the owner only (report, section 3) |
+| `SECURITY DEFINER` inventory | not governed | exactly the frozen platform baseline plus `stamp_binding_provenance()` (ADR 27.10, stage B1) |
 | Runtime code | accepts any session | refuses any session that is not its sealed role |
 
 Nothing else changes: no table, column, trigger body, owner or existing migration file. No P8 object is created.
@@ -25,7 +27,15 @@ Nothing else changes: no table, column, trigger body, owner or existing migratio
 1. The exact candidate SHA has an independent hostile review with verdict APPROVE.
 2. CI is green on that SHA, including both mutation jobs.
 3. The frozen manifest has been reviewed line by line by a human.
-4. The open ruling on the `security definer` change is closed (report, section 3).
+4. The `security definer` change is ruled: ADR-0023 revision 2.5 section 27.9, sealed at `424f85c`. Closed.
+4a. **The target platform `SECURITY DEFINER` baseline is frozen** (ADR 27.10.4). Before any B1 migration on the target,
+   the deployment owner runs, read-only:
+   `pnpm tsx scripts/b1/platform-baseline-snapshot.ts --environment <name> --database-url-file <mode-600 file> --out infrastructure/database/security-definer-platform-baseline.json`.
+   The connection string is a file path, never an argument; delete the file afterwards. The tool opens one READ ONLY
+   transaction with `search_path = ''`, writes nothing, and refuses if B1 is already applied or an entry is
+   ineligible. The resulting file is reviewed line by line and committed: that is a **new candidate SHA** and needs
+   its own review. Until it exists, `database.runtimeRolesLeastPrivilege` reports `TARGET_PLATFORM_BASELINE_PENDING`
+   and stays CRITICAL, so the window cannot pass step 11.
 5. A change window is authorised and recorded.
 6. **Production is re-inventoried.** The qualification database is plain Postgres 17. Production is hosted Postgres
    and was not inspected. Before the window, with read-only catalogue queries as the owner, record:
@@ -56,9 +66,12 @@ Each step has a check chosen before acting and a result that means failure.
 1. **Hold ingress.** Stop new admissions at the door (existing procedure). Check: no new `task_admissions` row for
    60 seconds.
 2. **Apply the B1 migration** as the owner, in one transaction: `20261002090000_runtime_least_privilege_roles.sql`.
-   Its own pre-COMMIT check refuses to commit if a role's attributes are not as sealed.
+   Its own pre-COMMIT check refuses to commit if a role's attributes are not as sealed, or if the stamp function is not
+   exactly as ADR 27.9.4 requires (definer, `proconfig`, owner-only ACL, source digest equal to the pin, one function of
+   that name, one KernelJSON definer).
    Check: the catalogue equals the manifest for both roles (`compareRoleToManifest`, both directions empty) and the
-   `security definer` list equals the manifest. Failure: any missing or extra fact. On failure, roll back the
+   `SECURITY DEFINER` inventory equals `EXPECTED(B1)` against the committed platform baseline
+   (`definerInventoryProblems` empty). Failure: any missing, extra or mismatched fact. On failure, roll back the
    transaction; nothing has changed.
 3. **Provision credentials out of band.** As the owner, set a generated password on each role. Store each in the
    vault through `secretctl`, value never in an argument, with a length expectation. The migration contains no

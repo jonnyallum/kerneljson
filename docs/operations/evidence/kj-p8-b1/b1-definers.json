@@ -1,0 +1,448 @@
+{
+  "contract": "kerneljson:b1-definer-qualification/v1",
+  "design": "424f85c283a543ba00a650ecc2ecc3a4346623df",
+  "testedCommit": "d2a2447908a0b2588433c3f2580c11caf41d88a4",
+  "environment": "qualification fixture (docker compose postgres); not the target environment",
+  "preB1": {
+    "derivationA": {
+      "sql": "468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e439b",
+      "node": "468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e439b"
+    },
+    "stamp": {
+      "prosecdef": false,
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "acl": [
+        "postgres=X/postgres"
+      ]
+    }
+  },
+  "sourceDigest": {
+    "pin": "468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e439b",
+    "derivationA": {
+      "sql": "468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e439b",
+      "node": "468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e439b"
+    },
+    "derivationB": "468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e439b",
+    "afterB1": "468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e439b"
+  },
+  "stampCatalogue": {
+    "schema": "kernel_private",
+    "name": "stamp_binding_provenance",
+    "pronargs": 0,
+    "returns": "trigger",
+    "proretset": false,
+    "prokind": "f",
+    "prosecdef": true,
+    "owner": "postgres",
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "lanname": "plpgsql"
+  },
+  "stampAcl": {
+    "proacl": [
+      "postgres=X/postgres"
+    ],
+    "aclexplode": [
+      {
+        "grantor": "postgres",
+        "grantee": "postgres",
+        "privilege_type": "EXECUTE",
+        "is_grantable": false
+      }
+    ],
+    "effective": [
+      {
+        "role": "kj_worker",
+        "execute": false
+      },
+      {
+        "role": "kj_door",
+        "execute": false
+      },
+      {
+        "role": "anon",
+        "execute": false
+      },
+      {
+        "role": "authenticated",
+        "execute": false
+      },
+      {
+        "role": "service_role",
+        "execute": false
+      }
+    ]
+  },
+  "stampTrigger": [
+    {
+      "name": "execution_bindings_provenance",
+      "relation": "kernel_private.execution_bindings",
+      "tgtype": 7,
+      "tgenabled": "O",
+      "tgqual": null,
+      "tgisinternal": false,
+      "tgnargs": 0,
+      "tgattr": ""
+    }
+  ],
+  "stampNameUniqueness": [
+    "kernel_private.stamp_binding_provenance() -> pg_catalog.trigger"
+  ],
+  "baseline": {
+    "contract": "kerneljson:security-definer-platform-baseline/v1",
+    "design": "424f85c283a543ba00a650ecc2ecc3a4346623df",
+    "environment": "qualification-fixture",
+    "provenance": {
+      "systemIdentifier": "7693523426964799527",
+      "database": "kj_b1_def_516ecddab2b4",
+      "serverVersion": "PostgreSQL 17.6 (Debian 17.6-2.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+      "snapshotAt": "2026-10-06T12:00:17.083101Z",
+      "snapshotUser": "postgres",
+      "transaction": {
+        "readOnly": true,
+        "searchPath": "\"\""
+      },
+      "migrationLedger": {
+        "table": "supabase_migrations.schema_migrations",
+        "present": false,
+        "head": null,
+        "b1Recorded": false
+      },
+      "stampSecurityDefiner": false,
+      "querySha256": "d5877634364c8996d08c0489b7f7a140d6a08c0c30e48e67fbd08ddf5c2e0c58"
+    },
+    "entries": [
+      {
+        "schema": "auth",
+        "name": "kj_platform_atomic",
+        "args": [],
+        "returns": "pg_catalog.int4",
+        "retset": false,
+        "kind": "f",
+        "owner": "postgres",
+        "securityDefiner": true,
+        "language": "sql",
+        "config": null,
+        "sourceDigest": "4d45ecf98629922e0d65f6ff80e838f13b8759c337258014934ba416f05d9de2"
+      },
+      {
+        "schema": "auth",
+        "name": "kj_platform_guard",
+        "args": [],
+        "returns": "pg_catalog.void",
+        "retset": false,
+        "kind": "f",
+        "owner": "postgres",
+        "securityDefiner": true,
+        "language": "plpgsql",
+        "config": [
+          "search_path=\"\""
+        ],
+        "sourceDigest": "26714596b68ee85d36704c912f2473483680400591fcab9ff1784a751b91b547"
+      },
+      {
+        "schema": "auth",
+        "name": "kj_platform_len",
+        "args": [
+          "pg_catalog.text"
+        ],
+        "returns": "pg_catalog.int4",
+        "retset": false,
+        "kind": "f",
+        "owner": "postgres",
+        "securityDefiner": true,
+        "language": "internal",
+        "config": null,
+        "sourceDigest": "2e6723b8e2f954bb831a087b6a853de56b1dea3700c60f0020d1c4859d490a48"
+      },
+      {
+        "schema": "auth",
+        "name": "kj_platform_uid",
+        "args": [],
+        "returns": "pg_catalog.uuid",
+        "retset": false,
+        "kind": "f",
+        "owner": "postgres",
+        "securityDefiner": true,
+        "language": "sql",
+        "config": null,
+        "sourceDigest": "d2ba675600b85f3e0413f83986abc86bb021fafe6acd3f54bc200d26b587956e"
+      }
+    ],
+    "entriesSha256": "67f7e69ddd73cf7aaa8eab0a6320963a1e6274bda73e1f3530824d5b131674bd"
+  },
+  "tempSchemaNames": {
+    "temp": "pg_temp_15",
+    "toast": "pg_toast_temp_15"
+  },
+  "reservedPrefix": {
+    "statement": "create schema pg_kj_probe",
+    "sqlstate": "42939"
+  },
+  "migrationRefusesTamperedBody": {
+    "sqlstate": "23514",
+    "message": "B1: source digest of kernel_private.stamp_binding_provenance() is 8c4c159990022eb33b936126856ae61c8f93883e8315d150b297e7e74ffd2637, pinned 468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e4"
+  },
+  "fixtures": [
+    {
+      "fixture": "platform definer added after the snapshot",
+      "expected": "unlisted SECURITY DEFINER function auth.kj_platform_late()",
+      "observedProblems": [
+        "unlisted SECURITY DEFINER function auth.kj_platform_late()"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "platform definer missing",
+      "expected": "missing SECURITY DEFINER function auth.kj_platform_guard()",
+      "observedProblems": [
+        "missing SECURITY DEFINER function auth.kj_platform_guard()"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "platform definer with a changed owner",
+      "expected": "auth.kj_platform_uid() owner:",
+      "observedProblems": [
+        "SECURITY DEFINER mismatch auth.kj_platform_uid() owner: \"kj_b1_probe_owner_516ecddab2b4\", expected \"postgres\""
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "platform definer with a changed return type",
+      "expected": "auth.kj_platform_uid() returns:",
+      "observedProblems": [
+        "SECURITY DEFINER mismatch auth.kj_platform_uid() returns: \"pg_catalog.text\", expected \"pg_catalog.uuid\"",
+        "SECURITY DEFINER mismatch auth.kj_platform_uid() sourceDigest: \"220577dc6c365887d01a6d7cf6802d4ba8c718e4be9d3ff1d1e53890db516164\", expected \"d2ba675600b85f3e0413f83986abc86bb021fafe6acd3f54bc200d26b587956e\""
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "platform definer with a changed proconfig",
+      "expected": "auth.kj_platform_guard() config:",
+      "observedProblems": [
+        "SECURITY DEFINER mismatch auth.kj_platform_guard() config: null, expected [\"search_path=\\\"\\\"\"]"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "platform definer with a changed source digest",
+      "expected": "auth.kj_platform_guard() sourceDigest:",
+      "observedProblems": [
+        "SECURITY DEFINER mismatch auth.kj_platform_guard() sourceDigest: \"829378692b62d4078aa43dcbf23be8fe41bcb3aa4c70f760178000acb2726dca\", expected \"26714596b68ee85d36704c912f2473483680400591fcab9ff1784a751b91b547\""
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "a platform-looking schema is not excluded",
+      "expected": "unlisted SECURITY DEFINER function storage.kj_probe()",
+      "observedProblems": [
+        "unlisted SECURITY DEFINER function storage.kj_probe()"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "a new application schema is no escape hatch",
+      "expected": "unlisted SECURITY DEFINER function kj_b1_app.kj_probe()",
+      "observedProblems": [
+        "unlisted SECURITY DEFINER function kj_b1_app.kj_probe()"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "a moved function is missing and extra",
+      "expected": "unlisted SECURITY DEFINER function storage.kj_platform_uid()",
+      "observedProblems": [
+        "unlisted SECURITY DEFINER function storage.kj_platform_uid()",
+        "missing SECURITY DEFINER function auth.kj_platform_uid()"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "an unlisted definer in public",
+      "expected": "unlisted SECURITY DEFINER function public.kj_b1_probe_definer()",
+      "observedProblems": [
+        "unlisted SECURITY DEFINER function public.kj_b1_probe_definer()"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "a later-stage function present at B1",
+      "expected": "unlisted SECURITY DEFINER function kernel_private.freeze_reflection(pg_catalog.uuid)",
+      "observedProblems": [
+        "unlisted SECURITY DEFINER function kernel_private.freeze_reflection(pg_catalog.uuid)"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "a second stamp_binding_provenance in public",
+      "expected": "exactly one function named stamp_binding_provenance must exist",
+      "observedProblems": [
+        "exactly one function named stamp_binding_provenance must exist, kernel_private.stamp_binding_provenance() returning pg_catalog.trigger; found kernel_private.stamp_binding_provenance(), public.stamp_binding_provenance()"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "a stamp_binding_provenance overload",
+      "expected": "exactly one function named stamp_binding_provenance must exist",
+      "observedProblems": [
+        "exactly one function named stamp_binding_provenance must exist, kernel_private.stamp_binding_provenance() returning pg_catalog.trigger; found kernel_private.stamp_binding_provenance(), kernel_private.stamp_binding_provenance(pg_catalog.int4)"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "the stamp function back to SECURITY INVOKER",
+      "expected": "missing SECURITY DEFINER function kernel_private.stamp_binding_provenance()",
+      "observedProblems": [
+        "missing SECURITY DEFINER function kernel_private.stamp_binding_provenance()"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "the stamp function executable by kj_worker",
+      "expected": "kernel_private.stamp_binding_provenance() acl:",
+      "observedProblems": [
+        "SECURITY DEFINER mismatch kernel_private.stamp_binding_provenance() acl: [\"kj_worker=X/postgres\",\"postgres=X/postgres\"], expected [\"postgres=X/postgres\"]"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "the stamp function executable by PUBLIC",
+      "expected": "kernel_private.stamp_binding_provenance() acl:",
+      "observedProblems": [
+        "SECURITY DEFINER mismatch kernel_private.stamp_binding_provenance() acl: [\"=X/postgres\",\"postgres=X/postgres\"], expected [\"postgres=X/postgres\"]"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "the stamp function with a null proacl (the PUBLIC default)",
+      "expected": "kernel_private.stamp_binding_provenance() acl:",
+      "observedProblems": [
+        "SECURITY DEFINER mismatch kernel_private.stamp_binding_provenance() acl: null, expected [\"postgres=X/postgres\"]"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "the stamp function with a widened search_path",
+      "expected": "kernel_private.stamp_binding_provenance() config:",
+      "observedProblems": [
+        "SECURITY DEFINER mismatch kernel_private.stamp_binding_provenance() config: [\"search_path=public\"], expected [\"search_path=\\\"\\\"\"]"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "the stamp function with no search_path",
+      "expected": "kernel_private.stamp_binding_provenance() config:",
+      "observedProblems": [
+        "SECURITY DEFINER mismatch kernel_private.stamp_binding_provenance() config: null, expected [\"search_path=\\\"\\\"\"]"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "the stamp function with another owner",
+      "expected": "kernel_private.stamp_binding_provenance() owner:",
+      "observedProblems": [
+        "SECURITY DEFINER mismatch kernel_private.stamp_binding_provenance() owner: \"kj_b1_probe_owner_516ecddab2b4\", expected \"postgres\"",
+        "SECURITY DEFINER mismatch kernel_private.stamp_binding_provenance() acl: [\"kj_b1_probe_owner_516ecddab2b4=X/kj_b1_probe_owner_516ecddab2b4\"], expected [\"postgres=X/postgres\"]"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "the stamp function with a changed body",
+      "expected": "kernel_private.stamp_binding_provenance() sourceDigest:",
+      "observedProblems": [
+        "SECURITY DEFINER mismatch kernel_private.stamp_binding_provenance() sourceDigest: \"8c4c159990022eb33b936126856ae61c8f93883e8315d150b297e7e74ffd2637\", expected \"468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e439b\""
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "the trigger disabled",
+      "expected": "trigger topology",
+      "observedProblems": [
+        "trigger topology of kernel_private.stamp_binding_provenance(): {\"name\":\"execution_bindings_provenance\",\"relation\":\"kernel_private.execution_bindings\",\"tgtype\":7,\"tgenabled\":\"D\",\"tgqual\":null,\"tgisinternal\":false,\"tgnargs\":0,\"tgattr\":\"\"}, expected {\"name\":\"execution_bindings_provenance\",\"relation\":\"kernel_private.execution_bindings\",\"tgtype\":7,\"tgenabled\":\"O\",\"tgqual\":null,\"tgisinternal\":false,\"tgnargs\":0,\"tgattr\":\"\"}"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "the trigger set to fire only on replicas",
+      "expected": "trigger topology",
+      "observedProblems": [
+        "trigger topology of kernel_private.stamp_binding_provenance(): {\"name\":\"execution_bindings_provenance\",\"relation\":\"kernel_private.execution_bindings\",\"tgtype\":7,\"tgenabled\":\"R\",\"tgqual\":null,\"tgisinternal\":false,\"tgnargs\":0,\"tgattr\":\"\"}, expected {\"name\":\"execution_bindings_provenance\",\"relation\":\"kernel_private.execution_bindings\",\"tgtype\":7,\"tgenabled\":\"O\",\"tgqual\":null,\"tgisinternal\":false,\"tgnargs\":0,\"tgattr\":\"\"}"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "the trigger set to fire always",
+      "expected": "trigger topology",
+      "observedProblems": [
+        "trigger topology of kernel_private.stamp_binding_provenance(): {\"name\":\"execution_bindings_provenance\",\"relation\":\"kernel_private.execution_bindings\",\"tgtype\":7,\"tgenabled\":\"A\",\"tgqual\":null,\"tgisinternal\":false,\"tgnargs\":0,\"tgattr\":\"\"}, expected {\"name\":\"execution_bindings_provenance\",\"relation\":\"kernel_private.execution_bindings\",\"tgtype\":7,\"tgenabled\":\"O\",\"tgqual\":null,\"tgisinternal\":false,\"tgnargs\":0,\"tgattr\":\"\"}"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "a second attachment on execution_bindings",
+      "expected": "must be attached to exactly one trigger; found 2",
+      "observedProblems": [
+        "kernel_private.stamp_binding_provenance() must be attached to exactly one trigger; found 2",
+        "trigger topology of kernel_private.stamp_binding_provenance(): {\"name\":\"kj_b1_second\",\"relation\":\"kernel_private.execution_bindings\",\"tgtype\":7,\"tgenabled\":\"O\",\"tgqual\":null,\"tgisinternal\":false,\"tgnargs\":0,\"tgattr\":\"\"}, expected {\"name\":\"execution_bindings_provenance\",\"relation\":\"kernel_private.execution_bindings\",\"tgtype\":7,\"tgenabled\":\"O\",\"tgqual\":null,\"tgisinternal\":false,\"tgnargs\":0,\"tgattr\":\"\"}"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "an attachment on another table",
+      "expected": "must be attached to exactly one trigger; found 2",
+      "observedProblems": [
+        "kernel_private.stamp_binding_provenance() must be attached to exactly one trigger; found 2",
+        "trigger topology of kernel_private.stamp_binding_provenance(): {\"name\":\"kj_b1_elsewhere\",\"relation\":\"kernel_private.dispatch_events\",\"tgtype\":7,\"tgenabled\":\"O\",\"tgqual\":null,\"tgisinternal\":false,\"tgnargs\":0,\"tgattr\":\"\"}, expected {\"name\":\"execution_bindings_provenance\",\"relation\":\"kernel_private.execution_bindings\",\"tgtype\":7,\"tgenabled\":\"O\",\"tgqual\":null,\"tgisinternal\":false,\"tgnargs\":0,\"tgattr\":\"\"}"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "a WHEN condition on the trigger",
+      "expected": "trigger topology",
+      "observedProblems": [
+        "trigger topology of kernel_private.stamp_binding_provenance(): {\"name\":\"execution_bindings_provenance\",\"relation\":\"kernel_private.execution_bindings\",\"tgtype\":7,\"tgenabled\":\"O\",\"tgqual\":\"CREATE TRIGGER execution_bindings_provenance BEFORE INSERT ON kernel_private.execution_bindings FOR EACH ROW WHEN ((new.release_epoch >= 0)) EXECUTE FUNCTION kernel_private.stamp_binding_provenance()\",\"tgisinternal\":false,\"tgnargs\":0,\"tgattr\":\"\"}, expected {\"name\":\"execution_bindings_provenance\",\"relation\":\"kernel_private.execution_bindings\",\"tgtype\":7,\"tgenabled\":\"O\",\"tgqual\":null,\"tgisinternal\":false,\"tgnargs\":0,\"tgattr\":\"\"}"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    },
+    {
+      "fixture": "the trigger renamed",
+      "expected": "trigger topology",
+      "observedProblems": [
+        "trigger topology of kernel_private.stamp_binding_provenance(): {\"name\":\"kj_b1_renamed\",\"relation\":\"kernel_private.execution_bindings\",\"tgtype\":7,\"tgenabled\":\"O\",\"tgqual\":null,\"tgisinternal\":false,\"tgnargs\":0,\"tgattr\":\"\"}, expected {\"name\":\"execution_bindings_provenance\",\"relation\":\"kernel_private.execution_bindings\",\"tgtype\":7,\"tgenabled\":\"O\",\"tgqual\":null,\"tgisinternal\":false,\"tgnargs\":0,\"tgattr\":\"\"}"
+      ],
+      "failedOnPurpose": true,
+      "restored": true
+    }
+  ]
+}

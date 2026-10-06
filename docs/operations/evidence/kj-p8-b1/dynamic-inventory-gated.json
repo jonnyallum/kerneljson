@@ -1,0 +1,544 @@
+{
+  "contract": "kerneljson:b1-dynamic-inventory/v1",
+  "events": 54,
+  "roles": {
+    "kj_worker": {
+      "statements": 37,
+      "byConnection": {
+        "login": 37,
+        "setRole": 0
+      },
+      "observed": [
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.alert_state",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/alerting/pg-state-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.alert_state",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/alerting/pg-state-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.alert_state",
+          "columns": [
+            "current_state",
+            "first_seen_at",
+            "last_notified_at",
+            "last_seen_at",
+            "occurrence_count",
+            "recovered_at",
+            "severity"
+          ],
+          "callers": [
+            "services/kernel/src/alerting/pg-state-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.notification_delivery_events",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/alerting/pg-outbox-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.notification_outbox",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/alerting/pg-outbox-store.ts",
+            "services/kernel/src/alerting/pg-state-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.notification_outbox",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/alerting/pg-outbox-store.ts",
+            "services/kernel/src/alerting/pg-state-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "kernel_private.notification_outbox",
+          "columns": [
+            "attempt_count",
+            "delivered_at",
+            "last_attempt_at",
+            "last_error",
+            "next_attempt_at",
+            "status"
+          ],
+          "callers": [
+            "services/kernel/src/alerting/pg-outbox-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.schedule_fires",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.schedule_fires",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.schedule_fires",
+          "columns": [
+            "admission_request_id",
+            "admitted_at",
+            "admitted_child_task_id",
+            "state"
+          ],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "DELETE",
+          "object": "public.schedule_leases",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.schedule_leases",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.schedule_leases",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.schedule_leases",
+          "columns": [
+            "acquired_at",
+            "epoch",
+            "expires_at",
+            "owner"
+          ],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.schedule_observations",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.schedule_specs",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.schedule_specs",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "public.schedule_state",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.schedule_state",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "UPDATE",
+          "object": "public.schedule_state",
+          "columns": [
+            "active_version",
+            "state",
+            "updated_at",
+            "updated_by"
+          ],
+          "callers": [
+            "services/kernel/src/scheduler/pg-store.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        }
+      ],
+      "observedNotInManifest": [],
+      "inManifestNeverObserved": [
+        "DELETE kernel_private.control_assertions",
+        "EXECUTE kernel_private.identity_cognition_source_v1",
+        "EXECUTE kernel_private.identity_core_canonical_v1",
+        "EXECUTE kernel_private.identity_core_digest_v1",
+        "EXECUTE kernel_private.identity_json_string_v1",
+        "INSERT kernel_private.control_assertions",
+        "INSERT kernel_private.effect_receipts",
+        "INSERT kernel_private.execution_bindings",
+        "INSERT kernel_private.identity_cognition_latches",
+        "INSERT kernel_private.telegram_approval_cards",
+        "INSERT kernel_private.telegram_approval_handles",
+        "INSERT kernel_private.telegram_callback_inbox",
+        "INSERT kernel_private.telegram_inbox",
+        "INSERT kernel_private.terminal_results",
+        "INSERT public.approvals",
+        "INSERT public.capabilities",
+        "INSERT public.capability_runs",
+        "INSERT public.capability_versions",
+        "INSERT public.evidence",
+        "INSERT public.faculty_pins",
+        "INSERT public.identity_activations",
+        "INSERT public.identity_candidates",
+        "INSERT public.identity_pins",
+        "INSERT public.identity_profiles",
+        "INSERT public.identity_versions",
+        "INSERT public.memory_candidates",
+        "INSERT public.memory_context_assemblies",
+        "INSERT public.memory_promotions",
+        "INSERT public.memory_relations",
+        "INSERT public.memory_versions",
+        "INSERT public.outcomes",
+        "INSERT public.schedule_backfill_requests",
+        "INSERT public.task_events",
+        "INSERT public.task_steps",
+        "INSERT public.tasks",
+        "ROWLOCK public.capability_versions",
+        "ROWLOCK public.evidence",
+        "ROWLOCK public.memory_versions",
+        "ROWLOCK public.principals",
+        "ROWLOCK public.task_events",
+        "ROWLOCK public.tenant_memberships",
+        "SELECT kernel_private.control_assertions",
+        "SELECT kernel_private.effect_receipts",
+        "SELECT kernel_private.execution_bindings",
+        "SELECT kernel_private.identity_cognition_contract_v1",
+        "SELECT kernel_private.identity_cognition_latches",
+        "SELECT kernel_private.identity_governance_state",
+        "SELECT kernel_private.notification_delivery_events",
+        "SELECT kernel_private.release_activations",
+        "SELECT kernel_private.release_epoch",
+        "SELECT kernel_private.task_admissions",
+        "SELECT kernel_private.telegram_approval_cards",
+        "SELECT kernel_private.telegram_approval_handles",
+        "SELECT kernel_private.telegram_callback_inbox",
+        "SELECT kernel_private.telegram_inbox",
+        "SELECT kernel_private.telegram_operator_state",
+        "SELECT kernel_private.terminal_results",
+        "SELECT public.approvals",
+        "SELECT public.capabilities",
+        "SELECT public.capability_runs",
+        "SELECT public.capability_versions",
+        "SELECT public.evidence",
+        "SELECT public.faculty_current",
+        "SELECT public.faculty_pins",
+        "SELECT public.faculty_versions",
+        "SELECT public.identity_activations",
+        "SELECT public.identity_candidates",
+        "SELECT public.identity_current",
+        "SELECT public.identity_head",
+        "SELECT public.identity_pins",
+        "SELECT public.identity_profiles",
+        "SELECT public.identity_versions",
+        "SELECT public.memory_candidates",
+        "SELECT public.memory_context_assemblies",
+        "SELECT public.memory_current",
+        "SELECT public.memory_promotions",
+        "SELECT public.memory_relations",
+        "SELECT public.memory_versions",
+        "SELECT public.outcomes",
+        "SELECT public.principals",
+        "SELECT public.schedule_observations",
+        "SELECT public.task_events",
+        "SELECT public.task_steps",
+        "SELECT public.tasks",
+        "SELECT public.tenant_memberships",
+        "UPDATE kernel_private.telegram_approval_cards",
+        "UPDATE kernel_private.telegram_callback_inbox",
+        "UPDATE kernel_private.telegram_inbox",
+        "UPDATE kernel_private.telegram_operator_state",
+        "UPDATE public.approvals",
+        "UPDATE public.identity_candidates",
+        "UPDATE public.memory_candidates",
+        "UPDATE public.task_steps",
+        "UPDATE public.tasks"
+      ],
+      "denied": []
+    },
+    "kj_door": {
+      "statements": 17,
+      "byConnection": {
+        "login": 17,
+        "setRole": 0
+      },
+      "observed": [
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.dispatch_events",
+          "columns": [],
+          "callers": [
+            "apps/gateway/src/server.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.dispatch_events",
+          "columns": [],
+          "callers": [
+            "apps/gateway/src/server.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.effect_receipts",
+          "columns": [],
+          "callers": [
+            "apps/gateway/src/server.ts",
+            "services/kernel/src/terminal.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.execution_bindings",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/execution-binding.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.execution_bindings",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/execution-binding.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "INSERT",
+          "object": "kernel_private.task_admissions",
+          "columns": [],
+          "callers": [
+            "apps/gateway/src/server.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.task_admissions",
+          "columns": [],
+          "callers": [
+            "apps/gateway/src/server.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "kernel_private.terminal_results",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/terminal.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.outcomes",
+          "columns": [],
+          "callers": [
+            "services/kernel/src/terminal.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.principals",
+          "columns": [],
+          "callers": [
+            "packages/identity/src/index.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.principals",
+          "columns": [],
+          "callers": [
+            "packages/identity/src/index.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.tasks",
+          "columns": [],
+          "callers": [
+            "apps/gateway/src/server.ts",
+            "services/kernel/src/terminal.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "ROWLOCK",
+          "object": "public.tenant_memberships",
+          "columns": [],
+          "callers": [
+            "packages/identity/src/index.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        },
+        {
+          "verb": "SELECT",
+          "object": "public.tenant_memberships",
+          "columns": [],
+          "callers": [
+            "packages/identity/src/index.ts"
+          ],
+          "via": [
+            "login"
+          ]
+        }
+      ],
+      "observedNotInManifest": [],
+      "inManifestNeverObserved": [
+        "INSERT kernel_private.control_events",
+        "SELECT kernel_private.control_events",
+        "SELECT kernel_private.release_epoch",
+        "SELECT public.approvals",
+        "SELECT public.entities",
+        "SELECT public.evidence",
+        "SELECT public.memory_items",
+        "SELECT public.observations",
+        "SELECT public.relationships",
+        "SELECT public.task_events"
+      ],
+      "denied": []
+    }
+  }
+}
