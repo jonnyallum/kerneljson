@@ -1,12 +1,13 @@
 # KJ-P8 B1 entry brief: least-privilege runtime database roles
 
-Status: BRIEF ONLY, reconciled to ADR-0023 revision 2.5. It extracts the B1 contract from the sealed design so an
+Status: BRIEF ONLY, reconciled to ADR-0023 revision 2.6. It extracts the B1 contract from the sealed design so an
 engineering session starts from one place. It adds nothing to the design and changes nothing in it. Where this brief
 and the ADR differ, the ADR wins. B1 is authorised for remediation and qualification only; it is not merged, not
 deployed and not cut over.
 
-Source: ADR-0023 revision 2.5, section 27 (including sections 27.9 and 27.10), at hostile-sealed commit
-`424f85c283a543ba00a650ecc2ecc3a4346623df` (verdict APPROVE; it closes P8-R24-B1), in
+Source: ADR-0023 revision 2.6, section 27 (including sections 27.9, 27.10 and 27.11), at hostile-sealed commit
+`7712702020ef5d3d841f68f4d425d9707fb703eb` (verdict APPROVE; it closes B1-R25-B1), on revision 2.5
+`424f85c283a543ba00a650ecc2ecc3a4346623df` (APPROVE; it closed P8-R24-B1), in
 `docs/adr/0023-reflection-self-model-governed-growth.md` on branch `design/kjp8-reflection-governed-growth`. Earlier
 seals: revision 2.3 at `679e3a3dfc7a33f9106ed77913d49cdac19166d5`
 (`docs/reviews/KJ_P8_ADR0023_R23_HOSTILE_SEAL_679e3a3.md`); revision 2.4 at `8a17de18b26edd12a9f3af7ab6179552ff0cd20e`
@@ -232,3 +233,13 @@ return type, owner, language, `proconfig`, ACL (KernelJSON functions) or source 
 - The platform baseline is a frozen, reviewed artefact from a read-only snapshot of the target before B1. It may not
   contain anything in `public` or `kernel_private`, anything named `stamp_binding_provenance`, or any stage-manifest
   function. A later platform change turns health red until a reviewed refresh; nothing is learned automatically.
+
+## 17. The runtime capability fact model (ADR 27.11)
+
+An object privilege (relation, column, sequence, callable function) is a runtime capability fact only in a governed
+schema on which the role has effective USAGE, directly or through `PUBLIC`. Role attributes, memberships, ownership,
+database CONNECT/CREATE/TEMPORARY and schema USAGE/CREATE in every governed schema are exact and ungated, so a new
+schema USAGE is itself an unexpected fact. Function facts are keyed by exact identity, schema.name(argument types).
+A policy is a fact only on a reachable relation for an operation the role holds. The manifest is environment-
+independent; an unexpected fact on the target stops B1 (no platform revoke, no target-specific manifest addition).
+The section 27.10 definer inventory is not narrowed by this rule.

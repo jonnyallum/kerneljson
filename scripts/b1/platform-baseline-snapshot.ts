@@ -10,7 +10,7 @@
 // never logged and never written to the artefact; errors print only a fixed message and the PostgreSQL SQLSTATE.
 import { readFileSync, writeFileSync } from "node:fs";
 import pg from "pg";
-import { snapshotPlatformBaseline } from "../../services/kernel/src/database/platform-baseline-snapshot.js";
+import { parseConnectionFile, scrubPgEnvironment, snapshotPlatformBaseline } from "../../services/kernel/src/database/platform-baseline-snapshot.js";
 import { loadStageManifest } from "../../services/kernel/src/database/security-definers.js";
 
 const arg = (name: string): string => {
@@ -27,9 +27,17 @@ if (!/^[A-Za-z0-9._:-]{1,80}$/.test(environment)) {
   console.error("--environment must be 1 to 80 characters of [A-Za-z0-9._:-]");
   process.exit(2);
 }
-// Strip a UTF-8 BOM and surrounding whitespace; the value itself is never shown.
-const connectionString = readFileSync(urlFile, "utf8").replace(/^﻿/, "").trim();
-const client = new pg.Client({ connectionString, application_name: "kj-b1-platform-baseline-snapshot" });
+// No PG* default may supply a missing parameter, and the file must hold exactly one explicit URL. Never shown.
+const scrubbed = scrubPgEnvironment(process.env);
+let config: pg.ClientConfig;
+try {
+  config = parseConnectionFile(readFileSync(urlFile, "utf8"));
+} catch (error) {
+  console.error((error as Error).message);
+  process.exit(2);
+}
+if (scrubbed.length) console.log(`ignored PG* environment variables: ${scrubbed.join(", ")}`);
+const client = new pg.Client({ ...config, application_name: "kj-b1-platform-baseline-snapshot" });
 try {
   await client.connect();
   const baseline = await snapshotPlatformBaseline(client, environment, loadStageManifest());

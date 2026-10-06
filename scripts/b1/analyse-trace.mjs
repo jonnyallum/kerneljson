@@ -23,7 +23,8 @@ if (existsSync(traceDir))
 
 const granted = (role, object, verb) => {
   const r = manifest.roles[role];
-  if (verb === "EXECUTE") return object in r.functions;
+  // Manifest functions are keyed by exact identity (ADR-0023 27.11.3); a traced statement names the function only.
+  if (verb === "EXECUTE") return Object.keys(r.functions).some((k) => k.slice(0, k.indexOf("(")) === object);
   const rel = r.relations[object];
   if (!rel) return false;
   if (verb === "ROWLOCK") return "UPDATE" in rel.verbs;
@@ -52,7 +53,7 @@ for (const role of Object.keys(manifest.roles)) {
   const expected = [];
   for (const [object, rel] of Object.entries(manifest.roles[role].relations))
     for (const [verb, v] of Object.entries(rel.verbs)) expected.push(`${verb === "UPDATE" && v?.lockOnly ? "ROWLOCK" : verb} ${object}`);
-  for (const fn of Object.keys(manifest.roles[role].functions)) expected.push(`EXECUTE ${fn}`);
+  for (const fn of Object.keys(manifest.roles[role].functions)) expected.push(`EXECUTE ${fn.slice(0, fn.indexOf("("))}`);
   const seen = new Set(list.map((o) => `${o.verb} ${o.object}`));
   result.roles[role] = {
     statements: mine.filter((e) => e.kind === "use").length,

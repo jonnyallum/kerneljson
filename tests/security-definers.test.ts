@@ -6,6 +6,8 @@ import {
   compareDefiners, excludedSchemaSql, expectedDefiners, identityKey, isExcludedSchema, loadStageManifest, sha256, sortEntries,
   stageBindingProblems, stageFunctions, type DefinerEntry, type PlatformBaseline, type StageManifest,
 } from "../services/kernel/src/database/security-definers.js";
+import { expectedLedgerHead, parseConnectionFile, scrubPgEnvironment } from "../services/kernel/src/database/platform-baseline-snapshot.js";
+import { TABLE_PRIVILEGES, loadManifest } from "../services/kernel/src/database/runtime-roles.js";
 
 /**
  * KJ-P8 B1 - the stage-aware SECURITY DEFINER inventory of ADR-0023 revision 2.5, section 27.10, without a database:
@@ -40,7 +42,8 @@ describe("27.10.2 governed and excluded schemas", () => {
 
 describe("27.10.3 the KernelJSON stage manifest", () => {
   it("is bound to the sealed design and lists the six stages in rollout order", () => {
-    expect(manifest.design).toEqual({ adr: "ADR-0023", revision: "2.5", sha: SEALED_DESIGN });
+    expect(manifest.design).toEqual({ adr: "ADR-0023", revision: "2.6", sha: SEALED_DESIGN });
+    expect(SEALED_DESIGN).toBe("7712702020ef5d3d841f68f4d425d9707fb703eb");
     expect(manifest.stages.map((s) => s.stage)).toEqual([...STAGES]);
     expect(manifest.declaredStage).toBe("B1");
   });
@@ -242,5 +245,59 @@ describe("RFC 8785 canonical JSON", () => {
   it("sorts keys at every depth and is stable", () => {
     expect(canonicalJson({ b: [true, null, { z: "1", a: "2" }], a: "x" })).toBe('{"a":"x","b":[true,null,{"a":"2","z":"1"}]}');
     expect(() => canonicalJson({ n: 1 })).toThrow(/unsupported/);
+  });
+});
+
+describe("27.11 runtime capability facts (static)", () => {
+  it("the table privilege vocabulary is exactly the seven PostgreSQL defines", () => {
+    expect([...TABLE_PRIVILEGES]).toEqual(["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"]);
+  });
+  it("manifest function facts are exact identities and the migration grants exactly those, never by name", () => {
+    const runtime = loadManifest();
+    const identity = /^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*\((?:[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*(?:, [a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)*)?\)$/;
+    const keys = Object.values(runtime.roles).flatMap((r) => Object.keys(r.functions));
+    expect(keys.length).toBeGreaterThan(0);
+    for (const k of keys) expect(k, k).toMatch(identity);
+    const b1 = lf(readFileSync(`${MIGRATIONS}/${B1}`, "utf8"));
+    for (const k of Object.keys(runtime.roles.kj_worker.functions)) expect(b1).toContain(`grant execute on function ${k} to kj_worker;`);
+    expect(b1).not.toContain("grant execute on function %s"); // no grant loop over every overload of a name
+  });
+});
+
+describe("27.11.6 snapshot hardening (static)", () => {
+  const ok = "postgresql://owner@db.example.internal:5432/postgres";
+  it("accepts exactly one explicit postgres URL, with or without one trailing newline", () => {
+    expect(parseConnectionFile(ok)).toEqual({ connectionString: ok });
+    expect(parseConnectionFile(`${ok}\n`)).toEqual({ connectionString: ok });
+    expect(parseConnectionFile(`\uFEFF${ok}\r\n`)).toEqual({ connectionString: ok });
+  });
+  it.each([
+    ["an empty file", "", "empty or whitespace only"],
+    ["a whitespace-only file", "   \n", "empty or whitespace only"],
+    ["a NUL byte", `${ok}\0`, "NUL byte"],
+    ["two lines", `${ok}\n${ok}`, "more than one line"],
+    ["a trailing blank line", `${ok}\n\n`, "more than one line"],
+    ["surrounding spaces", ` ${ok} `, "leading or trailing whitespace"],
+    ["not a URL", "host=db user=owner", "does not hold a URL"],
+    ["another scheme", "mysql://owner@db/x", "not a postgres URL"],
+    ["no host (socket or PGHOST fallback)", "postgresql:///postgres", "must name the host, the user and the database"],
+    ["no user (PGUSER fallback)", "postgresql://db.example.internal/postgres", "must name the host, the user and the database"],
+    ["no database (PGDATABASE fallback)", "postgresql://owner@db.example.internal", "must name the host, the user and the database"],
+  ])("refuses %s, without echoing the content", (_label, raw, message) => {
+    let error: Error | undefined;
+    try { parseConnectionFile(raw); } catch (e) { error = e as Error; }
+    expect(error?.message).toMatch(/^CONNECTION_FILE_REFUSED: /);
+    expect(error?.message).toContain(message);
+    expect(error?.message).not.toContain("owner@");
+  });
+  it("scrubs every PG* variable so no default can fill a gap", () => {
+    const env: NodeJS.ProcessEnv = { PGHOST: "x", PGPASSWORD: "y", PGSSLMODE: "z", PATH: "p", KJ: "k" };
+    expect(scrubPgEnvironment(env)).toEqual(["PGHOST", "PGPASSWORD", "PGSSLMODE"]);
+    expect(env).toEqual({ PATH: "p", KJ: "k" });
+  });
+  it("the expected ledger head is the final base migration before B1", () => {
+    const last = manifest.baseMigrations.at(-1)!.file;
+    expect(expectedLedgerHead(manifest)).toBe(last.slice(0, 14));
+    expect(last < B1).toBe(true);
   });
 });

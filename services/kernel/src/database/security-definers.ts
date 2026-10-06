@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 import type pg from "pg";
 
 /**
- * KJ-P8 B1 - the stage-aware SECURITY DEFINER inventory (ADR-0023 revision 2.5, section 27.10, sealed at
- * 424f85c283a543ba00a650ecc2ecc3a4346623df).
+ * KJ-P8 B1 - the stage-aware SECURITY DEFINER inventory (ADR-0023 section 27.10: revision 2.5, unchanged in revision
+ * 2.6 sealed at 7712702020ef5d3d841f68f4d425d9707fb703eb). It is global over every governed schema and is never narrowed
+ * by the schema-USAGE gate of section 27.11.
  *
  *   EXPECTED(stage) = PLATFORM_BASELINE  UNION  KERNELJSON_STAGE_MANIFEST(stage)
  *   ACTUAL          = every pg_proc row with prosecdef = true whose schema is governed
@@ -18,7 +19,7 @@ import type pg from "pg";
  */
 type Db = Pick<pg.Pool | pg.PoolClient | pg.Client, "query">;
 
-export const SEALED_DESIGN = "424f85c283a543ba00a650ecc2ecc3a4346623df";
+export const SEALED_DESIGN = "7712702020ef5d3d841f68f4d425d9707fb703eb";
 export const STAGES = ["B1", "P8A-0", "B2", "P8A-1", "P8A-2", "P8B"] as const;
 export type Stage = (typeof STAGES)[number];
 export const STAGE_MANIFEST_PATH = "infrastructure/database/security-definer-stage-manifest.json";
@@ -317,11 +318,35 @@ export function stampProblems(facts: { sameName: readonly DefinerEntry[]; trigge
   return problems;
 }
 
+/**
+ * ADR-0023 revision 2.6 section 27.11.6 item 4: the committed baseline belongs to THIS database. Its systemIdentifier
+ * must equal the live one, and its database name the live current_database(). Either mismatch is a P0 problem; an
+ * unreadable live identifier is a problem too, never a pass.
+ */
+export async function baselineBindingProblems(db: Db, baseline: PlatformBaseline): Promise<string[]> {
+  let live: { sid: string; db: string };
+  try {
+    live = (await db.query<{ sid: string; db: string }>(
+      `select (select system_identifier::text from pg_catalog.pg_control_system()) as sid, pg_catalog.current_database() as db`)).rows[0]!;
+  } catch (error) {
+    return [`platform baseline binding unverifiable: the live system identifier cannot be read (SQLSTATE ${(error as { code?: string }).code ?? "unknown"})`];
+  }
+  const problems: string[] = [];
+  if (live.sid !== baseline.provenance.systemIdentifier)
+    problems.push(`platform baseline belongs to system ${baseline.provenance.systemIdentifier}, not this database's ${live.sid}`);
+  if (live.db !== baseline.provenance.database)
+    problems.push(`platform baseline belongs to database ${baseline.provenance.database}, not ${live.db}`);
+  return problems;
+}
+
 /** Everything 27.10 and 27.9.4 assert, as problem strings; empty means the inventory is exactly as sealed. */
 export async function definerInventoryProblems(db: Db, manifest: StageManifest, baseline: PlatformBaseline | null): Promise<string[]> {
   const problems: string[] = [];
   if (!baseline) problems.push("TARGET_PLATFORM_BASELINE_PENDING: no frozen platform SECURITY DEFINER baseline for this environment");
-  else problems.push(...baselineProblems(baseline, manifest).map((p) => `platform baseline invalid: ${p}`));
+  else {
+    problems.push(...baselineProblems(baseline, manifest).map((p) => `platform baseline invalid: ${p}`));
+    problems.push(...(await baselineBindingProblems(db, baseline)));
+  }
   const actual = await readDefiners(db);
   const diff = compareDefiners(actual, expectedDefiners(manifest, baseline, await deploymentOwner(db)));
   // Without a baseline the platform half is unknown: only KernelJSON schemas are judged for extras.

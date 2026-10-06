@@ -2,8 +2,8 @@
   "contract": "kerneljson:security-definer-stage-manifest/v1",
   "design": {
     "adr": "ADR-0023",
-    "revision": "2.5",
-    "sha": "424f85c283a543ba00a650ecc2ecc3a4346623df"
+    "revision": "2.6",
+    "sha": "7712702020ef5d3d841f68f4d425d9707fb703eb"
   },
   "repository": "jonnyallum/kerneljson",
   "releaseIdentity": "The commit that carries this file; a running process reports it as KERNELJSON_RELEASE_ID. A database is bound to the declared stage by catalogue equality (ADR-0023 section 27.10.5).",
@@ -116,7 +116,7 @@
       "migrations": [
         {
           "file": "20261002090000_runtime_least_privilege_roles.sql",
-          "sha256": "c76bedf90e8c358a34e459d7e30b6cdd3b1060a548a2e992759336ab166b1cc9"
+          "sha256": "5cbb8b54fdb64d5546bf5acce78a86de23fc5dadfb73a664b252549f7589c8a5"
         }
       ],
       "adds": [

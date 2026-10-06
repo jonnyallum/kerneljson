@@ -12,6 +12,8 @@ import {
 /**
  * The sealed snapshot procedure, read-only: one READ ONLY transaction with search_path = '' on the target before B1.
  * It refuses, and returns nothing, if B1 is already applied or an entry is ineligible. It never writes.
+ * ADR-0023 revision 2.6 section 27.11.6 item 3: it also refuses unless the migration ledger exists, its head is the
+ * final base migration of canonical main expected before B1, and kernel_private.stamp_binding_provenance() exists.
  */
 export async function snapshotPlatformBaseline(client: pg.Client | pg.PoolClient, environment: string, manifest: StageManifest): Promise<PlatformBaseline> {
   await client.query("begin transaction isolation level repeatable read read only");
@@ -31,13 +33,18 @@ export async function snapshotPlatformBaseline(client: pg.Client | pg.PoolClient
       head = l.head;
       b1Recorded = l.b1 === true;
     }
-    const stamp = (await client.query<{ d: boolean | null }>(
+    const stampRow = (await client.query<{ d: boolean }>(
       `select p.prosecdef as d from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
-        where n.nspname = 'kernel_private' and p.proname = 'stamp_binding_provenance' and p.pronargs = 0`)).rows[0]?.d ?? false;
+        where n.nspname = 'kernel_private' and p.proname = 'stamp_binding_provenance' and p.pronargs = 0`)).rows;
+    const stamp = stampRow[0]?.d ?? false;
     const entries = sortEntries((await client.query<DefinerEntry>(INVENTORY_SQL)).rows).map(baselineEntry);
     await client.query("commit");
     if (tx.ro !== "on" || (tx.sp !== '""' && tx.sp !== "")) throw new Error(`snapshot transaction was not READ ONLY with an empty search_path (${tx.ro}, ${tx.sp})`);
     if (b1Recorded || stamp) throw new Error("PLATFORM_BASELINE_REFUSED: B1 is already applied to this database; a baseline must be taken before B1");
+    if (!ledgerPresent) throw new Error("PLATFORM_BASELINE_REFUSED: the migration ledger supabase_migrations.schema_migrations does not exist");
+    const expectedHead = expectedLedgerHead(manifest);
+    if (head !== expectedHead) throw new Error(`PLATFORM_BASELINE_REFUSED: the migration ledger head is ${String(head)}, not ${expectedHead}, the final base migration before B1`);
+    if (stampRow.length !== 1) throw new Error("PLATFORM_BASELINE_REFUSED: kernel_private.stamp_binding_provenance() does not exist");
     const ineligible = baselineEligibilityProblems(entries, manifest);
     if (ineligible.length) throw new Error(`PLATFORM_BASELINE_REFUSED: ${ineligible.join("; ")}`);
     return {
@@ -60,3 +67,42 @@ export async function snapshotPlatformBaseline(client: pg.Client | pg.PoolClient
   }
 }
 
+/** The version of the last base migration (the stage manifest's baseMigrations), which the ledger head must equal. */
+export function expectedLedgerHead(manifest: StageManifest): string {
+  const last = manifest.baseMigrations.at(-1)?.file ?? "";
+  const version = /^([0-9]{14})_/.exec(last)?.[1];
+  if (!version) throw new Error("stage manifest has no base migration version");
+  return version;
+}
+
+/**
+ * ADR-0023 revision 2.6 section 27.11.6 item 2: the connection-string file must hold exactly one explicit PostgreSQL URL.
+ * An empty, whitespace-only, NUL-containing or multi-line file is refused, and so is a URL without an explicit host,
+ * user or database, so the client can never fall back to PG* environment variables or a local default. The messages
+ * are fixed and never contain the file's content.
+ */
+export function parseConnectionFile(raw: string): pg.ClientConfig {
+  const text = raw.replace(/^\uFEFF/, "");
+  if (text.includes("\0")) throw new Error("CONNECTION_FILE_REFUSED: the file contains a NUL byte");
+  const value = text.replace(/\r?\n$/, "");
+  if (value.trim() === "") throw new Error("CONNECTION_FILE_REFUSED: the file is empty or whitespace only");
+  if (/[\r\n]/.test(value)) throw new Error("CONNECTION_FILE_REFUSED: the file holds more than one line");
+  if (value !== value.trim()) throw new Error("CONNECTION_FILE_REFUSED: the URL has leading or trailing whitespace");
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("CONNECTION_FILE_REFUSED: the file does not hold a URL");
+  }
+  if (url.protocol !== "postgres:" && url.protocol !== "postgresql:") throw new Error("CONNECTION_FILE_REFUSED: not a postgres URL");
+  if (!url.hostname || !url.username || url.pathname.length < 2)
+    throw new Error("CONNECTION_FILE_REFUSED: the URL must name the host, the user and the database explicitly");
+  return { connectionString: value };
+}
+
+/** Remove every PG* variable from an environment so that libpq-style defaults cannot supply a missing parameter. */
+export function scrubPgEnvironment(env: NodeJS.ProcessEnv): string[] {
+  const removed = Object.keys(env).filter((k) => /^PG[A-Z_]*$/.test(k)).sort();
+  for (const k of removed) delete env[k];
+  return removed;
+}

@@ -4,8 +4,9 @@ import pg from "pg";
 import { excludedSchemaSql } from "./security-definers.js";
 
 /**
- * KJ-P8 B1 (ADR-0023 revision 2.5, section 27, sealed at 424f85c283a543ba00a650ecc2ecc3a4346623df) - least-privilege
- * runtime database roles. The SECURITY DEFINER inventory of section 27.10 lives in ./security-definers.ts.
+ * KJ-P8 B1 (ADR-0023 revision 2.6, section 27, sealed at 7712702020ef5d3d841f68f4d425d9707fb703eb) - least-privilege
+ * runtime database roles. The capability fact model of section 27.11 is `actualFacts` below; the SECURITY DEFINER
+ * inventory of section 27.10 lives in ./security-definers.ts and is never narrowed by the schema-USAGE gate.
  *
  * Two things live here, and nothing else:
  *   1. `assertRuntimeRole`: every runtime process proves, before it serves anything, that its database session is
@@ -144,7 +145,22 @@ export function expectedFacts(manifest: RuntimeRoleManifest, role: RuntimeRole):
 
 /** Section 27.10.2: the one exact predicate for schemas outside the catalogue comparisons. */
 const GOVERNED = (column: string): string => `not ${excludedSchemaSql(column)}`;
-/** The complete actual capability set of one role, read from the catalogues. Effective privileges, PUBLIC included. */
+/** Section 27.11.1: an object fact needs effective USAGE on its (governed) schema, directly or through PUBLIC. */
+const REACHABLE = (namespace: string): string => `${GOVERNED(`${namespace}.nspname`)} and has_schema_privilege($1, ${namespace}.oid, 'USAGE')`;
+/** Every privilege PostgreSQL defines on a table-like relation; none may be silently left out of the fact set. */
+export const TABLE_PRIVILEGES = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"] as const;
+/** Section 27.11.3: exact function identity, schema.name(<type schema>.<type name>, ...), independent of search_path. */
+export const FUNCTION_IDENTITY_SQL = (p: string, n: string): string =>
+  `${n}.nspname || '.' || ${p}.proname || '(' || array_to_string(array(
+     select tn.nspname || '.' || t.typname from unnest(${p}.proargtypes::oid[]) with ordinality as a(oid, i)
+       join pg_type t on t.oid = a.oid join pg_namespace tn on tn.oid = t.typnamespace order by a.i), ', ') || ')'`;
+/**
+ * The complete actual capability set of one role, read from the catalogues, under the capability fact model of
+ * ADR-0023 section 27.11. Effective privileges, PUBLIC included.
+ *   - Exact and ungated: role attributes, memberships, ownership, database CONNECT/CREATE/TEMPORARY, and schema
+ *     USAGE/CREATE in every governed schema. A new USAGE on any schema is therefore itself an unexpected fact.
+ *   - Gated by effective schema USAGE: relation, column, sequence and function privileges, and policies.
+ */
 export async function actualFacts(db: Db, role: RuntimeRole): Promise<string[]> {
   const facts: string[] = [];
   const q = async <T extends Record<string, unknown>>(sql: string): Promise<T[]> => (await db.query<T>(sql, [role])).rows;
@@ -179,8 +195,8 @@ export async function actualFacts(db: Db, role: RuntimeRole): Promise<string[]> 
   for (const t of await q<{ name: string; p: string }>(
     `select n.nspname || '.' || c.relname as name, p
        from pg_class c join pg_namespace n on n.oid = c.relnamespace,
-            unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p
-      where c.relkind in ('r','v','m','p','f') and ${GOVERNED("n.nspname")} and has_table_privilege($1, c.oid, p)`,
+            unnest(array[${TABLE_PRIVILEGES.map((x) => `'${x}'`).join(",")}]) p
+      where c.relkind in ('r','v','m','p','f') and ${REACHABLE("n")} and has_table_privilege($1, c.oid, p)`,
   ))
     facts.push(`relation:${t.name}:${t.p}`);
   for (const c of await q<{ name: string; p: string }>(
@@ -188,25 +204,36 @@ export async function actualFacts(db: Db, role: RuntimeRole): Promise<string[]> 
        from pg_class c join pg_namespace n on n.oid = c.relnamespace
        join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped,
             unnest(array['SELECT','INSERT','UPDATE','REFERENCES']) p
-      where c.relkind in ('r','v','m','p','f') and ${GOVERNED("n.nspname")}
+      where c.relkind in ('r','v','m','p','f') and ${REACHABLE("n")}
         and not has_table_privilege($1, c.oid, p) and has_column_privilege($1, c.oid, a.attnum, p)`,
   ))
     facts.push(`column:${c.name}:${c.p}`);
   for (const s of await q<{ name: string; p: string }>(
     `select n.nspname || '.' || c.relname as name, p
        from pg_class c join pg_namespace n on n.oid = c.relnamespace, unnest(array['USAGE','SELECT','UPDATE']) p
-      where c.relkind = 'S' and ${GOVERNED("n.nspname")} and has_sequence_privilege($1, c.oid, p)`,
+      where c.relkind = 'S' and ${REACHABLE("n")} and has_sequence_privilege($1, c.oid, p)`,
   ))
     facts.push(`sequence:${s.name}:${s.p}`);
   for (const f of await q<{ name: string }>(
-    `select distinct n.nspname || '.' || p.proname as name
+    `select ${FUNCTION_IDENTITY_SQL("p", "n")} as name
        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-      where ${GOVERNED("n.nspname")} and p.prorettype <> 'trigger'::regtype and has_function_privilege($1, p.oid, 'EXECUTE')`,
+      where ${REACHABLE("n")} and p.prorettype <> 'pg_catalog.trigger'::pg_catalog.regtype and has_function_privilege($1, p.oid, 'EXECUTE')`,
   ))
     facts.push(`function:${f.name}:EXECUTE`);
   for (const p of await q<{ name: string; policyname: string; cmd: string; qual: string | null; with_check: string | null; permissive: string }>(
-    `select schemaname || '.' || tablename as name, policyname, cmd, qual, with_check, permissive
-       from pg_policies where $1 = any(roles) or 'public' = any(roles)`,
+    // Section 27.11.3: a policy is a fact only on a reachable relation, for an operation the role holds there.
+    `select pol.schemaname || '.' || pol.tablename as name, pol.policyname, pol.cmd, pol.qual, pol.with_check, pol.permissive
+       from pg_policies pol join pg_namespace n on n.nspname = pol.schemaname
+       join pg_class c on c.relnamespace = n.oid and c.relname = pol.tablename
+      where ($1 = any(pol.roles) or 'public' = any(pol.roles)) and ${REACHABLE("n")}
+        and case pol.cmd
+              when 'SELECT' then has_any_column_privilege($1, c.oid, 'SELECT')
+              when 'INSERT' then has_any_column_privilege($1, c.oid, 'INSERT')
+              when 'UPDATE' then has_any_column_privilege($1, c.oid, 'UPDATE')
+              when 'DELETE' then has_table_privilege($1, c.oid, 'DELETE')
+              else has_any_column_privilege($1, c.oid, 'SELECT') or has_any_column_privilege($1, c.oid, 'INSERT')
+                or has_any_column_privilege($1, c.oid, 'UPDATE') or has_table_privilege($1, c.oid, 'DELETE')
+            end`,
   ))
     facts.push(
       `policy:${p.name}:${p.policyname}:${p.cmd}:using=${p.qual ?? "-"}:check=${p.with_check ?? "-"}` +

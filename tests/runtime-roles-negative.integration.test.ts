@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import pg from "pg";
 import { DATABASE, compose, holdRuntime, migrate, until } from "./support/local.js";
-import { RUNTIME_ROLES, actualFacts, loadManifest, type RuntimeRole } from "../services/kernel/src/database/runtime-roles.js";
+import { FUNCTION_IDENTITY_SQL, RUNTIME_ROLES, actualFacts, loadManifest, type RuntimeRole } from "../services/kernel/src/database/runtime-roles.js";
 
 /**
  * KJ-P8 B1 gate 7 - negative privilege qualification. Every forbidden power is ATTEMPTED on a genuine login session
@@ -171,7 +171,7 @@ describe.each(RUNTIME_ROLES)("B1 forbidden powers: %s", (role: RuntimeRole) => {
   it("every function outside the manifest is not executable", async () => {
     const granted = new Set(Object.keys(manifest.roles[role].functions));
     const { rows } = await owner.query<{ name: string; ok: boolean }>(
-      `select distinct n.nspname || '.' || p.proname as name, has_function_privilege($1, p.oid, 'EXECUTE') as ok
+      `select ${FUNCTION_IDENTITY_SQL("p", "n")} as name, has_function_privilege($1, p.oid, 'EXECUTE') as ok
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
         where n.nspname in ('public','kernel_private') and p.prorettype <> 'trigger'::regtype`, [role]);
     for (const f of rows.filter((r) => !granted.has(r.name))) {

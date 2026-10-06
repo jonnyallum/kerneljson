@@ -4,8 +4,8 @@ Status: PLAN ONLY. **Nothing in this document has been executed.** No production
 configuration or deployment was touched while preparing the B1 candidate. Executing this plan needs its own explicit
 authorisation and its own change window (new-system `docs/migration/CHANGE_WINDOWS.md`).
 
-Design: ADR-0023 revision 2.5, section 27 (including 27.9 and 27.10), hostile-sealed APPROVE at
-`424f85c283a543ba00a650ecc2ecc3a4346623df`.
+Design: ADR-0023 revision 2.6, section 27 (including 27.9, 27.10 and 27.11), hostile-sealed APPROVE at
+`7712702020ef5d3d841f68f4d425d9707fb703eb`.
 Candidate: branch `feat/kjp8-b1-runtime-least-privilege` (see `KJ_P8_B1_IMPLEMENTATION_REPORT.md`).
 
 ## 1. What changes in production
@@ -44,10 +44,13 @@ Nothing else changes: no table, column, trigger body, owner or existing migratio
      and alter it afterwards;
    - how a custom role logs in through the connection pooler in use, and which pooler mode the services use (the
      runner lock uses session-level advisory locks, which need a session-mode connection);
-   - which schemas other than `public` and `kernel_private` grant USAGE to `PUBLIC`, and which functions there are
-     executable by `PUBLIC`. On the hosting platform some are expected; the manifest lists none. Each one found is
-     either revoked from `PUBLIC`, or added to the manifest by a reviewed change, before cutover. Until then the
-     catalogue equality check would report them as extra and the health check would be CRITICAL;
+   - the runtime capability facts of both roles under ADR 27.11. A platform object, sequence, function or policy
+     granted to `PUBLIC` inside a schema the role cannot USAGE is **not** a runtime fact and needs nothing. Any
+     unexpected fact that remains (for example a platform schema that grants USAGE to `PUBLIC`, which is an
+     unexpected `schema:<name>:USAGE` fact and exposes the objects inside it) **stops B1**: classify it and report it.
+     A platform grant is never revoked without separate authority, and target-specific authority is never added to the
+     repository manifest to make health green (ADR 27.7, 27.11.5). A genuinely required new runtime capability needs
+     its own reviewed manifest change and design authority, and is a new candidate SHA;
    - whether revoking TEMPORARY on the database from `PUBLIC` affects any platform role. If it does, that revoke is
      replaced by a reviewed alternative before the window;
    - default privileges in `public` and `kernel_private` (`pg_default_acl`): none may grant to the runtime roles;
@@ -71,8 +74,12 @@ Each step has a check chosen before acting and a result that means failure.
    that name, one KernelJSON definer).
    Check: the catalogue equals the manifest for both roles (`compareRoleToManifest`, both directions empty) and the
    `SECURITY DEFINER` inventory equals `EXPECTED(B1)` against the committed platform baseline
-   (`definerInventoryProblems` empty). Failure: any missing, extra or mismatched fact. On failure, roll back the
-   transaction; nothing has changed.
+   (`definerInventoryProblems` empty, including the committed baseline's `systemIdentifier` and database name equal to
+   the live database's). Failure: any missing, extra or mismatched fact.
+   **Transaction behaviour (ADR 27.11.6 item 5).** The migration's own assertions run before its COMMIT: if one fails,
+   the transaction rolls back and nothing has changed. The catalogue and inventory checks above run after the migration
+   has committed and cannot roll it back. If one of them fails, stop the window and invoke the recorded rollback
+   procedure of section 6; do not continue to step 3.
 3. **Provision credentials out of band.** As the owner, set a generated password on each role. Store each in the
    vault through `secretctl`, value never in an argument, with a length expectation. The migration contains no
    password and never will.
@@ -124,7 +131,9 @@ an owner session.
 
 | Failure | Response |
 |---|---|
-| Migration check fails in step 2 | roll back the transaction; production is unchanged; close the window |
+| The migration's own pre-COMMIT check fails in step 2 | the migration's transaction rolls back; production is unchanged; close the window |
+| A post-COMMIT check of step 2 fails (catalogue, capability facts, definer inventory, baseline binding) | stop the window; invoke the rollback procedure below; the committed migration is not undone by the check |
+| An unexpected runtime capability fact on the target | stop; classify and report it; no platform revoke and no target-specific manifest addition (ADR 27.11.5) |
 | A service refuses to start, or a legitimate statement gets `42501` | stop that service or path. Do not reconnect it as the owner. Identify the exact missing privilege. |
 | A privilege is genuinely missing | fix forward: a reviewed manifest change, a regenerated migration, a new candidate SHA, applied in a window |
 | The window cannot complete in time | roll back as below |

@@ -54,10 +54,17 @@
       "reason": "canonical memory service locks the head version row; assembled across string literals. Observed in the dynamic trace."
     }
   ],
+  "functionIdentities": {
+    "note": "ADR-0023 revision 2.6 section 27.11.3: function capability facts are keyed by exact identity, schema.name(<type schema>.<type name>, ...). Each function name the inventory finds maps to the exact overload(s) the runtime may execute; build-manifest.mjs refuses a name without an entry. Read from the CREATE FUNCTION statements in 20260929120000_identity_cognition_binding.sql.",
+    "kernel_private.identity_cognition_source_v1": ["kernel_private.identity_cognition_source_v1(pg_catalog.uuid, pg_catalog.uuid, pg_catalog.int4)"],
+    "kernel_private.identity_core_canonical_v1": ["kernel_private.identity_core_canonical_v1(pg_catalog.jsonb)"],
+    "kernel_private.identity_core_digest_v1": ["kernel_private.identity_core_digest_v1(pg_catalog.jsonb)"],
+    "kernel_private.identity_json_string_v1": ["kernel_private.identity_json_string_v1(pg_catalog.text)"]
+  },
   "securityDefinerTriggers": [
     {
       "function": "kernel_private.stamp_binding_provenance",
-      "reason": "ADR-0023 revision 2.5 section 27.9 (sealed at 424f85c283a543ba00a650ecc2ecc3a4346623df): the one enumerated B1 SECURITY DEFINER exception. This existing BEFORE INSERT trigger on kernel_private.execution_bindings performs a real UPDATE of kernel_private.release_epoch (epoch = epoch) to lock it and stamp the binding. As SECURITY DEFINER it does exactly the same work with the owner's rights, and neither runtime role holds any write on release_epoch or release_activations. Its body is not touched: B1 changes only its security attributes.",
+      "reason": "ADR-0023 section 27.9 (revision 2.5, unchanged in revision 2.6 sealed at 7712702020ef5d3d841f68f4d425d9707fb703eb): the one enumerated B1 SECURITY DEFINER exception. This existing BEFORE INSERT trigger on kernel_private.execution_bindings performs a real UPDATE of kernel_private.release_epoch (epoch = epoch) to lock it and stamp the binding. As SECURITY DEFINER it does exactly the same work with the owner's rights, and neither runtime role holds any write on release_epoch or release_activations. Its body is not touched: B1 changes only its security attributes.",
       "sourceDigest": "468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e439b",
       "sourceDigestDerivation": "ADR-0023 section 27.9.3: lowercase hex SHA-256 of pg_proc.prosrc, UTF-8, CRLF replaced by LF. Derivation B (this pin) is the text between the dollar quotes of the function in applied migration 20260916205049_release_provenance.sql at canonical main 20e39f797be9c4c982bc32fb40b6aa1427b5c09c, recomputed by build-manifest.mjs on every run. Derivation A is pg_proc.prosrc of a database migrated from main without B1, asserted equal by tests/runtime-roles-definers.integration.test.ts."
     }
