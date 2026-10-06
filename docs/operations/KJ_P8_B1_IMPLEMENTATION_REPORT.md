@@ -3,12 +3,13 @@
 Status: ENGINEERING CANDIDATE, not merged, not deployed. **Repository-qualified; target platform baseline pending
 (section 12).** Production was not touched. No P8A-0 object exists in this candidate.
 
-Design authority: ADR-0023 revision 2.5, section 27 (including 27.9 and 27.10), hostile-sealed APPROVE at
-`424f85c283a543ba00a650ecc2ecc3a4346623df` on branch `design/kjp8-reflection-governed-growth`. It supersedes revision
-2.3 (`679e3a3`) for B1 and closes the ruling this report previously left open. Entry contract:
-`docs/operations/KJ_P8_B1_ENTRY_BRIEF.md`, reconciled to revision 2.5. Base: `main`
-`20e39f797be9c4c982bc32fb40b6aa1427b5c09c`. Candidate history: `4314858`, `108db1b` (the frozen candidate),
-`d1a7d97` (revision 2.5 remediation), `d2a2447` (fixture corrections), then the evidence commit.
+Design authority: ADR-0023 revision 2.6, section 27 (including 27.9, 27.10 and 27.11), hostile-sealed APPROVE at
+`7712702020ef5d3d841f68f4d425d9707fb703eb` on branch `design/kjp8-reflection-governed-growth`, on revision 2.5
+`424f85c` (APPROVE). Revision 2.6 closes B1-R25-B1, the one blocker the hostile review of `54a469c` found. Entry
+contract: `docs/operations/KJ_P8_B1_ENTRY_BRIEF.md`, reconciled to revision 2.6. Base: `main`
+`20e39f797be9c4c982bc32fb40b6aa1427b5c09c`. Candidate history: `4314858`, `108db1b`, `d1a7d97` and `d2a2447`
+(revision 2.5 remediation), `54a469c` (reviewed, BLOCK on B1-R25-B1), `437eda6` (revision 2.6 remediation), `94bb6cb`
+(discovery-mode skip for one new health case), then the evidence commit.
 
 Tags used below: **FACT** was observed in this work; **INFERENCE** was reasoned and not exercised.
 
@@ -184,48 +185,35 @@ does not satisfy the guard; the message never contains the connection string.
 | `SET ROLE`, `SET SESSION AUTHORIZATION`, `session_replication_role` in runtime code | none |
 | literal `postgres` credential in runtime code | none |
 | `SECURITY DEFINER` | the KernelJSON half is exactly `stamp_binding_provenance()` (section 3); every governed schema is inventoried against the stage manifest and the frozen platform baseline (section 12) |
-| EXECUTE through `PUBLIC` | revoked for all functions in both schemas; catalogue equality reads effective privileges, so a future grant to `PUBLIC` fails the test |
+| EXECUTE through `PUBLIC` | revoked for all functions in both schemas; catalogue equality reads effective privileges, so a future grant to `PUBLIC` in a schema the role can USAGE fails the test (ADR 27.11) |
 | dynamic SQL with interpolated identifiers in runtime queries | none found |
 | deployment modules imported by a runtime entry | none (tested) |
 
 ## 7. Qualification results (gates 6 to 9)
 
-FACT. These runs are GitHub Actions CI (`ubuntu-24.04`, Postgres 17.6 and Restate 1.7.9 in docker compose), run
-`37459729830` on `d2a2447908a0b2588433c3f2580c11caf41d88a4`; the base row is `main`'s own CI run `36940075218` on
-`20e39f7`. Local Docker was not available for this remediation, so nothing below comes from a local run. The evidence
-in `docs/operations/evidence/kj-p8-b1/` was regenerated from those artefacts by `scripts/b1/summarise.mjs`.
+FACT. GitHub Actions CI (`ubuntu-24.04`, Postgres 17.6 and Restate 1.7.9 in docker compose), run `37537615887` on
+`94bb6cba979596251fbdf1177b599a193ad104ac`; the base row is `main`'s own CI run `36940075218` on `20e39f7`. Local Docker
+was not available, so nothing below comes from a local run. The evidence in `docs/operations/evidence/kj-p8-b1/` was
+regenerated from those artefacts by `scripts/b1/summarise.mjs`; nothing was hand-edited.
 
 | Run | Total | Passed | Failed | Skipped |
 |---|---|---|---|---|
 | Base `20e39f7`, everything as the owner (`main` CI) | 1,861 | 1,799 | 0 | 62 |
-| B1, enforce mode (`validate` job; genuine `kj_worker` / `kj_door` sessions) | 2,160 | 2,098 | 0 | 62 |
-| B1, discovery mode (`b1-qualification` job) | 2,160 | 2,097 | 0 | 63 |
+| B1, enforce mode (`validate` job; genuine `kj_worker` / `kj_door` sessions) | 2,188 | 2,126 | 0 | 62 |
+| B1, discovery mode (`b1-qualification` job) | 2,188 | 2,124 | 0 | 64 |
 | Six environment-gated files, B1 enforce mode (`b1-qualification` job) | 43 | 43 | 0 | 0 |
 
-- Pre-existing test files under the roles: 1,805 passed and 62 skipped, in both modes. That is the 1,799 of the
-  base plus the 6 cases B1 adds to existing files; the 62 skips are the same environment-gated tests, and
-  `pnpm test:baseline` passes. B1 test files add 293 passing cases (one more is skipped in discovery mode because it
-  needs a genuine session).
-- **Unexpected `42501`: 0**, in the enforce run, the discovery run and the gated run (trace gate
-  `analyse-trace.mjs --fail-on-refusal`). Observed operations not in the manifest: 0 for both roles.
-- **Negative probes: 237 of 237 pass** (98 for `kj_worker`, 139 for `kj_door`), each with its pinned SQLSTATE.
-- **ADR 27.9.5 matrix: all 27 sealed rows, 62 of 62 probes pass** across both roles (`b1-definer-probes.json`).
-  Rows 15, 20 and 21 keep the design's grouping (two, three and two forms). The 56 refusals all returned `42501`,
-  including row 1, the direct call (`0A000` would have been a DESIGN_MISMATCH; it did not occur). Every refusal is
-  followed by an owner re-read showing nothing changed. Rows 25 to 27: with a changed `search_path`, with forged
-  `release_epoch` and `persisted_at`, and repeatedly, inserted bindings carry the canonical epoch and a fresh
-  timestamp, and the epoch's value does not change.
-- **Catalogue equality: pass in both directions for both roles**, with the existing negative cases.
-- **`SECURITY DEFINER` inventory: pass** against a qualification-fixture baseline (section 12). **28 deliberate
-  failures, 28 seen red and restored to green**: an extra platform definer after the snapshot, a missing one, changed
-  owner, return type, `proconfig` and digest, a platform-looking schema, a new application schema, a moved function, a
-  definer in `public`, a P8A-0 function present at B1, a second `stamp_binding_provenance` and an overload, the stamp
-  function back to invoker, executable by `kj_worker` or `PUBLIC`, a null `proacl`, a widened or missing
-  `search_path`, another owner, a changed body, the trigger disabled, replica-only, always, attached twice, attached
-  elsewhere, given a `WHEN`, and renamed.
-- **Schema predicate, observed:** temporary schemas are named `pg_temp_15` and `pg_toast_temp_15`; `CREATE SCHEMA
-  pg_kj_probe` is refused `42939` even for the owner.
-- **Mutation jobs:** faculty, identity and identity-cognition mutation checks are green in the same CI run.
+- Pre-existing test files under the roles: 1,805 passed and 62 skipped, in both modes: the 1,799 of the base plus the
+  6 cases B1 adds to existing files; `pnpm test:baseline` passes. B1 test files add 321 passing cases (two are
+  skipped in discovery mode because they need a genuine session).
+- **Unexpected `42501`: 0** in the enforce, discovery and gated runs; observed operations not in the manifest: 0.
+- **Negative probes: 237 of 237**; **ADR 27.9.5: all 27 sealed rows, 62 of 62 probes**, the 56 refusals all `42501`
+  (row 1, the direct call, included), each with an owner re-read showing nothing changed.
+- **Catalogue equality: pass in both directions for both roles** (`runtime-roles-catalogue`, 26 of 26), including the
+  ADR 27.11.7 cases of section 13.
+- **`SECURITY DEFINER` inventory: pass** against the qualification-fixture baseline; **28 of 28 deliberate failures**
+  seen red and restored (`runtime-roles-definers`, 50 of 50).
+- **Mutation jobs:** faculty, identity and identity-cognition mutation checks green in the same run.
 
 ## 8. Existing tests whose expectations changed (gate 9)
 
@@ -258,11 +246,15 @@ Stated so that nobody assumes otherwise:
 ## 10. Not verified, and must be at cutover
 
 - **Production was not inspected, read or written.** The door's current role, the pooler mode, platform schemas
-  that grant to `PUBLIC`, and whether revoking TEMPORARY from `PUBLIC` affects a platform role are all unknown. Each
-  is a precondition in the cutover plan. FACT from the qualification fixture: a platform function executable by
-  `PUBLIC` is reported by the existing grant-manifest equality as a runtime-role grant (`kj_worker holds unlisted
-  function:auth...:EXECUTE`) and turns the health check red. On the hosting platform such functions are expected,
-  so cutover precondition 6 (revoke or list each by a reviewed change) is real work, not a formality.
+  that grant USAGE to `PUBLIC`, and whether revoking TEMPORARY from `PUBLIC` affects a platform role are all unknown.
+  Each is a precondition in the cutover plan. Under ADR 27.11 a platform `PUBLIC` grant inside a schema the roles
+  cannot USAGE is not a runtime fact (FACT, section 13); a platform schema that grants USAGE to `PUBLIC` would be an
+  unexpected fact, and the cutover plan now says that stops B1 for classification, with no platform revoke and no
+  target-specific manifest addition.
+- INFERENCE, to confirm at target qualification: the snapshot requires the Supabase ledger head to equal
+  `20260929120000`, the final base migration. An earlier production record noted ledger drift
+  (`PHASE_KJ_P7A_PRIMARY_IDENTITY_STORE_LIVE_RESULT_2026-09-28.md`); if the target ledger is behind, the snapshot
+  refuses and the drift needs its own ruling before a baseline can be taken.
 - **The target platform `SECURITY DEFINER` baseline has not been taken** (section 12).
 - The connection limits (40 and 20) are INFERENCE from pool sizes in the code (worker 10 + 3 + 3, door 10).
 - The environment-gated files were not re-run as the owner at the base commit in this remediation (the frozen
@@ -325,3 +317,38 @@ It opens one READ ONLY transaction with `search_path = ''`, writes nothing, and 
 ineligible. Delete the URL file afterwards. The artefact is reviewed and committed, which makes a new candidate SHA
 for review. If the platform role cannot execute `pg_control_system()`, the tool stops with a fixed message and the
 SQLSTATE; that would need a design ruling on the provenance field, not a weaker snapshot.
+
+## 13. The runtime capability fact model (ADR 27.11)
+
+`actualFacts()` now implements the sealed rule: a relation, column, sequence or callable-function fact exists only in a
+governed schema on which the role has effective USAGE (directly or through `PUBLIC`), and only where the object
+privilege is effective. Role attributes, memberships, ownership, database CONNECT/CREATE/TEMPORARY and schema
+USAGE/CREATE in every governed schema stay exact and ungated. Function facts are keyed by exact identity
+(`schema.name(<schema>.<type>, ...)`); the manifest and the migration's grants use the reviewed identities in
+`runtime-role-decisions.json` `functionIdentities` (for example
+`kernel_private.identity_cognition_source_v1(pg_catalog.uuid, pg_catalog.uuid, pg_catalog.int4)`), and no grant-by-name
+loop remains. A policy is a fact only on a reachable relation for an operation the role holds. The section 27.10
+definer inventory is unchanged and still global.
+
+FACT (CI run `37537615887`), each made to fail on purpose:
+
+| ADR 27.11.7 case | Observed |
+|---|---|
+| `PUBLIC` grants of all seven table privileges, a column, a sequence and a function, and a `PUBLIC` policy, in a governed schema without USAGE | no fact for either role; equality still empty in both directions |
+| the same schema after `GRANT USAGE ... TO PUBLIC` | `schema:<name>:USAGE` plus every object, sequence, function and policy fact, for both roles; gone again on revoke |
+| an overload `identity_core_digest_v1(text)` of a manifest function | a separate fact `...(pg_catalog.text):EXECUTE`; the listed `(pg_catalog.jsonb)` identity is not missing |
+| a `PUBLIC` policy on a relation the role holds no privilege on | no fact; after `GRANT SELECT` to `kj_worker`, exactly the SELECT policy and the relation fact, and nothing for `kj_door` |
+| every KernelJSON-generated policy | still exactly equal to the manifest, both roles |
+| a definer in a schema with no runtime USAGE | still reported by the 27.10 inventory |
+| the table privilege vocabulary | exactly SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, and each is read |
+
+Hardening (ADR 27.11.6), FACT:
+- the snapshot connection file is refused when empty, whitespace-only, NUL-containing, multi-line, padded, not a
+  `postgres` URL, or missing an explicit host, user or database; every `PG*` variable is removed before connecting,
+  and no message contains the file's content (unit tests);
+- the snapshot refuses with no migration ledger, with a ledger head other than `20260929120000`, and without
+  `kernel_private.stamp_binding_provenance()`, and succeeds once all hold (integration test);
+- health compares the committed baseline's `systemIdentifier` and database name with the live database; either
+  mismatch is a P0 problem, and an unreadable identifier is a problem, never a pass. `kj_worker` reads it (enforce run);
+- the cutover plan separates the migration's pre-COMMIT assertions (which roll back) from post-COMMIT checks (whose
+  failure stops the window and invokes the rollback procedure).

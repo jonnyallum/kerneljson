@@ -288,7 +288,7 @@
       "probe": "search_path manipulation then insert",
       "observed": {
         "epoch": "7",
-        "persisted": "2026-10-06 12:00:23.361095+00",
+        "persisted": "2026-10-06 22:03:34.112374+00",
         "recent": true
       },
       "pass": true
@@ -299,7 +299,7 @@
       "probe": "forged release_epoch / persisted_at",
       "observed": {
         "epoch": "7",
-        "persisted": "2026-10-06 12:00:23.363948+00",
+        "persisted": "2026-10-06 22:03:34.11516+00",
         "recent": true
       },
       "pass": true
@@ -601,7 +601,7 @@
       "probe": "search_path manipulation then insert",
       "observed": {
         "epoch": "7",
-        "persisted": "2026-10-06 12:00:23.421528+00",
+        "persisted": "2026-10-06 22:03:34.173881+00",
         "recent": true
       },
       "pass": true
@@ -612,7 +612,7 @@
       "probe": "forged release_epoch / persisted_at",
       "observed": {
         "epoch": "7",
-        "persisted": "2026-10-06 12:00:23.423812+00",
+        "persisted": "2026-10-06 22:03:34.176552+00",
         "recent": true
       },
       "pass": true

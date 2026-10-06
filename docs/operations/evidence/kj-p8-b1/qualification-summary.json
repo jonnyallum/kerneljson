@@ -1,12 +1,12 @@
 {
   "contract": "kerneljson:b1-qualification-summary/v1",
-  "design": "ADR-0023 revision 2.5, section 27, sealed at 424f85c283a543ba00a650ecc2ecc3a4346623df",
+  "design": "ADR-0023 revision 2.6, section 27, sealed at 7712702020ef5d3d841f68f4d425d9707fb703eb",
   "manifest": {
     "path": "infrastructure/database/runtime-role-manifest.json",
-    "sha256": "ae16a6c4ba63ed7c73185fadfb8f3bf760d7ac41fde927df127f86e22d50150e",
+    "sha256": "e3ad8477265685a9948541b5ae247556fbd501e811334b77d78a3875f3f273a8",
     "decisions": {
       "path": "infrastructure/database/runtime-role-decisions.json",
-      "sha256": "468a0fcdcd2e20daec1678a76f9ed284cdb69084f0cbf89f802c34651eeffd7a"
+      "sha256": "06c5d32be0dabcac2204f07dd3344e5527bbca04578aea5a3815561aee8712ad"
     },
     "entryCounts": {
       "kj_worker": {
@@ -36,7 +36,7 @@
     "added": [
       {
         "file": "20261002090000_runtime_least_privilege_roles.sql",
-        "sha256": "c76bedf90e8c358a34e459d7e30b6cdd3b1060a548a2e992759336ab166b1cc9"
+        "sha256": "5cbb8b54fdb64d5546bf5acce78a86de23fc5dadfb73a664b252549f7589c8a5"
       }
     ],
     "total": 23,
@@ -144,10 +144,10 @@
       "success": true
     },
     "discover": {
-      "total": 2160,
-      "passed": 2097,
+      "total": 2188,
+      "passed": 2124,
       "failed": 0,
-      "skipped": 63,
+      "skipped": 64,
       "files": 107,
       "success": true,
       "split": {
@@ -156,14 +156,14 @@
           "skipped": 62
         },
         "b1Files": {
-          "passed": 292,
-          "skipped": 1
+          "passed": 319,
+          "skipped": 2
         }
       }
     },
     "enforce": {
-      "total": 2160,
-      "passed": 2098,
+      "total": 2188,
+      "passed": 2126,
       "failed": 0,
       "skipped": 62,
       "files": 107,
@@ -174,7 +174,7 @@
           "skipped": 62
         },
         "b1Files": {
-          "passed": 293
+          "passed": 321
         }
       }
     },
@@ -191,11 +191,11 @@
   "securityDefiners": {
     "stageManifest": {
       "path": "infrastructure/database/security-definer-stage-manifest.json",
-      "sha256": "418d47acd0413d3289bf044b46c2e03c49fd624e046e7a5fce9ba17652b397a4",
+      "sha256": "a900f5b51da7d396ea1845a4da46c7875d63a64417dc1e1bf9c5bd2dff3ee1d0",
       "design": {
         "adr": "ADR-0023",
-        "revision": "2.5",
-        "sha": "424f85c283a543ba00a650ecc2ecc3a4346623df"
+        "revision": "2.6",
+        "sha": "7712702020ef5d3d841f68f4d425d9707fb703eb"
       },
       "declaredStage": "B1",
       "stageSets": {
@@ -231,7 +231,7 @@
       "path": "infrastructure/database/security-definer-platform-baseline.json"
     },
     "qualification": {
-      "testedCommit": "d2a2447908a0b2588433c3f2580c11caf41d88a4",
+      "testedCommit": "94bb6cba979596251fbdf1177b599a193ad104ac",
       "environment": "qualification fixture (docker compose postgres); not the target environment",
       "sourceDigest": {
         "pin": "468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e439b",
@@ -307,8 +307,8 @@
         "kernel_private.stamp_binding_provenance() -> pg_catalog.trigger"
       ],
       "tempSchemaNames": {
-        "temp": "pg_temp_15",
-        "toast": "pg_toast_temp_15"
+        "temp": "pg_temp_34",
+        "toast": "pg_toast_temp_34"
       },
       "reservedPrefix": {
         "statement": "create schema pg_kj_probe",
@@ -323,10 +323,10 @@
         "entries": 4,
         "entriesSha256": "67f7e69ddd73cf7aaa8eab0a6320963a1e6274bda73e1f3530824d5b131674bd",
         "provenance": {
-          "systemIdentifier": "7693523426964799527",
-          "database": "kj_b1_def_516ecddab2b4",
+          "systemIdentifier": "7693678346233040937",
+          "database": "kj_b1_def_37570392f312",
           "serverVersion": "PostgreSQL 17.6 (Debian 17.6-2.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
-          "snapshotAt": "2026-10-06T12:00:17.083101Z",
+          "snapshotAt": "2026-10-06T22:03:01.116146Z",
           "snapshotUser": "postgres",
           "transaction": {
             "readOnly": true,
@@ -334,8 +334,8 @@
           },
           "migrationLedger": {
             "table": "supabase_migrations.schema_migrations",
-            "present": false,
-            "head": null,
+            "present": true,
+            "head": "20260929120000",
             "b1Recorded": false
           },
           "stampSecurityDefiner": false,
@@ -390,10 +390,10 @@
   "dynamicInventory": {
     "discover": {
       "kj_worker": {
-        "distinctStatements": 1440,
+        "distinctStatements": 1441,
         "byConnection": {
           "login": 0,
-          "setRole": 1440
+          "setRole": 1441
         },
         "observedOperations": 106,
         "observedNotInManifest": [],
@@ -434,9 +434,9 @@
     },
     "enforce": {
       "kj_worker": {
-        "distinctStatements": 706,
+        "distinctStatements": 707,
         "byConnection": {
-          "login": 676,
+          "login": 677,
           "setRole": 30
         },
         "observedOperations": 102,

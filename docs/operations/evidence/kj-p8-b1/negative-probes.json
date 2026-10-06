@@ -532,7 +532,7 @@
     {
       "role": "kj_worker",
       "probe": "function outside manifest",
-      "sql": "has_function_privilege(kernel_private.activate_release)",
+      "sql": "has_function_privilege(kernel_private.activate_release(pg_catalog.uuid, pg_catalog.text, pg_catalog.int8, pg_catalog.jsonb))",
       "expected": "false",
       "observed": "false",
       "pass": true
@@ -540,7 +540,7 @@
     {
       "role": "kj_worker",
       "probe": "function outside manifest",
-      "sql": "has_function_privilege(kernel_private.set_identity_freeze)",
+      "sql": "has_function_privilege(kernel_private.set_identity_freeze(pg_catalog.uuid, pg_catalog.bool, pg_catalog.text))",
       "expected": "false",
       "observed": "false",
       "pass": true
@@ -1340,7 +1340,7 @@
     {
       "role": "kj_door",
       "probe": "function outside manifest",
-      "sql": "has_function_privilege(kernel_private.identity_core_digest_v1)",
+      "sql": "has_function_privilege(kernel_private.activate_release(pg_catalog.uuid, pg_catalog.text, pg_catalog.int8, pg_catalog.jsonb))",
       "expected": "false",
       "observed": "false",
       "pass": true
@@ -1348,7 +1348,7 @@
     {
       "role": "kj_door",
       "probe": "function outside manifest",
-      "sql": "has_function_privilege(kernel_private.activate_release)",
+      "sql": "has_function_privilege(kernel_private.set_identity_freeze(pg_catalog.uuid, pg_catalog.bool, pg_catalog.text))",
       "expected": "false",
       "observed": "false",
       "pass": true
@@ -1356,7 +1356,7 @@
     {
       "role": "kj_door",
       "probe": "function outside manifest",
-      "sql": "has_function_privilege(kernel_private.set_identity_freeze)",
+      "sql": "has_function_privilege(kernel_private.identity_cognition_source_v1(pg_catalog.uuid, pg_catalog.uuid, pg_catalog.int4))",
       "expected": "false",
       "observed": "false",
       "pass": true
@@ -1364,7 +1364,7 @@
     {
       "role": "kj_door",
       "probe": "function outside manifest",
-      "sql": "has_function_privilege(kernel_private.identity_json_string_v1)",
+      "sql": "has_function_privilege(kernel_private.identity_core_canonical_v1(pg_catalog.jsonb))",
       "expected": "false",
       "observed": "false",
       "pass": true
@@ -1372,7 +1372,7 @@
     {
       "role": "kj_door",
       "probe": "function outside manifest",
-      "sql": "has_function_privilege(kernel_private.identity_cognition_source_v1)",
+      "sql": "has_function_privilege(kernel_private.identity_core_digest_v1(pg_catalog.jsonb))",
       "expected": "false",
       "observed": "false",
       "pass": true
@@ -1380,7 +1380,7 @@
     {
       "role": "kj_door",
       "probe": "function outside manifest",
-      "sql": "has_function_privilege(kernel_private.identity_core_canonical_v1)",
+      "sql": "has_function_privilege(kernel_private.identity_json_string_v1(pg_catalog.text))",
       "expected": "false",
       "observed": "false",
       "pass": true

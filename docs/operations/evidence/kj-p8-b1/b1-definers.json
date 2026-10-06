@@ -1,7 +1,7 @@
 {
   "contract": "kerneljson:b1-definer-qualification/v1",
-  "design": "424f85c283a543ba00a650ecc2ecc3a4346623df",
-  "testedCommit": "d2a2447908a0b2588433c3f2580c11caf41d88a4",
+  "design": "7712702020ef5d3d841f68f4d425d9707fb703eb",
+  "testedCommit": "94bb6cba979596251fbdf1177b599a193ad104ac",
   "environment": "qualification fixture (docker compose postgres); not the target environment",
   "preB1": {
     "derivationA": {
@@ -93,13 +93,13 @@
   ],
   "baseline": {
     "contract": "kerneljson:security-definer-platform-baseline/v1",
-    "design": "424f85c283a543ba00a650ecc2ecc3a4346623df",
+    "design": "7712702020ef5d3d841f68f4d425d9707fb703eb",
     "environment": "qualification-fixture",
     "provenance": {
-      "systemIdentifier": "7693523426964799527",
-      "database": "kj_b1_def_516ecddab2b4",
+      "systemIdentifier": "7693678346233040937",
+      "database": "kj_b1_def_37570392f312",
       "serverVersion": "PostgreSQL 17.6 (Debian 17.6-2.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
-      "snapshotAt": "2026-10-06T12:00:17.083101Z",
+      "snapshotAt": "2026-10-06T22:03:01.116146Z",
       "snapshotUser": "postgres",
       "transaction": {
         "readOnly": true,
@@ -107,8 +107,8 @@
       },
       "migrationLedger": {
         "table": "supabase_migrations.schema_migrations",
-        "present": false,
-        "head": null,
+        "present": true,
+        "head": "20260929120000",
         "b1Recorded": false
       },
       "stampSecurityDefiner": false,
@@ -175,8 +175,8 @@
     "entriesSha256": "67f7e69ddd73cf7aaa8eab0a6320963a1e6274bda73e1f3530824d5b131674bd"
   },
   "tempSchemaNames": {
-    "temp": "pg_temp_15",
-    "toast": "pg_toast_temp_15"
+    "temp": "pg_temp_34",
+    "toast": "pg_toast_temp_34"
   },
   "reservedPrefix": {
     "statement": "create schema pg_kj_probe",
@@ -209,7 +209,7 @@
       "fixture": "platform definer with a changed owner",
       "expected": "auth.kj_platform_uid() owner:",
       "observedProblems": [
-        "SECURITY DEFINER mismatch auth.kj_platform_uid() owner: \"kj_b1_probe_owner_516ecddab2b4\", expected \"postgres\""
+        "SECURITY DEFINER mismatch auth.kj_platform_uid() owner: \"kj_b1_probe_owner_37570392f312\", expected \"postgres\""
       ],
       "failedOnPurpose": true,
       "restored": true
@@ -364,8 +364,8 @@
       "fixture": "the stamp function with another owner",
       "expected": "kernel_private.stamp_binding_provenance() owner:",
       "observedProblems": [
-        "SECURITY DEFINER mismatch kernel_private.stamp_binding_provenance() owner: \"kj_b1_probe_owner_516ecddab2b4\", expected \"postgres\"",
-        "SECURITY DEFINER mismatch kernel_private.stamp_binding_provenance() acl: [\"kj_b1_probe_owner_516ecddab2b4=X/kj_b1_probe_owner_516ecddab2b4\"], expected [\"postgres=X/postgres\"]"
+        "SECURITY DEFINER mismatch kernel_private.stamp_binding_provenance() owner: \"kj_b1_probe_owner_37570392f312\", expected \"postgres\"",
+        "SECURITY DEFINER mismatch kernel_private.stamp_binding_provenance() acl: [\"kj_b1_probe_owner_37570392f312=X/kj_b1_probe_owner_37570392f312\"], expected [\"postgres=X/postgres\"]"
       ],
       "failedOnPurpose": true,
       "restored": true

@@ -1,12 +1,12 @@
 {
   "contract": "kerneljson:b1-dynamic-inventory/v1",
-  "events": 1548,
+  "events": 1549,
   "roles": {
     "kj_worker": {
-      "statements": 1440,
+      "statements": 1441,
       "byConnection": {
         "login": 0,
-        "setRole": 1440
+        "setRole": 1441
       },
       "observed": [
         {
