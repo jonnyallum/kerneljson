@@ -295,7 +295,8 @@ export async function readStampFacts(db: Db): Promise<{ sameName: DefinerEntry[]
     `select ${COLUMNS}\n where p.proname = '${STAMP.name}' and not ${excludedSchemaSql("n.nspname")}`)).rows);
   const triggers = (await db.query<StampTrigger>(
     `select t.tgname as name, cn.nspname || '.' || c.relname as relation, t.tgtype::int as tgtype, t.tgenabled::text as tgenabled,
-            pg_get_expr(t.tgqual, t.tgrelid) as tgqual, t.tgisinternal, t.tgnargs::int as tgnargs, t.tgattr::text as tgattr
+            case when t.tgqual is null then null else pg_get_triggerdef(t.oid) end as tgqual, t.tgisinternal, t.tgnargs::int as tgnargs,
+            t.tgattr::text as tgattr
        from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace cn on cn.oid = c.relnamespace
       where t.tgfoid in (select p.oid from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                           where n.nspname = '${STAMP.schema}' and p.proname = '${STAMP.name}' and p.pronargs = 0)

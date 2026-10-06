@@ -66,6 +66,9 @@ beforeAll(async () => {
   evidence["preB1"] = { derivationA: { sql: a.digest, node: hex(lf(a.prosrc)) }, stamp: pre };
   await pool.query(`create schema auth`);
   for (const sql of PLATFORM) await pool.query(sql);
+  // A platform grants its definers to its own roles, not to PUBLIC. A PUBLIC-executable platform function would be a
+  // runtime-role grant outside the frozen manifest; that case is proved red below and is a cutover precondition.
+  await pool.query(`revoke execute on all functions in schema auth from public`);
   const client = new pg.Client({ connectionString: url() });
   await client.connect();
   try {
@@ -182,6 +185,14 @@ describe("27.10.1 ACTUAL equals EXPECTED(B1) = PLATFORM_BASELINE UNION { stamp_b
     const observed = await fetchRuntimeRoles(pool, { baseline: null });
     expect(observed.available && observed.problems).toContain("TARGET_PLATFORM_BASELINE_PENDING: no frozen platform SECURITY DEFINER baseline for this environment");
   });
+  it("a platform function executable by PUBLIC is a runtime-role grant outside the manifest, and the check goes red", async () => {
+    await pool.query(`grant execute on function auth.kj_platform_uid() to public`);
+    try {
+      const observed = await fetchRuntimeRoles(pool, { baseline });
+      expect(observed.available && observed.problems).toEqual(expect.arrayContaining([
+        "kj_worker holds unlisted function:auth.kj_platform_uid:EXECUTE", "kj_door holds unlisted function:auth.kj_platform_uid:EXECUTE"]));
+    } finally { await pool.query(`revoke execute on function auth.kj_platform_uid() from public`); }
+  });
   it("the health check reports an unlisted privilege and an unlisted definer function together", async () => {
     await pool.query(`grant truncate on public.task_events to kj_door`);
     await pool.query(`create function public.kj_b1_probe_definer2() returns int language sql security definer as 'select 1'`);
@@ -204,11 +215,12 @@ let originalSrc = "";
 const FIXTURES: [string, () => Promise<void>, () => Promise<void>, string][] = [
   ["platform definer added after the snapshot", q(`create function auth.kj_platform_late() returns int language sql security definer as 'select 1'`),
     q(`drop function auth.kj_platform_late()`), "unlisted SECURITY DEFINER function auth.kj_platform_late()"],
-  ["platform definer missing", q(`drop function auth.kj_platform_guard()`), q(PLATFORM[1]!), "missing SECURITY DEFINER function auth.kj_platform_guard()"],
+  ["platform definer missing", q(`drop function auth.kj_platform_guard()`), q(PLATFORM[1]!, `revoke execute on function auth.kj_platform_guard() from public`),
+    "missing SECURITY DEFINER function auth.kj_platform_guard()"],
   ["platform definer with a changed owner", q(`create role ${probeOwner} nologin`, `alter function auth.kj_platform_uid() owner to ${probeOwner}`),
     async () => { await q(`alter function auth.kj_platform_uid() owner to ${owner}`, `drop role ${probeOwner}`)(); }, "auth.kj_platform_uid() owner:"],
   ["platform definer with a changed return type", q(`drop function auth.kj_platform_uid()`, `create function auth.kj_platform_uid() returns text language sql stable security definer as $f$ select 'x' $f$`),
-    q(`drop function auth.kj_platform_uid()`, PLATFORM[0]!), "auth.kj_platform_uid() returns:"],
+    q(`drop function auth.kj_platform_uid()`, PLATFORM[0]!, `revoke execute on function auth.kj_platform_uid() from public`), "auth.kj_platform_uid() returns:"],
   ["platform definer with a changed proconfig", q(`alter function auth.kj_platform_guard() reset search_path`),
     q(`alter function auth.kj_platform_guard() set search_path = ''`), "auth.kj_platform_guard() config:"],
   ["platform definer with a changed source digest", q(`create or replace function auth.kj_platform_guard() returns void language plpgsql security definer set search_path = '' as $f$ begin perform 2; end $f$`),
@@ -225,7 +237,7 @@ const FIXTURES: [string, () => Promise<void>, () => Promise<void>, string][] = [
     q(`drop function kernel_private.freeze_reflection(uuid)`), "unlisted SECURITY DEFINER function kernel_private.freeze_reflection(pg_catalog.uuid)"],
   ["a second stamp_binding_provenance in public", q(`create function public.stamp_binding_provenance() returns trigger language plpgsql as $f$ begin return new; end $f$`),
     q(`drop function public.stamp_binding_provenance()`), "exactly one function named stamp_binding_provenance must exist"],
-  ["a stamp_binding_provenance overload", q(`create function kernel_private.stamp_binding_provenance(integer) returns trigger language plpgsql as $f$ begin return new; end $f$`),
+  ["a stamp_binding_provenance overload", q(`create function kernel_private.stamp_binding_provenance(integer) returns integer language sql as 'select 1'`),
     q(`drop function kernel_private.stamp_binding_provenance(integer)`), "exactly one function named stamp_binding_provenance must exist"],
   ["the stamp function back to SECURITY INVOKER", q(`alter function ${STAMP} security invoker`), q(`alter function ${STAMP} security definer`),
     `missing SECURITY DEFINER function ${STAMP}`],
@@ -236,7 +248,7 @@ const FIXTURES: [string, () => Promise<void>, () => Promise<void>, string][] = [
   ["the stamp function with a widened search_path", q(`alter function ${STAMP} set search_path = public`), q(`alter function ${STAMP} set search_path = ''`), `${STAMP} config:`],
   ["the stamp function with no search_path", q(`alter function ${STAMP} reset search_path`), q(`alter function ${STAMP} set search_path = ''`), `${STAMP} config:`],
   ["the stamp function with another owner", q(`create role ${probeOwner} nologin`, `alter function ${STAMP} owner to ${probeOwner}`),
-    q(`alter function ${STAMP} owner to ${owner}`, `drop role ${probeOwner}`), `${STAMP} owner:`],
+    async () => { await q(`alter function ${STAMP} owner to ${owner}`, `drop role ${probeOwner}`)(); }, `${STAMP} owner:`],
   ["the stamp function with a changed body", async () => {
     originalSrc = (await pool.query<{ s: string }>(`select prosrc as s from pg_proc where oid = '${STAMP}'::regprocedure`)).rows[0]!.s;
     await pool.query(`update pg_proc set prosrc = prosrc || ' ' where oid = '${STAMP}'::regprocedure`);
