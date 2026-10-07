@@ -9,7 +9,7 @@ Design authority: ADR-0023 revision 2.6, section 27 (including 27.9, 27.10 and 2
 contract: `docs/operations/KJ_P8_B1_ENTRY_BRIEF.md`, reconciled to revision 2.6. Base: `main`
 `20e39f797be9c4c982bc32fb40b6aa1427b5c09c`. Candidate history: `4314858`, `108db1b`, `d1a7d97` and `d2a2447`
 (revision 2.5 remediation), `54a469c` (reviewed, BLOCK on B1-R25-B1), `437eda6` (revision 2.6 remediation), `94bb6cb`
-(discovery-mode skip for one new health case), then the evidence commit.
+(discovery-mode skip for one new health case), `74869ef` (APPROVE_REPOSITORY_QUALIFIED), `c0dbf24` (exact pre-B1 ledger version set in the snapshot gate), then the evidence commit.
 
 Tags used below: **FACT** was observed in this work; **INFERENCE** was reasoned and not exercised.
 
@@ -191,20 +191,20 @@ does not satisfy the guard; the message never contains the connection string.
 
 ## 7. Qualification results (gates 6 to 9)
 
-FACT. GitHub Actions CI (`ubuntu-24.04`, Postgres 17.6 and Restate 1.7.9 in docker compose), run `37537615887` on
-`94bb6cba979596251fbdf1177b599a193ad104ac`; the base row is `main`'s own CI run `36940075218` on `20e39f7`. Local Docker
+FACT. GitHub Actions CI (`ubuntu-24.04`, Postgres 17.6 and Restate 1.7.9 in docker compose), run `37657933670` on
+`c0dbf24f3fc49aed7ce80cf7a6d8599887d178bd`; the base row is `main`'s own CI run `36940075218` on `20e39f7`. Local Docker
 was not available, so nothing below comes from a local run. The evidence in `docs/operations/evidence/kj-p8-b1/` was
 regenerated from those artefacts by `scripts/b1/summarise.mjs`; nothing was hand-edited.
 
 | Run | Total | Passed | Failed | Skipped |
 |---|---|---|---|---|
 | Base `20e39f7`, everything as the owner (`main` CI) | 1,861 | 1,799 | 0 | 62 |
-| B1, enforce mode (`validate` job; genuine `kj_worker` / `kj_door` sessions) | 2,188 | 2,126 | 0 | 62 |
-| B1, discovery mode (`b1-qualification` job) | 2,188 | 2,124 | 0 | 64 |
+| B1, enforce mode (`validate` job; genuine `kj_worker` / `kj_door` sessions) | 2,192 | 2,130 | 0 | 62 |
+| B1, discovery mode (`b1-qualification` job) | 2,192 | 2,128 | 0 | 64 |
 | Six environment-gated files, B1 enforce mode (`b1-qualification` job) | 43 | 43 | 0 | 0 |
 
 - Pre-existing test files under the roles: 1,805 passed and 62 skipped, in both modes: the 1,799 of the base plus the
-  6 cases B1 adds to existing files; `pnpm test:baseline` passes. B1 test files add 321 passing cases (two are
+  6 cases B1 adds to existing files; `pnpm test:baseline` passes. B1 test files add 325 passing cases (two are
   skipped in discovery mode because they need a genuine session).
 - **Unexpected `42501`: 0** in the enforce, discovery and gated runs; observed operations not in the manifest: 0.
 - **Negative probes: 237 of 237**; **ADR 27.9.5: all 27 sealed rows, 62 of 62 probes**, the 56 refusals all `42501`
@@ -331,7 +331,7 @@ USAGE/CREATE in every governed schema stay exact and ungated. Function facts are
 loop remains. A policy is a fact only on a reachable relation for an operation the role holds. The section 27.10
 definer inventory is unchanged and still global.
 
-FACT (CI run `37537615887`), each made to fail on purpose:
+FACT (CI run `37657933670`), each made to fail on purpose:
 
 | ADR 27.11.7 case | Observed |
 |---|---|
