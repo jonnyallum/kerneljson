@@ -7,7 +7,7 @@
 //
 // The connection string is read from a file (mode 600, shred it afterwards). It is never an argument, never printed,
 // never logged and never written to the output; errors print only a fixed message and the PostgreSQL SQLSTATE.
-import { readFileSync, writeFileSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, statSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import pg from "pg";
 import { footprint } from "./footprint-lib.mjs";
@@ -22,6 +22,7 @@ const arg = (name) => {
   return value;
 };
 const urlFile = arg("database-url-file"), out = arg("out");
+if (existsSync(out)) { console.error("refusing to overwrite an existing output file"); process.exit(2); }
 
 // No PG* default may supply a missing parameter.
 const scrubbed = Object.keys(process.env).filter((k) => /^PG[A-Z]/.test(k)).sort();
@@ -51,7 +52,7 @@ try {
   await client.connect();
   const fp = await footprint(client);
   const body = JSON.stringify({ capturedAt: new Date().toISOString(), ...fp }, null, 2) + "\n";
-  writeFileSync(out, body);
+  writeFileSync(out, body, { flag: "wx", mode: 0o600 }); // never overwrite; readable by the owner only
   console.log(`footprint: database ${fp.meta.database}, user ${fp.meta.user}, server ${fp.meta.serverVersionNum}, ` +
     `${fp.meta.transaction.isolation} / read_only=${fp.meta.transaction.readOnly}; ${Object.keys(fp.objects).length} objects; ` +
     `ledger ${fp.ledger ? fp.ledger.length + " rows" : "absent"}; sha256 ${createHash("sha256").update(body).digest("hex")}; written to ${out}`);
