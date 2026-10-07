@@ -33,7 +33,10 @@ Nothing else changes: no table, column, trigger body, owner or existing migratio
    `pnpm tsx scripts/b1/platform-baseline-snapshot.ts --environment <name> --database-url-file <mode-600 file> --out infrastructure/database/security-definer-platform-baseline.json`.
    The connection string is a file path, never an argument; delete the file afterwards. The tool opens one READ ONLY
    transaction with `search_path = ''`, writes nothing, and refuses if B1 is already applied or an entry is
-   ineligible. The resulting file is reviewed line by line and committed: that is a **new candidate SHA** and needs
+   ineligible. It also refuses unless the migration ledger records **exactly** the 22 base migration versions of the
+   stage manifest (no missing, extra or duplicated row; B1 not recorded) and the stamp function exists. If production's
+   ledger has gaps from manually applied migrations, the snapshot refuses and the drift is adjudicated separately; the
+   ledger is not caught up ad hoc and the gate is not weakened. The resulting file is reviewed line by line and committed: that is a **new candidate SHA** and needs
    its own review. Until it exists, `database.runtimeRolesLeastPrivilege` reports `TARGET_PLATFORM_BASELINE_PENDING`
    and stays CRITICAL, so the window cannot pass step 11.
 5. A change window is authorised and recorded.

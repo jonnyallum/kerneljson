@@ -14,6 +14,9 @@ import {
  * It refuses, and returns nothing, if B1 is already applied or an entry is ineligible. It never writes.
  * ADR-0023 revision 2.6 section 27.11.6 item 3: it also refuses unless the migration ledger exists, its head is the
  * final base migration of canonical main expected before B1, and kernel_private.stamp_binding_provenance() exists.
+ * Fail-closed hardening of the same requirement: the ledger must record EXACTLY the base migration versions of the
+ * stage manifest, no more and no fewer. A correct head over a ledger with missing rows (migrations applied manually
+ * and never recorded) is refused, as is any extra row; the head check is therefore implied, never relied on alone.
  */
 export async function snapshotPlatformBaseline(client: pg.Client | pg.PoolClient, environment: string, manifest: StageManifest): Promise<PlatformBaseline> {
   await client.query("begin transaction isolation level repeatable read read only");
@@ -26,10 +29,11 @@ export async function snapshotPlatformBaseline(client: pg.Client | pg.PoolClient
               current_user::text as who`,
     )).rows[0]!;
     const ledgerPresent = (await client.query<{ ok: boolean }>(`select pg_catalog.to_regclass('supabase_migrations.schema_migrations') is not null as ok`)).rows[0]!.ok;
-    let head: string | null = null, b1Recorded = false;
+    let head: string | null = null, b1Recorded = false, versions: string[] = [];
     if (ledgerPresent) {
       const l = (await client.query<{ head: string | null; b1: boolean }>(
         `select max(version)::text as head, bool_or(version::text = $1) as b1 from supabase_migrations.schema_migrations`, [B1_MIGRATION_VERSION])).rows[0]!;
+      versions = (await client.query<{ v: string }>(`select version::text as v from supabase_migrations.schema_migrations order by 1`)).rows.map((r) => r.v);
       head = l.head;
       b1Recorded = l.b1 === true;
     }
@@ -44,6 +48,8 @@ export async function snapshotPlatformBaseline(client: pg.Client | pg.PoolClient
     if (!ledgerPresent) throw new Error("PLATFORM_BASELINE_REFUSED: the migration ledger supabase_migrations.schema_migrations does not exist");
     const expectedHead = expectedLedgerHead(manifest);
     if (head !== expectedHead) throw new Error(`PLATFORM_BASELINE_REFUSED: the migration ledger head is ${String(head)}, not ${expectedHead}, the final base migration before B1`);
+    const set = ledgerSetProblems(versions, expectedLedgerVersions(manifest));
+    if (set) throw new Error(`PLATFORM_BASELINE_REFUSED: ${set}`);
     if (stampRow.length !== 1) throw new Error("PLATFORM_BASELINE_REFUSED: kernel_private.stamp_binding_provenance() does not exist");
     const ineligible = baselineEligibilityProblems(entries, manifest);
     if (ineligible.length) throw new Error(`PLATFORM_BASELINE_REFUSED: ${ineligible.join("; ")}`);
@@ -54,7 +60,7 @@ export async function snapshotPlatformBaseline(client: pg.Client | pg.PoolClient
       provenance: {
         systemIdentifier: p.sid, database: p.db, serverVersion: p.v, snapshotAt: p.at, snapshotUser: p.who,
         transaction: { readOnly: true, searchPath: tx.sp },
-        migrationLedger: { table: "supabase_migrations.schema_migrations", present: ledgerPresent, head, b1Recorded },
+        migrationLedger: { table: "supabase_migrations.schema_migrations", present: ledgerPresent, head, b1Recorded, versions },
         stampSecurityDefiner: stamp,
         querySha256: INVENTORY_SQL_SHA256,
       },
@@ -65,6 +71,23 @@ export async function snapshotPlatformBaseline(client: pg.Client | pg.PoolClient
     await client.query("rollback").catch(() => undefined);
     throw error;
   }
+}
+
+/** The versions of every base migration in the stage manifest, sorted: the exact set the ledger must record. */
+export function expectedLedgerVersions(manifest: StageManifest): string[] {
+  const versions = manifest.baseMigrations.map((m) => /^([0-9]{14})_/.exec(m.file)?.[1]);
+  if (!versions.length || versions.some((v) => !v)) throw new Error("stage manifest has a base migration without a version");
+  return [...new Set(versions as string[])].sort();
+}
+
+/** Exact set equality of recorded and expected ledger versions; null when equal, else a message naming the versions. */
+export function ledgerSetProblems(recorded: readonly string[], expected: readonly string[]): string | null {
+  const have = new Set(recorded), want = new Set(expected);
+  const missing = expected.filter((v) => !have.has(v)), extra = [...have].filter((v) => !want.has(v)).sort();
+  const duplicated = recorded.length !== have.size;
+  if (!missing.length && !extra.length && !duplicated) return null;
+  return `the migration ledger does not record exactly the ${expected.length} base migrations before B1` +
+    `${missing.length ? `; missing ${missing.join(", ")}` : ""}${extra.length ? `; unexpected ${extra.join(", ")}` : ""}${duplicated ? "; duplicated versions" : ""}`;
 }
 
 /** The version of the last base migration (the stage manifest's baseMigrations), which the ledger head must equal. */

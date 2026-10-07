@@ -391,11 +391,25 @@ describe("27.11.6 item 3: the snapshot needs the ledger at the expected head and
       await createLedger(db, files.slice(0, -1));
       await expect(snap()).rejects.toThrow(/PLATFORM_BASELINE_REFUSED: the migration ledger head is [0-9]{14}, not [0-9]{14}, the final base migration before B1/);
       await db.query(`insert into supabase_migrations.schema_migrations values ($1, $2)`, [files.at(-1)!.slice(0, 14), "last"]);
+      // A gapped ledger: correct head, but rows for migrations that were applied manually are missing.
+      const gap = files.slice(10, 13).map((f) => f.slice(0, 14));
+      await db.query(`delete from supabase_migrations.schema_migrations where version = any($1)`, [gap]);
+      await expect(snap()).rejects.toThrow(`PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; missing ${gap.join(", ")}`);
+      for (const v of gap) await db.query(`insert into supabase_migrations.schema_migrations values ($1, 'restored')`, [v]);
+      // An unexpected extra row that is not B1.
+      await db.query(`insert into supabase_migrations.schema_migrations values ('20250101000000', 'unexpected')`);
+      await expect(snap()).rejects.toThrow("PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; unexpected 20250101000000");
+      await db.query(`delete from supabase_migrations.schema_migrations where version = '20250101000000'`);
+      // B1 already recorded in the ledger.
+      await db.query(`insert into supabase_migrations.schema_migrations values ('20261002090000', 'b1')`);
+      await expect(snap()).rejects.toThrow("PLATFORM_BASELINE_REFUSED: B1 is already applied to this database");
+      await db.query(`delete from supabase_migrations.schema_migrations where version = '20261002090000'`);
       await db.query(`alter function ${STAMP} rename to stamp_binding_provenance_moved`);
       await expect(snap()).rejects.toThrow("PLATFORM_BASELINE_REFUSED: kernel_private.stamp_binding_provenance() does not exist");
       await db.query(`alter function kernel_private.stamp_binding_provenance_moved() rename to stamp_binding_provenance`);
       const ok = await snap();
-      expect(ok.provenance.migrationLedger).toEqual({ table: "supabase_migrations.schema_migrations", present: true, head: files.at(-1)!.slice(0, 14), b1Recorded: false });
+      expect(ok.provenance.migrationLedger).toEqual({ table: "supabase_migrations.schema_migrations", present: true, head: files.at(-1)!.slice(0, 14), b1Recorded: false,
+        versions: files.map((f) => f.slice(0, 14)).sort() });
     } finally { await db.end(); }
   });
 });

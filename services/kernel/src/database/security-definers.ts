@@ -197,7 +197,7 @@ export interface PlatformBaseline {
     snapshotAt: string;
     snapshotUser: string;
     transaction: { readOnly: boolean; searchPath: string };
-    migrationLedger: { table: string; present: boolean; head: string | null; b1Recorded: boolean };
+    migrationLedger: { table: string; present: boolean; head: string | null; b1Recorded: boolean; versions: string[] };
     stampSecurityDefiner: boolean;
     querySha256: string;
   };

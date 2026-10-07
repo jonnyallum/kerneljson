@@ -251,10 +251,11 @@ Stated so that nobody assumes otherwise:
   cannot USAGE is not a runtime fact (FACT, section 13); a platform schema that grants USAGE to `PUBLIC` would be an
   unexpected fact, and the cutover plan now says that stops B1 for classification, with no platform revoke and no
   target-specific manifest addition.
-- INFERENCE, to confirm at target qualification: the snapshot requires the Supabase ledger head to equal
-  `20260929120000`, the final base migration. An earlier production record noted ledger drift
-  (`PHASE_KJ_P7A_PRIMARY_IDENTITY_STORE_LIVE_RESULT_2026-09-28.md`); if the target ledger is behind, the snapshot
-  refuses and the drift needs its own ruling before a baseline can be taken.
+- INFERENCE, to confirm at target qualification: the snapshot requires the Supabase ledger to record exactly the 22
+  base migrations. `PHASE_KJ_P7A_PRIMARY_IDENTITY_STORE_LIVE_RESULT_2026-09-28.md` records that the production ledger
+  stopped at `20260917120000` with the P4A, P5, P6 and P7A migrations applied manually and unrecorded, and the P7B
+  record adds one row. If that is still the state, the snapshot will refuse with the missing versions, and the drift
+  needs its own ruling before a baseline can be taken.
 - **The target platform `SECURITY DEFINER` baseline has not been taken** (section 12).
 - The connection limits (40 and 20) are INFERENCE from pool sizes in the code (worker 10 + 3 + 3, door 10).
 - The environment-gated files were not re-run as the owner at the base commit in this remediation (the frozen
@@ -347,7 +348,10 @@ Hardening (ADR 27.11.6), FACT:
   `postgres` URL, or missing an explicit host, user or database; every `PG*` variable is removed before connecting,
   and no message contains the file's content (unit tests);
 - the snapshot refuses with no migration ledger, with a ledger head other than `20260929120000`, and without
-  `kernel_private.stamp_binding_provenance()`, and succeeds once all hold (integration test);
+  `kernel_private.stamp_binding_provenance()`, and succeeds once all hold (integration test). Fail-closed hardening of
+  the same requirement: the ledger must record exactly the 22 base migration versions; a gapped ledger whose head is
+  still correct, an unexpected extra row, a duplicated row and a recorded B1 are each refused (unit and integration
+  tests), and the recorded version list is kept in the baseline's provenance;
 - health compares the committed baseline's `systemIdentifier` and database name with the live database; either
   mismatch is a P0 problem, and an unreadable identifier is a problem, never a pass. `kj_worker` reads it (enforce run);
 - the cutover plan separates the migration's pre-COMMIT assertions (which roll back) from post-COMMIT checks (whose

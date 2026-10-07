@@ -6,7 +6,7 @@ import {
   compareDefiners, excludedSchemaSql, expectedDefiners, identityKey, isExcludedSchema, loadStageManifest, sha256, sortEntries,
   stageBindingProblems, stageFunctions, type DefinerEntry, type PlatformBaseline, type StageManifest,
 } from "../services/kernel/src/database/security-definers.js";
-import { expectedLedgerHead, parseConnectionFile, scrubPgEnvironment } from "../services/kernel/src/database/platform-baseline-snapshot.js";
+import { expectedLedgerHead, expectedLedgerVersions, ledgerSetProblems, parseConnectionFile, scrubPgEnvironment } from "../services/kernel/src/database/platform-baseline-snapshot.js";
 import { TABLE_PRIVILEGES, loadManifest } from "../services/kernel/src/database/runtime-roles.js";
 
 /**
@@ -159,7 +159,7 @@ const baselineOf = (entries: DefinerEntry[]): PlatformBaseline => {
     provenance: {
       systemIdentifier: "1", database: "x", serverVersion: "PostgreSQL 17", snapshotAt: "2026-10-06T00:00:00.000000Z", snapshotUser: OWNER,
       transaction: { readOnly: true, searchPath: '""' },
-      migrationLedger: { table: "supabase_migrations.schema_migrations", present: true, head: "20260929120000", b1Recorded: false },
+      migrationLedger: { table: "supabase_migrations.schema_migrations", present: true, head: "20260929120000", b1Recorded: false, versions: [] },
       stampSecurityDefiner: false, querySha256: INVENTORY_SQL_SHA256,
     },
     entries: e, entriesSha256: sha256(canonicalJson(e)),
@@ -299,5 +299,28 @@ describe("27.11.6 snapshot hardening (static)", () => {
     const last = manifest.baseMigrations.at(-1)!.file;
     expect(expectedLedgerHead(manifest)).toBe(last.slice(0, 14));
     expect(last < B1).toBe(true);
+  });
+});
+
+describe("snapshot ledger gate: the exact base migration version set, not only the head", () => {
+  const expected = expectedLedgerVersions(manifest);
+  it("is the 22 base migrations of the stage manifest, ending at the expected head", () => {
+    expect(expected).toHaveLength(manifest.baseMigrations.length);
+    expect(expected).toHaveLength(22);
+    expect(expected.at(-1)).toBe(expectedLedgerHead(manifest));
+  });
+  it("accepts exactly that set, in any order", () => {
+    expect(ledgerSetProblems([...expected].reverse(), expected)).toBeNull();
+  });
+  it("refuses a gapped ledger whose head is still correct (manually applied, unrecorded migrations)", () => {
+    const gapped = expected.filter((_, i) => i < 10 || i > 13);
+    expect(gapped.at(-1)).toBe(expected.at(-1));
+    expect(ledgerSetProblems(gapped, expected)).toBe(
+      `the migration ledger does not record exactly the 22 base migrations before B1; missing ${expected.slice(10, 14).join(", ")}`);
+  });
+  it("refuses an extra row, a duplicated row and an empty ledger", () => {
+    expect(ledgerSetProblems([...expected, "20261101000000"], expected)).toContain("; unexpected 20261101000000");
+    expect(ledgerSetProblems([...expected, expected[0]!], expected)).toContain("; duplicated versions");
+    expect(ledgerSetProblems([], expected)).toContain(`; missing ${expected.join(", ")}`);
   });
 });
