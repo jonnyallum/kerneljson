@@ -1,0 +1,50 @@
+name: Ledger drift reference
+# KJ-P8 migration-ledger drift adjudication. Builds the canonical expected footprint of every migration on a disposable
+# Postgres 17.6 and proves the footprint and comparator against a known-good and a known-bad database. Never touches
+# any non-disposable database.
+on:
+  push:
+    branches: ['audit/**']
+permissions:
+  contents: read
+jobs:
+  reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      db:
+        image: postgres:17.6
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      CI: 'true'
+      KJ_REFERENCE_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Canonical reference, migration by migration
+        run: |
+          mkdir -p artifacts/drift
+          git rev-parse HEAD > artifacts/drift/tested-commit.txt
+          sha256sum supabase/migrations/*.sql > artifacts/drift/migrations.sha256
+          node scripts/drift/reference-steps.mjs --out artifacts/drift/reference-steps.json
+      - name: Self-test on known-good and known-bad databases
+        run: node scripts/drift/selftest.mjs --reference artifacts/drift/reference-steps.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ledger-drift-reference-${{ github.sha }}
+          path: artifacts/drift/
+          retention-days: 30
