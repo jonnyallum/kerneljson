@@ -1,7 +1,7 @@
 # ADR-0023: Reflection, self-model and governed identity growth (KJ-P8)
 
-Status: PROPOSED, revision 2.7 (design only). Nothing here is implemented, migrated or deployed.
-Date: 08/10/2026 (revision 2.7). Revision 2.3 is dated 01/10/2026, revision 2.4 02/10/2026, revision 2.5
+Status: PROPOSED, revision 2.7.1 (design only). Nothing here is implemented, migrated or deployed.
+Date: 08/10/2026 (revisions 2.7 and 2.7.1). Revision 2.3 is dated 01/10/2026, revision 2.4 02/10/2026, revision 2.5
 05/10/2026 and revision 2.6 06/10/2026.
 Base: canonical `main` `750d5b7926f320d8e9d3f64789b8f7035eaa4f3d`. Production: epoch 13, release `cebbb0d`, cognition
 ON, Class C/D frozen (docs/operations/KJ_P7B_LIVE_RESULT_2026-09-30.md).
@@ -150,6 +150,22 @@ and the target declares it in a frozen, system-identifier-bound artefact. The on
 `public.rls_auto_enable()` with `ensure_rls`. **It grants nothing to any role.** It changes what qualification
 accepts, by one enumerated object, and it narrows B1: B1 no longer touches that function's ACL. The frozen B1 count
 check is replaced by exact set equality (27.12.7). Nothing else in the design changes.
+
+Revision 2.7.1 is an author amendment on top of revision 2.7 (`4d1e809b9487e4862a1759521a220180bc7c1050`), which is
+not rewritten. It was made before the hostile review of 2.7, from the author's own answers to eight review questions
+and the owner's ruling on them. It changes only sections 26, 27.12.6, 27.12.7, 27.12.8 and 27.12.9:
+
+| Finding | Defect in 2.7 | Resolved in |
+|---|---|---|
+| R27-P2-TOPOLOGY | P2 checked that each event trigger present matched a sealed binding, but did not require a present pinned function to have its sealed binding. A dropped `ensure_rls` was caught before COMMIT only by the operator-supplied P3 digest | 27.12.7 P2 (c) |
+| R27-P3-ABSENCE | P3 read two unset settings as an empty declaration, so a missing declaration on an empty target passed silently | 27.12.7 P3: three settings, all mandatory on every target; absence is never an empty declaration |
+| R27-P3-FORMAT | malformed setting values were unspecified; a cast would have raised `22P02`, not `23514` | 27.12.7 P3 step 2 |
+| R27-P3-DATABASE | P3 did not check the database name, though health did | 27.12.7 P3 step 3 |
+| R27-PROVENANCE | nothing bound the pre-COMMIT values to the committed declaration | 27.12.6 cutover runner; 27.12.8 items 7 and 8 |
+| R27-HEALTH-DECL | health did not list a missing, malformed or incomplete declaration as P0 | 27.12.6 |
+| R27-THREAT | the threat model of P3 and the physical-clone limitation were unstated | 27.12.7 |
+
+It grants nothing, widens no admission condition of 27.12.2 and changes no pin.
 
 Section numbers changed from revision 1: section 18 (P8B adoption mechanics) and section 23 (same-tenant references)
 are new, and the later sections moved down.
@@ -1741,7 +1757,9 @@ No authority-critical ambiguity is known to remain. Open, and not authority-crit
   qualification must observe each: (1) a direct call of a function returning `event_trigger`, by a role holding
   EXECUTE, fails `0A000` before running the body; (2) firing an event trigger does not check EXECUTE on its function;
   (3) a transaction-local custom setting (`set_config('kj.b1.*', ..., true)`) can be set by the deployment owner on
-  the target and is visible to a `DO` block later in the same transaction; (4) a runtime role's `CREATE`, `ALTER` or
+  the target and is visible to a `DO` block later in the same transaction, and `current_setting(name, true)` returns
+  NULL for a custom setting never set in the session (revision 2.7.1 treats NULL and empty alike, so either result
+  is safe); (4) a runtime role's `CREATE`, `ALTER` or
   `DROP EVENT TRIGGER`, and its `CREATE OR REPLACE` or `ALTER` of a function it does not own, fail `42501`. If any
   differs, B1 stops and section 27.12 is re-specified by a design revision.
 - The six canonical migrations missing from the production ledger (`20260920120000`, `20260920150000`,
@@ -2543,8 +2561,17 @@ Two artefacts, split by environment dependence:
      finding routed to a design revision, on any other function in `public` or `kernel_private` that is a definer or
      returns `pg_catalog.event_trigger`, and on any event trigger bound into those schemas that is not a sealed
      binding.
-   - An empty declaration is valid. It is what a target without the helper has (local and CI); its `setSha256` is the
-     SHA-256 of the empty string.
+   - An empty declaration is valid. It is what a target without the helper has (local, CI, disposable databases):
+     `entries` is the empty array and `setSha256` is the SHA-256 of the canonical empty serialisation (27.12.7), which
+     is the empty string: `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`. It is still a
+     declaration. It is snapshotted, committed, frozen, bound to its target and supplied to B1 exactly like a
+     non-empty one (revision 2.7.1). No declaration is not the same as an empty declaration.
+   - **Required fields** (revision 2.7.1): `kind` exactly `kerneljson:co-resident-platform-exceptions/v1`;
+     `environment`; `systemIdentifier` (decimal text, 27.12.7 P3 step 2); `database`; `serverVersion`; `capturedAt`;
+     `capturedBy`; `ledgerHead`; `ledgerSetSha256`; `querySha256`; `pinsSha256` and `setSha256` (each 64 lowercase
+     hexadecimal characters); `entries` (an array, possibly empty, each element with every field of 27.12.3 and its
+     bindings with every column of 27.12.4). An unknown top-level field is refused too, so a mistyped field name
+     cannot pass as an absent optional one.
 
 **Frozen.** Committed with the B1 remediation and reviewed by the B1 hostile review together with the baseline. Fixed
 for the qualification run and for the release that carries it.
@@ -2552,7 +2579,26 @@ for the qualification run and for the release that carries it.
 **Target identity.** Health and qualification refuse the declaration unless its `system_identifier` and database name
 equal the live values (as 27.11.6 item 4). The pre-COMMIT check binds it through 27.12.7 P3.
 
+**Cutover runner** (revision 2.7.1). The B1 migration is applied only by a committed runner, never by hand-typed
+settings. Given the exact release commit `R` that carries the migration, before it opens any database connection it:
+1. verifies that it runs from `R` (`HEAD` equals `R`, no tracked change in the working tree);
+2. reads the declaration and the pins file as blobs of `R` (`git show R:<path>`), never from the working copy, and
+   records both blob SHAs;
+3. validates the declaration against every required field above and the formats of 27.12.7 P3 step 2;
+4. verifies that the SHA-256 of the pins blob equals the declaration's `pinsSha256`, that `setSha256` recomputed from
+   `entries` equals the declared value, that every entry equals a pin, and that the pins embedded in the migration at
+   `R` equal the pins blob (the generator's reproducibility check);
+5. refuses on any failure, having opened no connection and no transaction.
+
+Only then does it open one owner transaction, set the three settings of 27.12.7 P3 with `set_config(..., true)` from
+the validated declaration, apply the migration and COMMIT. It records `R`, both blob SHAs, `pinsSha256` and
+`setSha256` in the cutover record. Post-migration qualification reads the declaration again at `R`, refuses unless
+its blob SHA equals the recorded one, and compares the live surface to it field by field, with its `setSha256`, system
+identifier and database name.
+
 **Health.** `database.runtimeRolesLeastPrivilege` reads both artefacts from the running release and asserts all of:
+- the declaration file exists, parses as JSON, has the exact `kind` and version above, has every required field and no
+  unknown field, and its `pinsSha256`, `setSha256` and `systemIdentifier` are well formed (revision 2.7.1);
 - the SHA-256 of the pins file equals the declaration's `pinsSha256`;
 - every declared entry equals a pin;
 - `setSha256` recomputed from the entries equals the declared value;
@@ -2568,41 +2614,86 @@ Health never writes either artefact.
 A refresh can only reproduce sealed pins. If the live object no longer equals its pin, the snapshot refuses, and only
 a design revision can proceed.
 
-**P0 red.** Any health assertion above fails. In particular:
+**P0 red.** Any health assertion above fails. In particular, each of these is P0 by itself:
+- declaration file missing;
+- declaration not valid JSON;
+- wrong `kind` or version;
+- a required field missing, or an unknown field present;
+- `pinsSha256` not equal to the SHA-256 of the pins file;
+- `setSha256` malformed, or not equal to the digest recomputed from `entries`, or not equal to the live surface;
+- target database name not equal to `current_database()`;
+- target system identifier malformed, or not equal to the live one;
 - a declared exception missing, changed or moved;
 - an undeclared one present;
 - a binding missing, disabled, re-moded, re-bound or with changed tags, or an extra binding;
 - `proacl` not null;
-- a system-identifier, pins-hash or set-digest mismatch;
 - a declared entry not equal to a pin.
 
 #### 27.12.7 B1 pre-COMMIT rule: exact set equality
 
 This replaces the frozen count check (`n <> 1` over `public` and `kernel_private`). Inside the B1 migration, before
-COMMIT, all of these must hold, or the migration raises `23514` and its transaction rolls back:
+COMMIT, all of these must hold, evaluated in the order P1, P2, P3, or the migration raises `23514` and its transaction
+rolls back:
 
 - **P1. KernelJSON definers.** The identities of every `prosecdef` function in `public` and `kernel_private` that is
   not a sealed pin identity are exactly {`kernel_private.stamp_binding_provenance()`}. Identity is schema, name and
   ordered input argument types written `<type schema>.<type name>`. Every 27.9.4 assertion the migration already makes
   still applies.
-- **P2. Co-resident surface matches the pins.** `CR_ACTUAL` is every function in `public` and `kernel_private` that is
-  `prosecdef` or returns `pg_catalog.event_trigger`, other than the stamp function, plus every `pg_event_trigger` row
-  whose function is in those schemas. Each function must equal a sealed pin in every pinned field, and each event
-  trigger must equal a sealed binding. For each sealed pin name, the `pg_proc` rows carrying that name in all governed
-  schemas (27.10.2) are exactly the pinned identity when it is in `CR_ACTUAL`, and none otherwise (27.12.2 item 6).
-  The pins are embedded in the generated migration from the pins file as environment-independent constants, the same
-  kind of value as the stamp digest pin already in it.
-- **P3. Co-resident surface equals the target declaration.** The migration reads two transaction-local settings,
-  `kj.b1.co_resident_set_sha256` and `kj.b1.target_system_identifier`. The deployment owner sets them with
-  `set_config(..., true)` in the same transaction, immediately before the migration, from the frozen target
-  declaration. They are not secrets.
-  - Both unset or empty: the declared set is empty, so `CR_ACTUAL` must be empty.
-  - Exactly one set: abort.
-  - Both set: the system identifier must equal `pg_control_system().system_identifier`, and the serialisation digest
-    of `CR_ACTUAL` must equal the declared value.
+- **P2. Co-resident surface matches the pins, with complete topology** (revision 2.7.1). `CR_ACTUAL` is every
+  function in `public` and `kernel_private` that is `prosecdef` or returns `pg_catalog.event_trigger`, other than the
+  stamp function, plus every `pg_event_trigger` row whose function is in those schemas. All of these must hold:
+  - (a) each function in `CR_ACTUAL` equals a sealed pin in every field of 27.12.3;
+  - (b) each event trigger in `CR_ACTUAL` equals, in every column of 27.12.4, a sealed binding of a pin whose function
+    is in `CR_ACTUAL`;
+  - (c) for each pinned function present in `CR_ACTUAL`, the set of `pg_event_trigger` rows whose `evtfoid` is that
+    function equals its complete sealed topology exactly: every sealed binding present and equal in every column, and
+    no other row. A pinned function present without its complete sealed topology aborts. A pinned function cannot be
+    present while any of its sealed bindings is absent;
+  - (d) for each sealed pin name, the `pg_proc` rows carrying that name in all governed schemas (27.10.2) are exactly
+    the pinned identity when it is in `CR_ACTUAL`, and none otherwise (27.12.2 item 6).
+
+  P2 is decided from the catalogue and the embedded pins alone. It reads no setting and does not depend on P3, so a
+  missing `ensure_rls` aborts by P2 whatever digest the operator supplies. The pins are embedded in the generated
+  migration from the pins file as environment-independent constants, the same kind of value as the stamp digest pin
+  already in it.
+- **P3. Co-resident surface equals the target declaration** (revision 2.7.1). The migration reads three
+  transaction-local settings with `current_setting(name, true)`:
+  - `kj.b1.co_resident_set_sha256`, the declaration's `setSha256`;
+  - `kj.b1.target_system_identifier`, the declaration's `systemIdentifier`;
+  - `kj.b1.target_database`, the declaration's `database`.
+
+  The cutover runner of 27.12.6 sets all three with `set_config(name, value, true)` in the migration transaction,
+  immediately before the migration, from the frozen declaration at the release commit. They are not secrets. Every
+  B1 application supplies all three, on every target, including a target whose declaration is empty. The checks run
+  in this order, and each failure raises `23514` with a message naming the failed step:
+  1. **Presence.** Each of the three settings is non-NULL and non-empty. One, two or all three missing or empty
+     aborts. Absence of the settings is never read as an empty declaration.
+  2. **Format.** `kj.b1.co_resident_set_sha256` matches `^[0-9a-f]{64}$`. `kj.b1.target_system_identifier` matches
+     `^(0|-?[1-9][0-9]{0,18})$`, the canonical decimal text of a `bigint`. `kj.b1.target_database` is 1 to 63 bytes
+     with no character below U+0020. Formats are checked by pattern before any comparison and never by cast, so a
+     malformed value raises `23514`, never `22P02`.
+  3. **Database.** `kj.b1.target_database` equals `current_database()`, compared as text.
+  4. **System identifier.** `kj.b1.target_system_identifier` equals
+     `(pg_control_system()).system_identifier::text`, compared as text.
+  5. **Set digest.** The serialisation digest of `CR_ACTUAL` equals `kj.b1.co_resident_set_sha256`.
 
   So `CR_ACTUAL` equals the target's frozen declaration exactly, in both directions, before COMMIT. No count is
-  compared anywhere, and no target identity is written into the migration.
+  compared anywhere, and no target identity is written into the migration. The migration's first statement repeats
+  steps 1 and 2, so a malformed or incomplete cutover aborts before any change is made; the full P3 runs again before
+  COMMIT.
+
+**Threat model of P3.** P3 protects against mistakes and drift: the wrong declaration, the wrong target, a stale
+release, an operator typing values, and a co-resident surface that has changed since the snapshot. It does not
+protect against a hostile deployment owner, who can edit the migration, set any value or alter the catalogue
+directly. The defence against the owner is outside the database: the committed runner, the cutover record, the
+hostile review of the declaration, and post-migration qualification and health comparing against the committed
+declaration.
+
+**Clone limitation.** A physical clone, replica or restore of the target may keep its `system_identifier`, and its
+database name is usually the same. Database-internal identity alone cannot tell such a clone from the target. P3 and
+health therefore prove only that the database is the target or a physical copy of it. The deployment target is
+established outside the database, by the cutover record naming the connection target. This limitation does not relax
+any qualification rule: every check above still applies in full, to the target and to any clone.
 
 **Serialisation**, byte-exact and shared by the snapshot tool, health and the migration:
 - One line per member, with fields separated by `|`.
@@ -2617,14 +2708,19 @@ COMMIT, all of these must hold, or the migration raises `23514` and its transact
   - `<tags>`: elements sorted by byte order, comma-joined, or `NULL`.
 - Lines are sorted by byte order (`COLLATE "C"`) and joined by a single LF, with no trailing LF. The digest is SHA-256
   over UTF-8, in lowercase hexadecimal.
+- The canonical empty serialisation is the empty string (zero lines). Its digest is
+  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
 - Each field is also compared individually by P2. The digest binds set membership to the declaration.
 
 **Expected on the production target after B1:**
 - P1: {`kernel_private.stamp_binding_provenance()`};
 - `CR_ACTUAL`: one `fn` line for `public.rls_auto_enable()` and one `evt` line for `ensure_rls`.
 
-On a target without the helper (local, CI), `CR_ACTUAL` is empty and the settings stay unset. A target that holds the
-helper but is migrated without the settings aborts: that is the intended fail-closed default.
+**Expected on a target without the helper** (local, CI, disposable databases): its committed declaration is empty;
+the runner sets all three settings from it, with `kj.b1.co_resident_set_sha256` equal to the empty-serialisation
+digest; `CR_ACTUAL` is empty; P3 step 5 compares that digest and passes. The same target migrated without the
+settings, or without a declaration, aborts `23514` at P3 step 1. So does a target that holds the helper. Revision 2.7
+read unset settings as an empty declaration; revision 2.7.1 withdraws that.
 
 #### 27.12.8 Required B1 remediation (specified here, not implemented)
 
@@ -2633,7 +2729,8 @@ helper but is migrated without the settings aborts: that is the intended fail-cl
    with a test pinning its content. `scripts/b1/build-manifest.mjs` embeds the pins in the generated migration.
 2. **`PUBLIC` cleanup.** Replace `revoke execute on all functions in schema public, kernel_private from public` with
    the enumerated loop of 27.12.5, which skips `pg_catalog.event_trigger` return types.
-3. **Pre-COMMIT.** Replace the `n <> 1` definer count with P1 to P3 of 27.12.7.
+3. **Pre-COMMIT.** Replace the `n <> 1` definer count with P1 to P3 of 27.12.7, including the topology clause P2 (c),
+   the three mandatory settings and the presence and format checks repeated as the migration's first statement.
 4. **Target snapshot** (`platform-baseline-snapshot.ts`, `baselineEligibilityProblems` in `security-definers.ts`):
    - route `public` and `kernel_private` definers and event-trigger functions to pin comparison;
    - capture `pg_event_trigger` rows bound into those schemas;
@@ -2641,17 +2738,25 @@ helper but is migrated without the settings aborts: that is the intended fail-cl
    - refuse everything else;
    - refuse pinned names in the baseline in any governed schema.
 5. **Inventory and health** (`definerInventoryProblems`, `database.runtimeRolesLeastPrivilege`): the middle term of
-   `EXPECTED(stage, target)`; rules E1 to E3; name uniqueness; system-identifier binding; pins hash; set digest; P0 on
-   any failure.
+   `EXPECTED(stage, target)`; rules E1 to E3; name uniqueness; system-identifier and database-name binding; pins
+   hash; set digest; declaration presence, parse, `kind`, version, required fields and formats; P0 on any failure
+   (27.12.6).
 6. **Capability facts** (`runtime-roles.ts`): no function capability fact for a function returning
    `pg_catalog.event_trigger` (27.11.1), relying on E1 holding.
-7. **Post-migration qualification:** every item of 27.12.3 and 27.12.4 for each declared entry, unchanged from the
-   target declaration.
-8. **Cutover plan:** one owner transaction of `set_config` for both settings, from the frozen declaration, then the
-   migration, then COMMIT. State that a target holding the helper aborts without them.
-9. **Negative suite:** the cases of 27.12.9, run on a disposable database where the owner installs the pinned 953-byte
-   body and `ensure_rls` from the cited upstream text. The canonical CI reference has neither.
-10. **B1 documents:** reconcile the implementation report, cutover plan and entry brief to revision 2.7.
+7. **Post-migration qualification:** reads the declaration at the release commit, refuses unless its blob SHA equals
+   the one in the cutover record, and checks every item of 27.12.3 and 27.12.4 for each declared entry, the live
+   `setSha256`, system identifier and database name against it (27.12.6).
+8. **Cutover runner and plan:** the committed runner of 27.12.6, which reads the declaration and pins at the exact
+   release commit, validates them and verifies `pinsSha256` before opening any connection, then runs one owner
+   transaction of `set_config` for all three settings, the migration and COMMIT, and writes the cutover record. The
+   plan states that every target, including one with an empty declaration, aborts without the settings.
+9. **Every other application of the B1 migration** (CI, local regression, disposable databases, test fixtures) also
+   goes through the runner with a declaration snapshotted from that database. A plain migration runner that cannot set
+   the settings aborts at P3 step 1; that is intended, and the harness must be changed, not the check.
+10. **Negative suite:** the cases of 27.12.9, run on a disposable database where the owner installs the pinned 953-byte
+   body and `ensure_rls` from the cited upstream text, and on a second disposable database without either. The
+   canonical CI reference has neither.
+11. **B1 documents:** reconcile the implementation report, cutover plan and entry brief to revisions 2.7 and 2.7.1.
 
 **Not required by this revision.** Separate authorisation; these do not gate B1:
 - The forensic drift tool (audit branch `f19a37dea3e20d49eca4c3d34cf221bb3b18089b`, unchanged by this revision)
@@ -2662,10 +2767,12 @@ helper but is migrated without the settings aborts: that is the intended fail-cl
 
 #### 27.12.9 Negative cases
 
-Each is a committed automated case. Case 1 is the positive control; every other case must fail on purpose:
+Each is a committed automated case. Cases 1 and 23 are the positive controls; every other case must fail on purpose:
 - For inventory and health, failure means a named problem and P0.
-- For a pre-COMMIT case, the migration aborts with `23514` and an owner re-read shows the catalogue unchanged.
-- Fixture: the disposable database of 27.12.8 item 9.
+- For a pre-COMMIT case, the migration aborts with `23514`, the error names the failed rule or P3 step, and an owner
+  re-read shows the catalogue unchanged. Any other SQLSTATE fails the case.
+- For a runner case, the runner refuses and the test shows that no database connection was opened.
+- Fixtures: the two disposable databases of 27.12.8 item 10, one holding the helper and one without it.
 
 | # | Case | Required result |
 |---|---|---|
@@ -2675,22 +2782,37 @@ Each is a committed automated case. Case 1 is the positive control; every other 
 | 4 | `ALTER FUNCTION ... SECURITY INVOKER` | fail (pin mismatch; E1 still applies) |
 | 5 | `proconfig` changed: `RESET search_path`; `SET search_path = public, pg_catalog` | fail |
 | 6 | ACL changed: `REVOKE EXECUTE ... FROM PUBLIC` (materialised ACL); `GRANT EXECUTE ... TO kj_worker`; B1 run with the old blanket revoke | fail; the last aborts pre-COMMIT |
-| 7 | `ensure_rls` dropped | fail |
+| 7 | `ensure_rls` dropped | fail; pre-COMMIT aborts by P2 (c) |
 | 8 | `ensure_rls` disabled; also `ENABLE REPLICA` and `ENABLE ALWAYS` | fail |
 | 9 | tags changed: only `CREATE TABLE`; `ALTER TABLE` added | fail |
-| 10 | `ensure_rls` bound to a different function | fail |
+| 10 | `ensure_rls` bound to a different function, in `public` or in another schema | fail; pre-COMMIT aborts by P2 (c) |
 | 11 | a second event trigger on `public.rls_auto_enable()` | fail (E2) |
 | 12 | a second platform definer in `public` (for example an exact copy under another name); an INVOKER event-trigger function in `public` | fail (27.10; E1) |
 | 13 | an overload `public.rls_auto_enable(text)` of any return type | fail (name uniqueness) |
 | 14 | a copy `extensions.rls_auto_enable()`, before or after the snapshot; `ALTER FUNCTION ... SET SCHEMA` | fail (name uniqueness; baseline refusal; missing plus extra) |
 | 15 | an extra KernelJSON definer, in `kernel_private` or `public` | fail (P1; 27.10) |
-| 16 | declaration from another `system_identifier`; pre-COMMIT with a wrong `kj.b1.target_system_identifier` | fail; abort |
+| 16 | declaration from another `system_identifier`; pre-COMMIT with a wrong `kj.b1.target_system_identifier` | health P0; pre-COMMIT aborts `23514` at P3 step 4 |
 | 17 | silent refresh: a declared entry edited to match a drifted body; `setSha256` edited; the pins file edited without a design revision | fail (pin equality; set digest; `pinsSha256` and the pinned-content test). A static test also shows health has no write path to either artefact |
 | 18 | a body equal to the pin with LF converted to CRLF | semantic source equality holds (normalised digest equal); the forensic raw digest, length and has-CR differ and are reported as forensic evidence only |
-| 19 | settings unset on a database holding the helper; only one setting set; both set on a database without it | abort |
+| 19 | on the database holding the helper: no settings; each of the six partial combinations (any one or any two of the three set); the declaration of the helper target applied to the database without it | abort `23514` (P3 step 1, or step 5 for the last) |
 | 20 | a canonical KernelJSON migration containing `CREATE [OR REPLACE] FUNCTION` of `rls_auto_enable` | the repository test fails |
 | 21 | as `kj_worker` and as `kj_door`: `select public.rls_auto_enable()` | refused `0A000`; any other SQLSTATE fails the probe |
 | 22 | as each runtime role: `CREATE EVENT TRIGGER`; `ALTER EVENT TRIGGER ensure_rls DISABLE`; `DROP EVENT TRIGGER ensure_rls`; `CREATE OR REPLACE FUNCTION public.rls_auto_enable()`; `ALTER FUNCTION public.rls_auto_enable() ...` | refused `42501`; catalogue unchanged |
+| 23 | empty target: the database without the helper, its exact empty declaration, all three settings from it (set digest `e3b0c442...b855`) | commits; inventory equal; health green (positive control) |
+| 24 | the same empty target with no settings; and with no declaration file, by bypassing the runner | abort `23514` at P3 step 1; never read as an empty declaration |
+| 25 | the same empty target with each of the six partial setting combinations; each setting set to the empty string | abort `23514` at P3 step 1 |
+| 26 | helper target with `ensure_rls` dropped, the operator supplying the correctly computed digest of a set that omits it (the `fn` line only), with matching system identifier and database | abort `23514` by P2 (c); the error names P2, not P3 |
+| 27 | malformed `kj.b1.target_system_identifier`: `abc`; `0123`; a leading or trailing space; 20 digits; `7678069749886157684.0` | abort `23514` at P3 step 2; `22P02` or any other SQLSTATE fails the case |
+| 28 | malformed `kj.b1.co_resident_set_sha256`: uppercase hexadecimal; 63 characters; 65 characters; a non-hexadecimal character | abort `23514` at P3 step 2 |
+| 29 | malformed `kj.b1.target_database`: 64 bytes; a control character | abort `23514` at P3 step 2 |
+| 30 | `kj.b1.target_database` naming another database, everything else correct | abort `23514` at P3 step 3 |
+| 31 | health: declaration file missing | P0 |
+| 32 | health: declaration not valid JSON; truncated file; a byte-order mark before the JSON | P0 |
+| 33 | health: wrong `kind`; `/v2`; `kind` missing | P0 |
+| 34 | health: each required field of 27.12.6 removed in turn; one unknown field added | P0 for every one |
+| 35 | health: `pinsSha256` one character changed; `setSha256` malformed (uppercase, 63 characters); declared `database` or `systemIdentifier` not the live value; `systemIdentifier` malformed | P0 for every one |
+| 36 | runner: run from a commit other than the release commit; tracked file modified in the working tree; declaration edited in the working copy only; `pinsSha256` not equal to the pins blob; pins embedded in the migration differ from the pins blob; a declaration failing case 33 or 34 | refuses before opening a connection |
+| 37 | post-migration qualification: the declaration at the release commit replaced by one with a different blob SHA than the cutover record; live surface changed after COMMIT | qualification fails |
 
 The SQLSTATEs in cases 21 and 22 are INFERENCE (section 26). If PostgreSQL returns another, B1 stops and the case is
 re-specified by a design revision, never relaxed to "any error".
