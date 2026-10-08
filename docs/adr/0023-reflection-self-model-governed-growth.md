@@ -1,8 +1,8 @@
 # ADR-0023: Reflection, self-model and governed identity growth (KJ-P8)
 
-Status: PROPOSED, revision 2.6 (design only). Nothing here is implemented, migrated or deployed.
-Date: 06/10/2026 (revision 2.6). Revision 2.3 is dated 01/10/2026, revision 2.4 02/10/2026 and revision 2.5
-05/10/2026.
+Status: PROPOSED, revision 2.7 (design only). Nothing here is implemented, migrated or deployed.
+Date: 08/10/2026 (revision 2.7). Revision 2.3 is dated 01/10/2026, revision 2.4 02/10/2026, revision 2.5
+05/10/2026 and revision 2.6 06/10/2026.
 Base: canonical `main` `750d5b7926f320d8e9d3f64789b8f7035eaa4f3d`. Production: epoch 13, release `cebbb0d`, cognition
 ON, Class C/D frozen (docs/operations/KJ_P7B_LIVE_RESULT_2026-09-30.md).
 
@@ -132,6 +132,24 @@ defines when an existing catalogue ACL is actually usable by a runtime role. The
 facts stay exact, so any new schema USAGE is itself an unexpected fact. The section 27.10 `SECURITY DEFINER` inventory
 is unchanged and remains global over every governed schema. Section 27.11.6 records five implementation hardenings of
 the sealed mechanism from the same review; they add no authority. Nothing else in the design changes.
+
+Revision 2.7 is a narrow docs-only ruling on top of revision 2.6 (`7712702020ef5d3d841f68f4d425d9707fb703eb`), which is
+not rewritten. It answers a target-qualification finding, not a review blocker. A read-only adjudication of the
+production database (07/10 and 08/10/2026; nothing written) found a pre-existing platform `SECURITY DEFINER` function
+inside a KernelJSON schema, which revision 2.6 cannot qualify:
+
+| Finding | Defect | Resolved in |
+|---|---|---|
+| B1-R26-CORESIDENT | production holds `public.rls_auto_enable()`, a `SECURITY DEFINER` event-trigger function bound to the enabled event trigger `ensure_rls`, byte-identical to the Supabase Studio auto-enable-RLS installer. Section 27.10.4 forbids a baseline entry in `public`, so B1 cannot qualify; the frozen B1 migration's pre-COMMIT check (`count = 1` over `public` and `kernel_private`) would abort on it; and B1's blanket `REVOKE EXECUTE ... FROM PUBLIC` would silently change its ACL | section 27.12 (new), with sections 26, 27.6 step 2, 27.8, 27.10.1, 27.10.4, 27.10.7, 27.11.1 and 27.11.4 and the sequence document made consistent |
+
+Revision 2.7 preserves that platform control exactly as it is. It does not relocate, delete, disable or re-grant it,
+and it does not relax the section 27.10.4 prohibition generally. It adds one exact, fail-closed exception surface,
+the **co-resident platform exception** of section 27.12: a platform function inside `public` or `kernel_private` is
+admissible only if this ADR enumerates it by exact identity and fingerprint, together with its event-trigger topology,
+and the target declares it in a frozen, system-identifier-bound artefact. The one entry is
+`public.rls_auto_enable()` with `ensure_rls`. **It grants nothing to any role.** It changes what qualification
+accepts, by one enumerated object, and it narrows B1: B1 no longer touches that function's ACL. The frozen B1 count
+check is replaced by exact set equality (27.12.7). Nothing else in the design changes.
 
 Section numbers changed from revision 1: section 18 (P8B adoption mechanics) and section 23 (same-tenant references)
 are new, and the later sections moved down.
@@ -1714,6 +1732,22 @@ No authority-critical ambiguity is known to remain. Open, and not authority-crit
   schema-USAGE gate of section 27.11, keys function facts by `schema.name`, and its cutover plan offers the two
   workarounds section 27.11.5 rules out. It also lacks the five hardenings of section 27.11.6. It stays frozen until
   revision 2.6 is hostile-sealed, and is then remediated to section 27.11.
+- Implementation that predates revision 2.7 (not edited by this revision): the frozen B1 candidate
+  `0ff2919c1bbf722b4842aa56fdc94ef9b74e5a51` counts definers (`n <> 1`) in its pre-COMMIT check, revokes `PUBLIC`
+  EXECUTE from every function in `public` and `kernel_private`, refuses any `public` entry in its baseline snapshot
+  and has no co-resident artefact or event-trigger capture. It stays frozen until revision 2.7 is hostile-sealed and
+  is then remediated as section 27.12.8 lists.
+- Four PostgreSQL behaviours section 27.12 relies on are INFERENCE, not executed in revision 2.7, and B1
+  qualification must observe each: (1) a direct call of a function returning `event_trigger`, by a role holding
+  EXECUTE, fails `0A000` before running the body; (2) firing an event trigger does not check EXECUTE on its function;
+  (3) a transaction-local custom setting (`set_config('kj.b1.*', ..., true)`) can be set by the deployment owner on
+  the target and is visible to a `DO` block later in the same transaction; (4) a runtime role's `CREATE`, `ALTER` or
+  `DROP EVENT TRIGGER`, and its `CREATE OR REPLACE` or `ALTER` of a function it does not own, fail `42501`. If any
+  differs, B1 stops and section 27.12 is re-specified by a design revision.
+- The six canonical migrations missing from the production ledger (`20260920120000`, `20260920150000`,
+  `20260920180000`, `20260921180000`, `20260923150000`, `20260925120000`) are not addressed here. Their current
+  state is equivalent to canonical; their historical application is unproven; the B1 target snapshot still refuses on
+  the ledger set, and revision 2.7 neither changes that gate nor authorises any ledger repair.
 - Implementation that predates revision 2.5 (not edited by this revision): at the frozen B1 candidate
   `108db1b0db5923993eb17888d3039c5a32890c2c`, `services/kernel/src/database/runtime-roles.ts` excludes only
   `pg_catalog`, `information_schema` and `pg_toast` from its definer query, compares only `schema.name`, and has no
@@ -1847,8 +1881,9 @@ inventory, and proved by the full suite before cutover.
 2. **Catalogue equality.** After the B1 migration, role attributes, memberships, table and column grants, function
    grants, ownership and policies read from the catalogue, as runtime capability facts under section 27.11, equal the
    manifest exactly. An extra privilege fails the check, as a missing one does. The same check asserts the `SECURITY DEFINER` inventory rule of section 27.10 for the
-   stage being qualified (at B1: `EXPECTED(B1)`, the frozen platform baseline plus the section 27.9 exception), and
-   every item of section 27.9.4 for the section 27.9 exception.
+   stage being qualified (at B1: `EXPECTED(B1)`, the frozen platform baseline, the target's declared co-resident
+   platform exceptions of section 27.12 and the section 27.9 exception), every item of section 27.9.4 for the section
+   27.9 exception, and every item of section 27.12.3 and 27.12.4 for each declared co-resident exception.
 3. **Positive requalification, P1 to P7.** The complete existing suite, the faculty, identity and cognition mutation
    suites and the real-Restate tests run with the worker connected as `kj_worker` and the door as `kj_door`, against
    a database migrated by the owner. Required: the same pass and skip counts as the baseline run at the same commit,
@@ -1899,6 +1934,11 @@ inventory, and proved by the full suite before cutover.
 There is no other. The general rule stands: an existing P1 to P7 function stays `SECURITY INVOKER` unless this
 design enumerates it by exact identity. A change to any other function's security attribute is outside this design
 and needs its own revision and seal.
+
+**Not touched by B1 at all (revision 2.7):** a co-resident platform exception of section 27.12 and its event-trigger
+topology. B1 changes none of its attributes, its ACL included: B1's `PUBLIC` EXECUTE cleanup excludes functions
+returning `pg_catalog.event_trigger` (27.12.5), and B1's pre-COMMIT check fails if any declared exception differs
+afterwards from its sealed pin (27.12.7).
 
 ### 27.9 The release-provenance definer exception (P8-R23-DEFINER)
 
@@ -2048,13 +2088,19 @@ it is implemented in its authorised stage (the B1 remediation for the B1 entry a
 P8B for theirs). The invariant is not "there is one `SECURITY DEFINER` function forever". It is:
 
 > At every rollout stage, the complete set of `SECURITY DEFINER` functions in every governed schema is exactly the
-> frozen platform baseline together with the KernelJSON functions this design authorises for all stages applied so
-> far.
+> frozen platform baseline, together with the co-resident platform exceptions the target declares under section
+> 27.12, together with the KernelJSON functions this design authorises for all stages applied so far.
 
 ```
-EXPECTED(stage) = PLATFORM_BASELINE  UNION  KERNELJSON_STAGE_MANIFEST(stage)
-ACTUAL          = { every pg_proc row with prosecdef = true whose schema is governed (27.10.2) }
+EXPECTED(stage, target) = PLATFORM_BASELINE(target)
+                    UNION CO_RESIDENT_PLATFORM_EXCEPTIONS(target)      -- section 27.12 (revision 2.7)
+                    UNION KERNELJSON_STAGE_MANIFEST(stage)
+ACTUAL                  = { every pg_proc row with prosecdef = true whose schema is governed (27.10.2) }
 ```
+
+Revision 2.7 adds the middle term only. The three terms are disjoint by construction (27.10.4 eligibility, 27.12.2);
+an identity that would fall in two of them fails. Where this design writes `EXPECTED(stage)` it means
+`EXPECTED(stage, target)` for the target being qualified or checked.
 
 `ACTUAL` must equal `EXPECTED(stage)` in both directions, under the identity and attributes of 27.10.3 and 27.10.4:
 
@@ -2171,6 +2217,14 @@ with LF, lowercase hexadecimal:
 `stamp_binding_provenance`, and no function whose identity appears in any stage of 27.10.3. If the snapshot finds
 such a function, it is not baselined: B1 does not qualify, and the finding goes to a design revision.
 
+Revision 2.7 keeps this rule unchanged and adds one routing step before the refusal. A `SECURITY DEFINER` function in
+`public` or `kernel_private` that is not a KernelJSON stage function is still never a baseline entry. The snapshot
+compares it with the co-resident pins sealed in section 27.12.3: if it equals a pin exactly, function and
+event-trigger topology together, it is recorded in the target's co-resident artefact (27.12.6), not in the baseline;
+otherwise the refusal above applies unchanged. In addition, the baseline may contain no function whose name equals the
+name of a sealed co-resident pin, in any governed schema (27.12.2 item 6), so a copy or overload outside `public`
+cannot be baselined.
+
 **Immutability.** The baseline is fixed for a qualification run and for the release that carries it. The health check
 compares against the baseline in the running release. If the platform later adds, removes or changes a definer
 function, `database.runtimeRolesLeastPrivilege` goes red at P0 and B1 qualification fails, until a new snapshot is
@@ -2203,6 +2257,11 @@ Because the inventory covers every governed schema:
 - the runtime roles have no CREATE on any schema (27.2);
 - KernelJSON migrations must not create KernelJSON-owned application objects inside a schema that holds a baseline
   entry unless a separately sealed design explicitly allows it.
+- a co-resident platform exception (section 27.12) attaches to one exact function and its exact event-trigger
+  topology, never to a schema. It is not a baseline entry, so `public` holding one does not engage the bullet above,
+  and KernelJSON objects stay in `public` as already designed. It makes `public` no more trusted than before: a second
+  platform function there, a changed or overloaded `rls_auto_enable`, a copy in any other schema and a second event
+  trigger on it each still fail (27.12.9).
 
 Each of these ships with a negative case that makes it fail on purpose: an extra definer in `public`, one in a new
 schema created by the owner, a moved function, a second `stamp_binding_provenance`, a baseline entry with a changed
@@ -2235,6 +2294,15 @@ EFFECTIVE_OBJECT_CAPABILITY(role, object, privilege) :=
 where the object predicate is `has_table_privilege` for a table, view, materialised view, foreign table or partitioned
 table and its partitions; `has_column_privilege` for a column privilege not already held on the whole table;
 `has_sequence_privilege` for a sequence; and `has_function_privilege(..., 'EXECUTE')` for an ordinary callable function.
+
+**Ordinary callable function (revision 2.7).** Every `pg_proc` row in a governed schema is an ordinary callable
+function for this rule except one whose return type is `pg_catalog.event_trigger`. An event-trigger function cannot
+be invoked by a call: a direct call fails `0A000` before its body runs (INFERENCE, observed by the probe of 27.12.9),
+and only an event trigger, which only a privileged role can create, runs it. Its EXECUTE ACL is therefore not a
+runtime capability fact. This exclusion is closed, not open-ended: in `public` and `kernel_private`, the only schemas
+the runtime roles can reach, every function returning `pg_catalog.event_trigger` must be a sealed co-resident
+exception whose ACL is pinned exactly (27.12.4 rule E1), so an unpinned one fails instead of disappearing. Functions
+returning `pg_catalog.trigger`, and every other function, are unchanged by this paragraph.
 
 Rationale (FACT of PostgreSQL privilege semantics): an object inside a schema can be reached only by a role holding
 USAGE on that schema, so an object ACL inherited through `PUBLIC` inside a schema the role cannot USAGE is not runtime
@@ -2274,10 +2342,11 @@ intended tripwire: the gate cannot hide authority, because the authority it gate
 #### 27.11.4 The `SECURITY DEFINER` inventory is not narrowed
 
 Section 27.10 is unchanged. The definer inventory continues over every governed schema regardless of whether
-`kj_worker` or `kj_door` has USAGE on it: `EXPECTED(stage) = PLATFORM_BASELINE UNION KERNELJSON_STAGE_MANIFEST(stage)`
-against every governed `SECURITY DEFINER` function. A definer in `auth`, `storage`, `extensions`, a new application
-schema or any other governed schema remains inventoried and fingerprinted. The schema-USAGE gate of 27.11.1 is never
-applied to section 27.10.
+`kj_worker` or `kj_door` has USAGE on it: `EXPECTED(stage, target) = PLATFORM_BASELINE UNION
+CO_RESIDENT_PLATFORM_EXCEPTIONS UNION KERNELJSON_STAGE_MANIFEST(stage)` (revision 2.7 added the middle term, section
+27.12) against every governed `SECURITY DEFINER` function. A definer in `auth`, `storage`, `extensions`, a new
+application schema or any other governed schema remains inventoried and fingerprinted. The schema-USAGE gate of
+27.11.1 is never applied to section 27.10.
 
 #### 27.11.5 The manifest stays environment-independent; target qualification fails closed
 
@@ -2311,3 +2380,327 @@ Each ships with a negative case that makes it fail on purpose: a `PUBLIC` table 
 schema without USAGE (no fact); the same after a USAGE grant on that schema (unexpected schema fact and object facts);
 an overload of a manifest function (separate fact); a `PUBLIC` policy on an unreachable relation (no fact) and on a
 reachable one (fact); and a definer in a schema without USAGE (still inventoried by 27.10).
+
+### 27.12 Co-resident platform exceptions (revision 2.7; B1-R26-CORESIDENT)
+
+#### 27.12.1 Decision
+
+FACT, observed read-only on the production database on 07/10/2026 (drift footprint SHA-256
+`90f3a0ff2a5408a8e2f0b462ea7304343d74ec8ca839551e0f83af02f1e97524`) and 08/10/2026 (PostgreSQL 17.6,
+`system_identifier` `7678069749886157684`, REPEATABLE READ READ ONLY, empty `search_path`, rolled back):
+
+- `public.rls_auto_enable()` exists. It is the only `SECURITY DEFINER` function in `public` and `kernel_private`.
+- It is bound to the event trigger `ensure_rls`, enabled, on `ddl_command_end` for `CREATE TABLE`, `CREATE TABLE AS`
+  and `SELECT INTO`. It is an active control that enables row level security on every table created in `public`.
+- Its source is byte-identical to the auto-enable-RLS installer that Supabase Studio runs only on an explicit opt-in
+  (an unticked-by-default option at project creation, or the RLS notice and event-trigger template). Before revision
+  2.7, no KernelJSON migration, document or commit created or mentioned it (searched across every ref of the
+  repository history).
+
+**Decision.** KernelJSON preserves this control in place and unchanged, and models it exactly. It is not relocated,
+deleted, disabled, re-owned or re-granted to make B1 qualify. The section 27.10.4 prohibition on baseline entries in
+`public` and `kernel_private` stands. Revision 2.7 adds a third, separately sealed term to the inventory, the
+co-resident platform exceptions, admissible only under every condition of 27.12.2.
+
+**Rejected.**
+- *Baseline it as an ordinary platform entry.* That attaches trust to whatever sits in `public`, and engages the last
+  bullet of 27.10.7 for every KernelJSON object in `public`.
+- *Relocate it to a non-KernelJSON schema.* That mutates a platform security control to satisfy an abstraction.
+- *Delete or disable it.* That removes an active control; no security reason requires it.
+- *"Platform functions in `public` are allowed", "Supabase-owned functions are trusted", or trust by name.* None of
+  these is exact, and each would admit a changed or additional function.
+
+#### 27.12.2 Admission conditions
+
+An object is a co-resident platform exception of a target if and only if all of these hold:
+
+1. **Design authority.** This section enumerates it by exact identity, with every value of 27.12.3 and every binding
+   of 27.12.4. There is no wildcard, family, name-only entry or schema-wide entry. A new entry, or any change to a
+   pinned value, is a new design revision, a hostile review and a new seal.
+2. **Schema.** Its schema is `public` or `kernel_private`. A platform function in any other governed schema is
+   handled by the ordinary baseline of 27.10.4 and cannot be a co-resident exception.
+3. **Not KernelJSON.** It is not named `stamp_binding_provenance`; its identity is not in any stage of 27.10.3; no
+   canonical KernelJSON migration creates or replaces a function of its name, qualified or not (a committed
+   repository test); and its normalised source digest equals a cited external platform source at cited upstream
+   revisions. A co-resident exception can never legitimise a KernelJSON-created definer.
+4. **Pre-existence.** It is present in the target snapshot of 27.12.6, taken by the deployment owner before B1 under
+   the sealed snapshot procedure of 27.10.4, which refuses if B1 is already applied.
+5. **Target evidence.** The target's co-resident artefact (27.12.6) declares it, bound to the target's
+   `system_identifier`, and the B1 hostile review has reviewed that artefact.
+6. **Name uniqueness.** In all governed schemas there is exactly one `pg_proc` row with the pinned name, whatever its
+   schema, arguments, return type, owner or security attribute, and it is the pinned identity. A copy in another
+   schema, an overload and a shadow function each fail. No platform baseline entry may carry a pinned name (27.10.4).
+7. **No learning and no refresh.** Neither health nor qualification writes, extends or regenerates any artefact. The
+   snapshot tool writes a co-resident entry only for an object equal to a sealed pin (27.12.6).
+8. **No reduction in coverage.** Section 27.10 stays global over every governed schema and section 27.11.4 is
+   unchanged. The exception adds one exact member to `EXPECTED(stage, target)` and removes nothing.
+
+#### 27.12.3 The exact pin: `public.rls_auto_enable()`
+
+| Fact | Required value |
+|---|---|
+| identity | schema `public`, name `rls_auto_enable`, no input arguments (`pronargs = 0`) |
+| return type | `pg_catalog.event_trigger`; `proretset = false`; `prokind = 'f'` |
+| owner | the role named `postgres`. Rationale: the role that ran the platform installer, and on this target also the deployment owner of 27.2; pinned by name, as every baseline entry is. Never `kj_worker` or `kj_door`. Any other owner fails, however privileged |
+| `prosecdef` | true |
+| language | `plpgsql` (`pg_language.lanname`) |
+| `proconfig` | exactly a one-element `text[]` whose element is `search_path=pg_catalog` (SQL literal `'{search_path=pg_catalog}'::text[]`); no other element |
+| `proacl` | null (section 27.12.5) |
+| other attributes | `provolatile = 'v'`, `proisstrict = false`, `proleakproof = false`, `proparallel = 'u'`, `probin` null, `prosqlbody` null |
+| source digest | `2782e98b348aca7d6f6f73c420fd78d2e094957dd7a52b0483d4c34f29d2a7a1`, by rule 3 of 27.10.4 (the 27.9.3 rule: SHA-256 of UTF-8 `prosrc` after replacing every CRLF with LF); normalised source length 953 bytes |
+| event-trigger topology | exactly the one binding `ensure_rls` of 27.12.4 |
+
+**Provenance** (evidence for condition 3, not a runtime check). The digest equals the text between the dollar quotes of
+`AUTO_ENABLE_RLS_EVENT_TRIGGER_SQL` in `apps/studio/components/interfaces/Database/Triggers/EventTriggersList/EventTriggers.constants.ts`
+of `supabase/supabase` at `54a96831278818ff2fbdd82c51e225cdd0fecab8` (08/01/2026),
+`0433eeb5f5cc6c41b80c85793a3b7be1fc976119` and `c569a29c26d03b084e8162f1c393d18bd9a17734` (30/06/2026). Upstream
+changed the body at `536fbd547063cd7420b788e34c3150e542f3bfb8` (08/10/2026) to a different text (1055 bytes, digest
+prefix `325ae266`). The Supabase documentation snippet is a third, different text (970 bytes). Neither is this pin.
+
+**The pin does not follow upstream.** A re-install from a current Studio yields a body that fails this pin: health is
+P0 and B1 does not qualify until a design revision seals the new body. Nothing restores or accepts it automatically.
+
+**Forensic fields.** The observed raw digest equals the normalised digest and the source contains no CR. Raw digest,
+raw length and a has-CR flag are recorded in the target artefact as forensic evidence; equality is decided on the
+normalised digest only.
+
+#### 27.12.4 Event-trigger topology
+
+The function's authority is exercised only through its event trigger. The same source re-bound to another event or
+other tags is a different control, so the binding is part of the fingerprint. Four rules, over `pg_event_trigger` and
+the two KernelJSON schemas only:
+
+- **E1.** Every `pg_proc` row in `public` or `kernel_private` whose return type is `pg_catalog.event_trigger`, whether
+  or not it is a definer, is a sealed pin declared in the target artefact. Otherwise fail. KernelJSON therefore
+  creates no event-trigger function in its schemas, and an unpinned platform one fails rather than being ignored.
+- **E2.** Every `pg_event_trigger` row whose function's schema is `public` or `kernel_private` is a binding sealed for
+  that function. Otherwise fail: a second event trigger on a pinned function, or one on any other function in those
+  schemas, fails.
+- **E3.** Every binding sealed for a declared pin exists exactly, in every column below. Missing, renamed, disabled
+  (`'D'`), set to replica (`'R'`) or always (`'A'`) mode, re-bound, re-owned, on another event, or with different tags:
+  fail.
+- **E4.** Event triggers whose function is in another schema are outside this rule; KernelJSON does not baseline
+  them. Any of their functions that is a definer remains inside section 27.10 through the ordinary baseline.
+
+The sealed binding of `public.rls_auto_enable()`; exactly one `pg_event_trigger` row has `evtfoid` equal to it:
+
+| `evtname` | owner | `evtevent` | function | `evtenabled` | `evttags` |
+|---|---|---|---|---|---|
+| `ensure_rls` | `postgres` | `ddl_command_end` | `public.rls_auto_enable()` | `'O'` | exactly the set {`CREATE TABLE`, `CREATE TABLE AS`, `SELECT INTO`}; order is not significant, a duplicate or any other element fails |
+
+**Interactions** (INFERENCE from the pinned body and section 27.2, observed by the qualification named):
+- The runtime roles cannot fire it: they have no CREATE on any schema and no TEMPORARY, and `CREATE TABLE AS` and
+  `SELECT INTO` need CREATE too. Already a probe of 27.9.5.
+- B1 creates no table, so it does not fire during B1.
+- It fires inside KernelJSON migrations that create tables in `public` (P8A-0's reflection and self-model tables). It
+  enables row level security, which those migrations enable anyway (27.4), so their end state is unchanged. On
+  failure the pinned body re-raises, so the migration aborts: fail closed. P8A-0 qualification must expect its LOG
+  lines and must not treat its effect as drift.
+
+#### 27.12.5 ACL decision
+
+**Decision: preserve.** The pinned `proacl` is null before B1, after B1 and at every health check. B1 does not change
+it.
+
+- Null means PostgreSQL's default: EXECUTE for `PUBLIC` and the owner.
+- No authority reason requires a change. A direct call fails `0A000` before the body runs, whoever holds EXECUTE;
+  firing does not check EXECUTE (both INFERENCE, section 26, observed in B1 qualification); the runtime roles cannot
+  fire it (27.12.4). Revoking `PUBLIC` would change a
+  platform control's catalogue state for no security gain.
+- **B1's `PUBLIC` cleanup is restated.** B1 revokes EXECUTE from `PUBLIC` on every function in `public` and
+  `kernel_private` whose return type is not `pg_catalog.event_trigger`, by an enumerated loop over exact identities
+  (`regprocedure`), not by `REVOKE ... ON ALL FUNCTIONS IN SCHEMA`. The exclusion names no target object, so the
+  migration stays environment-independent. Rule E1 closes it: every function it skips must be a sealed pin whose ACL
+  is pinned exactly.
+- **Capability facts.** Under 27.11.1 an event-trigger function is not an ordinary callable function, so the true
+  `has_function_privilege` of `kj_worker` and `kj_door` on it is not a runtime capability fact. It is neither added to
+  the runtime manifest nor reported as unexpected. The probe of 27.12.9 case 21 corroborates non-callability.
+- **Rejected: normalise the ACL in B1** (revoke `PUBLIC` with before and after sealed). It makes B1 mutate a platform
+  control, against 27.8, and buys nothing.
+- **Rejected: accept any ACL with the same effect.** A materialised ACL equal in effect is still a change of platform
+  state that nobody authorised. Exact null is the narrower pin. If the platform later materialises it, health is P0
+  until a design revision.
+
+#### 27.12.6 Artefacts, lifecycle and target binding
+
+Two artefacts, split by environment dependence:
+
+1. **Sealed pins, environment-independent.** `kerneljson:co-resident-platform-pins/v1`, file
+   `infrastructure/database/co-resident-platform-pins.json`. It holds exactly the values of 27.12.3 and 27.12.4 and
+   nothing target-specific: no system identifier and no environment name. It is a design constant like the stage
+   manifest. It is transcribed from this section in the B1 remediation, reviewed against this section by the B1
+   hostile review, and changed only by a design revision. It says what an admissible co-resident object must be if one
+   is present; it does not say that any target has one. It is not part of the runtime-role manifest and grants nothing.
+2. **Target declaration, target-specific.** `kerneljson:co-resident-platform-exceptions/v1`, file
+   `infrastructure/database/co-resident-platform-exceptions.json`, beside the platform baseline.
+   - **Created by** the deployment owner's read-only snapshot tool, in the same READ ONLY transaction with empty
+     `search_path` as the platform baseline snapshot of 27.10.4, before B1. Nothing is written to the database.
+   - **Records** every provenance field of 27.10.4 (environment name, `system_identifier`, `current_database()`,
+     `version()`, `clock_timestamp()`, `current_user`, ledger head and set, query SHA-256), plus `pinsSha256` (SHA-256
+     of the pins file bytes it was validated against), `entries` (each a pin with its bindings, as observed, with the
+     forensic fields of 27.12.3) and `setSha256` (the 27.12.7 serialisation digest).
+   - The tool writes an entry only when the observed function and bindings equal a pin exactly. It refuses, with the
+     finding routed to a design revision, on any other function in `public` or `kernel_private` that is a definer or
+     returns `pg_catalog.event_trigger`, and on any event trigger bound into those schemas that is not a sealed
+     binding.
+   - An empty declaration is valid. It is what a target without the helper has (local and CI); its `setSha256` is the
+     SHA-256 of the empty string.
+
+**Frozen.** Committed with the B1 remediation and reviewed by the B1 hostile review together with the baseline. Fixed
+for the qualification run and for the release that carries it.
+
+**Target identity.** Health and qualification refuse the declaration unless its `system_identifier` and database name
+equal the live values (as 27.11.6 item 4). The pre-COMMIT check binds it through 27.12.7 P3.
+
+**Health.** `database.runtimeRolesLeastPrivilege` reads both artefacts from the running release and asserts all of:
+- the SHA-256 of the pins file equals the declaration's `pinsSha256`;
+- every declared entry equals a pin;
+- `setSha256` recomputed from the entries equals the declared value;
+- live `system_identifier` and database name equal the declared ones;
+- the live co-resident surface serialises to `setSha256`;
+- section 27.10 equality with the middle term;
+- rules E1 to E3;
+- name uniqueness.
+
+Health never writes either artefact.
+
+**Refresh.** Only by re-running the snapshot procedure, reviewing, and committing as a deliberate refresh, as 27.10.4.
+A refresh can only reproduce sealed pins. If the live object no longer equals its pin, the snapshot refuses, and only
+a design revision can proceed.
+
+**P0 red.** Any health assertion above fails. In particular:
+- a declared exception missing, changed or moved;
+- an undeclared one present;
+- a binding missing, disabled, re-moded, re-bound or with changed tags, or an extra binding;
+- `proacl` not null;
+- a system-identifier, pins-hash or set-digest mismatch;
+- a declared entry not equal to a pin.
+
+#### 27.12.7 B1 pre-COMMIT rule: exact set equality
+
+This replaces the frozen count check (`n <> 1` over `public` and `kernel_private`). Inside the B1 migration, before
+COMMIT, all of these must hold, or the migration raises `23514` and its transaction rolls back:
+
+- **P1. KernelJSON definers.** The identities of every `prosecdef` function in `public` and `kernel_private` that is
+  not a sealed pin identity are exactly {`kernel_private.stamp_binding_provenance()`}. Identity is schema, name and
+  ordered input argument types written `<type schema>.<type name>`. Every 27.9.4 assertion the migration already makes
+  still applies.
+- **P2. Co-resident surface matches the pins.** `CR_ACTUAL` is every function in `public` and `kernel_private` that is
+  `prosecdef` or returns `pg_catalog.event_trigger`, other than the stamp function, plus every `pg_event_trigger` row
+  whose function is in those schemas. Each function must equal a sealed pin in every pinned field, and each event
+  trigger must equal a sealed binding. For each sealed pin name, the `pg_proc` rows carrying that name in all governed
+  schemas (27.10.2) are exactly the pinned identity when it is in `CR_ACTUAL`, and none otherwise (27.12.2 item 6).
+  The pins are embedded in the generated migration from the pins file as environment-independent constants, the same
+  kind of value as the stamp digest pin already in it.
+- **P3. Co-resident surface equals the target declaration.** The migration reads two transaction-local settings,
+  `kj.b1.co_resident_set_sha256` and `kj.b1.target_system_identifier`. The deployment owner sets them with
+  `set_config(..., true)` in the same transaction, immediately before the migration, from the frozen target
+  declaration. They are not secrets.
+  - Both unset or empty: the declared set is empty, so `CR_ACTUAL` must be empty.
+  - Exactly one set: abort.
+  - Both set: the system identifier must equal `pg_control_system().system_identifier`, and the serialisation digest
+    of `CR_ACTUAL` must equal the declared value.
+
+  So `CR_ACTUAL` equals the target's frozen declaration exactly, in both directions, before COMMIT. No count is
+  compared anywhere, and no target identity is written into the migration.
+
+**Serialisation**, byte-exact and shared by the snapshot tool, health and the migration:
+- One line per member, with fields separated by `|`.
+  - A function line: `fn|<schema>|<name>|<argtypes>|<rettype>|<proretset>|<prokind>|<owner>|<prosecdef>|<lanname>|<provolatile>|<proisstrict>|<proleakproof>|<proparallel>|<proconfig>|<proacl>|<digest>`.
+  - An event-trigger line: `evt|<evtname>|<owner>|<evtevent>|<function identity>|<evtenabled>|<tags>`.
+- Field formats:
+  - `<argtypes>`: comma-joined `<type schema>.<type name>`, empty for none; `<rettype>` in the same form.
+  - Booleans: `t` or `f`.
+  - `<proconfig>` and `<proacl>`: PostgreSQL's array text output, or the literal `NULL`.
+  - `<digest>`: per 27.10.4.
+  - `<function identity>`: `<schema>.<name>(<argtypes>)`.
+  - `<tags>`: elements sorted by byte order, comma-joined, or `NULL`.
+- Lines are sorted by byte order (`COLLATE "C"`) and joined by a single LF, with no trailing LF. The digest is SHA-256
+  over UTF-8, in lowercase hexadecimal.
+- Each field is also compared individually by P2. The digest binds set membership to the declaration.
+
+**Expected on the production target after B1:**
+- P1: {`kernel_private.stamp_binding_provenance()`};
+- `CR_ACTUAL`: one `fn` line for `public.rls_auto_enable()` and one `evt` line for `ensure_rls`.
+
+On a target without the helper (local, CI), `CR_ACTUAL` is empty and the settings stay unset. A target that holds the
+helper but is migrated without the settings aborts: that is the intended fail-closed default.
+
+#### 27.12.8 Required B1 remediation (specified here, not implemented)
+
+**Required by this revision.** B1 cannot qualify without each of these:
+1. **Pins file.** Add `infrastructure/database/co-resident-platform-pins.json`, transcribed from 27.12.3 and 27.12.4,
+   with a test pinning its content. `scripts/b1/build-manifest.mjs` embeds the pins in the generated migration.
+2. **`PUBLIC` cleanup.** Replace `revoke execute on all functions in schema public, kernel_private from public` with
+   the enumerated loop of 27.12.5, which skips `pg_catalog.event_trigger` return types.
+3. **Pre-COMMIT.** Replace the `n <> 1` definer count with P1 to P3 of 27.12.7.
+4. **Target snapshot** (`platform-baseline-snapshot.ts`, `baselineEligibilityProblems` in `security-definers.ts`):
+   - route `public` and `kernel_private` definers and event-trigger functions to pin comparison;
+   - capture `pg_event_trigger` rows bound into those schemas;
+   - write the co-resident declaration;
+   - refuse everything else;
+   - refuse pinned names in the baseline in any governed schema.
+5. **Inventory and health** (`definerInventoryProblems`, `database.runtimeRolesLeastPrivilege`): the middle term of
+   `EXPECTED(stage, target)`; rules E1 to E3; name uniqueness; system-identifier binding; pins hash; set digest; P0 on
+   any failure.
+6. **Capability facts** (`runtime-roles.ts`): no function capability fact for a function returning
+   `pg_catalog.event_trigger` (27.11.1), relying on E1 holding.
+7. **Post-migration qualification:** every item of 27.12.3 and 27.12.4 for each declared entry, unchanged from the
+   target declaration.
+8. **Cutover plan:** one owner transaction of `set_config` for both settings, from the frozen declaration, then the
+   migration, then COMMIT. State that a target holding the helper aborts without them.
+9. **Negative suite:** the cases of 27.12.9, run on a disposable database where the owner installs the pinned 953-byte
+   body and `ensure_rls` from the cited upstream text. The canonical CI reference has neither.
+10. **B1 documents:** reconcile the implementation report, cutover plan and entry brief to revision 2.7.
+
+**Not required by this revision.** Separate authorisation; these do not gate B1:
+- The forensic drift tool (audit branch `f19a37dea3e20d49eca4c3d34cf221bb3b18089b`, unchanged by this revision)
+  should compare function sources by the CRLF-normalised digest, keeping raw digest, raw length and has-CR as forensic
+  evidence. That would settle `public.schedule_fire_bind_once()` mechanically: its production body is the canonical
+  body with LF converted to CRLF (365 against 355 bytes, ten line endings). It should also capture `pg_event_trigger`.
+- The six missing ledger rows (section 26). The B1 snapshot's ledger gate is unchanged.
+
+#### 27.12.9 Negative cases
+
+Each is a committed automated case. Case 1 is the positive control; every other case must fail on purpose:
+- For inventory and health, failure means a named problem and P0.
+- For a pre-COMMIT case, the migration aborts with `23514` and an owner re-read shows the catalogue unchanged.
+- Fixture: the disposable database of 27.12.8 item 9.
+
+| # | Case | Required result |
+|---|---|---|
+| 1 | exact `rls_auto_enable()` and exact `ensure_rls`, B1 applied with the correct settings | commits; inventory equal; health green |
+| 2 | source changed: one byte of the body; also the upstream `536fbd5` body | fail |
+| 3 | owner changed to another role | fail |
+| 4 | `ALTER FUNCTION ... SECURITY INVOKER` | fail (pin mismatch; E1 still applies) |
+| 5 | `proconfig` changed: `RESET search_path`; `SET search_path = public, pg_catalog` | fail |
+| 6 | ACL changed: `REVOKE EXECUTE ... FROM PUBLIC` (materialised ACL); `GRANT EXECUTE ... TO kj_worker`; B1 run with the old blanket revoke | fail; the last aborts pre-COMMIT |
+| 7 | `ensure_rls` dropped | fail |
+| 8 | `ensure_rls` disabled; also `ENABLE REPLICA` and `ENABLE ALWAYS` | fail |
+| 9 | tags changed: only `CREATE TABLE`; `ALTER TABLE` added | fail |
+| 10 | `ensure_rls` bound to a different function | fail |
+| 11 | a second event trigger on `public.rls_auto_enable()` | fail (E2) |
+| 12 | a second platform definer in `public` (for example an exact copy under another name); an INVOKER event-trigger function in `public` | fail (27.10; E1) |
+| 13 | an overload `public.rls_auto_enable(text)` of any return type | fail (name uniqueness) |
+| 14 | a copy `extensions.rls_auto_enable()`, before or after the snapshot; `ALTER FUNCTION ... SET SCHEMA` | fail (name uniqueness; baseline refusal; missing plus extra) |
+| 15 | an extra KernelJSON definer, in `kernel_private` or `public` | fail (P1; 27.10) |
+| 16 | declaration from another `system_identifier`; pre-COMMIT with a wrong `kj.b1.target_system_identifier` | fail; abort |
+| 17 | silent refresh: a declared entry edited to match a drifted body; `setSha256` edited; the pins file edited without a design revision | fail (pin equality; set digest; `pinsSha256` and the pinned-content test). A static test also shows health has no write path to either artefact |
+| 18 | a body equal to the pin with LF converted to CRLF | semantic source equality holds (normalised digest equal); the forensic raw digest, length and has-CR differ and are reported as forensic evidence only |
+| 19 | settings unset on a database holding the helper; only one setting set; both set on a database without it | abort |
+| 20 | a canonical KernelJSON migration containing `CREATE [OR REPLACE] FUNCTION` of `rls_auto_enable` | the repository test fails |
+| 21 | as `kj_worker` and as `kj_door`: `select public.rls_auto_enable()` | refused `0A000`; any other SQLSTATE fails the probe |
+| 22 | as each runtime role: `CREATE EVENT TRIGGER`; `ALTER EVENT TRIGGER ensure_rls DISABLE`; `DROP EVENT TRIGGER ensure_rls`; `CREATE OR REPLACE FUNCTION public.rls_auto_enable()`; `ALTER FUNCTION public.rls_auto_enable() ...` | refused `42501`; catalogue unchanged |
+
+The SQLSTATEs in cases 21 and 22 are INFERENCE (section 26). If PostgreSQL returns another, B1 stops and the case is
+re-specified by a design revision, never relaxed to "any error".
+
+#### 27.12.10 What this revision does not do
+
+- It grants nothing to any role. The runtime roles' attributes, memberships, USAGE, CREATE and TEMPORARY are
+  unchanged. The runtime-role manifest is unchanged and stays environment-independent.
+- It is not a precedent. Each further co-resident object needs its own exact entry, design revision, hostile review
+  and seal.
+- It does not change section 27.9 or the rollout order.
+- It authorises no production mutation, no ledger repair, no B1 target-baseline capture, no B1 merge or deployment,
+  and no start of P8A-0.

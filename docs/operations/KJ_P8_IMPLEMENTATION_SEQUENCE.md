@@ -32,7 +32,9 @@ ahead of production. Production order may not.
 - no existing P1 to P7 function changes its security attribute except the one enumerated in ADR 27.9; no runtime role
   is ever granted a direct write on `release_epoch` or `release_activations`;
 - at every step the `SECURITY DEFINER` inventory equals ADR 27.10's expected set for the steps applied so far: the
-  frozen platform baseline plus `stamp_binding_provenance()` from B1, `freeze_reflection(uuid)` from P8A-0 and
+  frozen platform baseline, the target's declared co-resident platform exceptions of ADR 27.12 (on production exactly
+  `public.rls_auto_enable()` with its event trigger `ensure_rls`, preserved unchanged), plus
+  `stamp_binding_provenance()` from B1, `freeze_reflection(uuid)` from P8A-0 and
   `close_growth_window_by_owner(uuid, uuid)` from P8B; nothing else;
 - Class C/D stays frozen until an effective growth window exists in P8B;
 - applied migrations are never edited; every guard change is a new migration that replaces a function;
