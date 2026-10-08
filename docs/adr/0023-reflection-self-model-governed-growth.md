@@ -1,7 +1,7 @@
 # ADR-0023: Reflection, self-model and governed identity growth (KJ-P8)
 
-Status: PROPOSED, revision 2.7.1 (design only). Nothing here is implemented, migrated or deployed.
-Date: 08/10/2026 (revisions 2.7 and 2.7.1). Revision 2.3 is dated 01/10/2026, revision 2.4 02/10/2026, revision 2.5
+Status: PROPOSED, revision 2.7.2 (design only). Nothing here is implemented, migrated or deployed.
+Date: 08/10/2026 (revisions 2.7, 2.7.1 and 2.7.2). Revision 2.3 is dated 01/10/2026, revision 2.4 02/10/2026, revision 2.5
 05/10/2026 and revision 2.6 06/10/2026.
 Base: canonical `main` `750d5b7926f320d8e9d3f64789b8f7035eaa4f3d`. Production: epoch 13, release `cebbb0d`, cognition
 ON, Class C/D frozen (docs/operations/KJ_P7B_LIVE_RESULT_2026-09-30.md).
@@ -166,6 +166,22 @@ and the owner's ruling on them. It changes only sections 26, 27.12.6, 27.12.7, 2
 | R27-THREAT | the threat model of P3 and the physical-clone limitation were unstated | 27.12.7 |
 
 It grants nothing, widens no admission condition of 27.12.2 and changes no pin.
+
+Revision 2.7.2 remediates the hostile verdict `BLOCK_R27_1_DESIGN` on revision 2.7.1
+(`cf3b953e2f381f7f8d80de5cdf16e17ae9efe9cc`, not rewritten). It closes exactly its two blockers, with five small
+clarifications the owner authorised:
+
+| Finding | Defect in 2.7.1 | Resolved in |
+|---|---|---|
+| R271-B1 | frozen B1 holds a second schema-wide function ACL statement, `REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public, kernel_private FROM kj_worker, kj_door`, which 2.7.1 did not redesign. OBSERVED on PostgreSQL 17.6 (27.12.12): it turns the pinned null `proacl` of `public.rls_auto_enable()` into `{=X/postgres,postgres=X/postgres}`, so the positive B1 case was impossible | 27.12.5: no schema-wide routine ACL operation in B1; one enumerated cleanup for both grantee sets; static guard; cases ACL-A to ACL-C |
+| R271-B2 | 2.7.1 made a committed runner the only way to apply B1 but said nothing about the migration ledger, so a conforming runner could apply B1 and leave `20261002090000` unrecorded | 27.12.11: B1 is applied by the standard engine (the pinned Supabase CLI), whose ledger write is atomic with the migration (OBSERVED); the runner refuses unless the ledger is exactly the sealed base set; exact post-B1 ledger equality; cases LEDGER-A to LEDGER-F |
+
+Clarifications: the line serialisation is defined only over P2-admitted members and gains a populated golden vector;
+runner integrity against `skip-worktree`, `assume-unchanged` and untracked migration files; one more P3 case; a static
+test on who may supply the three settings; the post-P2 race stated. The declaration's provenance now reuses the
+platform baseline's provenance object, so the two artefacts cannot disagree on target or ledger, and the undefined
+`ledgerSetSha256` of 2.7.1 is withdrawn. The six historical ledger rows stay unresolved and unauthorised: production
+still cannot pass the runner's ledger gate. It grants nothing.
 
 Section numbers changed from revision 1: section 18 (P8B adoption mechanics) and section 23 (same-tenant references)
 are new, and the later sections moved down.
@@ -1756,10 +1772,11 @@ No authority-critical ambiguity is known to remain. Open, and not authority-crit
 - Four PostgreSQL behaviours section 27.12 relies on are INFERENCE, not executed in revision 2.7, and B1
   qualification must observe each: (1) a direct call of a function returning `event_trigger`, by a role holding
   EXECUTE, fails `0A000` before running the body; (2) firing an event trigger does not check EXECUTE on its function;
-  (3) a transaction-local custom setting (`set_config('kj.b1.*', ..., true)`) can be set by the deployment owner on
-  the target and is visible to a `DO` block later in the same transaction, and `current_setting(name, true)` returns
-  NULL for a custom setting never set in the session (revision 2.7.1 treats NULL and empty alike, so either result
-  is safe); (4) a runtime role's `CREATE`, `ALTER` or
+  (3) a custom setting passed as a connection startup parameter (`options=-c kj.b1.<name>=<value>`) reaches the
+  migration session on the target's actual connection path (OBSERVED on disposable PostgreSQL 17.6 with the Supabase
+  CLI, 27.12.12; not observed on hosted Supabase or through its pooler; if a pooler drops it, P3 step 1 aborts, so
+  the failure is closed), and `current_setting(name, true)` returns NULL for a custom setting never set in the session
+  (revision 2.7.1 treats NULL and empty alike, so either result is safe); (4) a runtime role's `CREATE`, `ALTER` or
   `DROP EVENT TRIGGER`, and its `CREATE OR REPLACE` or `ALTER` of a function it does not own, fail `42501`. If any
   differs, B1 stops and section 27.12 is re-specified by a design revision.
 - The six canonical migrations missing from the production ledger (`20260920120000`, `20260920150000`,
@@ -2525,11 +2542,35 @@ it.
   firing does not check EXECUTE (both INFERENCE, section 26, observed in B1 qualification); the runtime roles cannot
   fire it (27.12.4). Revoking `PUBLIC` would change a
   platform control's catalogue state for no security gain.
-- **B1's `PUBLIC` cleanup is restated.** B1 revokes EXECUTE from `PUBLIC` on every function in `public` and
-  `kernel_private` whose return type is not `pg_catalog.event_trigger`, by an enumerated loop over exact identities
-  (`regprocedure`), not by `REVOKE ... ON ALL FUNCTIONS IN SCHEMA`. The exclusion names no target object, so the
-  migration stays environment-independent. Rule E1 closes it: every function it skips must be a sealed pin whose ACL
-  is pinned exactly.
+- **No schema-wide routine ACL operation** (revision 2.7.2, R271-B1). B1 performs no GRANT or REVOKE of the form
+  `ON ALL FUNCTIONS IN SCHEMA`, `ON ALL ROUTINES IN SCHEMA` or `ON ALL PROCEDURES IN SCHEMA` naming `public` or
+  `kernel_private`, for any grantee (`PUBLIC`, `kj_worker`, `kj_door` or any other), and no `ALTER DEFAULT PRIVILEGES`
+  on functions or routines. Every function ACL change B1 makes in those schemas names one concrete catalogue object.
+  No GRANT or REVOKE in B1 names a function returning `pg_catalog.event_trigger`. Revision 2.7.1 replaced only the
+  `PUBLIC` statement; the per-role statement `REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public, kernel_private FROM
+  kj_worker, kj_door` also materialises a null ACL, even where neither role held anything (OBSERVED, 27.12.12).
+- **One enumerated cleanup for both grantee sets.** It replaces both frozen statements, in the same place in the
+  migration:
+  - **Set.** `C` is every `pg_proc` row whose schema is `public` or `kernel_private`, whose `prokind` is `f`, `a` or
+    `w`, and whose `prorettype` is not `pg_catalog.event_trigger`, read once at that point in the migration.
+  - **Kinds.** `f`, `a` and `w` are exactly the kinds the frozen `ON ALL FUNCTIONS` statements affected: plain,
+    aggregate and window functions, and never procedures (`p`) (OBSERVED, 27.12.12). Procedures stay untouched, as
+    they were. Adding `p` would widen B1 and is not part of this revision.
+  - **Order.** Ascending `p.oid::pg_catalog.regprocedure::text` under `COLLATE "C"`.
+  - **Statements.** For each member, with `<f>` its `regprocedure` text: `REVOKE EXECUTE ON FUNCTION <f> FROM PUBLIC`,
+    then `REVOKE ALL ON FUNCTION <f> FROM kj_worker, kj_door`. `ON FUNCTION` accepts all three kinds (OBSERVED for
+    `a` and `w`) and refuses a procedure with `42809` (OBSERVED), so a procedure that slipped into `C` would abort
+    the migration, not change silently.
+  - **Equivalence.** On every member of `C` the resulting `proacl` equals what the two frozen statements produce,
+    including a function that already held a grant to a runtime role (OBSERVED, 27.12.12). The only difference is the
+    skipped set.
+  - **Skipped set.** Every function in those schemas returning `pg_catalog.event_trigger`, of any kind. Each must be
+    a sealed pin with its exact null `proacl`: P2 (a) and rule E1 check that before COMMIT in the same transaction,
+    so an unpinned skipped function aborts the migration `23514` and nothing commits (case ACL-C).
+  - The rule names no target object, so the migration stays environment-independent.
+- **Guards.** P2 (a) compares `proacl` exactly, so any ACL operation that materialises the pinned null aborts before
+  COMMIT (case ACL-B). A repository test over the generated migration refuses the forbidden forms statically
+  (27.12.8 item 12). The static test is defence in depth; P2 is the authority.
 - **Capability facts.** Under 27.11.1 an event-trigger function is not an ordinary callable function, so the true
   `has_function_privilege` of `kj_worker` and `kj_door` on it is not a runtime capability fact. It is neither added to
   the runtime manifest nor reported as unexpected. The probe of 27.12.9 case 21 corroborates non-callability.
@@ -2566,12 +2607,23 @@ Two artefacts, split by environment dependence:
      is the empty string: `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`. It is still a
      declaration. It is snapshotted, committed, frozen, bound to its target and supplied to B1 exactly like a
      non-empty one (revision 2.7.1). No declaration is not the same as an empty declaration.
-   - **Required fields** (revision 2.7.1): `kind` exactly `kerneljson:co-resident-platform-exceptions/v1`;
-     `environment`; `systemIdentifier` (decimal text, 27.12.7 P3 step 2); `database`; `serverVersion`; `capturedAt`;
-     `capturedBy`; `ledgerHead`; `ledgerSetSha256`; `querySha256`; `pinsSha256` and `setSha256` (each 64 lowercase
-     hexadecimal characters); `entries` (an array, possibly empty, each element with every field of 27.12.3 and its
-     bindings with every column of 27.12.4). An unknown top-level field is refused too, so a mistyped field name
+   - **Required fields** (revision 2.7.1, provenance shape revised in 2.7.2): `kind` exactly
+     `kerneljson:co-resident-platform-exceptions/v1`; `environment`; `provenance`; `pinsSha256` and `setSha256`
+     (each 64 lowercase hexadecimal characters); `entries` (an array, possibly empty, each element with every field of
+     27.12.3 and its bindings with every column of 27.12.4). An unknown field is refused too, so a mistyped field name
      cannot pass as an absent optional one.
+   - **`provenance`** (revision 2.7.2) is the platform baseline's provenance object of 27.10.4, with the same fields
+     and meaning as the frozen snapshot tool writes them (`platform-baseline-snapshot.ts` at `0ff2919`):
+     `systemIdentifier` (decimal text, 27.12.7 P3 step 2), `database`, `serverVersion`, `snapshotAt`, `snapshotUser`,
+     `transaction`, `migrationLedger` (`table`, `present`, `head`, `b1Recorded`, `versions`), `stampSecurityDefiner`
+     and `querySha256`. Only `querySha256` differs, because it names the co-resident query. There is no second ledger
+     representation: the ledger set is `migrationLedger.versions`, the sorted version list, compared by exact set
+     equality as the baseline compares it. The `ledgerHead` and `ledgerSetSha256` fields of revision 2.7.1 are
+     withdrawn; `ledgerSetSha256` was never defined.
+   - **One read, two artefacts.** The snapshot tool reads the provenance once, in the one READ ONLY transaction, and
+     writes the identical object into both artefacts. Health, the runner and qualification refuse unless the
+     declaration's `provenance` equals the baseline's in every field except `querySha256`. The two artefacts therefore
+     cannot disagree on system identifier, database, server version, snapshot time or ledger set.
 
 **Frozen.** Committed with the B1 remediation and reviewed by the B1 hostile review together with the baseline. Fixed
 for the qualification run and for the release that carries it.
@@ -2581,7 +2633,10 @@ equal the live values (as 27.11.6 item 4). The pre-COMMIT check binds it through
 
 **Cutover runner** (revision 2.7.1). The B1 migration is applied only by a committed runner, never by hand-typed
 settings. Given the exact release commit `R` that carries the migration, before it opens any database connection it:
-1. verifies that it runs from `R` (`HEAD` equals `R`, no tracked change in the working tree);
+1. verifies that it runs from `R` (`HEAD` equals `R`, no tracked change in the working tree), and that no
+   authority-critical path carries the `skip-worktree` or `assume-unchanged` flag (`git ls-files -v`): the pins file,
+   the declaration, the platform baseline, the stage manifest, everything under `supabase/migrations/`, the runner
+   itself and its pinned engine version (revision 2.7.2);
 2. reads the declaration and the pins file as blobs of `R` (`git show R:<path>`), never from the working copy, and
    records both blob SHAs;
 3. validates the declaration against every required field above and the formats of 27.12.7 P3 step 2;
@@ -2590,15 +2645,17 @@ settings. Given the exact release commit `R` that carries the migration, before 
    `R` equal the pins blob (the generator's reproducibility check);
 5. refuses on any failure, having opened no connection and no transaction.
 
-Only then does it open one owner transaction, set the three settings of 27.12.7 P3 with `set_config(..., true)` from
-the validated declaration, apply the migration and COMMIT. It records `R`, both blob SHAs, `pinsSha256` and
-`setSha256` in the cutover record. Post-migration qualification reads the declaration again at `R`, refuses unless
-its blob SHA equals the recorded one, and compares the live surface to it field by field, with its `setSha256`, system
+Only then does it apply B1, by the procedure of 27.12.11 (revision 2.7.2): the standard migration engine, over
+migration files exported byte-exactly from `R`, after a read-only ledger gate, with the three settings of 27.12.7 P3
+delivered to the migration session. It records `R`, both blob SHAs, `pinsSha256`, `setSha256` and the items of
+27.12.11 in the cutover record. Post-migration qualification reads the declaration again at `R`, refuses unless its
+blob SHA equals the recorded one, and compares the live surface to it field by field, with its `setSha256`, system
 identifier and database name.
 
 **Health.** `database.runtimeRolesLeastPrivilege` reads both artefacts from the running release and asserts all of:
 - the declaration file exists, parses as JSON, has the exact `kind` and version above, has every required field and no
-  unknown field, and its `pinsSha256`, `setSha256` and `systemIdentifier` are well formed (revision 2.7.1);
+  unknown field, and its `pinsSha256`, `setSha256` and `provenance.systemIdentifier` are well formed (revision
+  2.7.1), and its `provenance` equals the baseline's in every field except `querySha256` (revision 2.7.2);
 - the SHA-256 of the pins file equals the declaration's `pinsSha256`;
 - every declared entry equals a pin;
 - `setSha256` recomputed from the entries equals the declared value;
@@ -2659,11 +2716,14 @@ rolls back:
 - **P3. Co-resident surface equals the target declaration** (revision 2.7.1). The migration reads three
   transaction-local settings with `current_setting(name, true)`:
   - `kj.b1.co_resident_set_sha256`, the declaration's `setSha256`;
-  - `kj.b1.target_system_identifier`, the declaration's `systemIdentifier`;
-  - `kj.b1.target_database`, the declaration's `database`.
+  - `kj.b1.target_system_identifier`, the declaration's `provenance.systemIdentifier`;
+  - `kj.b1.target_database`, the declaration's `provenance.database`.
 
-  The cutover runner of 27.12.6 sets all three with `set_config(name, value, true)` in the migration transaction,
-  immediately before the migration, from the frozen declaration at the release commit. They are not secrets. Every
+  The cutover runner of 27.12.6 delivers all three to the migration session from the frozen declaration at the
+  release commit, as connection startup parameters of the standard engine's connection (27.12.11, revision 2.7.2).
+  A disposable test harness that applies the migration without the engine may instead set them with
+  `set_config(name, value, true)` in the migration transaction; P3 reads them the same way in both cases. They are
+  not secrets. Every
   B1 application supplies all three, on every target, including a target whose declaration is empty. The checks run
   in this order, and each failure raises `23514` with a message naming the failed step:
   1. **Presence.** Each of the three settings is non-NULL and non-empty. One, two or all three missing or empty
@@ -2689,6 +2749,11 @@ directly. The defence against the owner is outside the database: the committed r
 hostile review of the declaration, and post-migration qualification and health comparing against the committed
 declaration.
 
+**Race after P2** (revision 2.7.2). P1 to P3 observe the catalogue at one point before COMMIT. A concurrent DDL by
+another owner session after that point, or between the runner's ledger gate and the engine's connection (27.12.11),
+is not prevented by this design. Post-COMMIT qualification and continuous health remain the detectors, and either
+finding is P0. This revision adds no locking protocol.
+
 **Clone limitation.** A physical clone, replica or restore of the target may keep its `system_identifier`, and its
 database name is usually the same. Database-internal identity alone cannot tell such a clone from the target. P3 and
 health therefore prove only that the database is the target or a physical copy of it. The deployment target is
@@ -2710,6 +2775,21 @@ any qualification rule: every check above still applies in full, to the target a
   over UTF-8, in lowercase hexadecimal.
 - The canonical empty serialisation is the empty string (zero lines). Its digest is
   `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+- **Domain** (revision 2.7.2). The serialisation is defined only over members P2 has already admitted, whose every
+  field equals a sealed pin or binding value. It has no escaping, because no sealed value contains `|`, a line feed
+  or, inside `<tags>`, a comma. It is not a general encoding of catalogue strings; a non-admitted member never
+  reaches it, because P2 aborts first.
+- **Golden vector** (revision 2.7.2), the production surface of 27.12.3 and 27.12.4, two lines joined by one LF, no
+  trailing LF, 285 bytes:
+
+  ```text
+  evt|ensure_rls|postgres|ddl_command_end|public.rls_auto_enable()|O|CREATE TABLE,CREATE TABLE AS,SELECT INTO
+  fn|public|rls_auto_enable||pg_catalog.event_trigger|f|f|postgres|t|plpgsql|v|f|f|u|{search_path=pg_catalog}|NULL|2782e98b348aca7d6f6f73c420fd78d2e094957dd7a52b0483d4c34f29d2a7a1
+  ```
+
+  SHA-256 `80d365b875ba65ae543e351a47c09f66c6df756db772f6fa494a36639291d721`, computed from this specification, not
+  read from a database. The B1 remediation's snapshot tool, health and migration must each reproduce it from the
+  disposable helper fixture, as a committed test.
 - Each field is also compared individually by P2. The digest binds set membership to the declaration.
 
 **Expected on the production target after B1:**
@@ -2727,8 +2807,9 @@ read unset settings as an empty declaration; revision 2.7.1 withdraws that.
 **Required by this revision.** B1 cannot qualify without each of these:
 1. **Pins file.** Add `infrastructure/database/co-resident-platform-pins.json`, transcribed from 27.12.3 and 27.12.4,
    with a test pinning its content. `scripts/b1/build-manifest.mjs` embeds the pins in the generated migration.
-2. **`PUBLIC` cleanup.** Replace `revoke execute on all functions in schema public, kernel_private from public` with
-   the enumerated loop of 27.12.5, which skips `pg_catalog.event_trigger` return types.
+2. **Function ACL cleanup** (revised in 2.7.2). Replace both `revoke execute on all functions in schema public,
+   kernel_private from public` and `revoke all on all functions in schema public, kernel_private from kj_worker,
+   kj_door` with the one enumerated cleanup of 27.12.5. Table and sequence cleanup is unchanged.
 3. **Pre-COMMIT.** Replace the `n <> 1` definer count with P1 to P3 of 27.12.7, including the topology clause P2 (c),
    the three mandatory settings and the presence and format checks repeated as the migration's first statement.
 4. **Target snapshot** (`platform-baseline-snapshot.ts`, `baselineEligibilityProblems` in `security-definers.ts`):
@@ -2746,24 +2827,44 @@ read unset settings as an empty declaration; revision 2.7.1 withdraws that.
 7. **Post-migration qualification:** reads the declaration at the release commit, refuses unless its blob SHA equals
    the one in the cutover record, and checks every item of 27.12.3 and 27.12.4 for each declared entry, the live
    `setSha256`, system identifier and database name against it (27.12.6).
-8. **Cutover runner and plan:** the committed runner of 27.12.6, which reads the declaration and pins at the exact
-   release commit, validates them and verifies `pinsSha256` before opening any connection, then runs one owner
-   transaction of `set_config` for all three settings, the migration and COMMIT, and writes the cutover record. The
-   plan states that every target, including one with an empty declaration, aborts without the settings.
+8. **Cutover runner and plan:** the committed runner of 27.12.6 and 27.12.11. It reads the declaration and pins at
+   the exact release commit, validates them and verifies `pinsSha256` before opening any connection; exports the
+   migrations byte-exactly from `R`; passes the read-only ledger gate; applies B1 through the pinned engine with the
+   three settings as startup parameters; and writes the cutover record. The plan states that every target, including
+   one with an empty declaration, aborts without the settings, and that production refuses at the ledger gate while
+   its ledger lacks base versions.
 9. **Every other application of the B1 migration** (CI, local regression, disposable databases, test fixtures) also
-   goes through the runner with a declaration snapshotted from that database. A plain migration runner that cannot set
-   the settings aborts at P3 step 1; that is intended, and the harness must be changed, not the check.
+   goes through the runner and its engine, with a declaration snapshotted from that database. A plain migration runner
+   that cannot supply the settings aborts at P3 step 1; that is intended, and the harness must be changed, not the
+   check. The only exception is a negative case of 27.12.9 that exercises P3 directly, which may set the settings with
+   `set_config(name, value, true)` in the migration transaction.
 10. **Negative suite:** the cases of 27.12.9, run on a disposable database where the owner installs the pinned 953-byte
    body and `ensure_rls` from the cited upstream text, and on a second disposable database without either. The
    canonical CI reference has neither.
-11. **B1 documents:** reconcile the implementation report, cutover plan and entry brief to revisions 2.7 and 2.7.1.
+11. **B1 documents:** reconcile the implementation report, cutover plan and entry brief to revisions 2.7, 2.7.1 and
+   2.7.2.
+12. **Static guards** (revision 2.7.2), each a committed repository test with its own failing fixtures:
+   - over the generated B1 migration text, comments and string literals included (so a form built inside `EXECUTE`
+     is still seen), case-insensitive and whitespace-normalised: fail on `ON ALL FUNCTIONS IN SCHEMA`,
+     `ON ALL ROUTINES IN SCHEMA` or `ON ALL PROCEDURES IN SCHEMA`; on any `ALTER DEFAULT PRIVILEGES` whose object
+     type is `FUNCTIONS` or `ROUTINES`; on any GRANT or REVOKE naming a sealed pin name; and on any transaction-control
+     statement (`BEGIN`, `START TRANSACTION`, `COMMIT`, `END`, `ROLLBACK`, `SAVEPOINT`, `RELEASE`, `PREPARE
+     TRANSACTION`) at top level. It must pass `ON ALL TABLES IN SCHEMA` and `ON ALL SEQUENCES IN SCHEMA`;
+   - over the repository: only the runner may supply `kj.b1.co_resident_set_sha256`, `kj.b1.target_system_identifier`
+     or `kj.b1.target_database` (as startup parameters or by `set_config` or `SET`). The B1 migration may only read
+     them with `current_setting(name, true)`. The P3 negative-case fixtures are the only other allowed writers. Any
+     other occurrence in code fails the test;
+   - over the runner: it never passes `--include-all` and never invokes `migration repair`, `db push` or `db reset`.
+13. **Engine pin** (revision 2.7.2): the exact Supabase CLI version and the SHA-256 of its binary, committed at `R`
+   and checked by the runner (27.12.11 step 6). Every LEDGER case runs against that pinned binary.
 
 **Not required by this revision.** Separate authorisation; these do not gate B1:
 - The forensic drift tool (audit branch `f19a37dea3e20d49eca4c3d34cf221bb3b18089b`, unchanged by this revision)
   should compare function sources by the CRLF-normalised digest, keeping raw digest, raw length and has-CR as forensic
   evidence. That would settle `public.schedule_fire_bind_once()` mechanically: its production body is the canonical
   body with LF converted to CRLF (365 against 355 bytes, ten line endings). It should also capture `pg_event_trigger`.
-- The six missing ledger rows (section 26). The B1 snapshot's ledger gate is unchanged.
+- The six missing ledger rows (section 26). The B1 snapshot's ledger gate is unchanged, and the runner's ledger gate
+  of 27.12.11 refuses production until that separate track resolves them under its own authorisation.
 
 #### 27.12.9 Negative cases
 
@@ -2773,6 +2874,9 @@ Each is a committed automated case. Cases 1 and 23 are the positive controls; ev
   re-read shows the catalogue unchanged. Any other SQLSTATE fails the case.
 - For a runner case, the runner refuses and the test shows that no database connection was opened.
 - Fixtures: the two disposable databases of 27.12.8 item 10, one holding the helper and one without it.
+- Cases ACL-A to ACL-C and LEDGER-A to LEDGER-F (revision 2.7.2) apply B1 through the runner and the pinned engine.
+  For LEDGER-B, LEDGER-E and LEDGER-F the fixture database is first brought to the stated ledger state by the test
+  itself; that fixture setup is not a runner or engine path.
 
 | # | Case | Required result |
 |---|---|---|
@@ -2813,11 +2917,27 @@ Each is a committed automated case. Cases 1 and 23 are the positive controls; ev
 | 35 | health: `pinsSha256` one character changed; `setSha256` malformed (uppercase, 63 characters); declared `database` or `systemIdentifier` not the live value; `systemIdentifier` malformed | P0 for every one |
 | 36 | runner: run from a commit other than the release commit; tracked file modified in the working tree; declaration edited in the working copy only; `pinsSha256` not equal to the pins blob; pins embedded in the migration differ from the pins blob; a declaration failing case 33 or 34 | refuses before opening a connection |
 | 37 | post-migration qualification: the declaration at the release commit replaced by one with a different blob SHA than the cutover record; live surface changed after COMMIT | qualification fails |
+| 38 | helper target, correct system identifier and database, `kj.b1.co_resident_set_sha256` set to the empty-serialisation digest | abort `23514` at P3 step 5 |
+| 39 | static guard fixtures: a generated migration containing each forbidden form of 27.12.8 item 12 in turn, including one inside an `EXECUTE` string; a `set_config('kj.b1.target_database', ...)` added outside the runner; a runner invoking `--include-all` | each fails its static test; `ON ALL TABLES IN SCHEMA` and `ON ALL SEQUENCES IN SCHEMA` pass |
+| 40 | runner integrity: `skip-worktree` or `assume-unchanged` set on the pins file, the declaration or a migration file; an untracked `.sql` file added under `supabase/migrations/`; an exported migration file differing from its blob; the engine binary's SHA-256 or version not the pinned one | refuses; the untracked file never reaches the export directory |
+| 41 | the golden vector of 27.12.7, reproduced by the snapshot tool, by health and by the migration from the disposable helper fixture | all three produce `80d365b8...d721` (positive control) |
+| ACL-A | exact helper and exact `ensure_rls` with `proacl` null; corrected B1 through the runner; COMMIT | commits; afterwards `public.rls_auto_enable()` has `proacl IS NULL`; every member of the cleanup set `C` has the same `proacl` the frozen statements would give (positive control) |
+| ACL-B | same fixture; a B1 variant containing the frozen `revoke all on all functions in schema public, kernel_private from kj_worker, kj_door` | abort `23514` by P2 (a) on `proacl`; after rollback `proacl IS NULL` and the ledger has no B1 row |
+| ACL-C | same fixture plus an unpinned function in `public` returning `pg_catalog.event_trigger` (invoker; and a definer copy), which the cleanup skips | abort `23514` by P2 (a) and E1; nothing commits |
+| LEDGER-A | exact pre-B1 ledger (`SEALED_BASE_MIGRATION_SET`), B1 through the runner | commits; post-COMMIT ledger equals base plus `20261002090000` exactly, B1 once, its row equal to the recorded contract; qualification passes (positive control) |
+| LEDGER-B | B1's catalogue effects committed without its ledger row (the B1 blob applied outside the engine) | post-migration qualification fails on ledger set equality |
+| LEDGER-C | ledger already records `20261002090000` before application | the runner's ledger gate refuses after its read-only query, before the engine is invoked; no migration SQL runs and the catalogue is unchanged. The engine alone would have skipped B1 silently (OBSERVED), which is why the gate exists |
+| LEDGER-D | a fixture deferred constraint trigger on `supabase_migrations.schema_migrations` that raises at COMMIT for version `20261002090000`, so the failure falls after the ledger row is written | the engine reports the error; afterwards no B1 catalogue effect and no B1 ledger row (mechanism OBSERVED with a test migration, 27.12.12) |
+| LEDGER-E | pre-B1 ledger missing one base version (one test per position: oldest, middle, newest) | the ledger gate refuses; the engine is not invoked; the missing row is not added |
+| LEDGER-F | pre-B1 ledger holding one extra version not in the base set | the ledger gate refuses; the engine is not invoked |
 
 The SQLSTATEs in cases 21 and 22 are INFERENCE (section 26). If PostgreSQL returns another, B1 stops and the case is
 re-specified by a design revision, never relaxed to "any error".
 
 #### 27.12.10 What this revision does not do
+
+Revisions 2.7.1 and 2.7.2 are bound by every item below as well. Revision 2.7.2 records no ledger row, historical or
+otherwise; it specifies how B1's own row is written by the engine when B1 is eventually authorised.
 
 - It grants nothing to any role. The runtime roles' attributes, memberships, USAGE, CREATE and TEMPORARY are
   unchanged. The runtime-role manifest is unchanged and stays environment-independent.
@@ -2826,3 +2946,129 @@ re-specified by a design revision, never relaxed to "any error".
 - It does not change section 27.9 or the rollout order.
 - It authorises no production mutation, no ledger repair, no B1 target-baseline capture, no B1 merge or deployment,
   and no start of P8A-0.
+
+
+#### 27.12.11 Applying B1: engine and migration ledger (revision 2.7.2, R271-B2)
+
+**Canonical ledger contract.** OBSERVED on disposable PostgreSQL 17.6 with Supabase CLI 2.120.0 (27.12.12):
+- **Table.** `supabase_migrations.schema_migrations`, exactly three columns: `version text not null` (the primary
+  key), `statements text[]` (nullable) and `name text` (nullable). The CLI created no other table in that schema.
+- **Row.** For the file `<version>_<name>.sql`: `version` is the 14 digits; `name` is the rest of the file name
+  without `.sql`; `statements` is the file split by the CLI's parser into top-level statements, each without its
+  terminating semicolon, with a leading comment kept on the statement that follows it. For frozen B1 (`0ff2919`,
+  blob SHA-256 `5cbb8b54fdb64d5546bf5acce78a86de23fc5dadfb73a664b252549f7589c8a5`) the row has `name`
+  `runtime_least_privilege_roles` and 293 statements; the SHA-256 of the array's JSON text is
+  `1b19276eb6a861ea1b63f713a69fa3126a4fc2ade3e387a2c487129bf2fb84d1`.
+- **Write.** `INSERT INTO supabase_migrations.schema_migrations(version, name, statements) VALUES($1, $2, $3)`, issued
+  by the CLI as the last statement of the migration's own transaction, after every statement of the file.
+- **Transactions.** One transaction per migration file holds its statements and its ledger row (equal `xmin`). A
+  failure inside the migration leaves neither objects nor row. A failure at COMMIT, after the row was written, leaves
+  neither. Each file commits separately, so an earlier file in the same invocation stays committed if a later one
+  fails.
+- **Existing version.** A version already recorded is skipped silently: its file is never executed, and the CLI
+  reports "Local database is up to date".
+- **Gaps.** A recorded version with no local file: the CLI refuses. A local version missing from the ledger and older
+  than the ledger head: refused unless `--include-all`, which re-executes it. A local version missing from the ledger
+  and newer than the head: executed as pending.
+- **Hand-applied precedent.** P1.2A, P1.3D and P2.1A were applied by hand in one transaction with an `INSERT` of
+  `version`, `name` and `statements`, the CLI's row shape. How they split `statements` was not recorded, and this
+  design does not rely on it.
+
+**Selected route: the standard engine.** B1 is applied by the Supabase CLI's `migration up`, run by the committed
+runner. The B1 remediation pins an exact CLI version and the SHA-256 of its binary (27.12.8 item 13); 2.120.0 is the
+version observed here. The runner never writes the ledger itself. Reasons:
+- the CLI writes the canonical row, atomically with the migration (OBSERVED), so no ledger protocol is reimplemented;
+- the CLI's `statements` split is defined only by its parser, and another implementation could not be shown to
+  reproduce it;
+- P3's settings reach the migration session as connection startup parameters (OBSERVED), and the migration bytes
+  stay exactly the blob of `R`.
+
+The CLI alone is not safe. It skips an already recorded version silently, and it executes any unrecorded version newer
+than the head, historical ones included. So it is invoked only after the runner's gate below has passed, never with
+`--include-all`, and the runner never invokes `migration repair`, `db push` or `db reset`.
+
+**Runner procedure**, continuing the steps 1 to 5 of 27.12.6:
+6. **Engine.** Verify that the CLI binary's version and SHA-256 equal the pin committed at `R`.
+7. **Export.** Create a fresh empty directory. Write `supabase/config.toml` and every file of `R:supabase/migrations/`
+   into it with `git cat-file blob` (raw blob bytes, no checkout filter, no line-ending conversion), and compare each
+   written file's SHA-256 with its blob's. The engine reads only this directory, so an untracked or modified file in
+   the checkout cannot reach it. The exported set must be exactly the sealed base migrations of the stage manifest
+   (each file's SHA-256 equal to its `baseMigrations` pin) plus the one B1 file
+   `20261002090000_runtime_least_privilege_roles.sql`. Any other file refuses, so nothing but B1 can be pending.
+   Record the B1 file's git blob id and SHA-256 as `migrationBlob`.
+8. **Ledger gate.** As the deployment owner, in one READ ONLY transaction with an empty `search_path`, refuse, having
+   written nothing, unless all of these hold:
+   - `supabase_migrations.schema_migrations` exists with exactly the three columns, types, nullability and primary
+     key above;
+   - its versions equal `SEALED_BASE_MIGRATION_SET` exactly (no missing, no extra, no duplicate), by the
+     `ledgerSetProblems` comparison of 27.10.4, and equal `provenance.migrationLedger.versions` of the declaration
+     and of the baseline;
+   - version `20261002090000` is absent;
+   - `kernel_private.stamp_binding_provenance()` exists and is not `SECURITY DEFINER` (B1 not applied, as the
+     snapshot already checks);
+   - the live system identifier and database name equal the declaration's.
+
+   The gate needs a connection; it is read-only and precedes every write. Record its version list as `ledgerBefore`.
+9. **Apply.** Invoke `migration up --workdir <export directory> --db-url <url>`, with the three P3 settings as
+   startup parameters in the URL (`options=-c kj.b1.co_resident_set_sha256=<v> -c kj.b1.target_system_identifier=<v>
+   -c kj.b1.target_database=<v>`, percent-encoded). The URL carries no password. The password reaches the engine
+   only through a mode-600 passfile named by `PGPASSFILE` (OBSERVED working with the CLI), deleted afterwards. The
+   URL and the settings are not secrets. A connection path that drops startup parameters makes P3 step 1 abort.
+10. **Record** the engine's exit status and output in the cutover record.
+
+**Transaction invariant.** B1's statements, including its pre-COMMIT checks P1 to P3, and B1's ledger row are in one
+transaction: both commit or neither does, including on a failure at COMMIT. B1's checks run before the engine writes
+the ledger row (OBSERVED order), so they cannot see it; post-COMMIT qualification checks it.
+
+**`SEALED_BASE_MIGRATION_SET`** is the version set of `baseMigrations` in the sealed stage manifest. At `0ff2919` it
+is these 22 versions: `20260905153656`, `20260905153700`, `20260905153704`, `20260905153708`, `20260905173500`,
+`20260905173800`, `20260905174200`, `20260908233816`, `20260908234518`, `20260908234711`, `20260908234849`,
+`20260910180000`, `20260915220000`, `20260916205049`, `20260917120000`, `20260920120000`, `20260920150000`,
+`20260920180000`, `20260921180000`, `20260923150000`, `20260925120000`, `20260929120000`. A change to it is a stage
+manifest change under B1's own review.
+
+**Post-B1 ledger invariant.** Post-COMMIT qualification requires, read-only as the owner:
+- `EXPECTED_POST_B1_LEDGER = SEALED_BASE_MIGRATION_SET UNION {20261002090000}`, by exact set equality: no missing,
+  no extra, no duplicate, B1 exactly once. `max(version)` is never sufficient;
+- the B1 row has `version` `20261002090000`, `name` `runtime_least_privilege_roles`, and a `statements` array whose
+  JSON-text SHA-256 equals the one the same pinned engine wrote for the same blob on the disposable qualification
+  database, recorded with the B1 qualification evidence and frozen with the release;
+- the B1 file at `R` still has the recorded `migrationBlob`.
+
+Record the version list as `ledgerAfter`.
+
+**Cutover record additions:** the engine version and binary SHA-256; the exported file list with SHA-256s;
+`migrationBlob` (blob id and SHA-256) and version `20261002090000`; `ledgerBefore`; `ledgerAfter`; the B1 `statements`
+digest.
+
+**Production consequence.** Production's ledger lacks six base versions (section 26), so the gate of step 8 refuses on
+production, as it must. This revision authorises no ledger row. The runner adds, deletes and repairs nothing in the
+ledger; the only row ever written is B1's own, by the engine, in B1's transaction. Without the gate, the engine would
+re-execute those six historical migrations as pending (OBSERVED behaviour for unrecorded versions newer than the
+head). The six rows remain a separate forensic track with its own authorisation.
+
+#### 27.12.12 Disposable PostgreSQL 17.6 evidence (revision 2.7.2)
+
+Run on 08/10/2026 on a disposable local PostgreSQL 17.6 (`PostgreSQL 17.6 on x86_64-windows, compiled by
+msvc-19.44.35213, 64-bit`, embedded binaries, trust authentication on 127.0.0.1, fresh database per scenario) with
+Supabase CLI 2.120.0. No production access. Scripts and full output are in
+`docs/operations/KJ_P8_R272_DISPOSABLE_PG176_EVIDENCE_2026-10-08.md`. Docker was not available, so the CI image
+`postgres:17.6` was not used; the server version matches it, the build does not.
+
+ACL, starting from `proacl` null on every routine:
+
+| Statement | `public.rls_auto_enable()` after | Other effect |
+|---|---|---|
+| `revoke all on all functions in schema public, kernel_private from kj_worker, kj_door` | `{=X/postgres,postgres=X/postgres}` | same materialisation on every `f`, `a` and `w` routine, invoker event-trigger functions included; procedure untouched |
+| `revoke execute on all functions in schema public, kernel_private from public` | `{postgres=X/postgres}` | every `f`, `a`, `w`; procedure untouched |
+| both frozen statements in order | `{postgres=X/postgres}` | as above |
+| `revoke all on all routines in schema ...` | materialised | also the procedure |
+| `revoke all on all procedures in schema ...` | null | only the procedure |
+| the enumerated cleanup of 27.12.5 | **null** | every member of `C` equal to the frozen pair's result, including a function previously granted to `kj_door`; procedure untouched |
+| `revoke all on function public.rls_auto_enable() from kj_worker, kj_door` | materialised | (any per-role statement naming it) |
+| `revoke all on function <procedure>` | n/a | `42809 ... is not a function` |
+
+Ledger: the contract of 27.12.11, observed with test migrations, then with the 22 base migrations and frozen B1
+exported from `0ff2919` by `git cat-file blob` (bytes equal to the blobs, no CR) and applied by the CLI: 23 rows, the
+B1 row in the same transaction as the stamp function's change (`xmin` equal), and a startup parameter visible to the
+migration. The frozen B1 was applied only to that disposable database and was not modified.
