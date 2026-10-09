@@ -1,7 +1,7 @@
 # ADR-0023: Reflection, self-model and governed identity growth (KJ-P8)
 
-Status: PROPOSED, revision 2.7.5 candidate (design only). Nothing here is implemented, migrated or deployed.
-Date: 09/10/2026 (revisions 2.7.3, 2.7.4 and 2.7.5). Revisions 2.7, 2.7.1 and 2.7.2 are dated 08/10/2026, revision 2.3 01/10/2026, revision
+Status: PROPOSED, revision 2.7.6 candidate (design only). Nothing here is implemented, migrated or deployed.
+Date: 09/10/2026 (revisions 2.7.3 to 2.7.6). Revisions 2.7, 2.7.1 and 2.7.2 are dated 08/10/2026, revision 2.3 01/10/2026, revision
 2.4 02/10/2026, revision 2.5 05/10/2026 and revision 2.6 06/10/2026.
 Base: canonical `main` `750d5b7926f320d8e9d3f64789b8f7035eaa4f3d`. Production: epoch 13, release `cebbb0d`, cognition
 ON, Class C/D frozen (docs/operations/KJ_P7B_LIVE_RESULT_2026-09-30.md).
@@ -224,6 +224,18 @@ rewritten. Revision 2.7.5 closes exactly that one:
 Nothing else changes: the R273-B1 and R273-B2 closures, H1, H2, the hook registry, the pins, P1 to P3, the ACL rule,
 the ledger gate, post-B1 ledger equality, the hosted procedure, the rollout order and every production fence stand. It
 grants nothing.
+
+Revision 2.7.5 (`c7c0fba524655b19e06deb39cec5b6d5426c4ce4`) was hostile-approved (`APPROVE_R275_DESIGN`, record
+`docs/reviews/KJ_P8_ADR0023_R275_HOSTILE_SEAL_c7c0fba.md`) and is not rewritten. B1 remediation against it stopped
+before any code on one integration finding. Revision 2.7.6 resolves exactly that one:
+
+| Finding | Defect in 2.7.5 | Resolved in |
+|---|---|---|
+| R275-HARNESS | The existing regression suite applies every migration, B1 included, through a plain helper, runs production code as the runtime roles that only B1 creates, creates its own databases, and reaches the database from compose containers. Revision 2.7.5 forbids each of these (27.12.8 item 9; 27.12.13.3 L1; 27.12.13.8 rule 5 and the last static bullet; L2 and L3), and gave no conforming way for the suite to use a database holding B1 | 27.12.15 (four lanes; stage T for regression consumers after S7; committed plans selected only by a registered suite id; a run network); 27.12.13.3 L1, L2, L3 and L6; 27.12.13.8 (registry, rule 5, static qualification); 27.12.8 items 9 and 14; 27.12.13.10; cases CON-1 to CON-14 |
+
+Nothing else changes: P1 to P3, the pins, the ACL rule, the engine and blob binding, the ledger gate and post-B1
+ledger equality, hosted declarations and baselines, the eligibility predicate, the qualification-status predicate,
+the rollout order and every production fence stand. It grants nothing.
 
 Section numbers changed from revision 1: section 18 (P8B adoption mechanics) and section 23 (same-tenant references)
 are new, and the later sections moved down.
@@ -2925,7 +2937,8 @@ read unset settings as an empty declaration; revision 2.7.1 withdraws that.
    database cluster the runner created in the same run, that declaration is `EPHEMERAL_RUN_BOUND` under 27.12.13; for
    any other target it is `HOSTED_COMMITTED`. A plain migration runner that cannot supply the settings aborts at P3
    step 1; that is intended, and the harness must be changed, not the check. The only exceptions are the negative
-   fixtures of 27.12.13.8.
+   fixtures of 27.12.13.8. Revision 2.7.6: regression that needs a database holding B1 uses one only as a regression
+   consumer in stage T, and every repository helper that applies migrations applies the base set only (27.12.15).
 10. **Negative suite:** the cases of 27.12.9, run on a disposable database where the owner installs the pinned 953-byte
    body and `ensure_rls` from the cited upstream text, and on a second disposable database without either. The
    canonical CI reference has neither.
@@ -2951,7 +2964,9 @@ read unset settings as an empty declaration; revision 2.7.1 withdraws that.
    (27.12.11 step 6). Every LEDGER case runs against that pinned engine.
 14. **Ephemeral mode** (revision 2.7.3): the run directory, cluster lifecycle, eligibility predicate, run-bound
    declaration, evidence record and cases EPH-1 to EPH-15 of 27.12.13; and, from revision 2.7.4, the run-bound
-   baseline's mode and run binding, the hook registry, the computed qualification status and cases EPH-16 to EPH-25.
+   baseline's mode and run binding, the hook registry, the computed qualification status and cases EPH-16 to EPH-25;
+   and, from revision 2.7.6, the four lanes, stage T, the committed plans, the run network and cases CON-1 to CON-14
+   of 27.12.15.
 
 **Not required by this revision.** Separate authorisation; these do not gate B1:
 - The forensic drift tool (audit branch `f19a37dea3e20d49eca4c3d34cf221bb3b18089b`, unchanged by this revision)
@@ -3230,7 +3245,8 @@ hosted targets (hardening item 3 of the 2.7.2 seal record) belongs to this mode 
 **Who may invoke.** Only the ephemeral entry point of the committed runner, run by the CI job or by a developer on a
 host whose container daemon is healthy. It is the only way to create an ephemeral target. Its inputs are exactly the
 release commit `R` (27.12.6 step 1, unchanged: `HEAD` equals `R`, no tracked change, no flagged path), one setup
-profile, and zero or more hook ids, both from the closed hook registry at `R` (27.12.13.8, revision 2.7.4). It accepts
+profile, zero or more hook ids, and zero or one regression suite id (27.12.15, revision 2.7.6), all from the closed
+hook registry at `R` (27.12.13.8, revision 2.7.4). It accepts
 no URL, connection file, host, port, user, database name, declaration path, baseline path, qualification status or
 any other option. An unknown option, an unknown profile or an unknown hook id refuses before L1, so no container is
 created. Negative fixtures run inside this same entry point as registered hooks; there is no second entry point and
@@ -3244,23 +3260,28 @@ further connection and never falls back to hosted mode or to another cluster:
   characters. Write the run record once: `runId`, `clusterNonce`, `R`, the runner's blob SHA at `R`, the hook
   registry's blob SHA at `R`, the setup profile, the hook ids, `negativeFixture` (revision 2.7.4: true if and only if
   at least one hook id was given, decided by the runner, 27.12.13.8), `plannedApplications` (revision 2.7.5, below),
-  and the host time (informational only). This header is written before L2 and never changed.
+  the regression suite id and plan id (revision 2.7.6, 27.12.15), and the host time (informational only). This header is written before L2 and never changed.
 
   `plannedApplications` is the ordered list of the B1 applications this run will make. Each entry has exactly a
   sequence number, counting from 1, the database it targets, and the migration S6 applies, which is the B1 migration
   of the stage manifest at `R` (version `20261002090000`, `migrationBlob`). The plan is a constant of the committed
   runner at `R`: it is not an input, no option, environment variable, file, profile or hook can add, remove or
   reorder an entry, and it holds at least one entry. A plan that is empty, or has an entry whose migration is not
-  that B1 blob, refuses at L1, before L2.
+  that B1 blob, refuses at L1, before L2. Revision 2.7.6: the runner holds a closed set of such constants, the base
+  plan and one plan per registered regression suite, and the plan of a run is selected only by its registered
+  regression suite id (27.12.15). Selection by anything else is impossible, and every committed plan obeys this
+  paragraph.
 - **L2. Create.** Create exactly one container through the daemon:
   - image referenced by the pinned digest of 27.12.13.7, never by tag;
   - label `kj.b1.ephemeral.run=<runId>`;
   - data directory `/var/lib/postgresql/data` on `tmpfs`, with no bind mount and no named or anonymous volume;
   - command exactly `postgres -c cluster_name=kj-eph-<clusterNonce>` behind the image's own entry point;
   - port 5432 published on `127.0.0.1` only, with a port the daemon assigns;
-  - local trust authentication: the cluster holds nothing but this run's fixtures, and it dies with the container.
+  - local trust authentication: the cluster holds nothing but this run's fixtures, and it dies with the container;
+  - (revision 2.7.6) attached only to the run network `kj-eph-<runId>`, which the runner creates first with the label
+    `kj.b1.ephemeral.run=<runId>`, under the alias `kj-eph-db` (27.12.15).
 
-  Record the container id the daemon returns.
+  Record the container id and the network id the daemon returns.
 - **L3. Daemon attestation**, repeated before every connection the runner opens. Inspect the recorded container id and
   require all of:
   - running;
@@ -3269,7 +3290,9 @@ further connection and never falls back to hosted mode or to another cluster:
   - `Mounts` empty, and `HostConfig.Tmpfs` exactly the data directory;
   - `Config.Cmd` exactly `["postgres","-c","cluster_name=kj-eph-<clusterNonce>"]`, and `Config.Entrypoint` exactly
     the image's `["docker-entrypoint.sh"]` (OBSERVED, 27.12.14);
-  - exactly one port binding, on `127.0.0.1`.
+  - exactly one port binding, on `127.0.0.1`;
+  - (revision 2.7.6) attached to exactly the run network, which carries the exact label and, until stage T of 27.12.15
+    begins, has no other container attached.
 
   Record `Created`.
 - **L4. Address.** Connect only to `127.0.0.1` and the host port from L3, as `postgres`, with no password and no
@@ -3292,7 +3315,7 @@ further connection and never falls back to hosted mode or to another cluster:
   - the system identifier is not the `systemIdentifier` of any `HOSTED_COMMITTED` declaration or platform baseline
     committed at `R`. This is defence in depth and is never sufficient alone.
 - **L6. Teardown.** At the end of the run, on success or failure, remove the container (the `tmpfs` data directory goes
-  with it) and record the removal. The run directory stays as evidence. A run whose container is gone cannot be
+  with it), then the run network (revision 2.7.6), and record both removals. The run directory stays as evidence. A run whose container is gone cannot be
   continued. Running again is a new run with a new `runId`.
 
 **Eligibility proof.** A target is eligible only if every L step passes. Three independent facts follow:
@@ -3306,8 +3329,8 @@ A hosted Supabase database fails 1 and 3, and its owner role is not a superuser.
 cluster fails 1, 2 and 3 (OBSERVED shape, 27.12.14). The threat model is that of P3 (27.12.7): mistakes and drift, not
 a hostile operator who controls the container daemon, who could equally edit the runner.
 
-**One cluster, several databases.** One run creates one cluster, which may hold several databases (the regression
-suite creates them). Each B1 application targets one database, and has its own snapshot and declaration, numbered in
+**One cluster, several databases.** One run creates one cluster, which may hold several databases (the runner
+creates them, revision 2.7.6, 27.12.15). Each B1 application targets one database, and has its own snapshot and declaration, numbered in
 the run record with the sequence number of its entry in `plannedApplications` (revision 2.7.5). The runner makes the
 planned applications in order and makes no application that is not planned.
 
@@ -3488,6 +3511,8 @@ copy, and records its blob SHA. Its schema is exact at every level, and an unkno
 
   No point or effect may name L5, L6, L1, S7 or the qualification status, so L5 cannot be skipped, teardown cannot be
   suppressed, the run header cannot be rewritten and the status cannot be set by a hook.
+- **`regressionSuites`** (revision 2.7.6): the closed list of 27.12.15. A regression suite is not a hook, changes no L
+  or S step and cannot be combined with a hook.
 
 **Rules.**
 1. **Unknown refuses early.** Before L1, the runner validates the registry blob, the profile id and every hook id. An
@@ -3506,7 +3531,8 @@ copy, and records its blob SHA. Its schema is exact at every level, and an unkno
    credential or engine path with which to connect by itself.
 5. **One entry point.** Hooks run only inside the ephemeral entry point. The hosted entry point accepts no profile and
    no hook, and contains no hook code. There is no other path that applies SQL to a target, supplies the three settings
-   or invokes the engine.
+   or invokes the engine. Revision 2.7.6: the regression consumers of 27.12.15 apply test SQL to the databases of their
+   suite plan, during stage T only; they never apply a migration file, supply the settings or invoke the engine.
 6. **Positive controls are unhooked.** Cases 1, 23, 41, ACL-A, LEDGER-A and EPH-1 run with a setup profile and no hook,
    through the full normal runner: L1 to L6 and S1 to S7, unchanged.
 
@@ -3530,11 +3556,14 @@ those hooks.
 - no call site outside the registry's callers passes any hook;
 - the connection factory runs L5 before returning a connection, on a path with no branch that depends on a hook;
 - the runner's `plannedApplications` constant has at least one entry, every entry names the B1 migration of the stage
-  manifest, and nothing outside the runner's L1 code writes it (revision 2.7.5);
+  manifest, and nothing outside the runner's L1 code writes it (revision 2.7.5); from revision 2.7.6 this holds for
+  every committed plan, the base plan has exactly one entry, and each regression suite's `databases` equal its plan;
 - the runner and the consumer recomputation call one committed status function, which has failing fixtures of its own
   for each of conditions 1 to 8 of 27.12.13.6 (revision 2.7.5);
 - the hosted entry point imports no hook, profile or ephemeral code;
-- no file outside the runner opens a connection to an ephemeral cluster or invokes the engine.
+- no file outside the runner opens a connection to an ephemeral cluster or invokes the engine, except the committed
+  files of a registered regression suite, which connect only during stage T with the addresses the runner gives them
+  (revision 2.7.6, 27.12.15), and the regression-consumer prohibitions of 27.12.15.
 
 ##### 27.12.13.9 Negative cases
 
@@ -3585,6 +3614,8 @@ fail on purpose. Every earlier case of 27.12.9 stays in force.
 - mode; `runId`; `clusterNonce`; container id; `Created`; image reference;
 - the hook registry's blob SHA, the setup profile, the hook ids and `negativeFixture` (revision 2.7.4);
 - `plannedApplications`, and for every L and S step its recorded outcome (revision 2.7.5);
+- the regression suite id, the plan id, the run network id, and stage T's `regressionOutcome` with the report's
+  SHA-256 and the results of the post-T database and network reads (revision 2.7.6);
 - for each application, the SHA-256 of its run-bound baseline next to its declaration's, with their equal `mode` and
   `run` (revision 2.7.4);
 - the L3 and L5 results: system identifier, initdb time, postmaster start time and database names;
@@ -3602,7 +3633,7 @@ is recorded for information only, and is never authority.
 
 The hosted cutover record is that of 27.12.6 and 27.12.11, plus `mode`.
 
-##### 27.12.13.11 What revisions 2.7.3 to 2.7.5 do not change
+##### 27.12.13.11 What revisions 2.7.3 to 2.7.6 do not change
 
 - **Production and hosted authority.** No production authority is widened. Hosted mode is the 2.7.2 procedure plus
   refusals: the declaration's and the baseline's mode and `run` checks, and the read-only pre-application inventory
@@ -3652,3 +3683,155 @@ removed afterwards. No production access. Scripts and full output are in
     null`, `statements text[]` and `name text`; each row's `xmin` equals its migration's `txid`; the startup option
     reached the migration (`linux-startup`); the failing migration left no table and no row.
   - The Windows launcher alone, without `supabase-go.exe`, printed `migration up` help and reached the connection stage.
+
+#### 27.12.15 Repository regression and B1 (revision 2.7.6, R275-HARNESS)
+
+**Finding** (FACT, observed at frozen B1 `0ff2919` when B1 remediation began against revision 2.7.5; the file-by-file
+inventory is `docs/operations/KJ_P8_R276_REGRESSION_INVENTORY_2026-10-09.md`):
+- `tests/support/local.ts` `migrate()` applies every file of the working copy's `supabase/migrations/`, B1 included,
+  in a plain `begin`, query, `commit`. It is called by 25 test files directly and through the knowledge-database
+  helper by 13, 37 files in all (one does both). `scripts/b1/qualify-ci.sh` and `scripts/mutation-check-identity-cognition.mjs` apply B1 the same
+  way, and three further mutation scripts run test files that call `migrate()`.
+- The test harness (`tests/support/runtime-roles.ts`, a vitest setup file) runs production code as `kj_worker` and
+  `kj_door`, which only B1 creates. So every database-backed test needs a database where B1 is applied.
+- Tests create those databases themselves under random names, connect as the owner and as both runtime roles, and the
+  compose worker connects to `db:5432`. Three files recreate the whole compose stack, and one pauses the database
+  container.
+
+Revision 2.7.5 forbids each of these: 27.12.8 item 9 (every B1 application through the runner), 27.12.13.3 L1
+(`plannedApplications` a runner constant), 27.12.13.8 rule 5 and its last static bullet (no other path applies SQL to
+a target or opens a connection to an ephemeral cluster), and L2 and L3 (the cluster's only port is on `127.0.0.1`,
+which a container on a CI host cannot reach). Revision 2.7.6 integrates the regression suite without changing any
+rule of B1 application, eligibility or qualification.
+
+**Four lanes.** Every test and script falls in exactly one lane by what it needs (the inventory classifies each file):
+
+| Lane | What it is | Database | B1 |
+|---|---|---|---|
+| A. Base regression | tests and mutation checks of base migrations and of code that needs no runtime role | the compose stack's database, not runner-created | never applied, never present |
+| B. Positive B1 qualification | the unhooked ephemeral runs of 27.12.13 | runner-created, planned | applied by the runner only |
+| C. Negative B1 fixtures | registered hooks of 27.12.13.8, unchanged | runner-created, planned | applied by the runner, under a hook; never qualifies |
+| D. Post-B1 regression consumers | the database-backed suite under the runtime roles, run in stage T below | the run's planned databases | already applied in this run; never applied by a consumer |
+
+- **Lane A never applies B1.** Every repository helper that applies migrations (`migrate()`, the knowledge-database
+  helper, the mutation scripts) applies only files whose version is in `SEALED_BASE_MIGRATION_SET`, and refuses,
+  before it writes anything: the B1 version or file; any file whose version is not in that set; a database whose
+  ledger records `20261002090000`; a cluster in which `kj_worker` or `kj_door` exists; a server whose `cluster_name`
+  begins `kj-eph-`; and any call while stage T is running. Lane A runs the harness in mode `base`, in which production
+  code connects as the owner, as it did before B1. A lane A pass establishes nothing about B1.
+- **Mutation checks are lane A.** Each mutates a base migration, which 27.12.11 step 7 refuses by its blob binding,
+  so a mutated chain can never reach a runner cluster. They apply the mutated base chain only.
+- **The in-test B1 applications** of `tests/runtime-roles-definers.integration.test.ts` move to lane B (the positive
+  application and the ACL check, as cases EPH-1 and ACL-A already specify) or to lane C (the tamper and ledger
+  fixtures, as registered hooks).
+
+**Stage T: regression consumers.** It runs inside the ephemeral entry point, in the same run, after S7 of the last
+planned application and before L6, if and only if all of these hold: `negativeFixture` is false; exactly one
+regression suite id was given; and every planned application has outcome `passed` for S1 to S7. Otherwise stage T does
+not run, and records `not-run` with the reason.
+
+- **Input.** In addition to 27.12.13.3, the ephemeral entry point accepts zero or one regression suite id, from the
+  hook registry at `R`. An unknown id, an id given together with any hook id, or a suite named any other way (option,
+  environment variable, file) refuses before L1. The id is written into the L1 header. It changes no L or S step, no
+  plan entry and not `negativeFixture`.
+- **Registry.** The registry of 27.12.13.8 gains `regressionSuites`, a closed list. Each entry has exactly: `id`;
+  `argv`, a fixed argument vector run from the checkout of `R` (27.12.6 step 1 already requires it clean); `harness`,
+  `enforce` or `discover`; `files`, the exact committed test files it runs; `databases`, the sequence numbers of the
+  plan entries it may use; and `compose`, a committed compose file or null. Its schema is exact like the rest of the
+  registry.
+- **Process.** The runner launches `argv` as a child process in a fresh empty working directory that is not the run
+  directory. It builds the environment from its own, with every `PG*`, `SUPABASE_*`, `KJ_*`, `DATABASE_URL` and proxy
+  variable removed, and then adds exactly: for each database the entry lists, its owner address through the derived
+  loopback port of L4 and through the network alias below; the run network's name; the harness mode; and the report
+  path in the working directory. The run directory is never named to the suite.
+- **Authority of a regression consumer.** Test authority over the planned databases its entry lists, for the duration
+  of stage T, and nothing else. It may connect as the owner, `kj_worker` and `kj_door`, read and write rows, and run
+  the services of its compose file on the run network. It may not (static tests, each with failing fixtures of its
+  own): read or apply any file under `supabase/migrations/`, or name the B1 migration file; call a lane A helper (which
+  also refuses at run time); write any of the three settings (27.12.8 item 12, unchanged); create, drop, rename or
+  copy a database; start or attach a container other than its compose services; stop, pause, restart, `exec` into or
+  remove the cluster container; or read the run directory.
+- **After stage T,** the runner, through its connection factory (L3 and L5), reads the cluster's database list and
+  requires it to equal the planned databases plus `postgres`, `template0` and `template1`; inspects the run network and
+  requires its attached containers to be the cluster and the services of the suite's compose file only; and requires
+  the suite to have exited 0 with a JSON report that lists every file of `files` with at least one passed test and no
+  failed or skipped test. A report with zero tests, a missing file or a skipped file fails, so a consumer pass is never
+  vacuous.
+- **`regressionOutcome`** is `passed` only if all of that holds, and `failed` or `not-run` otherwise. It is recorded
+  with the report's SHA-256.
+- **No effect on the status.** The predicate of 27.12.13.6, conditions 1 to 8, is unchanged and is evaluated over the
+  L and S outcomes only. Stage T writes no L or S outcome, and after it starts the runner reads nothing from the run
+  directory or from the suite except the report and the two reads above. A regression consumer therefore cannot
+  produce or alter `REPOSITORY_QUALIFIED`. The most it can do is make L6 fail (for example by removing the cluster),
+  which makes the run `NOT_QUALIFIED`. The CI gate requires both the recomputed status `REPOSITORY_QUALIFIED` and,
+  for a run given a regression suite, `regressionOutcome` `passed`, recomputed from the record by the same rule.
+  Database state after stage T is never B1 qualification evidence.
+- **Health under stage T.** A suite that exercises health receives, in its working directory, read-only copies of the
+  run-bound declaration and baseline of each database it lists, with their SHA-256s from the runner's memory, and
+  verifies them as 27.12.6 requires for health inside an ephemeral run. The runner never reads the copies back.
+
+**Deterministic databases.** `plannedApplications` remains a constant of the committed runner at `R`, fixed before
+L2 and never changed. Revision 2.7.6 makes it one of a closed set of such constants, selected only by the registered
+regression suite id:
+- with no regression suite, the **base plan**: one entry, database `kj_b1`. Every hooked run and every lane B run
+  without a suite uses it, so a negative fixture never applies B1 to more than one database;
+- with a regression suite, that suite's **suite plan**: one entry per database its files use, each under a fixed name.
+
+Each plan is committed in the runner at `R` and holds at least one entry, each naming the B1 migration (27.12.13.3 L1,
+unchanged). The L1 header records the plan's id and its entries. No option, environment variable, file, profile or
+hook can add, remove or reorder an entry, or choose a plan except through a registered suite id. A suite's `databases`
+must equal its plan's entries. The static qualification of 27.12.13.8 covers every committed plan, and any consumer of
+run evidence also checks that the recorded plan equals the committed plan of the recorded suite id at `R`.
+
+The runner creates each planned database, empty, from `template0`, through its factory, immediately before that
+application's S1. Nobody else creates a database in the cluster during L1 to S7. A suite names only its plan's
+databases, by string literal (static test). **No database is copied.** A copy of an applied database would hold B1
+without its own P1 to P3 and S7, so `CREATE DATABASE ... TEMPLATE` of anything but `template0` is refused by static
+test and by the post-T database list. Every database that holds B1 passed its own application.
+
+**Network.** L2 gains one step: before it creates the container, the runner creates a user-defined bridge network
+`kj-eph-<runId>` carrying the label `kj.b1.ephemeral.run=<runId>`, and the container is attached to that network only,
+under the alias `kj-eph-db`. The loopback port of L2 is unchanged. L3 gains: the container is attached to exactly that
+network; the network carries the exact label; and until stage T begins, the cluster is the only container attached to
+it. L4 is unchanged: the runner connects only through the loopback port. During stage T the services of the suite's
+compose file join the run network as an external network, attach to no other network, and reach `kj-eph-db:5432`. The
+committed regression compose files define no database service. L6 removes the container and then the network, and
+records both. A test that needs a database outage disconnects its own service from the run network; no consumer
+pauses the cluster.
+
+**Hosted mode.** No stage T, no regression suite input and no run network. The hosted entry point imports no
+regression-suite code (static test, as 27.12.13.6).
+
+**Coverage.** Lane D runs the whole database-backed suite under the runtime roles, as the frozen B1's `enforce` and
+`discover` runs did, including the gated files of `scripts/b1/qualify-ci.sh` and the containerised worker and Restate
+files. Lane A keeps the base-migration mutation checks. Known differences, none of which removes a B1 assertion:
+- the mutation checks run their test files in harness mode `base`, as they did before B1, not under the runtime roles;
+- the database-outage fault of `tests/schedule-restate-live.integration.test.ts` becomes a network disconnect of the
+  worker instead of a paused server;
+- the definers file's in-test B1 applications become runner runs of lanes B and C;
+- a regression run applies B1 once per database of its suite plan, so its duration grows with that plan.
+
+Lane A alone could not replace lane D: without B1 there are no runtime roles, so the suite would not exercise
+production code under least privilege, the dynamic statement inventory would have nothing to record, and the
+`runtime-roles-*` files could not run.
+
+**Cases** (committed automated cases under the rules of 27.12.9):
+
+| # | Case | Required result |
+|---|---|---|
+| CON-1 | Positive control: profile `none`, regression suite `regression-enforce`, no hook | every planned application passes S1 to S7; stage T runs; status `REPOSITORY_QUALIFIED` and `regressionOutcome` `passed`, both recomputed by the CI gate |
+| CON-2 | Regression suite id unknown, differing only in case, or passed as an environment variable or option | refuses before L1; no container or network created |
+| CON-3 | Regression suite id together with any hook id | refuses before L1 |
+| CON-4 | A run given a regression suite in which an application does not pass S7, or which is refused at L5 as EPH-27 | stage T `not-run`; the suite is never launched; status `NOT_QUALIFIED` |
+| CON-5 | Suite exits 0 having run zero tests; a listed file missing from the report; a listed file skipped; one failed test | `regressionOutcome` `failed`; the CI gate fails; the status is computed as before |
+| CON-6 | During stage T a consumer creates a database, drops a planned one, or copies an applied one with `TEMPLATE` | the post-T database list fails `regressionOutcome`; the static test fails on the literal forms |
+| CON-7 | A consumer names the B1 file or reads `supabase/migrations/`; a lane A helper is called during stage T; a lane A helper given the B1 file, a file outside the base set, a database recording `20261002090000`, a cluster holding `kj_worker`, or a `kj-eph-` server | each refuses before writing; the static test fails where the form is static |
+| CON-8 | A container other than the cluster attached to the run network before stage T | L3 refuses at the next connection; status `NOT_QUALIFIED` |
+| CON-9 | The cluster created with a second network, or a run network without the exact label | L3 refuses |
+| CON-10 | During stage T a consumer attaches a foreign container, or pauses or removes the cluster | the post-T network check fails `regressionOutcome`; a removed cluster makes L6 fail and the status `NOT_QUALIFIED` |
+| CON-11 | A record with `REPOSITORY_QUALIFIED` and a failed `regressionOutcome`; a record edited to `passed` | the CI gate fails; the edit fails recomputation or the record SHA-256 (EPH-25) |
+| CON-12 | The hosted entry point given a regression suite | refuses before any connection; the static test shows it imports no regression-suite code and creates no network |
+| CON-13 | Lane A positive control: the mutation checks and the lane A files on the compose stack | they pass, and the compose database's ledger never records `20261002090000` and its cluster holds no runtime role |
+| CON-14 | Plan selection: a run record whose plan differs from the committed plan of its recorded suite id; a hooked run whose plan is not the base plan; a suite whose `databases` differ from its plan | the consumer of the record refuses it; the static test fails |
+
+These cases are added to 27.12.8 item 14. They change none of the cases of 27.12.9 or 27.12.13.9.
