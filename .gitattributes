@@ -2,3 +2,4 @@
 infrastructure/database/co-resident-platform-pins.json text eol=lf
 infrastructure/database/co-resident-platform-exceptions.json text eol=lf
 infrastructure/database/security-definer-platform-baseline.json text eol=lf
+infrastructure/database/b1-fixture-platform-definers.sql text eol=lf

@@ -1,0 +1,10 @@
+{
+  "kind": "kerneljson:b1-runner-hook-registry/v1",
+  "setupProfiles": [
+    {"id":"none","sql":null,"sha256":null},
+    {"id":"pinned-helper","sql":"docs/operations/evidence/kj-p8-r279-contradiction/pinned-helper.sql","sha256":"7195032747ac82a1ebf166c4fcd9e920c52c5cabd5ceda4bcf291a5bcfc1909b"},
+    {"id":"platform-definer-fixture","sql":"infrastructure/database/b1-fixture-platform-definers.sql","sha256":"272681f3aec95c0d7ff99865c80d54643bafd7bf21c5d7faf68a70d5771048b4"}
+  ],
+  "hooks": [],
+  "regressionSuites": []
+}

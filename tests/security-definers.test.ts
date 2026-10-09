@@ -11,6 +11,7 @@ import { TABLE_PRIVILEGES, loadManifest } from "../services/kernel/src/database/
 import { engineEnvironment, startupUrl } from "../scripts/b1/engine.js";
 import { identityProblems, type LiveIdentity } from "../scripts/b1/ephemeral-cluster.js";
 import { qualificationStatus, type RunEvidence } from "../scripts/b1/run-status.js";
+import { ephemeralArguments } from "../scripts/b1/ephemeral.js";
 import { strictJson } from "../services/kernel/src/database/strict-json.js";
 import { CO_RESIDENT_SQL, EMPTY_SET_DIGEST, GOLDEN, hash, parseDeclaration, pins, pinText, setDigest,
   type CoResidentEntry } from "../services/kernel/src/database/co-resident.js";
@@ -222,6 +223,23 @@ describe("27.12 co-resident authority artifacts",()=>{
       USERPROFILE:"home",TEMP:"temp",TMP:"temp",SystemRoot:"system"});
     expect(()=>engineEnvironment("engine","home","temp",true)).toThrow(/SystemRoot/);
     expect(engineEnvironment("engine","home","temp",false,undefined,"pass").PGPASSFILE).toBe("pass");
+  });
+  it("accepts only the exact current ephemeral argument contract",()=>{
+    const args=["--release","a".repeat(40),"--profile","none"];
+    expect(ephemeralArguments(args)).toEqual({R:"a".repeat(40),profile:"none"});
+    for(const extra of ["--url","--host","--port","--database","--baseline","--declaration","--status","--mode"])
+      expect(()=>ephemeralArguments([...args,extra,"x"])).toThrow(/EPHEMERAL_REFUSED/);
+    expect(()=>ephemeralArguments(["--release","HEAD","--profile","none"])).toThrow();
+    expect(()=>ephemeralArguments(["--release","a".repeat(40),"--profile","unknown"])).toThrow();
+  });
+  it("pins the platform fixture to its four exact functions and per-function revokes",()=>{
+    const fixture=readFileSync("infrastructure/database/b1-fixture-platform-definers.sql","utf8");
+    expect(hash(fixture)).toBe("272681f3aec95c0d7ff99865c80d54643bafd7bf21c5d7faf68a70d5771048b4");
+    expect(fixture.match(/^create schema auth;$/gm)).toHaveLength(1);
+    expect([...fixture.matchAll(/^create function ([^(]+)\(/gm)].map(m=>m[1])).toEqual([
+      "auth.kj_platform_uid","auth.kj_platform_guard","auth.kj_platform_atomic","auth.kj_platform_len"]);
+    expect(fixture.match(/^revoke execute on function auth\.[^;]+ from public;$/gm)).toHaveLength(4);
+    expect(fixture).not.toMatch(/kernel_private|supabase_migrations|create role|alter role|on all functions/i);
   });
   it("encodes startup settings and refuses inherited options or URL passwords",()=>{
     const d=parseDeclaration(JSON.stringify(declaration()));d.provenance.database="space and\\slash";
