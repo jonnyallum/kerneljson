@@ -1,4 +1,7 @@
 import type pg from "pg";
+import { expectedLedgerVersions, expectedLedgerHead, ledgerSetProblems } from "./ledger-contract.js";
+export { expectedLedgerVersions, expectedLedgerHead, ledgerSetProblems } from "./ledger-contract.js";
+import { CO_RESIDENT_SQL, hash, pinText, readCoResident, setDigest, parseDeclaration, type Declaration } from "./co-resident.js";
 import {
   B1_MIGRATION_VERSION, INVENTORY_SQL, INVENTORY_SQL_SHA256, SEALED_DESIGN, baselineEligibilityProblems, baselineEntry, canonicalJson, sha256,
   sortEntries, type DefinerEntry, type PlatformBaseline, type StageManifest,
@@ -19,6 +22,11 @@ import {
  * and never recorded) is refused, as is any extra row; the head check is therefore implied, never relied on alone.
  */
 export async function snapshotPlatformBaseline(client: pg.Client | pg.PoolClient, environment: string, manifest: StageManifest): Promise<PlatformBaseline> {
+  return (await snapshotArtifacts(client,environment,manifest)).baseline;
+}
+
+export async function snapshotArtifacts(client: pg.Client | pg.PoolClient, environment:string, manifest:StageManifest,
+  mode: Pick<PlatformBaseline,"mode"|"run"> = {mode:"HOSTED_COMMITTED"}): Promise<{baseline:PlatformBaseline;declaration:Declaration}> {
   await client.query("begin transaction isolation level repeatable read read only");
   try {
     await client.query("set local search_path = ''");
@@ -41,8 +49,6 @@ export async function snapshotPlatformBaseline(client: pg.Client | pg.PoolClient
       `select p.prosecdef as d from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
         where n.nspname = 'kernel_private' and p.proname = 'stamp_binding_provenance' and p.pronargs = 0`)).rows;
     const stamp = stampRow[0]?.d ?? false;
-    const entries = sortEntries((await client.query<DefinerEntry>(INVENTORY_SQL)).rows).map(baselineEntry);
-    await client.query("commit");
     if (tx.ro !== "on" || (tx.sp !== '""' && tx.sp !== "")) throw new Error(`snapshot transaction was not READ ONLY with an empty search_path (${tx.ro}, ${tx.sp})`);
     if (b1Recorded || stamp) throw new Error("PLATFORM_BASELINE_REFUSED: B1 is already applied to this database; a baseline must be taken before B1");
     if (!ledgerPresent) throw new Error("PLATFORM_BASELINE_REFUSED: the migration ledger supabase_migrations.schema_migrations does not exist");
@@ -51,9 +57,13 @@ export async function snapshotPlatformBaseline(client: pg.Client | pg.PoolClient
     const set = ledgerSetProblems(versions, expectedLedgerVersions(manifest));
     if (set) throw new Error(`PLATFORM_BASELINE_REFUSED: ${set}`);
     if (stampRow.length !== 1) throw new Error("PLATFORM_BASELINE_REFUSED: kernel_private.stamp_binding_provenance() does not exist");
+    const coResident=await readCoResident(client);
+    const entries = sortEntries((await client.query<DefinerEntry>(INVENTORY_SQL)).rows)
+      .filter(e=>!(e.schema==="public" && e.name==="rls_auto_enable" && e.args.length===0)).map(baselineEntry);
     const ineligible = baselineEligibilityProblems(entries, manifest);
     if (ineligible.length) throw new Error(`PLATFORM_BASELINE_REFUSED: ${ineligible.join("; ")}`);
-    return {
+    const baseline:PlatformBaseline = {
+      ...mode,
       contract: "kerneljson:security-definer-platform-baseline/v1",
       design: SEALED_DESIGN,
       environment,
@@ -67,35 +77,15 @@ export async function snapshotPlatformBaseline(client: pg.Client | pg.PoolClient
       entries,
       entriesSha256: sha256(canonicalJson(entries)),
     };
+    const declaration=parseDeclaration(JSON.stringify({kind:"kerneljson:co-resident-platform-exceptions/v1",...mode,environment,
+      provenance:{...baseline.provenance,querySha256:hash(CO_RESIDENT_SQL)},pinsSha256:hash(pinText),
+      setSha256:setDigest(coResident),entries:coResident}));
+    await client.query("commit");
+    return {baseline,declaration};
   } catch (error) {
     await client.query("rollback").catch(() => undefined);
     throw error;
   }
-}
-
-/** The versions of every base migration in the stage manifest, sorted: the exact set the ledger must record. */
-export function expectedLedgerVersions(manifest: StageManifest): string[] {
-  const versions = manifest.baseMigrations.map((m) => /^([0-9]{14})_/.exec(m.file)?.[1]);
-  if (!versions.length || versions.some((v) => !v)) throw new Error("stage manifest has a base migration without a version");
-  return [...new Set(versions as string[])].sort();
-}
-
-/** Exact set equality of recorded and expected ledger versions; null when equal, else a message naming the versions. */
-export function ledgerSetProblems(recorded: readonly string[], expected: readonly string[]): string | null {
-  const have = new Set(recorded), want = new Set(expected);
-  const missing = expected.filter((v) => !have.has(v)), extra = [...have].filter((v) => !want.has(v)).sort();
-  const duplicated = recorded.length !== have.size;
-  if (!missing.length && !extra.length && !duplicated) return null;
-  return `the migration ledger does not record exactly the ${expected.length} base migrations before B1` +
-    `${missing.length ? `; missing ${missing.join(", ")}` : ""}${extra.length ? `; unexpected ${extra.join(", ")}` : ""}${duplicated ? "; duplicated versions" : ""}`;
-}
-
-/** The version of the last base migration (the stage manifest's baseMigrations), which the ledger head must equal. */
-export function expectedLedgerHead(manifest: StageManifest): string {
-  const last = manifest.baseMigrations.at(-1)?.file ?? "";
-  const version = /^([0-9]{14})_/.exec(last)?.[1];
-  if (!version) throw new Error("stage manifest has no base migration version");
-  return version;
 }
 
 /**

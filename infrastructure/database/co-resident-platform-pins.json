@@ -1,0 +1,32 @@
+{
+  "kind": "kerneljson:co-resident-platform-pins/v1",
+  "entries": [{
+    "schema": "public",
+    "name": "rls_auto_enable",
+    "args": [],
+    "returns": "pg_catalog.event_trigger",
+    "retset": false,
+    "kind": "f",
+    "owner": "postgres",
+    "securityDefiner": true,
+    "language": "plpgsql",
+    "config": ["search_path=pg_catalog"],
+    "acl": null,
+    "volatility": "v",
+    "strict": false,
+    "leakproof": false,
+    "parallel": "u",
+    "binary": null,
+    "sqlBody": null,
+    "sourceDigest": "2782e98b348aca7d6f6f73c420fd78d2e094957dd7a52b0483d4c34f29d2a7a1",
+    "sourceBytes": 953,
+    "bindings": [{
+      "name": "ensure_rls",
+      "owner": "postgres",
+      "event": "ddl_command_end",
+      "function": "public.rls_auto_enable()",
+      "enabled": "O",
+      "tags": ["CREATE TABLE", "CREATE TABLE AS", "SELECT INTO"]
+    }]
+  }]
+}

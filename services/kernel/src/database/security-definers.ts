@@ -2,13 +2,17 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type pg from "pg";
+import { z } from "zod";
+import { strictJson } from "./strict-json.js";
+import { Provenance, RunBinding, HASH, parseDeclaration, readCoResident, setDigest, hash, CO_RESIDENT_SQL,
+  DECLARATION_PATH, type Declaration } from "./co-resident.js";
 
 /**
- * KJ-P8 B1 - the stage-aware SECURITY DEFINER inventory (ADR-0023 section 27.10: revision 2.5, unchanged in revision
- * 2.6 sealed at 7712702020ef5d3d841f68f4d425d9707fb703eb). It is global over every governed schema and is never narrowed
+ * KJ-P8 B1 - the stage-aware SECURITY DEFINER inventory (ADR-0023 sections 27.10 and 27.12, revision 2.7.9).
+ * It is global over every governed schema and is never narrowed
  * by the schema-USAGE gate of section 27.11.
  *
- *   EXPECTED(stage) = PLATFORM_BASELINE  UNION  KERNELJSON_STAGE_MANIFEST(stage)
+ *   EXPECTED(stage) = PLATFORM_BASELINE UNION CO_RESIDENT_PLATFORM_EXCEPTIONS UNION KERNELJSON_STAGE_MANIFEST(stage)
  *   ACTUAL          = every pg_proc row with prosecdef = true whose schema is governed
  *
  * ACTUAL must equal EXPECTED(stage) in both directions. Identity is schema, name and ordered input argument types;
@@ -19,7 +23,7 @@ import type pg from "pg";
  */
 type Db = Pick<pg.Pool | pg.PoolClient | pg.Client, "query">;
 
-export const SEALED_DESIGN = "7712702020ef5d3d841f68f4d425d9707fb703eb";
+export const SEALED_DESIGN = "af2f7320aae32eaa0ce699b1c09d015371f156d5";
 export const STAGES = ["B1", "P8A-0", "B2", "P8A-1", "P8A-2", "P8B"] as const;
 export type Stage = (typeof STAGES)[number];
 export const STAGE_MANIFEST_PATH = "infrastructure/database/security-definer-stage-manifest.json";
@@ -87,10 +91,11 @@ export async function readDefiners(db: Db): Promise<DefinerEntry[]> {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// RFC 8785 canonical JSON for the artefacts here: they hold only strings, booleans, null, arrays and objects (no
-// numbers), for which JCS is JSON.stringify of each value with object keys sorted by UTF-16 code units.
+// RFC 8785 canonical JSON: ECMAScript scalar serialization and object keys sorted by UTF-16 code units.
+// Finite numbers support the run binding's application sequence; non-finite values are refused.
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value === "boolean" || typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number" && Number.isFinite(value)) return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (typeof value === "object") {
     const keys = Object.keys(value as Record<string, unknown>).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
@@ -187,6 +192,8 @@ export function stageBindingProblems(manifest: StageManifest, migrations: Readon
 // The frozen platform baseline (kerneljson:security-definer-platform-baseline/v1, section 27.10.4)
 export type BaselineEntry = Omit<DefinerEntry, "acl">;
 export interface PlatformBaseline {
+  mode: "HOSTED_COMMITTED" | "EPHEMERAL_RUN_BOUND";
+  run?: z.infer<typeof RunBinding>;
   contract: "kerneljson:security-definer-platform-baseline/v1";
   design: string;
   environment: string;
@@ -219,6 +226,7 @@ export function baselineEligibilityProblems(entries: readonly FunctionIdentity[]
   for (const e of entries) {
     if (e.schema === "public" || e.schema === "kernel_private") problems.push(`${identityKey(e)} is in KernelJSON schema ${e.schema}`);
     if (e.name === STAMP.name) problems.push(`${identityKey(e)} is named ${STAMP.name}`);
+    if (e.name === "rls_auto_enable") problems.push(`${identityKey(e)} carries a sealed co-resident name`);
     if (kernel.has(identityKey(e))) problems.push(`${identityKey(e)} is a KernelJSON stage-manifest function`);
   }
   return problems;
@@ -227,27 +235,64 @@ export function baselineEligibilityProblems(entries: readonly FunctionIdentity[]
 /** Structural validation of a baseline before it is trusted: its digests recompute and every entry is eligible. */
 export function baselineProblems(baseline: PlatformBaseline, manifest: StageManifest): string[] {
   const problems: string[] = [];
+  const parsed = BaselineSchema.safeParse(baseline);
+  if (!parsed.success) {
+    if (baseline.provenance?.migrationLedger?.b1Recorded || baseline.provenance?.stampSecurityDefiner) problems.push("platform baseline was taken after B1");
+    return [...problems, "platform baseline schema invalid: " + parsed.error.message];
+  }
+  if (baseline.design !== SEALED_DESIGN) problems.push("platform baseline design differs from sealed design");
   if (baseline.contract !== "kerneljson:security-definer-platform-baseline/v1") problems.push("unknown platform baseline contract");
   if (baseline.provenance?.querySha256 !== INVENTORY_SQL_SHA256) problems.push("platform baseline was taken with a different inventory query");
   if (baseline.provenance?.migrationLedger?.b1Recorded || baseline.provenance?.stampSecurityDefiner) problems.push("platform baseline was taken after B1");
   if (sha256(canonicalJson(baseline.entries)) !== baseline.entriesSha256) problems.push("platform baseline entries do not match entriesSha256");
   const sorted = sortEntries(baseline.entries);
+  if (new Set(baseline.entries.map(identityKey)).size !== baseline.entries.length) problems.push("platform baseline has duplicate identities");
+  const expectedVersions = manifest.baseMigrations.map(m => m.file.slice(0, 14)).sort();
+  if (JSON.stringify(baseline.provenance.migrationLedger.versions) !== JSON.stringify(expectedVersions) ||
+      baseline.provenance.migrationLedger.head !== expectedVersions.at(-1)) problems.push("platform baseline ledger differs from the exact base set");
   if (sorted.some((e, i) => e !== baseline.entries[i])) problems.push("platform baseline entries are not in canonical order");
   problems.push(...baselineEligibilityProblems(baseline.entries, manifest));
   return problems;
 }
 export function loadPlatformBaseline(path?: string): PlatformBaseline | null {
   const file = path ?? repoFile(PLATFORM_BASELINE_PATH);
-  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as PlatformBaseline) : null;
+  return existsSync(file) ? BaselineSchema.parse(strictJson(readFileSync(file, "utf8"))) : null;
+}
+
+const baselineFields = {
+  contract: z.literal("kerneljson:security-definer-platform-baseline/v1"), design: z.literal(SEALED_DESIGN),
+  environment: z.string().min(1), provenance: Provenance, entriesSha256: HASH,
+  entries: z.array(z.strictObject({schema:z.string(),name:z.string(),args:z.array(z.string()),returns:z.string(),
+    retset:z.boolean(),kind:z.string(),owner:z.string(),securityDefiner:z.literal(true),language:z.string(),
+    config:z.array(z.string()).nullable(),sourceDigest:HASH})),
+};
+export const BaselineSchema = z.discriminatedUnion("mode", [
+  z.strictObject({...baselineFields, mode:z.literal("HOSTED_COMMITTED")}),
+  z.strictObject({...baselineFields, mode:z.literal("EPHEMERAL_RUN_BOUND"),run:RunBinding}),
+]);
+export function loadDeclaration(path?:string):Declaration|null {
+  const file=path ?? repoFile(DECLARATION_PATH);
+  return existsSync(file) ? parseDeclaration(readFileSync(file,"utf8")) : null;
+}
+export function artifactPairProblems(baseline:PlatformBaseline, declaration:Declaration):string[] {
+  const problems:string[]=[];
+  const {querySha256: baselineQuery,...bp}=baseline.provenance;
+  const {querySha256: declarationQuery,...dp}=declaration.provenance;
+  if (baselineQuery !== INVENTORY_SQL_SHA256 || declarationQuery !== hash(CO_RESIDENT_SQL)) problems.push("artifact inventory query differs");
+  if (canonicalJson(bp)!==canonicalJson(dp)) problems.push("baseline and declaration provenance differ");
+  if (baseline.environment!==declaration.environment) problems.push("baseline and declaration environment differ");
+  if (baseline.mode!==declaration.mode || canonicalJson(baseline.run ?? null)!==canonicalJson("run" in declaration ? declaration.run : null))
+    problems.push("baseline and declaration mode/run differ");
+  return problems;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 // Equality (27.10.1)
 const FIELDS = ["returns", "retset", "kind", "owner", "securityDefiner", "language", "config", "acl", "sourceDigest"] as const;
 type Field = (typeof FIELDS)[number];
-export interface ExpectedDefiner extends FunctionIdentity { source: "platform" | "kernel"; pins: Partial<Record<Field, unknown>> }
+export interface ExpectedDefiner extends FunctionIdentity { source: "platform" | "co-resident" | "kernel"; pins: Partial<Record<Field, unknown>> }
 
-export function expectedDefiners(manifest: StageManifest, baseline: PlatformBaseline | null, owner: string, stage: Stage = manifest.declaredStage): ExpectedDefiner[] {
+export function expectedDefiners(manifest: StageManifest, baseline: PlatformBaseline | null, owner: string, stage: Stage = manifest.declaredStage, declaration:Declaration|null = null): ExpectedDefiner[] {
   const resolve = (v: string): string => v.replaceAll(DEPLOYMENT_OWNER, owner);
   const kernel = stageFunctions(manifest, stage).map((f): ExpectedDefiner => ({
     schema: f.schema, name: f.name, args: f.args, source: "kernel",
@@ -260,7 +305,9 @@ export function expectedDefiners(manifest: StageManifest, baseline: PlatformBase
     schema: e.schema, name: e.name, args: e.args, source: "platform",
     pins: { returns: e.returns, retset: e.retset, kind: e.kind, owner: e.owner, securityDefiner: true, language: e.language, config: e.config, sourceDigest: e.sourceDigest },
   }));
-  return sortEntries([...platform, ...kernel]);
+  const coResident=(declaration?.entries ?? []).map((e):ExpectedDefiner=>({schema:e.schema,name:e.name,args:e.args,source:"co-resident",
+    pins:Object.fromEntries(FIELDS.map(k=>[k,e[k]]))}));
+  return sortEntries([...platform, ...coResident, ...kernel]);
 }
 
 export interface InventoryDiff { missing: string[]; extra: string[]; mismatched: string[] }
@@ -340,15 +387,25 @@ export async function baselineBindingProblems(db: Db, baseline: PlatformBaseline
 }
 
 /** Everything 27.10 and 27.9.4 assert, as problem strings; empty means the inventory is exactly as sealed. */
-export async function definerInventoryProblems(db: Db, manifest: StageManifest, baseline: PlatformBaseline | null): Promise<string[]> {
+export async function definerInventoryProblems(db: Db, manifest: StageManifest, baseline: PlatformBaseline | null, declaration:Declaration|null = null): Promise<string[]> {
   const problems: string[] = [];
   if (!baseline) problems.push("TARGET_PLATFORM_BASELINE_PENDING: no frozen platform SECURITY DEFINER baseline for this environment");
   else {
     problems.push(...baselineProblems(baseline, manifest).map((p) => `platform baseline invalid: ${p}`));
     problems.push(...(await baselineBindingProblems(db, baseline)));
   }
+  if (!declaration) problems.push("TARGET_CO_RESIDENT_DECLARATION_PENDING: no frozen co-resident declaration");
+  else {
+    try {
+      parseDeclaration(JSON.stringify(declaration));
+      if (baseline) problems.push(...artifactPairProblems(baseline,declaration));
+      const live=await readCoResident(db);
+      if(setDigest(live)!==declaration.setSha256) problems.push("live co-resident set differs from declaration");
+      problems.push(...await baselineBindingProblems(db,{provenance:declaration.provenance} as PlatformBaseline));
+    } catch(error) { problems.push(`co-resident validation failed: ${error instanceof Error ? error.message : String(error)}`); }
+  }
   const actual = await readDefiners(db);
-  const diff = compareDefiners(actual, expectedDefiners(manifest, baseline, await deploymentOwner(db)));
+  const diff = compareDefiners(actual, expectedDefiners(manifest, baseline, await deploymentOwner(db), manifest.declaredStage, declaration));
   // Without a baseline the platform half is unknown: only KernelJSON schemas are judged for extras.
   for (const f of baseline ? diff.extra : diff.extra.filter((k) => k.startsWith("public.") || k.startsWith("kernel_private.")))
     problems.push(`unlisted SECURITY DEFINER function ${f}`);

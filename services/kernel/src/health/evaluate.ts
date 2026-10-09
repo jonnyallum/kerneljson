@@ -623,7 +623,7 @@ export function evaluateDatabase(s: DatabaseSnapshot, checkedAt: string): Domain
     const evidence = "current_user/session_user, pg_roles, has_*_privilege and pg_policies against the frozen runtime-role manifest; pg_proc and pg_trigger against the SECURITY DEFINER stage manifest and the frozen platform baseline";
     checks.push(
       !r.available
-        ? check("database.runtimeRolesLeastPrivilege", "UNKNOWN", evidence, `evidence unavailable: ${r.reason}`, checkedAt)
+        ? check("database.runtimeRolesLeastPrivilege", "CRITICAL", evidence, `authority evidence unavailable: ${r.reason}`, checkedAt)
         : check(
             "database.runtimeRolesLeastPrivilege",
             r.problems.length === 0 ? "HEALTHY" : "CRITICAL",

@@ -8,6 +8,12 @@ import {
 } from "../services/kernel/src/database/security-definers.js";
 import { expectedLedgerHead, expectedLedgerVersions, ledgerSetProblems, parseConnectionFile, scrubPgEnvironment } from "../services/kernel/src/database/platform-baseline-snapshot.js";
 import { TABLE_PRIVILEGES, loadManifest } from "../services/kernel/src/database/runtime-roles.js";
+import { engineEnvironment, startupUrl } from "../scripts/b1/engine.js";
+import { identityProblems, type LiveIdentity } from "../scripts/b1/ephemeral-cluster.js";
+import { qualificationStatus, type RunEvidence } from "../scripts/b1/run-status.js";
+import { strictJson } from "../services/kernel/src/database/strict-json.js";
+import { CO_RESIDENT_SQL, EMPTY_SET_DIGEST, GOLDEN, hash, parseDeclaration, pins, pinText, setDigest,
+  type CoResidentEntry } from "../services/kernel/src/database/co-resident.js";
 
 /**
  * KJ-P8 B1 - the stage-aware SECURITY DEFINER inventory of ADR-0023 revision 2.5, section 27.10, without a database:
@@ -42,8 +48,8 @@ describe("27.10.2 governed and excluded schemas", () => {
 
 describe("27.10.3 the KernelJSON stage manifest", () => {
   it("is bound to the sealed design and lists the six stages in rollout order", () => {
-    expect(manifest.design).toEqual({ adr: "ADR-0023", revision: "2.6", sha: SEALED_DESIGN });
-    expect(SEALED_DESIGN).toBe("7712702020ef5d3d841f68f4d425d9707fb703eb");
+    expect(manifest.design).toEqual({ adr: "ADR-0023", revision: "2.7.9", sha: SEALED_DESIGN });
+    expect(SEALED_DESIGN).toBe("af2f7320aae32eaa0ce699b1c09d015371f156d5");
     expect(manifest.stages.map((s) => s.stage)).toEqual([...STAGES]);
     expect(manifest.declaredStage).toBe("B1");
   });
@@ -155,17 +161,104 @@ const platform = [row({ schema: "auth", name: "uid", args: [], returns: "pg_cata
 const baselineOf = (entries: DefinerEntry[]): PlatformBaseline => {
   const e = sortEntries(entries).map(baselineEntry);
   return {
-    contract: "kerneljson:security-definer-platform-baseline/v1", design: SEALED_DESIGN, environment: "unit",
+    contract: "kerneljson:security-definer-platform-baseline/v1", mode:"HOSTED_COMMITTED", design: SEALED_DESIGN, environment: "unit",
     provenance: {
       systemIdentifier: "1", database: "x", serverVersion: "PostgreSQL 17", snapshotAt: "2026-10-06T00:00:00.000000Z", snapshotUser: OWNER,
       transaction: { readOnly: true, searchPath: '""' },
-      migrationLedger: { table: "supabase_migrations.schema_migrations", present: true, head: "20260929120000", b1Recorded: false, versions: [] },
+      migrationLedger: { table: "supabase_migrations.schema_migrations", present: true, head: expectedLedgerHead(manifest), b1Recorded: false, versions: expectedLedgerVersions(manifest) },
       stampSecurityDefiner: false, querySha256: INVENTORY_SQL_SHA256,
     },
     entries: e, entriesSha256: sha256(canonicalJson(e)),
   };
 };
 const baseline = baselineOf(platform);
+
+describe("27.12 co-resident authority artifacts",()=>{
+  const entry:CoResidentEntry={...pins.entries[0]!,rawDigest:pins.entries[0]!.sourceDigest,rawBytes:953,hasCR:false};
+  const declaration=()=>({kind:"kerneljson:co-resident-platform-exceptions/v1",mode:"HOSTED_COMMITTED",environment:"unit",
+    provenance:{...baseline.provenance,querySha256:hash(CO_RESIDENT_SQL)},pinsSha256:hash(pinText),
+    setSha256:setDigest([entry]),entries:[structuredClone(entry)]});
+  it("pins every source attribute and the complete topology independently",()=>{
+    expect(pins).toEqual({kind:"kerneljson:co-resident-platform-pins/v1",entries:[{
+      schema:"public",name:"rls_auto_enable",args:[],returns:"pg_catalog.event_trigger",retset:false,kind:"f",owner:"postgres",
+      securityDefiner:true,language:"plpgsql",config:["search_path=pg_catalog"],acl:null,volatility:"v",strict:false,
+      leakproof:false,parallel:"u",binary:null,sqlBody:null,sourceDigest:"2782e98b348aca7d6f6f73c420fd78d2e094957dd7a52b0483d4c34f29d2a7a1",
+      sourceBytes:953,bindings:[{name:"ensure_rls",owner:"postgres",event:"ddl_command_end",function:"public.rls_auto_enable()",
+        enabled:"O",tags:["CREATE TABLE","CREATE TABLE AS","SELECT INTO"]}]}]});
+  });
+  it("matches the sealed empty and 285-byte populated golden vectors",()=>{
+    expect(Buffer.byteLength(GOLDEN)).toBe(285);
+    expect(hash(GOLDEN)).toBe("80d365b875ba65ae543e351a47c09f66c6df756db772f6fa494a36639291d721");
+    expect(setDigest([])).toBe("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    expect(parseDeclaration(JSON.stringify(declaration())).entries).toEqual([entry]);
+    expect(parseDeclaration(JSON.stringify({...declaration(),entries:[],setSha256:EMPTY_SET_DIGEST})).entries).toEqual([]);
+  });
+  it.each(['{"mode":1,"mode":2}','{"x":{"a":1,"\\u0061":2}}','{"a":[{"x":1,"x":2}]}'])("rejects duplicate decoded keys: %s",text=>{
+    expect(()=>strictJson(text)).toThrow(/DUPLICATE_JSON_KEY/);
+  });
+  it.each(["",'{"x":1,}',"[1,]","true false",'"unterminated',"01","\uFEFF{}"])("rejects malformed JSON: %s",text=>{
+    expect(()=>strictJson(text)).toThrow();
+  });
+  it.each(["pinsSha256","setSha256","environment","provenance","entries","mode","kind"])("rejects missing field %s",field=>{
+    const d:Record<string,unknown>=declaration(); delete d[field]; expect(()=>parseDeclaration(JSON.stringify(d))).toThrow();
+  });
+  it.each(["owner","returns","sourceDigest","config","acl","bindings"])("rejects changed pin field %s",field=>{
+    const d=declaration(); (d.entries[0] as unknown as Record<string,unknown>)[field]=field==="acl" ? [] : null;
+    expect(()=>parseDeclaration(JSON.stringify(d))).toThrow();
+  });
+  it("rejects missing bindings, extra bindings, copied identities and duplicate members",()=>{
+    for(const entries of [[{...entry,bindings:[]}],[{...entry,bindings:[...entry.bindings,...entry.bindings]}],
+      [{...entry,schema:"auth"}],[entry,entry]]) expect(()=>setDigest(entries)).toThrow();
+  });
+  it("rejects unknown nested fields and hosted/run substitution",()=>{
+    const d=declaration();
+    for(const altered of [{...d,unknown:true},{...d,provenance:{...d.provenance,unknown:true}},
+      {...d,entries:[{...entry,unknown:true}]},{...d,run:{}},{...d,mode:"EPHEMERAL_RUN_BOUND"}])
+      expect(()=>parseDeclaration(JSON.stringify(altered))).toThrow();
+  });
+  it("builds H1 environments with exactly the permitted names",()=>{
+    expect(engineEnvironment("engine","home","temp",false)).toEqual({PATH:"engine",HOME:"home",TMPDIR:"temp"});
+    expect(engineEnvironment("engine","home","temp",true,"system")).toEqual({PATH:"engine",HOME:"home",TMPDIR:"temp",
+      USERPROFILE:"home",TEMP:"temp",TMP:"temp",SystemRoot:"system"});
+    expect(()=>engineEnvironment("engine","home","temp",true)).toThrow(/SystemRoot/);
+    expect(engineEnvironment("engine","home","temp",false,undefined,"pass").PGPASSFILE).toBe("pass");
+  });
+  it("encodes startup settings and refuses inherited options or URL passwords",()=>{
+    const d=parseDeclaration(JSON.stringify(declaration()));d.provenance.database="space and\\slash";
+    expect(new URL(startupUrl("postgresql://postgres@127.0.0.1:1234/db",d)).searchParams.get("options"))
+      .toContain("kj.b1.target_database=space\\ and\\\\slash");
+    expect(()=>startupUrl("postgresql://postgres:secret@127.0.0.1/db",d)).toThrow(/password/);
+    expect(()=>startupUrl("postgresql://postgres@127.0.0.1/db?options=x",d)).toThrow(/options/);
+  });
+  it("checks nonce, initdb lifetime, exact server and superuser independently",()=>{
+    const created="2026-10-09T10:00:00.000Z",seconds=Date.parse(created)/1000;
+    const live:LiveIdentity={cluster:"kj-eph-nonce",sid:String(BigInt(seconds)<<32n),started:seconds+2,
+      version:"pinned",superuser:true,database:"kj_b1"};
+    expect(identityProblems(live,created,"nonce","pinned",[])).toEqual([]);
+    for(const changed of [{...live,cluster:"kj-eph-other"},{...live,version:"other"},{...live,superuser:false},
+      {...live,started:seconds-1},{...live,sid:String(BigInt(seconds-1)<<32n)},
+      {...live,sid:String(BigInt(seconds+3)<<32n)}]) expect(identityProblems(changed,created,"nonce","pinned",[]).length).toBeGreaterThan(0);
+    expect(identityProblems(live,created,"nonce","pinned",[live.sid])).toContain("system identifier belongs to hosted artifact");
+  });
+  it("never qualifies zero applications, skipped steps, engine failures, missing ledger checks or negative fixtures",()=>{
+    const blob={id:"a".repeat(40),sha256:"b".repeat(64)},versions=expectedLedgerVersions(manifest);
+    const good:RunEvidence={negativeFixture:false,hookIds:[],migrationBlob:blob,baseVersions:versions,
+      plannedApplications:[{sequence:1,database:"kj_b1",version:"20261002090000",migrationBlob:blob}],
+      events:[...(["L1","L2","L3","L4","L5"] as const).map(step=>({step,outcome:"passed" as const,details:{}})),
+        ...(["S1","S2","S3","S4","S5","S6","S7"] as const).map(step=>({step,application:1,outcome:"passed" as const,details:{}})),
+        {step:"L6",outcome:"passed",details:{}}],
+      applications:[{sequence:1,database:"kj_b1",migrationBlob:blob,engineExitStatus:0,
+        ledgerAfter:[...versions,"20261002090000"],postLedgerCompared:true,postLedgerPassed:true}]};
+    expect(qualificationStatus(good)).toBe("REPOSITORY_QUALIFIED");
+    expect(qualificationStatus({...good,plannedApplications:[],applications:[]})).toBe("NOT_QUALIFIED");
+    for(const step of ["L1","L2","L3","L4","L5","L6","S1","S2","S3","S4","S5","S6","S7"])
+      expect(qualificationStatus({...good,events:good.events.filter(e=>e.step!==step)}),step).toBe("NOT_QUALIFIED");
+    for(const change of [{engineExitStatus:1},{postLedgerCompared:false},{postLedgerPassed:false},{ledgerAfter:versions}])
+      expect(qualificationStatus({...good,applications:[{...good.applications[0]!,...change}]})).toBe("NOT_QUALIFIED");
+    expect(qualificationStatus({...good,hookIds:["fixture"]})).toBe("NOT_QUALIFIED");
+    expect(qualificationStatus({...good,negativeFixture:true,hookIds:["fixture"]})).toBe("NEGATIVE_FIXTURE_RESULT");
+  });
+});
 const actual = sortEntries([...platform, stampRow]);
 const diff = (rows: DefinerEntry[], b: PlatformBaseline | null = baseline) => compareDefiners(sortEntries(rows), expectedDefiners(manifest, b, OWNER));
 
@@ -244,7 +337,8 @@ describe("27.10.4 the frozen platform baseline", () => {
 describe("RFC 8785 canonical JSON", () => {
   it("sorts keys at every depth and is stable", () => {
     expect(canonicalJson({ b: [true, null, { z: "1", a: "2" }], a: "x" })).toBe('{"a":"x","b":[true,null,{"a":"2","z":"1"}]}');
-    expect(() => canonicalJson({ n: 1 })).toThrow(/unsupported/);
+    expect(canonicalJson({ n: 1 })).toBe('{"n":1}');
+    expect(() => canonicalJson({ n: Number.POSITIVE_INFINITY })).toThrow(/unsupported/);
   });
 });
 

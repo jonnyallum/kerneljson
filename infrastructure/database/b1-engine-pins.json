@@ -1,0 +1,24 @@
+{
+  "kind": "kerneljson:b1-engine-pins/v1",
+  "version": "2.120.0",
+  "platforms": {
+    "linux-x64": {
+      "archive": "supabase_2.120.0_linux_amd64.tar.gz",
+      "sha256": "7074584113aa00495beeac661c41fb09f1ddd0a483cd7333894b0d080086dc6e",
+      "executables": {
+        "supabase": "e4e5d910546d7eda3bc3c63affce09a12b9954a00685dce5236080cd45f43eda",
+        "supabase-go": "3a2239de4dddd58040920fdb9706a11c7f9b396e0f2975d65b3829cf375834f4"
+      }
+    },
+    "windows-x64": {
+      "archive": "supabase_2.120.0_windows_amd64.tar.gz",
+      "sha256": "53920013d24bc9e66180f35ceeea9ddc20e65a7afa883421e9c0ba60ad7457ee",
+      "executables": {
+        "supabase.exe": "1cbedd6e494581a1c1d90113660113a06798d9967d19c857127b66b8a428e836",
+        "supabase-go.exe": "fa2ba7fb02b01d98fa5a3c6d92632239b10c6974dbc42c65b698b6a479847343"
+      }
+    }
+  },
+  "image": "postgres@sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929",
+  "serverVersion": "PostgreSQL 17.6 (Debian 17.6-2.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit"
+}

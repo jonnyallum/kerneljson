@@ -611,10 +611,10 @@ describe("KJ-P8 B1 runtime roles (database.runtimeRolesLeastPrivilege)", () => {
     expect(evaluateHealthSnapshot(snapshot, baseExpectations()).overall).toBe("CRITICAL");
   });
 
-  it("is UNKNOWN, never HEALTHY, when the catalogue could not be read", () => {
+  it("is CRITICAL when authority evidence cannot be read on a reachable database", () => {
     const snapshot = healthySnapshot();
     snapshot.database.runtimeRoles = { available: false, reason: "manifest unreadable" };
-    expect(dbCheck(snapshot).status).toBe("UNKNOWN");
+    expect(dbCheck(snapshot).status).toBe("CRITICAL");
   });
 
   it("is absent when the database is unreachable: reachability owns that failure", () => {

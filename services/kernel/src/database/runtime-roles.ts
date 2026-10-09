@@ -4,7 +4,7 @@ import pg from "pg";
 import { excludedSchemaSql } from "./security-definers.js";
 
 /**
- * KJ-P8 B1 (ADR-0023 revision 2.6, section 27, sealed at 7712702020ef5d3d841f68f4d425d9707fb703eb) - least-privilege
+ * KJ-P8 B1 (ADR-0023 revision 2.7.9, section 27, sealed at af2f7320aae32eaa0ce699b1c09d015371f156d5) - least-privilege
  * runtime database roles. The capability fact model of section 27.11 is `actualFacts` below; the SECURITY DEFINER
  * inventory of section 27.10 lives in ./security-definers.ts and is never narrowed by the schema-USAGE gate.
  *
@@ -217,7 +217,7 @@ export async function actualFacts(db: Db, role: RuntimeRole): Promise<string[]> 
   for (const f of await q<{ name: string }>(
     `select ${FUNCTION_IDENTITY_SQL("p", "n")} as name
        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-      where ${REACHABLE("n")} and p.prorettype <> 'pg_catalog.trigger'::pg_catalog.regtype and has_function_privilege($1, p.oid, 'EXECUTE')`,
+      where ${REACHABLE("n")} and p.prorettype <> 'pg_catalog.event_trigger'::pg_catalog.regtype and has_function_privilege($1, p.oid, 'EXECUTE')`,
   ))
     facts.push(`function:${f.name}:EXECUTE`);
   for (const p of await q<{ name: string; policyname: string; cmd: string; qual: string | null; with_check: string | null; permissive: string }>(

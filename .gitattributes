@@ -1,0 +1,4 @@
+# These authority bytes are hashed directly; checkout must preserve the blob bytes.
+infrastructure/database/co-resident-platform-pins.json text eol=lf
+infrastructure/database/co-resident-platform-exceptions.json text eol=lf
+infrastructure/database/security-definer-platform-baseline.json text eol=lf

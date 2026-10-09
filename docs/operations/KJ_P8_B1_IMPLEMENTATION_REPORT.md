@@ -1,5 +1,24 @@
 # KJ-P8 B1 implementation report: least-privilege runtime database roles
 
+> **Current status:** R279 implementation resumed under the [accepted narrow owner ruling](KJ_P8_B1_R279_OWNER_RULING.md). Design-review/seal update remains pending.
+> The helper diagnostic remains valid. Implementation is incomplete and no R279 qualification is claimed.
+
+### R279 work in progress — 10 October 2026
+
+The owner approved preserving the helper pin and correcting the inaccurate rethrow inference. This is an owner ruling, not a new hostile seal.
+
+Implemented in the current worktree:
+
+- Generated enumerated routine ACL cleanup, mandatory startup-setting checks, P1/P2/P3 checks and stronger stamp owner/signature/topology checks. The helper body is unchanged.
+- Strict duplicate-key JSON parsing, closed baseline/declaration schemas, the co-resident inventory, one-transaction paired snapshots and declaration-aware catalogue equality.
+- Health reports invalid or unreadable authority evidence as CRITICAL on a reachable database.
+- Runner support modules for raw Git-blob export, pinned engine isolation, disposable cluster attestation, immutable run artifacts, pre/post ledger gates and the non-vacuous qualification predicate.
+- Exact SQL log extraction and additive refusal accounting, with parser-level controls. These are not the pinned-image CON-48 execution fixture.
+
+Checks observed: TypeScript typechecking; 149 tests passed across `security-definers`, `health-model`, `runtime-roles-topology` and `b1-refusal-accounting`; focused ESLint; generated manifest/migration reproducibility. These checks establish neither a successful B1 application nor repository qualification.
+
+Outstanding: runner entry-point orchestration and closed registries; stage-T plans and consumers; lane partition and frozen collection/report coverage; full login/session/worker tracing; all required pinned-image positive/negative cases; migration-engine statement digest qualification; mutation suites; governed CI replacement and full G1–G9 evidence. No B1 application, hosted connection, production action, merge, deployment or later P8 stage has been performed during this resumption. The inherited CI must remain skipped until its ungoverned application paths are replaced.
+
 > **R2.7.9 remediation branch notice (09/10/2026):** The report below describes frozen B1
 > `0ff2919c1bbf722b4842aa56fdc94ef9b74e5a51`, not an R279-qualified implementation.
 > The R279 sprint reproduced a contradiction between the sealed helper source pin and its stated

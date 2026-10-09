@@ -1,5 +1,6 @@
 import { RUNTIME_ROLES, RuntimeRoleRefusal, assertRuntimeRole, compareRoleToManifest, loadManifest } from "../database/runtime-roles.js";
-import { definerInventoryProblems, loadPlatformBaseline, loadStageManifest, type PlatformBaseline } from "../database/security-definers.js";
+import { definerInventoryProblems, loadDeclaration, loadPlatformBaseline, loadStageManifest, type PlatformBaseline } from "../database/security-definers.js";
+import type { Declaration } from "../database/co-resident.js";
 import { collectBindingProvenance } from "./release-provenance.js";
 import type pg from "pg";
 import { createRestateAdminClient, type RestateAdminClient } from "./restate-client.js";
@@ -316,11 +317,12 @@ export interface CollectDeps {
  * `baseline` defaults to the committed frozen platform baseline; while none is committed the check reports
  * TARGET_PLATFORM_BASELINE_PENDING and stays red.
  */
-export async function fetchRuntimeRoles(pool: pg.Pool, options: { baseline?: PlatformBaseline | null } = {}): Promise<HealthSnapshot["database"]["runtimeRoles"]> {
+export async function fetchRuntimeRoles(pool: pg.Pool, options: { baseline?: PlatformBaseline | null; declaration?:Declaration|null } = {}): Promise<HealthSnapshot["database"]["runtimeRoles"]> {
   try {
     const manifest = loadManifest();
     const stages = loadStageManifest();
     const baseline = options.baseline === undefined ? loadPlatformBaseline() : options.baseline;
+    const declaration = options.declaration === undefined ? loadDeclaration() : options.declaration;
     const problems: string[] = [];
     try {
       await assertRuntimeRole(pool, "kj_worker");
@@ -333,10 +335,12 @@ export async function fetchRuntimeRoles(pool: pg.Pool, options: { baseline?: Pla
       for (const f of diff.missing) problems.push(`${role} lacks ${f}`);
       for (const f of diff.extra) problems.push(`${role} holds unlisted ${f}`);
     }
-    problems.push(...(await definerInventoryProblems(pool, stages, baseline)));
+    if (baseline?.mode !== "HOSTED_COMMITTED" || declaration?.mode !== "HOSTED_COMMITTED" || baseline?.run || (declaration && "run" in declaration))
+      problems.push("deployed health requires HOSTED_COMMITTED artifacts without run bindings");
+    problems.push(...(await definerInventoryProblems(pool, stages, baseline, declaration)));
     return { available: true, problems };
   } catch (error) {
-    return { available: false, reason: error instanceof Error ? error.message.slice(0, 200) : "runtime role catalogue unreadable" };
+    return { available: true, problems: [`runtime role qualification failed: ${error instanceof Error ? error.message.slice(0, 200) : "catalogue or authority artifact unreadable"}`] };
   }
 }
 
