@@ -1,7 +1,7 @@
 # ADR-0023: Reflection, self-model and governed identity growth (KJ-P8)
 
-Status: PROPOSED, revision 2.7.8 candidate (design only). Nothing here is implemented, migrated or deployed.
-Date: 09/10/2026 (revisions 2.7.3 to 2.7.8). Revisions 2.7, 2.7.1 and 2.7.2 are dated 08/10/2026, revision 2.3 01/10/2026, revision
+Status: PROPOSED, revision 2.7.9 candidate (design only). Nothing here is implemented, migrated or deployed.
+Date: 09/10/2026 (revisions 2.7.3 to 2.7.9). Revisions 2.7, 2.7.1 and 2.7.2 are dated 08/10/2026, revision 2.3 01/10/2026, revision
 2.4 02/10/2026, revision 2.5 05/10/2026 and revision 2.6 06/10/2026.
 Base: canonical `main` `750d5b7926f320d8e9d3f64789b8f7035eaa4f3d`. Production: epoch 13, release `cebbb0d`, cognition
 ON, Class C/D frozen (docs/operations/KJ_P7B_LIVE_RESULT_2026-09-30.md).
@@ -262,6 +262,18 @@ It also corrects three facts the review found (the identity mutation suite has 5
 was last changed by commit `1fbe6b2`; B1 does more than grant, so case CON-32 pins its whole shape and 27.6 item 3 no
 longer says B1 "cannot change any fact"), and folds in the two harness clarifications the review made a condition of
 cases CON-15 and CON-20 (genuine login pools are watched in every mode). Nothing else changes; it grants nothing.
+
+Revision 2.7.8 (`8c0f8e73435386623fff2b252bbb37a1515491e3`) was hostile-reviewed (`BLOCK_R278_DESIGN`: R276-B1,
+R277-B2 in substance and R277-B3 closed; the execution-report identity model closed) and is not rewritten. Revision
+2.7.9 closes exactly the two remaining findings:
+
+| Finding | Defect in 2.7.8 | Resolved in |
+|---|---|---|
+| R278-B1 | The collection that proves source coverage was not pinned to an invocation that works on correct frozen code: static parse ignores the environment flags and loses the skipped suites, and three flags leave out `gate3-executor` and the six `KJ_TEST_PG_URL` files. 2.7.8 also wrongly expected collection to show a `.each` template with zero rows, and matched skips per entry, which a removed skip gate whose `beforeAll` fails can satisfy | 27.12.15 "Test identity and coverage" (the pinned command and environment, the zero-expansion rule, the report success rule); cases CON-35 and CON-37 corrected, CON-47 |
+| R278-B2 | The log side of the refusal accounting was ambiguous and its fingerprint unsound: one refusal writes `ERROR`, `CONTEXT` and `STATEMENT` lines that all carry `42501`; the statement is not always the next line; whitespace collapsing merges distinct SQL; the frozen harness truncates at 600 characters; and the log cannot carry the test, so two tests issuing the same denied statement could collapse into one | 27.12.15 "Database log" (pinned `log_line_prefix`), "Log extraction" (primary events only, the `STATEMENT` of the same backend), the exact fingerprints on both sides, the log projection; case CON-48 |
+
+It also makes the `_acl` hook's precondition read the `proacl` items directly (a condition the review set on case
+CON-43), and corrects the inventory's description of B1's four `SELECT`s. Nothing else changes; it grants nothing.
 
 Section numbers changed from revision 1: section 18 (P8B adoption mechanics) and section 23 (same-tenant references)
 are new, and the later sections moved down.
@@ -3020,7 +3032,8 @@ read unset settings as an empty declaration; revision 2.7.1 withdraws that.
    of 27.12.15; and, from revision 2.7.7, the retained gates G1 to G9, the trace and database-log evidence, the
    coverage partition, the CI gate over every registered suite and cases CON-15 to CON-32; and, from revision 2.7.8,
    test identity from expanded report entries, the exact refusal accounting, structured hook expectations with
-   preconditions, and cases CON-33 to CON-46.
+   preconditions, and cases CON-33 to CON-46; and, from revision 2.7.9, the pinned collection contract, the report
+   success rule, the exact log extraction and fingerprints, the log projection and cases CON-47 and CON-48.
 
 **Not required by this revision.** Separate authorisation; these do not gate B1:
 - The forensic drift tool (audit branch `f19a37dea3e20d49eca4c3d34cf221bb3b18089b`, unchanged by this revision)
@@ -3580,7 +3593,10 @@ copy, and records its blob SHA. Its schema is exact at every level, and an unkno
   - `precondition` (revision 2.7.8): one committed read-only query and its exact expected result, which shows that the
     hook's perturbation took effect. The runner runs it through its connection factory immediately after the hook,
     before the next step, and records the result. If the result differs, the hook is recorded `not-effective` and the
-    case fails, whatever the run did afterwards;
+    case fails, whatever the run did afterwards. A precondition about a function ACL (revision 2.7.9) reads the
+    `proacl` items themselves (`aclexplode`, or `proacl::text[]` compared as a set), never `has_function_privilege`
+    alone: a null `proacl` grants `PUBLIC` EXECUTE by default and would satisfy a privilege check without the
+    perturbation having happened;
   - `cases`, the case numbers of 27.12.9 and 27.12.13.9 it serves.
 
   No point or effect may name L5, L6, L1, S7 or the qualification status, so L5 cannot be skipped, teardown cannot be
@@ -3692,7 +3708,8 @@ fail on purpose. Every earlier case of 27.12.9 stays in force.
   SHA-256 and the results of the post-T database and network reads (revision 2.7.6); and the profile, the
   `refusalPolicy`, the trace files' SHA-256s and analysis, the log extract's SHA-256 and the G-gate results
   (revision 2.7.7); the expected and observed refusal multisets, the re-read log settings, and each hook's
-  precondition result (revision 2.7.8);
+  precondition result (revision 2.7.8); the collection command, environment and summary, and the extracted log
+  events with their associations (revision 2.7.9);
 - for each application, the SHA-256 of its run-bound baseline next to its declaration's, with their equal `mode` and
   `run` (revision 2.7.4);
 - the L3 and L5 results: system identifier, initdb time, postmaster start time and database names;
@@ -3710,7 +3727,7 @@ is recorded for information only, and is never authority.
 
 The hosted cutover record is that of 27.12.6 and 27.12.11, plus `mode`.
 
-##### 27.12.13.11 What revisions 2.7.3 to 2.7.8 do not change
+##### 27.12.13.11 What revisions 2.7.3 to 2.7.9 do not change
 
 - **Production and hosted authority.** No production authority is widened. Hosted mode is the 2.7.2 procedure plus
   refusals: the declaration's and the baseline's mode and `run` checks, and the read-only pre-application inventory
@@ -3943,14 +3960,21 @@ each fail.
 - **Harness coverage** (revision 2.7.8). In every mode, including discover, the harness watches every runtime-role
   session: pools that log in as `kj_worker` or `kj_door`, the shadow pools of enforce mode, the `SET ROLE` emulation,
   and the compose worker, which loads the harness in every stage T mode. Every `42501` on such a session is recorded,
-  whether or not the caller catches it, with the role, the SQLSTATE, the statement fingerprint (SHA-256 of the
-  statement text with runs of whitespace collapsed to one space and trimmed), whether it came from a deliberate probe
-  or from production code, and the expanded name of the running test where there is one. Refusal records carry a
+  whether or not the caller catches it, with the role, the SQLSTATE, the statement fingerprint, whether it came from
+  a deliberate probe or from production code, and the expanded name of the running test where there is one. Revision
+  2.7.9 (R278-B2) withdraws the 2.7.8 whitespace-collapsing fingerprint, which merges distinct SQL (for example
+  whitespace inside a string literal). The **trace fingerprint** is the SHA-256, in lowercase hexadecimal, of the
+  UTF-8 bytes of the exact, untruncated statement text the driver sends to PostgreSQL (for a parameterised or named
+  prepared statement, its text with the `$n` placeholders, as sent at each execution). No truncation (the frozen
+  harness's 600-character limit does not apply to it), no whitespace change, no comment, literal, placeholder or cast
+  rewriting. Refusal records carry a
   sequence number and are never de-duplicated, so multiplicity is kept.
 - **Database log.** At the start of stage T the runner sets `log_line_prefix` to include the SQLSTATE (`%e`) and the
   session user (`%u`), keeps `log_min_error_statement` at `error` so each error line is followed by its statement
   (`ALTER SYSTEM` and `pg_reload_conf()` in its own cluster, recorded), and writes a `RAISE LOG` marker; at the end it
-  writes a second marker. Immediately before each marker it re-reads `log_line_prefix`, `log_min_error_statement`,
+  writes a second marker. Revision 2.7.9 pins the prefix exactly as `kjlog|%p|%l|%e|%u|%d| ` (backend process id,
+  per-session line number, SQLSTATE, session user, database, then one space), and the markers as `RAISE LOG` messages
+  whose text is exactly `kj-t-begin <runId>` and `kj-t-end <runId>`. Immediately before each marker it re-reads `log_line_prefix`, `log_min_error_statement`,
   `log_min_messages`, `log_destination` and `logging_collector`, and every row of `pg_db_role_setting`, and refuses to
   trust the log unless the settings are the recorded values and no row sets any `log_` parameter or
   `client_min_messages` for any role or database. Before L6 it reads the cluster's log through the daemon.
@@ -3973,9 +3997,53 @@ multiplicity):
 
 Both observations must equal that multiset exactly:
 - the trace's refusal records, keyed the same way, with multiplicity;
-- the database log's lines between the markers whose SQLSTATE is `42501` and whose session user is `kj_worker` or
-  `kj_door`, each keyed by the fingerprint of the statement line that follows it, with multiplicity (the log carries
-  no test name, so the log comparison is over role, SQLSTATE, fingerprint and multiplicity).
+- the database log's refusal events, extracted as below and keyed by (role, SQLSTATE, log fingerprint), compared with
+  the **log projection** of the expected multiset (revision 2.7.9).
+
+**Log projection** (revision 2.7.9, R278-B2). The log carries no test identity, so the expected multiset is projected
+mechanically: group its entries by (role, SQLSTATE, statement fingerprint) and sum their multiplicities across every
+test that shares that projection. Two tests that each expect `(kj_worker, 42501, X, 1)` project to one log entry
+`(kj_worker, 42501, X, 2)`. The observed log multiset must equal the projection exactly; the trace multiset must still
+equal the full, test-attributed multiset.
+
+**Log extraction** (revision 2.7.9, R278-B2), over the log between the two markers of this run:
+1. **Records.** A line beginning with the pinned prefix starts a record: process id, line number, SQLSTATE, session
+   user, database, severity and message. A line without the prefix is a continuation of the immediately preceding
+   record only if it begins with exactly one TAB; any other unprefixed line inside the window makes the log
+   untrusted, and the suite fails.
+2. **Primary events.** Only records whose severity is `ERROR` or `FATAL`, whose SQLSTATE is `42501` and whose session
+   user is `kj_worker` or `kj_door` are counted. `STATEMENT`, `CONTEXT`, `DETAIL`, `HINT` and `QUERY` records carry the
+   same SQLSTATE and are never counted as refusals.
+3. **Association.** For each primary event, the associated statement is the first later `STATEMENT` record from the
+   same process id, provided that between them that process wrote only `CONTEXT`, `DETAIL`, `HINT` or `QUERY` records.
+   If that process writes any other record first, or the window ends, the association is missing; a `STATEMENT` whose
+   user or SQLSTATE differs from its event's makes it ambiguous. A missing or ambiguous association fails the suite.
+   "The immediately following line" is not the rule: a function's refusal writes `CONTEXT` before `STATEMENT`
+   (OBSERVED, below).
+4. **Log fingerprint.** Rebuild the statement's text from its `STATEMENT` record: the message after `STATEMENT:  `,
+   then, for each continuation line, a line feed followed by the line with only its first TAB removed (the one
+   PostgreSQL inserts after each continuation newline). Nothing else is changed. Its SHA-256, in lowercase
+   hexadecimal, of the UTF-8 bytes is the log fingerprint, comparable with the trace fingerprint. If a later
+   implementation test shows that ordinary driver behaviour makes this reconstruction inexact, qualification fails and
+   the design is revised; the fingerprint is not weakened.
+5. **`FATAL` without a statement.** A `FATAL` `42501` for a runtime role with no associated `STATEMENT` fails the
+   suite. No expected-refusal form declares one: the frozen probes refuse connections in application code
+   (`RuntimeRoleRefusal`), not with a server `FATAL` (OBSERVED in `tests/runtime-roles-connection.integration.test.ts`
+   at `0ff2919`).
+
+Messages written concurrently by several backends to the server's standard error can, if large, interleave; any
+resulting unprefixed line or mis-attached continuation fails the suite (rules 1 and 4), so interleaving can cause a
+false failure but not a false pass.
+
+**Evidence for the extraction** (OBSERVED on 09/10/2026, a disposable cluster from the pinned image of 27.12.13.7,
+`postgres@sha256:00bc8661...`, with the repository's `pg` 8.23.0 and the pinned prefix; container removed; method
+and results in the inventory document): twelve `42501` refusals by a `kj_worker` login session, including two tests issuing
+the same statement, a multiline statement with a TAB and double spaces inside a literal, a SQL function whose refusal
+wrote `ERROR`, `CONTEXT`, `STATEMENT`, a named prepared statement executed twice, parameterised statements with
+`$n` placeholders, a statement longer than 600 characters and two statements differing only by whitespace inside a
+literal. Each refusal wrote separate `ERROR` and `STATEMENT` records, both tagged `42501`, and `%l` advanced on every
+record. The extraction reproduced the trace projection exactly (nine keys, three with multiplicity 2). Each
+perturbation of case CON-48 failed.
 
 An extra refusal, a missing one, a duplicate beyond the declared multiplicity, a refusal attributed to production code
 in a probe suite, and a trace refusal on a genuine login session with no matching log line, or the reverse, each fail
@@ -4007,22 +4075,48 @@ describe block of the frozen mixed files to its new file and lane; nothing is de
 **Test identity and coverage** (revision 2.7.8, R277-B1). Vitest's collection is not a test identity: it lists
 `.each` tests as unexpanded templates, loses `describe.skip` titles, repeats some (file, name) pairs and omits files
 whose top-level suite is skipped (observed by the reviewer on the frozen tree). So:
-- **Collection proves source coverage only.** The static test runs `vitest list --json` with task locations, and with
-  the live-Restate flags of the `notRunInCi` files set so their suites are collected (`S1R_LIVE`, `S1B_REARM_LIVE`,
-  `S1R_RUNTIME`), with no database. Every `tests/*.test.ts` file must be a key of `files`; every key must exist;
-  every collected entry is a source location (file, line, column). A file that still collects nothing must be a
-  `notRunInCi` file, bound below.
+- **Collection proves source coverage only.** Revision 2.7.9 (R278-B1) pins the one collection the reviewer and this
+  revision both observed to work on the frozen tree. The static test runs the Vitest of the frozen lockfile at `R`
+  (5.0.0, its version asserted) by path, with the repository's Node, exactly as:
+
+  ```text
+  node node_modules/vitest/vitest.mjs list --no-static-parse --includeTaskLocation --json
+  ```
+
+  in an environment built from nothing that holds exactly: the platform's process variables (`PATH`, `HOME` and
+  `TMPDIR` on Linux; `PATH`, `SystemRoot`, `TEMP`, `TMP`, `USERPROFILE` and `APPDATA` on Windows); `S1R_LIVE=1`,
+  `S1B_REARM_LIVE=1`, `S1R_RUNTIME=1` and `KJ_GATE3_LIVE=1`; and
+  `KJ_TEST_PG_URL=postgresql://kj_collect_placeholder@127.0.0.1:54999/kj_collect_placeholder`. Nothing else: no
+  `DATABASE_URL`, no other `PG*` or `KJ_*` variable. The placeholder makes the six gated files register their suites;
+  collection must never connect to it. The static test binds a TCP listener on `127.0.0.1:54999` before collecting
+  (and fails if it cannot), and requires zero accepted connections afterwards. Any other command, option or
+  environment, including static parse, a missing `--includeTaskLocation` or `--json`, a missing or changed flag, or
+  a missing or different `KJ_TEST_PG_URL`, fails static qualification (case CON-47).
+- **Collection result.** Every `tests/*.test.ts` file must be a key of `files`; every key must exist and collect at
+  least one entry; every collected entry carries a source location (file, line, column). Runtime collection expands
+  each `.each` row into its own entry, located at the call that registers it.
+- **Zero-expansion rule** (revision 2.7.9; corrects 2.7.8). Runtime collection reports nothing for a `.each` table
+  with zero rows, so collection cannot show that such a template vanished, and none is invented for it. Completeness
+  of every protected or B1-relevant parameterised row comes from the row-by-row identities in `tests/baseline.json`
+  and `tests/b1-required.json`: a removed row loses its expanded name from the report, and an emptied table loses all
+  of them, and either fails qualification. Residual, stated: a new, unprotected test whose `.each` table is empty
+  from the start is not detected; it asserts nothing and protects nothing.
 - **Identity is the expanded report entry.** Every primary suite runs with the JSON reporter and task locations
   enabled. A test's identity is (file, location, expanded full name) from the report. Expanded full names must be
   unique within a suite's report; a duplicate fails.
 - **Coverage.** Every collected location must map to at least one report entry in its own suite's report, with the
-  same file and location. A template with zero expansions therefore fails, and so does a file that crashes before its
-  tests run.
+  same file and location. A collected test that does not run therefore fails, and so does a file that crashes before
+  its tests run.
+- **Report success** (revision 2.7.9, R278-B1). Every primary report used for coverage must have its overall `success`
+  true and zero failed tests, as `check-baseline.mjs` already requires, and no file result in it may be failed or
+  carry a failure message. An accounted intentional skip is accepted only inside such a report. A file whose
+  `beforeAll` or other setup failed is a failed file result, whatever status its tests show, and fails the suite.
 - **Baselines.** `tests/baseline.json` (protected tests and `intentionalSkips`) and `tests/b1-required.json` are
   matched against the expanded names in the reports, never against the collection.
 - **`notRunInCi` files** are bound through reported skip entries: each file's report entries must be exactly its
-  `intentionalSkips` entries, each skipped. If a file's skip gate is removed, its tests run and are no longer skipped,
-  and the binding fails.
+  `intentionalSkips` entries, each skipped, inside a report that satisfies the report success rule. If a file's skip
+  gate is removed, its tests run: either they are no longer skipped, or their setup fails and the file result is
+  failed. Either way the binding fails.
 - Still static: no file assigned twice (a parser that refuses duplicate keys); each stage T suite's registry `files`
   equal to its partition files; every suite with at least one file; every plan with a database per database-backed
   file; no stage T file importing a lane A helper; no lane A file referring to a runtime role.
@@ -4083,9 +4177,9 @@ partly executed suite cannot pass, because its collected locations would have no
 | CON-32 | Static B1 shape (widened in revision 2.7.8): a generated B1 with a `CREATE FUNCTION`, `CREATE TABLE`, `CREATE VIEW` or `CREATE SEQUENCE`; a GRANT or policy naming any role other than `kj_worker` or `kj_door`; a REVOKE whose target or grantee is outside the pinned list (the enumerated function cleanup, `CREATE` on schema `public` and `TEMPORARY` on the database from `PUBLIC`, the stamp function from `PUBLIC`, and tables, sequences, functions and schemas from the runtime roles); an `ALTER FUNCTION` of anything but the stamp function's security attributes; an `ALTER ROLE` of anything but the two runtime roles' pinned attributes; a `DO` block outside the pinned set (role creation, the enumerated cleanup, `TEMPORARY` and `CONNECT` by `format`, the stamp ACL cleanup and the pre-COMMIT checks) | the static test fails (it underpins the lane A assignment of the default-ACL blocks and 27.6 item 3) |
 | CON-33 | Positive control: the identity and coverage checks over the unmodified suite after the partition | they pass; every collected location is covered and every baseline, intentional-skip and required entry matches |
 | CON-34 | A `.each` row removed from `FORBIDDEN`, `SEPARATION`, `PROBES` or the definers `FIXTURES` | its expanded name is missing from the report; the `tests/b1-required.json` match fails |
-| CON-35 | A `.each` template with zero expansions; a test whose suite crashes before it runs | its collected location has no report entry; the coverage check fails |
+| CON-35 | Corrected in revision 2.7.9: a required `.each` table emptied, or one of its rows removed; a test whose suite crashes before it runs | the required expanded names are missing from the report and the `tests/b1-required.json` or `tests/baseline.json` match fails; the crashed test's collected location has no report entry, and its file result is failed |
 | CON-36 | Two tests in one suite with the same expanded full name | the uniqueness check fails |
-| CON-37 | The skip gate of a `notRunInCi` file removed; a `notRunInCi` file whose report entries differ from its `intentionalSkips` | the binding fails |
+| CON-37 | Corrected in revision 2.7.9: the skip gate of a `notRunInCi` file removed, so its `beforeAll` fails while its entries still read as skipped; the gate removed and its tests run; a `notRunInCi` file whose report entries differ from its `intentionalSkips` | the report success rule fails the first (failed file result, `success` false); the binding fails the others |
 | CON-38 | One unexpected `42501` added to a probe suite (an extra probe statement not declared) | trace and log each exceed the expected multiset; `regressionOutcome` `failed` |
 | CON-39 | An expected probe that does not refuse (a grant added in a fixture build) | the multiset is short; fails, and the probe test itself fails |
 | CON-40 | One probe refusal duplicated (the statement issued twice) | multiplicity exceeds the declaration; fails |
@@ -4095,6 +4189,8 @@ partly executed suite cannot pass, because its collected locations would have no
 | CON-44 | A hook that ends the run at the expected step for another rule or message (for example S3 refusing on the ledger head when the hook removed the stamp function) | the structured `expected` does not match; the case fails |
 | CON-45 | Any one of the six frozen `_ledger` messages missing or different | its hook's case fails |
 | CON-46 | The `platform-definer-fixture` SQL with a changed digest, or with a statement outside its pinned set | the runner refuses before L1; the static test fails |
+| CON-47 | Collection contract. Positive control: the pinned command and environment on the frozen tree collect entries from all 107 committed test files, every entry located, no uncovered location, zero connections to the placeholder. Each fails: static parse (no `--no-static-parse`); no `--includeTaskLocation`; no `--json`; each of the four flags missing or not `1`; `KJ_TEST_PG_URL` missing or different; a connection accepted on `127.0.0.1:54999` | each departure fails static qualification. Observed on 09/10/2026: static parse collected 104 files, no `KJ_GATE3_LIVE` 106, no `KJ_TEST_PG_URL` 101, the earlier three-flag form 100 |
+| CON-48 | Log extraction. Positive fixture on a cluster of the pinned image: two distinct expanded tests issuing the same denied statement once each (log multiplicity 2); a multiline denied statement; a denied function call whose `CONTEXT` precedes its `STATEMENT`; a prepared statement executed twice; a statement longer than 600 characters; two statements differing only by whitespace inside a literal. Perturbations: one of the two identical refusals dropped; a third added; a `STATEMENT` attributed to another process id; the trace text truncated; whitespace collapsed; the next line taken as the statement when it is `CONTEXT`; whitespace inside a quoted literal altered | the positive fixture reconciles exactly and the two literal variants hash differently; every perturbation fails |
 
 These cases are added to 27.12.8 item 14. They change none of the cases of 27.12.9 or 27.12.13.9.
 

@@ -1,4 +1,4 @@
-# KJ-P8 R2.7.6 to R2.7.8: regression inventory against the B1 runner contract
+# KJ-P8 R2.7.6 to R2.7.9: regression inventory against the B1 runner contract
 
 Read-only inventory, taken on 09/10/2026 at the frozen B1 candidate `0ff2919c1bbf722b4842aa56fdc94ef9b74e5a51` (the
 parent of the B1 remediation branch). It supports ADR-0023 section 27.12.15. Nothing here was executed against a
@@ -13,6 +13,9 @@ this one governs.
 Revision 2.7.8 corrects it again (R277-B1 to B3 and the review's factual findings): the identity mutation suite has 57
 mutations, not 44; `tests/baseline.json` was last changed by commit `1fbe6b2`; the frozen `_ledger` test is restored
 as six hooks with its six exact messages; and the hook mappings now carry exact expectations and preconditions.
+
+Revision 2.7.9 pins the `_acl` precondition to the `proacl` items, corrects the description of B1's four `SELECT`s,
+and records the collection and log-extraction evidence below.
 
 ## Method
 
@@ -184,7 +187,7 @@ roles directly. Lane D, in a suite with `refusalPolicy` `probes`; every probe re
 | "27.10.1 ACTUAL equals EXPECTED(B1)...", 8 tests | health and inventory on the applied database, some creating schemas and functions to show detection | D, same suite |
 | "27.9.4 and 27.10: every assertion fails on purpose", 28 `FIXTURES` | tamper and restore on the applied database; health must report each | D, same suite |
 | "27.10.2 the excluded-schema predicate, observed", 2 tests | temporary schema names; `CREATE SCHEMA pg_kj_probe` refused | D |
-| "the B1 migration's pre-COMMIT self-check", test "removes any foreign EXECUTE grant..." (`_acl`) | `grant execute on function` the stamp function `to anon, authenticated` before B1, then B1; asserts the ACL is exactly the owner's EXECUTE | C: hook at `S2`. Precondition: the stamp function's `proacl` holds EXECUTE for `anon` and `authenticated`. `expected`: S6 commits, S7 passes, and the stamp function's `proacl` is exactly one item, the owner's EXECUTE |
+| "the B1 migration's pre-COMMIT self-check", test "removes any foreign EXECUTE grant..." (`_acl`) | `grant execute on function` the stamp function `to anon, authenticated` before B1, then B1; asserts the ACL is exactly the owner's EXECUTE | C: hook at `S2`. Precondition (pinned in revision 2.7.9, read from `aclexplode(proacl)`, never `has_function_privilege`): `proacl` is not null and its items are exactly three EXECUTE grants by `postgres`, not grantable, to `postgres`, `anon` and `authenticated` (`proacl::text[]` as a set: `postgres=X/postgres`, `anon=X/postgres`, `authenticated=X/postgres`). Before the hook it is `{postgres=X/postgres}`, because `20260916205049_release_provenance.sql` revokes all from `public`, `anon`, `authenticated` and `service_role` (INFERRED from the migration text; the runner cluster's owner is `postgres`). `expected`: S6 commits, S7 passes, and the stamp function's `proacl` is exactly `{postgres=X/postgres}` |
 | same block, test "refuses to commit B1 when the stamp body differs from the pin (23514)" (`_tamper`) | the stamp body changed (`prosrc || ' '`) before B1; asserts `23514`, a message naming the source digest, and full rollback | C: hook at `S2`. Precondition: the stamp function's source digest differs from the 27.9.3 pin. `expected`: the run ends at S6 with SQLSTATE `23514` and a message matching `source digest of kernel_private\.stamp_binding_provenance\(\)`; afterwards the stamp function is not a definer and the ledger has no B1 row |
 | "27.11.6 item 3: the snapshot needs the ledger at the expected head and the stamp function" (`_ledger`), six refusals and one success, each with its exact frozen message | see the next table | C: six hooks; the success case is B (EPH-1, whose S3 records the same `migrationLedger` provenance) |
 
@@ -239,8 +242,9 @@ In the frozen B1 migration at `0ff2919`, by leading keyword: 130 `CREATE POLICY`
 blanket revokes of tables, sequences, functions and schemas from the runtime roles, and the stamp function from
 `PUBLIC`); 2 `ALTER ROLE` (the two runtime roles' attributes); 2 `ALTER FUNCTION` (the stamp function's
 `SECURITY DEFINER` and `search_path`); 10 `DO` blocks (role creation, cleanup loops, `TEMPORARY` and `CONNECT` by
-`format`, the stamp ACL cleanup and the pre-COMMIT checks); 4 `SELECT`. No `CREATE TABLE`, `FUNCTION`, `VIEW` or
-`SEQUENCE`. The remediated B1 replaces the blanket function revoke with the enumerated cleanup of 27.12.5; CON-32 pins
+`format`, the stamp ACL cleanup and the pre-COMMIT checks). The four lines that begin with `select` (migration lines
+332, 345, 348 and 354) are inside the pre-COMMIT `DO` blocks, not top-level statements (corrected in revision 2.7.9).
+No `CREATE TABLE`, `FUNCTION`, `VIEW` or `SEQUENCE`. The remediated B1 replaces the blanket function revoke with the enumerated cleanup of 27.12.5; CON-32 pins
 the remediated shape.
 
 ## Test identity (facts from the R2.7.7 review, not re-run here)
@@ -250,6 +254,49 @@ The reviewer ran `vitest list --json` on the frozen tree (vitest 5.0.0, Node 20,
 templates; `describe.skip` titles lost; repeated (file, name) pairs; 112 of 224 protected tests and 0 of 62
 intentional skips matchable by name; 25 entries for `recovery.test.ts`; 9 templates for `runtime-roles-negative`.
 Revision 2.7.8 therefore uses collection for source locations only, and expanded report entries for identity.
+
+## Evidence for revision 2.7.9 (OBSERVED, 09/10/2026)
+
+Run by the recording session on Windows 11 with Node 25.2.1 (the repository pins 22.19.0) and Docker 29.1.5, on a
+disposable detached worktree of the frozen B1 `0ff2919` with `pnpm install --frozen-lockfile --ignore-scripts`
+(Vitest 5.0.0). No production access; every container removed. The scripts are held outside the repository; their
+SHA-256s: `collect.mjs` `16baa08f...fcb`, `variants.mjs` `abc44eb0...b52a`, `logexp.mjs` `87dacfa7...d6f7de`,
+`logparse.mjs` `e7bd580b...36f2`.
+
+**Collection** (`node node_modules/vitest/vitest.mjs list ...`, environment built from nothing as ADR-0023 27.12.15
+pins, a TCP listener on `127.0.0.1:54999` counting connections):
+
+| Form | Exit | Entries | Files of 107 | Without location | Missing files |
+|---|---|---|---|---|---|
+| pinned: `--no-static-parse --includeTaskLocation --json`, four flags, placeholder `KJ_TEST_PG_URL` | 0 | 2192 | 107 | 0 | none |
+| static parse (`--includeTaskLocation --json`) | 0 | 1528 | 104 | 0 | the three `schedule-restate-*` files |
+| no `--includeTaskLocation` | 0 | 2192 | 107 | 2192 | none |
+| no `KJ_GATE3_LIVE` | 0 | 2190 | 106 | 0 | `gate3-executor` |
+| no `KJ_TEST_PG_URL` | 0 | 2149 | 101 | 0 | the six gated files |
+| three flags, no `KJ_TEST_PG_URL` (the 2.7.8 form) | 0 | 2147 | 100 | 0 | `gate3-executor` and the six gated files |
+
+Connections accepted on the placeholder during the pinned collection: 0. Every location in the pinned output points
+at a test-registering call; for multi-line `.each` calls it is the closing `])(` line (167 such entries, inspected).
+The pinned run's standard output SHA-256: `73ccff08df277ff2fbd36de3c115ccb90aaed83a8ebe4e162ba57f0723f92f88`. Not
+reproduced here: the execution-report match of the 224 protected tests and 62 intentional skips (it needs the
+database-backed suite), which is reviewer-derived evidence.
+
+**Log extraction**: a cluster from `postgres@sha256:00bc8661...` (the pinned image), `log_line_prefix` set to the
+pinned `kjlog|%p|%l|%e|%u|%d| ` with `ALTER SYSTEM` and `pg_reload_conf()`, a `kj_worker` login role, a table it may
+not read and a SQL function reading it; `pg` 8.23.0. Twelve refusals, all `42501`: the same statement from two tests;
+a multiline statement with a TAB and two spaces inside a literal; `select public.peek()` (logged `ERROR`, `CONTEXT`,
+`STATEMENT`); a named prepared statement twice; a parameterised statement; a named parameterised statement twice; a
+statement of more than 600 characters; two statements differing only by whitespace inside a literal. Every record
+carried the prefix with `%e` `42501`, including `CONTEXT` and `STATEMENT`; `%l` advanced on every record; continuation
+lines began with one TAB. The extraction found nine (role, SQLSTATE, fingerprint) keys, three with multiplicity 2,
+equal to the trace projection, with no association error. Each perturbation failed: one identical refusal dropped; a
+third added; a `STATEMENT` moved to another process id; whitespace inside a literal altered; continuation TABs
+removed; the next-line rule; the frozen harness's fingerprint (whitespace collapsed, truncated to 600); truncation
+alone. The exact fingerprints of `... note = 'x  y'` and `... note = 'x y'` differ; collapsed, they are equal.
+
+Not covered: PostgreSQL 17.6 was the server, but on Docker Desktop for Windows, not the Linux CI host; concurrent
+backends were not exercised, so interleaving was not observed; `kj_door`, a `FATAL` refusal and `DETAIL` or `HINT`
+records were not produced.
 
 ## Not established
 
