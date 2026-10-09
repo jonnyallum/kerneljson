@@ -1,7 +1,7 @@
 # ADR-0023: Reflection, self-model and governed identity growth (KJ-P8)
 
-Status: PROPOSED, revision 2.7.3 candidate (design only). Nothing here is implemented, migrated or deployed.
-Date: 09/10/2026 (revision 2.7.3). Revisions 2.7, 2.7.1 and 2.7.2 are dated 08/10/2026, revision 2.3 01/10/2026, revision
+Status: PROPOSED, revision 2.7.4 candidate (design only). Nothing here is implemented, migrated or deployed.
+Date: 09/10/2026 (revisions 2.7.3 and 2.7.4). Revisions 2.7, 2.7.1 and 2.7.2 are dated 08/10/2026, revision 2.3 01/10/2026, revision
 2.4 02/10/2026, revision 2.5 05/10/2026 and revision 2.6 06/10/2026.
 Base: canonical `main` `750d5b7926f320d8e9d3f64789b8f7035eaa4f3d`. Production: epoch 13, release `cebbb0d`, cognition
 ON, Class C/D frozen (docs/operations/KJ_P7B_LIVE_RESULT_2026-09-30.md).
@@ -198,6 +198,21 @@ One wording correction with no semantic change: 27.12.11 "Production consequence
 precisely (hardening item 4 of the 2.7.2 seal record). Everything else in revision 2.7.2 stands unchanged, including the
 co-resident pins, P1 to P3, the ACL rule, the ledger gate and post-B1 equality, the rollout order and every production
 fence. It grants nothing.
+
+Revision 2.7.3 (`e93657198cb4ac363ad8af6c96d6d678f9e8883e`) was hostile-reviewed and blocked on two findings; it is not
+rewritten. Revision 2.7.4 closes exactly those two, with three bounded clarifications the owner authorised (H1, H2,
+H5 of that review):
+
+| Finding | Defect in 2.7.3 | Resolved in |
+|---|---|---|
+| R273-B1 | The platform baseline had no normative mode or run binding. Only the declaration carried `mode` and `run`, so a run-local baseline could be committed, could satisfy hosted gate 3b or deployed health, or could be swapped across runs or modes while the declaration stayed correct | 27.10.4 (baseline `mode` and `run`, origin per mode, self-reference stated); section 20 gate 3b; section 21 and 27.12.6 health; 27.12.6 hosted runner step 2; 27.12.13.4 S3 and S4; 27.12.13.6 repository test; cases EPH-16 to EPH-20 |
+| R273-B2 | "Optional fixture hooks for the committed tests" were open: no registry, no rule on what a hook may change, nothing stopping a hooked run from reporting itself qualified, and the negative-fixture path of 27.12.13.8 read as a second way to drive the engine | 27.12.13.3; 27.12.13.8 (closed committed hook registry, two setup profiles, `negativeFixture` set by the runner from the registry, L5 not bypassable, one entry point); 27.12.13.6 (qualification status computed, never supplied); cases EPH-21 to EPH-25 |
+| H1 | the engine's `PATH` and `PGPASSFILE` handling were not explicit | 27.12.13.7 item 4 |
+| H2 | the full 27.10 inventory was checked only after COMMIT, so drift outside `public` and `kernel_private` was found only after B1 committed | 27.12.11 step 8 (read-only equality before application); case EPH-8 |
+| H5 | REPOSITORY_QUALIFIED had no completion rule | 27.12.13.6 |
+
+Nothing else changes: the pins, P1 to P3, the ACL rule, the ledger gate, post-B1 ledger equality, the hosted procedure
+other than the added refusals, the rollout order and every production fence stand. It grants nothing.
 
 Section numbers changed from revision 1: section 18 (P8B adoption mechanics) and section 23 (same-tenant references)
 are new, and the later sections moved down.
@@ -1512,7 +1527,9 @@ functions, the `ADOPT` workflow and controlled activation. **There is no auto-ad
 3a. The section 27.9 exception holds exactly: the catalogue assertions of 27.9.4 pass, each has a negative case, and
     every probe of 27.9.5 is refused or overwritten as stated.
 3b. The `SECURITY DEFINER` inventory equals `EXPECTED(B1)` of section 27.10, with the platform baseline frozen and
-    reviewed as section 27.10.4 requires.
+    reviewed as section 27.10.4 requires. Revision 2.7.4: only a `HOSTED_COMMITTED` baseline committed at the release
+    commit, with no `run` field, satisfies this gate. An `EPHEMERAL_RUN_BOUND` baseline never does, whatever its
+    contents; it supports repository qualification only (27.12.13.6).
 4. In production, after cutover: the running worker and door report `current_user` as their runtime roles, a P1 to
    P7 live proof passes, and `database.runtimeRolesLeastPrivilege` is green.
 
@@ -1587,7 +1604,7 @@ functions, the `ADOPT` workflow and controlled activation. **There is no auto-ad
 | `reflection.evidenceCarriesNoModelText` | reflection runtime evidence matches the section 15.1 contract | P2 |
 | `reflection.adoptedChangeUnreviewed` | no adopted model change older than the alerting default (14 days) without a `POST_CHANGE` reflection | P3, notified |
 
-| `database.runtimeRolesLeastPrivilege` | the worker and the door are connected as `kj_worker` and `kj_door`; neither role is superuser, owner of any object, member of any role, `BYPASSRLS`, `CREATEDB` or `CREATEROLE`; the catalogue grants and policies, as runtime capability facts under section 27.11, equal the manifest; the `SECURITY DEFINER` inventory equals `EXPECTED(stage)` of section 27.10 for the stage the running release declares (so after B1 and before P8A-0 it is the platform baseline plus the section 27.9 exception only; from P8A-0 it adds `freeze_reflection`; from P8B it adds `close_growth_window_by_owner`), and every attribute 27.10 pins for each expected function holds, including for the section 27.9 exception every assertion of 27.9.4; an unlisted, missing or mismatched definer is P0 at every stage | **P0** |
+| `database.runtimeRolesLeastPrivilege` | the worker and the door are connected as `kj_worker` and `kj_door`; neither role is superuser, owner of any object, member of any role, `BYPASSRLS`, `CREATEDB` or `CREATEROLE`; the catalogue grants and policies, as runtime capability facts under section 27.11, equal the manifest; the `SECURITY DEFINER` inventory equals `EXPECTED(stage)` of section 27.10 for the stage the running release declares (so after B1 and before P8A-0 it is the platform baseline plus the section 27.9 exception only; from P8A-0 it adds `freeze_reflection`; from P8B it adds `close_growth_window_by_owner`), and every attribute 27.10 pins for each expected function holds, including for the section 27.9 exception every assertion of 27.9.4; an unlisted, missing or mismatched definer is P0 at every stage. Revision 2.7.4: in a deployed release the platform baseline and the co-resident declaration must both have `mode` `HOSTED_COMMITTED` and no `run` field; anything else is P0 | **P0** |
 
 - The P0 and P1 rows are detection behind database prevention; each also has a database constraint or trigger.
 - A Class E behavioural-consumer or topology breach is a **qualification failure** in CI (section 16). It is not
@@ -2243,6 +2260,21 @@ Platform functions in governed schemas are not ignored. They are listed, exactly
 qualification, reviewed by the B1 hostile review and committed with the B1 remediation. It is not a value of this
 ADR and is not fabricated in it.
 
+**Mode and run binding** (revision 2.7.4, R273-B1). The baseline carries the same `mode` and, when ephemeral, the same
+`run` object as the co-resident declaration taken in the same read (27.12.6, 27.12.13.4), with the same exact schema:
+`run` is required for `EPHEMERAL_RUN_BOUND` and absent for `HOSTED_COMMITTED`, and no other field is allowed.
+- A `HOSTED_COMMITTED` baseline is taken from the named hosted target by the snapshot procedure below, committed at the
+  release commit `R` that carries it, reviewed by the B1 hostile review, and frozen. It is the only kind that can
+  satisfy section 20 gate 3b, deployed health or target qualification.
+- An `EPHEMERAL_RUN_BOUND` baseline is taken only from a database in the cluster the runner created in the current
+  run (27.12.13.3), is written once into that run's directory, is immutable after capture, and is never committed.
+  It satisfies none of gate 3b, deployed health or target qualification.
+- **An ephemeral baseline is self-referential at capture.** It is read from the very database it will be compared with,
+  so it proves no independent historical provenance: it does not show that the platform's definers are the ones a
+  reviewer accepted, only what they were at S3. It detects drift only after the snapshot, together with the
+  pre-application inventory equality of 27.12.11 step 8, the migration's P1 to P3 and post-migration qualification.
+  The independent, reviewed baseline exists only in hosted mode.
+
 **Snapshot procedure.** Before the B1 migration is applied to the target environment, the deployment owner runs, in
 one `READ ONLY` transaction with `search_path = ''`, the same inventory query as `ACTUAL` over the governed schemas of
 27.10.2. Nothing is written. The artefact records, as provenance:
@@ -2277,7 +2309,7 @@ name of a sealed co-resident pin, in any governed schema (27.12.2 item 6), so a 
 cannot be baselined.
 
 **Immutability.** The baseline is fixed for a qualification run and for the release that carries it. The health check
-compares against the baseline in the running release. If the platform later adds, removes or changes a definer
+compares against the baseline in the running release, which must be `HOSTED_COMMITTED` (revision 2.7.4). If the platform later adds, removes or changes a definer
 function, `database.runtimeRolesLeastPrivilege` goes red at P0 and B1 qualification fails, until a new snapshot is
 taken by the same procedure, reviewed, and committed as a deliberate refresh. There is no silent learning and no
 automatic acceptance.
@@ -2665,7 +2697,11 @@ opens any database connection it:
    the declaration, the platform baseline, the stage manifest, everything under `supabase/migrations/`, the runner
    itself and its pinned engine version (revision 2.7.2);
 2. reads the declaration and the pins file as blobs of `R` (`git show R:<path>`), never from the working copy, and
-   records both blob SHAs;
+   records both blob SHAs. Revision 2.7.4 (R273-B1): it reads the platform baseline the same way, as a blob of `R`,
+   records its blob SHA, and refuses, before opening any connection, unless the declaration and the baseline both
+   have `mode` `HOSTED_COMMITTED`, neither carries `run`, and their `provenance` objects are equal in every field except
+   `querySha256`. The hosted entry point accepts no artefact path, so a run-bound baseline or declaration cannot be
+   substituted; a file from a run directory, a working-copy file or an ephemeral artefact committed at `R` is refused;
 3. validates the declaration against every required field above and the formats of 27.12.7 P3 step 2, and refuses
    unless its `mode` is `HOSTED_COMMITTED` (revision 2.7.3);
 4. verifies that the SHA-256 of the pins blob equals the declaration's `pinsSha256`, that `setSha256` recomputed from
@@ -2684,9 +2720,10 @@ identifier and database name.
 - the declaration file exists, parses as JSON, has the exact `kind` and version above, has every required field and no
   unknown field, and its `pinsSha256`, `setSha256` and `provenance.systemIdentifier` are well formed (revision
   2.7.1), and its `provenance` equals the baseline's in every field except `querySha256` (revision 2.7.2);
-- in a deployed release, its `mode` is `HOSTED_COMMITTED` (revision 2.7.3). Health inside an ephemeral run reads the
-  run-bound artefacts of 27.12.13.4 instead, verified by their recorded digests, and asserts everything else in this
-  list unchanged;
+- in a deployed release, its `mode` is `HOSTED_COMMITTED` (revision 2.7.3), and the platform baseline's `mode` is
+  `HOSTED_COMMITTED` too, with no `run` field in either (revision 2.7.4). Health inside an ephemeral run reads the
+  run-bound artefacts of 27.12.13.4 instead, verified by their recorded digests, requires them to have equal `mode`
+  and `run`, and asserts everything else in this list unchanged. Such a health result is evidence for that run only;
 - the SHA-256 of the pins file equals the declaration's `pinsSha256`;
 - every declared entry equals a pin;
 - `setSha256` recomputed from the entries equals the declared value;
@@ -2717,7 +2754,9 @@ a design revision can proceed.
 - `proacl` not null;
 - a declared entry not equal to a pin;
 - in a deployed release, a declaration whose `mode` is not `HOSTED_COMMITTED`, or that carries a `run` field
-  (revision 2.7.3).
+  (revision 2.7.3);
+- in a deployed release, a platform baseline whose `mode` is not `HOSTED_COMMITTED`, that carries a `run` field, or
+  whose `mode` differs from the declaration's (revision 2.7.4).
 
 #### 27.12.7 B1 pre-COMMIT rule: exact set equality
 
@@ -2890,8 +2929,8 @@ read unset settings as an empty declaration; revision 2.7.1 withdraws that.
      TRANSACTION`) at top level. It must pass `ON ALL TABLES IN SCHEMA` and `ON ALL SEQUENCES IN SCHEMA`;
    - over the repository: only the runner may supply `kj.b1.co_resident_set_sha256`, `kj.b1.target_system_identifier`
      or `kj.b1.target_database` (as startup parameters or by `set_config` or `SET`). The B1 migration may only read
-     them with `current_setting(name, true)`. The negative fixtures of 27.12.13.8, by an exact committed file list,
-     are the only other allowed writers. Any other occurrence in code fails the test;
+     them with `current_setting(name, true)`. The registered callers of the setting hooks of 27.12.13.8 are the only
+     other allowed writers. Any other occurrence in code fails the test;
    - over the runner: it never passes `--include-all` and never invokes `migration repair`, `db push` or `db reset`;
    - over the runner (revision 2.7.3): the hosted entry point contains no call into the ephemeral snapshot or the
      ephemeral cluster code, and the ephemeral entry point accepts no connection URL, connection file or declaration
@@ -2900,7 +2939,8 @@ read unset settings as an empty declaration; revision 2.7.1 withdraws that.
    each of its executables for each supported platform, as 27.12.13.7, committed at `R` and checked by the runner
    (27.12.11 step 6). Every LEDGER case runs against that pinned engine.
 14. **Ephemeral mode** (revision 2.7.3): the run directory, cluster lifecycle, eligibility predicate, run-bound
-   declaration, evidence record and cases EPH-1 to EPH-15 of 27.12.13.
+   declaration, evidence record and cases EPH-1 to EPH-15 of 27.12.13; and, from revision 2.7.4, the run-bound
+   baseline's mode and run binding, the hook registry, the computed qualification status and cases EPH-16 to EPH-25.
 
 **Not required by this revision.** Separate authorisation; these do not gate B1:
 - The forensic drift tool (audit branch `f19a37dea3e20d49eca4c3d34cf221bb3b18089b`, unchanged by this revision)
@@ -2924,6 +2964,13 @@ Each is a committed automated case. Cases 1 and 23 are the positive controls; ev
 - Revision 2.7.3: every disposable fixture is a cluster the runner created in the same run, and every positive case
   on it uses an `EPHEMERAL_RUN_BOUND` declaration (27.12.13). The B1 variants of cases 6 and ACL-B are applied by the
   negative-fixture path of 27.12.13.8, not through runner step 7. Cases EPH-1 to EPH-15 are in 27.12.13.9.
+- Revision 2.7.4: every negative fixture is a registered hook (27.12.13.8), and its run reports
+  `NEGATIVE_FIXTURE_RESULT`. Because the gate now checks the full inventory before application (27.12.11 step 8,
+  H2), each pre-COMMIT case that introduces drift before application is run twice:
+  - without a gate hook, where the gate must refuse before the engine runs;
+  - with the registered hook `S6-gate-inventory-skip`, where B1 must abort `23514` at the stated P rule.
+
+  Both layers are therefore shown failing on purpose. Cases EPH-16 to EPH-25 are in 27.12.13.9.
 
 | # | Case | Required result |
 |---|---|---|
@@ -3054,9 +3101,22 @@ than the head, historical ones included. So it is invoked only after the runner'
    - version `20261002090000` is absent;
    - `kernel_private.stamp_binding_provenance()` exists and is not `SECURITY DEFINER` (B1 not applied, as the
      snapshot already checks);
-   - the live system identifier and database name equal the declaration's.
+   - the live system identifier and database name equal the declaration's;
+   - (revision 2.7.4, H2) the full section 27.10 inventory, over every governed schema, equals the pre-B1 expected set
+     `PLATFORM_BASELINE(target) UNION CO_RESIDENT_PLATFORM_EXCEPTIONS(target)` exactly, by the identity and attributes
+     of 27.10.3 and 27.10.4, using the baseline and declaration of this application (blobs of `R` in hosted mode, the
+     run-bound files in ephemeral mode). Before B1 the KernelJSON stage manifest contributes nothing, because the
+     stamp function is not yet a definer (the bullet above). Rules E1 to E3 and name uniqueness are checked in the same
+     read.
 
-   The gate needs a connection; it is read-only and precedes every write. Record its version list as `ledgerBefore`.
+   The gate needs a connection; it is read-only and precedes every write. Record its version list as `ledgerBefore`
+   and its inventory result.
+
+   The pre-application inventory check narrows a window, it does not close one. Drift that happens before the gate is
+   now refused before the engine runs, in every governed schema. A concurrent DDL by another owner session after the
+   gate's read, before or during the engine's transaction, is still not prevented: the residual risk of 27.12.7
+   ("Race after P2") is unchanged. Inside `public` and `kernel_private`, P1 to P3 still re-check before COMMIT. In other
+   governed schemas only post-COMMIT qualification and health detect it, and either finding is P0.
 9. **Apply.** Invoke `migration up --workdir <export directory> --db-url <url>`, with the three P3 settings as
    startup parameters in the URL (`options=-c kj.b1.co_resident_set_sha256=<v> -c kj.b1.target_system_identifier=<v>
    -c kj.b1.target_database=<v>`, percent-encoded). The URL carries no password. The password reaches the engine
@@ -3157,18 +3217,22 @@ hosted targets (hardening item 3 of the 2.7.2 seal record) belongs to this mode 
 
 **Who may invoke.** Only the ephemeral entry point of the committed runner, run by the CI job or by a developer on a
 host whose container daemon is healthy. It is the only way to create an ephemeral target. Its inputs are exactly the
-release commit `R` (27.12.6 step 1, unchanged: `HEAD` equals `R`, no tracked change, no flagged path) and optional
-fixture hooks for the committed tests. It accepts no URL, connection file, host, port, user, database name,
-declaration path or baseline path. An unknown option refuses. A negative fixture that needs a different target or
-different bytes uses 27.12.13.8, never this entry point.
+release commit `R` (27.12.6 step 1, unchanged: `HEAD` equals `R`, no tracked change, no flagged path), one setup
+profile, and zero or more hook ids, both from the closed hook registry at `R` (27.12.13.8, revision 2.7.4). It accepts
+no URL, connection file, host, port, user, database name, declaration path, baseline path, qualification status or
+any other option. An unknown option, an unknown profile or an unknown hook id refuses before L1, so no container is
+created. Negative fixtures run inside this same entry point as registered hooks; there is no second entry point and
+no path that drives the engine or opens a target connection outside the runner (27.12.13.8).
 
 **Lifecycle.** Each step is recorded in the run record; any failure, missing value or ambiguity refuses, opens no
 further connection and never falls back to hosted mode or to another cluster:
 
 - **L1. Run identity.** Create a new empty run directory, mode 0700, outside the repository. Generate `runId` and,
   separately, `clusterNonce`, each 128 bits from a cryptographic random source, as 32 lowercase hexadecimal
-  characters. Write the run record once: `runId`, `clusterNonce`, `R`, the runner's blob SHA at `R`, and the host
-  time (informational only).
+  characters. Write the run record once: `runId`, `clusterNonce`, `R`, the runner's blob SHA at `R`, the hook
+  registry's blob SHA at `R`, the setup profile, the hook ids, `negativeFixture` (revision 2.7.4: true if and only if
+  at least one hook id was given, decided by the runner, 27.12.13.8), and the host time (informational only). This
+  header is written before L2 and never changed.
 - **L2. Create.** Create exactly one container through the daemon:
   - image referenced by the pinned digest of 27.12.13.7, never by tag;
   - label `kj.b1.ephemeral.run=<runId>`;
@@ -3193,7 +3257,10 @@ further connection and never falls back to hosted mode or to another cluster:
   passfile. The address is derived, never supplied. Loopback is not evidence of anything (OBSERVED, 27.12.14: a
   loopback port can reach a cluster that existed before the run). It is only where the attested container's port is.
 - **L5. Live identity**, the first statement of every runner connection to the target (snapshot, gate, apply
-  preflight, post-migration qualification), read-only. All must hold:
+  preflight, post-migration qualification, and every connection handed to a setup profile or a hook), read-only. It
+  is not bypassable (revision 2.7.4): the runner's one connection factory runs it unconditionally before returning a
+  connection, no registry entry may name it, and no hook receives an address or credential with which to connect by
+  itself (27.12.13.8). All must hold:
   - `current_setting('cluster_name')` equals `kj-eph-<clusterNonce>`. The setting has context `postmaster`
     (OBSERVED), so it reaches a server only through its start command or its configuration and a restart;
   - initdb time, `system_identifier >> 32`, is at least `floor(Created)` and at most the postmaster start time.
@@ -3231,26 +3298,41 @@ For each application, in this order, each step recorded with its time and sequen
 - **S1. Base.** Apply the sealed base migrations through the pinned engine, from a fresh export of `R` holding exactly
   the base files of the stage manifest (the export of 27.12.11 step 7 without the B1 file), never with `--include-all`.
   Afterwards the ledger records exactly `SEALED_BASE_MIGRATION_SET`.
-- **S2. Fixture setup.** Committed tests only: for example, the owner installs the pinned helper and `ensure_rls`, or
-  brings the ledger to the state LEDGER-B, LEDGER-E or LEDGER-F names. Owner connections pass L3 and L5 first.
+- **S2. Fixture setup.** Only the run's setup profile (`none`, or `pinned-helper`, which installs the pinned helper and
+  `ensure_rls`), and, in a `negativeFixture` run, registered hooks at point `S2` (for example the ledger states of
+  LEDGER-B, LEDGER-E and LEDGER-F). Connections come from the runner's factory and pass L3 and L5 first.
 - **S3. Snapshot.** The sealed snapshot procedure of 27.10.4 and 27.12.6, in its one READ ONLY transaction, writes the
   platform baseline and the declaration from one read.
   - The declaration has `mode` `EPHEMERAL_RUN_BOUND` and `run` with exactly the fields `runId`, `clusterNonce`,
     `containerId`, `containerCreated` and `application` (the sequence number).
+  - The baseline has the same `mode` and an identical `run` object (revision 2.7.4, R273-B1, 27.10.4).
   - Both files are written once into the run directory, mode 0600.
   - Their SHA-256s are recorded in the run record and kept in the runner's memory.
 - **S4. Validate.** Steps 3 and 4 of 27.12.6 unchanged: fields, formats, `pinsSha256`, `setSha256` recomputed, every
   entry equal to a pin, migration pins equal to the pins blob. In addition, `run.runId`, `run.clusterNonce` and
-  `run.containerId` must equal the current run's.
-- **S5. Drift fixtures.** Negative cases only.
+  `run.containerId` must equal the current run's. Revision 2.7.4 (R273-B1) adds, for the baseline, before the gate:
+  - its exact schema (`kind`, `mode`, `run` and every 27.10.4 field, no other field) and `entriesSha256` recomputed;
+  - `mode` `EPHEMERAL_RUN_BOUND`, equal to the declaration's;
+  - `run` deep-equal to the declaration's `run`, field by field (`runId`, `clusterNonce`, `containerId`,
+    `containerCreated`, `application`), and so to the current run and this application;
+  - `provenance` equal to the declaration's in every field except `querySha256`, and its `systemIdentifier` and
+    `database` equal to the values L5 read on this application's connection;
+  - the eligibility rule of 27.10.4 over its entries.
+
+  Any failure refuses before the gate, and nothing is written to the target.
+- **S5. Drift fixtures.** Registered hooks at point `S5` only, in a `negativeFixture` run.
 - **S6. Gate and apply.** Steps 8 to 10 of 27.12.11, after L3 and L5. Immediately before deriving the three settings,
   re-read both run files and require their recorded SHA-256s.
 - **S7. Post-migration qualification.** 27.12.8 item 7 and the post-B1 ledger invariant of 27.12.11, against the
   run-bound declaration, re-read and verified by digest, in place of the blob at `R`.
 
-**Immutable and single-use.** Nothing rewrites a run file. Any change after S3 refuses at S6, or fails S7. Another
-run's declaration fails S4 on `runId`, and if forced further it fails P3 step 4, because the system identifier differs
-(EPH-2, EPH-15).
+**Immutable and single-use.** Nothing rewrites a run file. Any change to the declaration or the baseline after S3
+refuses at S6, or fails S7. Another run's declaration or baseline fails S4 on `run`, and if forced further it fails P3
+step 4 or the gate, because the system identifier differs (EPH-2, EPH-15, EPH-18).
+
+**The run-bound baseline is self-referential** (27.10.4). It records what the run's own database held at S3. It proves
+no reviewed or historical provenance, and it can never stand in for the `HOSTED_COMMITTED` baseline of gate 3b. It
+detects only drift after S3, through the pre-application inventory equality of 27.12.11 step 8, P1 to P3 and S7.
 
 **What P3 proves here.** The declaration equals the live surface at S3 by construction. In this mode P3 therefore
 detects change between S3 and COMMIT, and misdirection to another database or cluster. That is its whole role here.
@@ -3259,20 +3341,42 @@ P1, P2, the ACL rule, the ledger gate, post-B1 ledger equality and migration-blo
 ##### 27.12.13.5 Runner procedure in ephemeral mode
 
 27.12.6 steps 1 and 3 to 5 and 27.12.11 steps 6 to 10 are unchanged. Step 2 is replaced by L1 to L6 and S1 to S4.
-Steps 3 and 4 run at S4, with `mode` required to be `EPHEMERAL_RUN_BOUND`. In step 9 the URL is the derived address
+Steps 3 and 4 run at S4, with `mode` required to be `EPHEMERAL_RUN_BOUND` for the declaration and the baseline. In step 9 the URL is the derived address
 of L4 with `sslmode=disable` and no passfile: loopback to the attested container, which holds no secret.
 
 ##### 27.12.13.6 Separation of the modes
 
 - **Entry points.** They are distinct. The hosted entry point has no code path into the ephemeral snapshot or
   cluster code, and the ephemeral entry point accepts no target input (static tests, 27.12.8 item 12).
-- **Repository test.** It refuses any committed declaration whose `mode` is not `HOSTED_COMMITTED` or that carries
-  `run`, and any committed run record or run-directory file. Run directories live outside the repository.
-- **Health.** In a deployed release, health accepts `HOSTED_COMMITTED` only; anything else is P0 (27.12.6).
+- **Repository test.** It refuses any committed declaration or platform baseline whose `mode` is not
+  `HOSTED_COMMITTED` or that carries `run`, a committed pair whose modes differ, and any committed run record or
+  run-directory file. Run directories live outside the repository.
+- **Health.** In a deployed release, health accepts `HOSTED_COMMITTED` only, for the declaration and the baseline
+  alike; anything else is P0 (27.12.6, section 21).
 - **Qualification labels.**
   - Ephemeral results are at most REPOSITORY_QUALIFIED. TARGET_QUALIFIED comes only from a `HOSTED_COMMITTED`
     cutover record against the named target.
   - No ephemeral result satisfies a hosted gate, a change window or production qualification.
+
+**Qualification status** (revision 2.7.4, R273-B2 and H5). At the end of an ephemeral run the runner computes exactly
+one status from its own in-memory run record, and emits it together with the SHA-256 of the final run record:
+- **`NEGATIVE_FIXTURE_RESULT`** if `negativeFixture` is true, whatever else happened. The run then records only
+  whether each hook's registered expected outcome occurred.
+- **`REPOSITORY_QUALIFIED`** only if all of these hold (H5):
+  - `negativeFixture` is false and no hook was given;
+  - every application in the run completed S1 to S7 in order, with every check passing: S4, the gate including the
+    pre-application inventory, engine exit status 0, post-migration qualification and post-B1 ledger equality;
+  - no post-application qualification failed anywhere in the run;
+  - L6 teardown is recorded as successful.
+- **`NOT_QUALIFIED`** otherwise.
+
+An ephemeral run never emits TARGET_QUALIFIED.
+
+The status is never supplied by a caller, an option, an environment variable or a file. Any consumer of run evidence
+(the CI summary, a qualification report) recomputes the status from the run record by the same rule, and refuses the
+record if the recomputed status, or the record's SHA-256, differs from what the runner emitted. A record with
+`negativeFixture` true, or with any hook, can never be counted as qualification, so a negative fixture cannot become
+ordinary qualification, by itself or by editing.
 
 ##### 27.12.13.7 Engine and image pins (R272-ENGINE-PLATFORM)
 
@@ -3295,10 +3399,21 @@ The runner's engine procedure, refining 27.12.11 step 6:
    and hash the copies. The directory must hold exactly those two files with exactly the pinned SHA-256s.
 3. Invoke the copied launcher by absolute path, never through `PATH`, and require `--version` to print exactly
    `2.120.0`.
-4. Build the engine's environment from an allow-list (hardening item 2):
-   - removed: every `PG*` variable except `PGPASSFILE` in hosted mode, and every `SUPABASE_*` variable;
-   - `HOME` (and `USERPROFILE` on Windows) is a fresh empty directory;
-   - only the variables the platform needs to start a process are kept.
+4. Build the engine's environment from nothing, never by inheriting and filtering (hardening item 2; made exact in
+   revision 2.7.4, H1). It holds exactly:
+   - `PATH`: the engine directory only;
+   - `HOME`, and on Windows also `USERPROFILE`: a fresh empty directory;
+   - `TMPDIR`, and on Windows `TEMP` and `TMP`: a fresh empty directory;
+   - on Windows only, `SystemRoot`, copied from the runner's own environment because process start requires it;
+   - in hosted mode only, `PGPASSFILE`, naming a passfile the runner itself created in the cutover directory with mode
+     0600, holding exactly one line for the exact target host, port, database and user, and deleted after the engine
+     exits. In ephemeral mode there is no `PGPASSFILE`.
+
+   Nothing else passes, whatever the parent process holds: no other `PG*` variable (`PGHOST`, `PGPORT`, `PGDATABASE`,
+   `PGUSER`, `PGOPTIONS`, `PGSERVICE`, `PGSERVICEFILE`, `PGSSLMODE` and the rest), no inherited `PGPASSFILE`, no
+   `SUPABASE_*` variable and no proxy variable. The runner records the variable names it passed, without values. If
+   the pinned engine cannot start in this environment, that is a finding for a design revision, not a reason to widen
+   the list.
 
 An unrecognised executable, an extra file, a digest that differs, the other platform's pin, or any other version
 refuses before any database connection. The pins are committed at `R` in the engine pin file. Changing the version, a
@@ -3311,23 +3426,71 @@ string is the L5 pin. The CI compose file uses the tag `postgres:17.6` today; th
 change of image pin is a pin change under B1's own hostile review, like `SEALED_BASE_MIGRATION_SET`. It does not touch
 hosted authority.
 
-##### 27.12.13.8 Negative-fixture path (R272-VARIANT)
+##### 27.12.13.8 Setup profiles and the closed hook registry (R272-VARIANT; revision 2.7.4, R273-B2)
 
-Only these committed negative fixtures may apply SQL bytes other than the blobs of `R`, or supply the three settings
-other than through the runner:
-- case 6, last part, and ACL-B: a B1 variant;
-- cases 16, 19, 24 to 30 and 38: the settings, by `set_config` or as engine startup parameters;
-- LEDGER-B: the B1 blob applied outside the engine;
-- EPH-5 and EPH-15: their forced P3 step 4 parts.
+**Registry.** `kerneljson:b1-runner-hook-registry/v1`, file `infrastructure/database/b1-runner-hooks.json`, committed
+and reviewed with the B1 remediation. The runner reads it as a blob of `R`, like the pins file, never from the working
+copy, and records its blob SHA. Its schema is exact at every level, and an unknown field refuses. It holds:
+- **`setupProfiles`**: exactly two, and no others.
+  - `none` does nothing.
+  - `pinned-helper` has the owner install, at S2, the 953-byte body of 27.12.3 as `public.rls_auto_enable()` and the
+    `ensure_rls` binding of 27.12.4.
 
-Each of them meets all of these conditions:
-- it runs only against a database in an ephemeral cluster of the current run, after L3 and L5;
-- it uses the same verified engine copy, or a direct owner connection;
-- it must fail with its stated SQLSTATE or refusal, and the harness asserts that it does;
-- it is marked `negativeFixture` in the run record;
-- it is never evidence that any release qualifies.
+  A profile changes and skips no L or S step. It only creates the fixture the snapshot will then record.
+- **`hooks`**: a closed list. Each entry has exactly:
+  - `id`, lowercase, unique;
+  - `point`, from a closed set: `S2`, `S5`, `L2-target`, `L3-skip`, `S3-files`, `S4-skip`, `S6-gate-inventory-skip`,
+    `S6-apply`;
+  - `effect`, a fixed text naming the steps it changes or skips;
+  - `callers`, the exact committed test files allowed to name it;
+  - `expected`, the refusal or SQLSTATE it must produce;
+  - `cases`, the case numbers of 27.12.9 and 27.12.13.9 it serves.
 
-The exact file list is committed. The static guard of 27.12.8 item 12 allows exactly that list and nothing else.
+  No point or effect may name L5, L6, L1, S7 or the qualification status, so L5 cannot be skipped, teardown cannot be
+  suppressed, the run header cannot be rewritten and the status cannot be set by a hook.
+
+**Rules.**
+1. **Unknown refuses early.** Before L1, the runner validates the registry blob, the profile id and every hook id. An
+   unknown profile, an unknown hook id, a registry that fails its schema, or a registry read from anywhere but `R`
+   refuses before any container is created.
+2. **Every hook makes the run a negative fixture.** `negativeFixture` is true if and only if at least one hook is
+   given. The runner decides this at L1 from the inputs, writes it into the run header before L2, and never changes it.
+   This holds whether or not the hook changes or skips a step of L1 to L6, S1, S3, S4 or S6. It is not a caller's
+   assertion and cannot be passed in.
+3. **A negative fixture can never qualify.** A `negativeFixture` run's status is `NEGATIVE_FIXTURE_RESULT`, even if
+   every check passes (27.12.13.6). Its outcome is only whether the hook's `expected` result occurred, which the
+   committed test asserts.
+4. **L5 is never bypassed.** Hooks receive only connections from the runner's factory, which ran L5 on them. A hook at
+   `L2-target` substitutes the container or port the factory will use, and the factory still runs L5 on it. A hook at
+   `L3-skip` omits the daemon attestation for one connection, and L5 still runs. No hook receives an address,
+   credential or engine path with which to connect by itself.
+5. **One entry point.** Hooks run only inside the ephemeral entry point. The hosted entry point accepts no profile and
+   no hook, and contains no hook code. There is no other path that applies SQL to a target, supplies the three settings
+   or invokes the engine.
+6. **Positive controls are unhooked.** Cases 1, 23, 41, ACL-A, LEDGER-A and EPH-1 run with a setup profile and no hook,
+   through the full normal runner: L1 to L6 and S1 to S7, unchanged.
+
+**What used to be the negative-fixture path of 2.7.3.** Every fixture that applies SQL bytes other than the blobs of
+`R`, or supplies the three settings other than through the runner, is a registered hook at `S6-apply`, `S2` or `S5`:
+- case 6, last part, and ACL-B: the B1 variant replaces the B1 file in the run's export;
+- cases 16, 19, 24 to 30 and 38: the settings, given by `set_config` in the migration transaction or as engine
+  startup parameters;
+- LEDGER-B: the B1 blob applied in an owner transaction instead of through the engine;
+- EPH-5 and EPH-15: the forced P3 step 4 parts;
+- the ledger fixtures of LEDGER-B, LEDGER-E, LEDGER-F, LEDGER-D and EPH-13.
+
+The static guard of 27.12.8 item 12 allows writers of the three settings only in the registry's listed callers of
+those hooks.
+
+**Static qualification** (a committed repository test with failing fixtures of its own). It verifies all of:
+- the registry parses under its exact schema, and every `id` is unique;
+- every hook's `callers` exist, and each of them names the hook;
+- every call of the ephemeral entry point that passes a hook is in a file listed in that hook's `callers`, and names
+  the hook by a string literal, never a computed value;
+- no call site outside the registry's callers passes any hook;
+- the connection factory runs L5 before returning a connection, on a path with no branch that depends on a hook;
+- the hosted entry point imports no hook, profile or ephemeral code;
+- no file outside the runner opens a connection to an ephemeral cluster or invokes the engine.
 
 ##### 27.12.13.9 Negative cases
 
@@ -3336,21 +3499,31 @@ fail on purpose. Every earlier case of 27.12.9 stays in force.
 
 | # | Case | Required result |
 |---|---|---|
-| EPH-1 | Fresh disposable database. Ephemeral entry point, S1 to S7: once with the helper absent (empty declaration), once with the pinned helper and `ensure_rls` installed at S2 | commits; post-migration qualification and ledger equality pass; the declaration is `EPHEMERAL_RUN_BOUND`; the run record shows S3 after S1 and S2 and before S6. This realises cases 1, 23, 41, ACL-A and LEDGER-A in this mode (positive control) |
+| EPH-1 | Fresh disposable database. Ephemeral entry point, S1 to S7, no hook: once with setup profile `none` (empty declaration), once with `pinned-helper` | commits; post-migration qualification and ledger equality pass; the declaration and the baseline are `EPHEMERAL_RUN_BOUND` with identical `run`; the run record shows S3 after S1 and S2 and before S6; teardown recorded; status `REPOSITORY_QUALIFIED`. This realises cases 1, 23, 41, ACL-A and LEDGER-A in this mode (positive control) |
 | EPH-2 | Two disposable databases, in two runs | their system identifiers differ; each commits with its own declaration; run A's declaration placed in run B's directory refuses at S4 (`runId`); forced through P3 on B, `23514` at step 4 |
-| EPH-3 | Hosted target falsely claiming ephemeral mode: the ephemeral entry point given a URL, connection file, host, port, database name or declaration path; a run record edited to name a container the runner did not create | refuses before any connection on any target input; L3 refuses the foreign container, and with L3 bypassed in the test, L5 refuses (no nonce) |
-| EPH-4 | Local tunnel to a hosted database, simulated by a pre-existing cluster behind a forwarding container on a loopback port, substituted for the run's container or port | L3 refuses (image, command); with L3 bypassed in the test, L5 refuses: `cluster_name` without the nonce, initdb before `Created` |
+| EPH-3 | Hosted target falsely claiming ephemeral mode: the ephemeral entry point given a URL, connection file, host, port, database name or declaration path; a run record edited to name a container the runner did not create | refuses before any connection on any target input; L3 refuses the foreign container, and with the registered hook at `L3-skip`, L5 refuses (no nonce); status `NEGATIVE_FIXTURE_RESULT` |
+| EPH-4 | Local tunnel to a hosted database, simulated by a pre-existing cluster behind a forwarding container on a loopback port, substituted for the run's container or port | L3 refuses (image, command); with the registered hook at `L3-skip`, L5 refuses: `cluster_name` without the nonce, initdb before `Created`; status `NEGATIVE_FIXTURE_RESULT` |
 | EPH-5 | Wrong system identifier: the run-bound declaration's `systemIdentifier` changed (digests updated to match); the same value forced into P3 | the gate refuses (live identity not equal to the declaration's), engine not invoked; forced, `23514` at P3 step 4 |
 | EPH-6 | Declaration replaced after the snapshot: between S3 and S6; between S6 and S7 | refuses at S6 before the engine runs (digest); S7 fails |
 | EPH-7 | Missing or malformed run-bound declaration: file deleted; invalid JSON; byte-order mark; `mode` missing; `HOSTED_COMMITTED` with `run`; `EPHEMERAL_RUN_BOUND` without `run`; unknown field in `run` | refuses at S4, before the gate |
-| EPH-8 | Catalogue or baseline changed after the snapshot (S5): extra definer in `public`; `ensure_rls` dropped; helper body changed; extra definer in `extensions` | `23514` by P1, P2 or P3 step 5 for the first three; for the last, B1 commits and S7 fails on 27.10 inventory equality (P1 to P3 cover `public` and `kernel_private` only), and health is P0 |
-| EPH-9 | Unpinned engine: another CLI version; an extra file in the engine directory; a `supabase` found through `PATH` | refuses before any connection |
+| EPH-8 | Catalogue or baseline changed after the snapshot (S5): extra definer in `public`; `ensure_rls` dropped; helper body changed; extra definer in `extensions` | revision 2.7.4 (H2): the gate's pre-application inventory equality refuses all four before the engine runs. With the registered hook at `S6-gate-inventory-skip`: `23514` by P1, P2 or P3 step 5 for the first three; for the last, B1 commits and S7 fails on 27.10 inventory equality (P1 to P3 cover `public` and `kernel_private` only) |
+| EPH-9 | Unpinned engine: another CLI version; an extra file in the engine directory; a `supabase` found through `PATH`. Revision 2.7.4 (H1): the parent process holds `PGHOST`, `PGOPTIONS`, `PGSERVICE`, `PGPASSFILE` and `SUPABASE_ACCESS_TOKEN`, and puts a fake `supabase` and `psql` first on its `PATH` | refuses before any connection for the first three; for the last, the recorded engine environment holds exactly the 27.12.13.7 item 4 names, the fakes never run, and the engine connects only to the derived target |
 | EPH-10 | Wrong platform digest: the other platform's executables; one byte changed in `supabase-go`; an unsupported platform | refuses before any connection |
 | EPH-11 | Hosted mode with no committed declaration: absent at `R`, or present only in the working copy | refuses before any connection (as case 36) |
 | EPH-12 | Attempted fallback: a hosted invocation failing any step; a hosted invocation whose declaration at `R` is `EPHEMERAL_RUN_BOUND` or carries `run`; a committed ephemeral declaration | the runner exits non-zero, creates no container and runs no ephemeral code (instrumented test plus static test); the repository test fails; health P0 |
-| EPH-13 | Missing historical ledger version in an ephemeral run: a base row deleted at S2, at the oldest, middle and newest position | the gate refuses, the engine is not invoked, the row is not added; S1 never passes `--include-all` (static test) |
+| EPH-13 | Missing historical ledger version in an ephemeral run: a base row deleted by a registered hook at `S2`, at the oldest, middle and newest position | the gate refuses, the engine is not invoked, the row is not added; S1 never passes `--include-all` (static test) |
 | EPH-14 | Migration blob substitution: an exported file differing from its blob; the B1 file edited in the working copy only; the B1 blob at `R` differing from its stage-manifest pin; `migrationBlob` differing at S7 | refuses at 27.12.11 step 7; S7 fails for the last |
 | EPH-15 | Cross-run reuse: run A's declaration and baseline used in run B; run A's container id used after A's teardown | S4 refuses (`runId`, `clusterNonce`, `containerId`); L3 refuses the removed container; forced through P3, `23514` at step 4 |
+| EPH-16 | Committed ephemeral baseline: a platform baseline with `mode` `EPHEMERAL_RUN_BOUND`, or with a `run` field, committed at `R` | the repository test fails; the hosted runner refuses before connecting (27.12.6 step 2); deployed health P0; gate 3b not satisfied |
+| EPH-17 | Hosted run-bound baseline substitution: a baseline path, or a run-directory baseline, offered to the hosted entry point; the baseline at `R` replaced by a run-directory file; a baseline edited in the working copy only | the option is refused; for the others the hosted runner refuses before opening any connection (mode, `run`, dirty tree) |
+| EPH-18 | Cross-run baseline reuse: run A's baseline with run B's own declaration, in run B (digests updated to match) | S4 refuses (`run` differs from the declaration's and from the current run); forced past S4 by the registered hook at `S4-skip`, the gate refuses (system identifier) |
+| EPH-19 | Mismatched modes: in a run, an ephemeral declaration with a baseline whose `mode` is `HOSTED_COMMITTED` or missing; at `R`, a hosted declaration with an ephemeral baseline | S4 refuses; the hosted runner refuses before connecting; the repository test fails; deployed health P0 |
+| EPH-20 | Mismatched run identifiers in one run: the baseline's `run.runId`, `clusterNonce`, `containerId`, `containerCreated` or `application` differs from the declaration's, each in turn | S4 refuses, before the gate, for every one |
+| EPH-21 | L3 bypass: the registered hook at `L3-skip` on an otherwise genuine run; an attempt to skip L3 by an unregistered option or environment variable | the genuine run passes L5 but its status is `NEGATIVE_FIXTURE_RESULT`; the unregistered attempt refuses before L1 |
+| EPH-22 | Unknown hook: an id not in the registry; an id differing only in case; a registry entry with an unknown field; a registry edited in the working copy only | refuses before L1; the daemon shows no container labelled with a new run |
+| EPH-23 | L5 bypass attempt: a registry entry whose `point` or `effect` names L5; a hook that tries to open its own connection; a code change adding a hook-dependent branch around L5 in the connection factory | the registry schema refuses before L1; the hook has no address or credential to connect with; the static test fails |
+| EPH-24 | Hooked otherwise-passing run: a registered hook whose effect does not prevent any check from passing (for example `L3-skip` on a genuine cluster), every application completing S1 to S7 | status `NEGATIVE_FIXTURE_RESULT`, never `REPOSITORY_QUALIFIED`; the CI summary does not count it |
+| EPH-25 | Qualification-status substitution: after a run, its record edited to clear `negativeFixture`, remove a hook or set a status; a status passed as an option or environment variable; a record claiming `REPOSITORY_QUALIFIED` with a failed S7 or no recorded teardown (H5) | the option or variable refuses before L1; the consumer's recomputation or the record SHA-256 differs from the runner's emitted values, and the record is refused |
 
 ##### 27.12.13.10 Evidence record
 
@@ -3364,23 +3537,29 @@ fail on purpose. Every earlier case of 27.12.9 stays in force.
 
 **Run evidence**, ephemeral mode only, per run:
 - mode; `runId`; `clusterNonce`; container id; `Created`; image reference;
+- the hook registry's blob SHA, the setup profile, the hook ids and `negativeFixture` (revision 2.7.4);
+- for each application, the SHA-256 of its run-bound baseline next to its declaration's, with their equal `mode` and
+  `run` (revision 2.7.4);
 - the L3 and L5 results: system identifier, initdb time, postmaster start time and database names;
 - for each application, the source (`run-directory`) and SHA-256 of its declaration and baseline, and its `setSha256`;
 - the sequence and times of S1 to S7, showing the snapshot after base setup and fixtures and before B1;
 - the gate results, `ledgerBefore` and `ledgerAfter`;
 - the engine's exit status and output;
 - the B1 `statements` digest;
-- the teardown time.
+- the engine environment's variable names (revision 2.7.4, H1);
+- the teardown time and result;
+- the qualification status the runner computed and the final run record's SHA-256 (revision 2.7.4).
 
 **Runner identity** is the runner's blob SHA at `R`. The invoking context (the CI run and job, or the local user name)
 is recorded for information only, and is never authority.
 
 The hosted cutover record is that of 27.12.6 and 27.12.11, plus `mode`.
 
-##### 27.12.13.11 What revision 2.7.3 does not change
+##### 27.12.13.11 What revisions 2.7.3 and 2.7.4 do not change
 
 - **Production and hosted authority.** No production authority is widened. Hosted mode is the 2.7.2 procedure plus
-  one refusal.
+  refusals: the declaration's and the baseline's mode and `run` checks, and the read-only pre-application inventory
+  equality of 27.12.11 step 8 (revision 2.7.4), which writes nothing.
 - **Pins and rules.** It leaves unchanged:
   - the co-resident pins of 27.12.3 and 27.12.4;
   - rules E1 to E4;
