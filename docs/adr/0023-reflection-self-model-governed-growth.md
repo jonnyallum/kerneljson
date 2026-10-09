@@ -1,7 +1,7 @@
 # ADR-0023: Reflection, self-model and governed identity growth (KJ-P8)
 
-Status: PROPOSED, revision 2.7.4 candidate (design only). Nothing here is implemented, migrated or deployed.
-Date: 09/10/2026 (revisions 2.7.3 and 2.7.4). Revisions 2.7, 2.7.1 and 2.7.2 are dated 08/10/2026, revision 2.3 01/10/2026, revision
+Status: PROPOSED, revision 2.7.5 candidate (design only). Nothing here is implemented, migrated or deployed.
+Date: 09/10/2026 (revisions 2.7.3, 2.7.4 and 2.7.5). Revisions 2.7, 2.7.1 and 2.7.2 are dated 08/10/2026, revision 2.3 01/10/2026, revision
 2.4 02/10/2026, revision 2.5 05/10/2026 and revision 2.6 06/10/2026.
 Base: canonical `main` `750d5b7926f320d8e9d3f64789b8f7035eaa4f3d`. Production: epoch 13, release `cebbb0d`, cognition
 ON, Class C/D frozen (docs/operations/KJ_P7B_LIVE_RESULT_2026-09-30.md).
@@ -213,6 +213,17 @@ H5 of that review):
 
 Nothing else changes: the pins, P1 to P3, the ACL rule, the ledger gate, post-B1 ledger equality, the hosted procedure
 other than the added refusals, the rollout order and every production fence stand. It grants nothing.
+
+Revision 2.7.4 (`0436cff8a331c9129dfa9fa6248a5851988798a8`) was hostile-reviewed and blocked on one finding; it is not
+rewritten. Revision 2.7.5 closes exactly that one:
+
+| Finding | Defect in 2.7.4 | Resolved in |
+|---|---|---|
+| R274-B1 | The `REPOSITORY_QUALIFIED` predicate required that "every application" passed, but no application count. A run with zero applications, for example one refused at L2 or L5 with teardown recorded, satisfied it vacuously | 27.12.13.3 L1 (the planned application sequence, fixed before L2); 27.12.13.6 (non-vacuous predicate over recorded outcomes, the same for runner and consumer); 27.12.13.8 static qualification; 27.12.13.10; cases EPH-26 and EPH-27 |
+
+Nothing else changes: the R273-B1 and R273-B2 closures, H1, H2, the hook registry, the pins, P1 to P3, the ACL rule,
+the ledger gate, post-B1 ledger equality, the hosted procedure, the rollout order and every production fence stand. It
+grants nothing.
 
 Section numbers changed from revision 1: section 18 (P8B adoption mechanics) and section 23 (same-tenant references)
 are new, and the later sections moved down.
@@ -2970,7 +2981,8 @@ Each is a committed automated case. Cases 1 and 23 are the positive controls; ev
   - without a gate hook, where the gate must refuse before the engine runs;
   - with the registered hook `S6-gate-inventory-skip`, where B1 must abort `23514` at the stated P rule.
 
-  Both layers are therefore shown failing on purpose. Cases EPH-16 to EPH-25 are in 27.12.13.9.
+  Both layers are therefore shown failing on purpose. Cases EPH-16 to EPH-25, and EPH-26 and EPH-27 of revision 2.7.5,
+  are in 27.12.13.9.
 
 | # | Case | Required result |
 |---|---|---|
@@ -3231,8 +3243,15 @@ further connection and never falls back to hosted mode or to another cluster:
   separately, `clusterNonce`, each 128 bits from a cryptographic random source, as 32 lowercase hexadecimal
   characters. Write the run record once: `runId`, `clusterNonce`, `R`, the runner's blob SHA at `R`, the hook
   registry's blob SHA at `R`, the setup profile, the hook ids, `negativeFixture` (revision 2.7.4: true if and only if
-  at least one hook id was given, decided by the runner, 27.12.13.8), and the host time (informational only). This
-  header is written before L2 and never changed.
+  at least one hook id was given, decided by the runner, 27.12.13.8), `plannedApplications` (revision 2.7.5, below),
+  and the host time (informational only). This header is written before L2 and never changed.
+
+  `plannedApplications` is the ordered list of the B1 applications this run will make. Each entry has exactly a
+  sequence number, counting from 1, the database it targets, and the migration S6 applies, which is the B1 migration
+  of the stage manifest at `R` (version `20261002090000`, `migrationBlob`). The plan is a constant of the committed
+  runner at `R`: it is not an input, no option, environment variable, file, profile or hook can add, remove or
+  reorder an entry, and it holds at least one entry. A plan that is empty, or has an entry whose migration is not
+  that B1 blob, refuses at L1, before L2.
 - **L2. Create.** Create exactly one container through the daemon:
   - image referenced by the pinned digest of 27.12.13.7, never by tag;
   - label `kj.b1.ephemeral.run=<runId>`;
@@ -3289,7 +3308,8 @@ a hostile operator who controls the container daemon, who could equally edit the
 
 **One cluster, several databases.** One run creates one cluster, which may hold several databases (the regression
 suite creates them). Each B1 application targets one database, and has its own snapshot and declaration, numbered in
-the run record.
+the run record with the sequence number of its entry in `plannedApplications` (revision 2.7.5). The runner makes the
+planned applications in order and makes no application that is not planned.
 
 ##### 27.12.13.4 Run-bound declaration and baseline
 
@@ -3358,23 +3378,43 @@ of L4 with `sslmode=disable` and no passfile: loopback to the attested container
     cutover record against the named target.
   - No ephemeral result satisfies a hosted gate, a change window or production qualification.
 
-**Qualification status** (revision 2.7.4, R273-B2 and H5). At the end of an ephemeral run the runner computes exactly
-one status from its own in-memory run record, and emits it together with the SHA-256 of the final run record:
+**Qualification status** (revision 2.7.4, R273-B2 and H5; predicate made non-vacuous in revision 2.7.5, R274-B1). At
+the end of an ephemeral run the runner computes exactly one status from its own in-memory run record, and emits it
+together with the SHA-256 of the final run record.
+
+Every L and S step writes an outcome to the run record: `passed`, or `refused` with the check that failed. A step with
+no recorded outcome counts as not passed. An application counts as **applied** only if its record shows S6 completed
+with engine exit status 0 for the B1 migration of its plan entry, and the S6 ledger read after the engine
+(`ledgerAfter`) holds exactly `SEALED_BASE_MIGRATION_SET` plus `20261002090000`.
+
 - **`NEGATIVE_FIXTURE_RESULT`** if `negativeFixture` is true, whatever else happened. The run then records only
   whether each hook's registered expected outcome occurred.
-- **`REPOSITORY_QUALIFIED`** only if all of these hold (H5):
-  - `negativeFixture` is false and no hook was given;
-  - every application in the run completed S1 to S7 in order, with every check passing: S4, the gate including the
-    pre-application inventory, engine exit status 0, post-migration qualification and post-B1 ledger equality;
-  - no post-application qualification failed anywhere in the run;
-  - L6 teardown is recorded as successful.
-- **`NOT_QUALIFIED`** otherwise.
+- **`REPOSITORY_QUALIFIED`** only if every one of these holds:
+  1. `negativeFixture` is false and no hook id was given.
+  2. `plannedApplications`, as written at L1, has at least one entry, and the number of applied applications equals
+     the number of planned entries.
+  3. Every planned entry names the B1 migration (version `20261002090000`, `migrationBlob` at `R`), and B1 was
+     applied in this run, as defined above, for every entry.
+  4. Every planned application has outcomes `passed` for S1, S2, S3, S4, S5, S6 and S7, recorded in that order, with
+     no refusal.
+  5. No step L1 to L6 or S1 to S7, on any connection or application, recorded a refusal or a failed identity,
+     lifecycle, validation, migration or qualification check.
+  6. Post-B1 ledger equality (27.12.11) was evaluated at S7 for every planned application, and passed. A ledger
+     comparison that did not run is a failure, not a pass.
+  7. No post-application qualification (S7, 27.12.8 item 7) failed for any application.
+  8. L6 teardown is recorded with outcome `passed`.
+- **`NOT_QUALIFIED`** in every other case.
+
+A run with zero applications can never report `REPOSITORY_QUALIFIED`: condition 2 needs at least one planned entry,
+and as many applied applications as planned entries. A run refused at any L step, or before S6 of any application, is
+`NOT_QUALIFIED` however clean its teardown (cases EPH-26 and EPH-27).
 
 An ephemeral run never emits TARGET_QUALIFIED.
 
 The status is never supplied by a caller, an option, an environment variable or a file. Any consumer of run evidence
-(the CI summary, a qualification report) recomputes the status from the run record by the same rule, and refuses the
-record if the recomputed status, or the record's SHA-256, differs from what the runner emitted. A record with
+(the CI summary, a qualification report) recomputes the status from the run record with the same predicate, conditions
+1 to 8 above, over the same recorded evidence, and refuses the record if the recomputed status, or the record's
+SHA-256, differs from what the runner emitted. A record with
 `negativeFixture` true, or with any hook, can never be counted as qualification, so a negative fixture cannot become
 ordinary qualification, by itself or by editing.
 
@@ -3489,6 +3529,10 @@ those hooks.
   the hook by a string literal, never a computed value;
 - no call site outside the registry's callers passes any hook;
 - the connection factory runs L5 before returning a connection, on a path with no branch that depends on a hook;
+- the runner's `plannedApplications` constant has at least one entry, every entry names the B1 migration of the stage
+  manifest, and nothing outside the runner's L1 code writes it (revision 2.7.5);
+- the runner and the consumer recomputation call one committed status function, which has failing fixtures of its own
+  for each of conditions 1 to 8 of 27.12.13.6 (revision 2.7.5);
 - the hosted entry point imports no hook, profile or ephemeral code;
 - no file outside the runner opens a connection to an ephemeral cluster or invokes the engine.
 
@@ -3499,7 +3543,7 @@ fail on purpose. Every earlier case of 27.12.9 stays in force.
 
 | # | Case | Required result |
 |---|---|---|
-| EPH-1 | Fresh disposable database. Ephemeral entry point, S1 to S7, no hook: once with setup profile `none` (empty declaration), once with `pinned-helper` | commits; post-migration qualification and ledger equality pass; the declaration and the baseline are `EPHEMERAL_RUN_BOUND` with identical `run`; the run record shows S3 after S1 and S2 and before S6; teardown recorded; status `REPOSITORY_QUALIFIED`. This realises cases 1, 23, 41, ACL-A and LEDGER-A in this mode (positive control) |
+| EPH-1 | Fresh disposable database. Ephemeral entry point, S1 to S7, no hook: once with setup profile `none` (empty declaration), once with `pinned-helper` | commits; post-migration qualification and ledger equality pass; the declaration and the baseline are `EPHEMERAL_RUN_BOUND` with identical `run`; the run record shows S3 after S1 and S2 and before S6; teardown recorded; applied applications equal `plannedApplications`, at least one; status `REPOSITORY_QUALIFIED`, and the consumer recomputes the same. This realises cases 1, 23, 41, ACL-A and LEDGER-A in this mode (positive control) |
 | EPH-2 | Two disposable databases, in two runs | their system identifiers differ; each commits with its own declaration; run A's declaration placed in run B's directory refuses at S4 (`runId`); forced through P3 on B, `23514` at step 4 |
 | EPH-3 | Hosted target falsely claiming ephemeral mode: the ephemeral entry point given a URL, connection file, host, port, database name or declaration path; a run record edited to name a container the runner did not create | refuses before any connection on any target input; L3 refuses the foreign container, and with the registered hook at `L3-skip`, L5 refuses (no nonce); status `NEGATIVE_FIXTURE_RESULT` |
 | EPH-4 | Local tunnel to a hosted database, simulated by a pre-existing cluster behind a forwarding container on a loopback port, substituted for the run's container or port | L3 refuses (image, command); with the registered hook at `L3-skip`, L5 refuses: `cluster_name` without the nonce, initdb before `Created`; status `NEGATIVE_FIXTURE_RESULT` |
@@ -3524,6 +3568,8 @@ fail on purpose. Every earlier case of 27.12.9 stays in force.
 | EPH-23 | L5 bypass attempt: a registry entry whose `point` or `effect` names L5; a hook that tries to open its own connection; a code change adding a hook-dependent branch around L5 in the connection factory | the registry schema refuses before L1; the hook has no address or credential to connect with; the static test fails |
 | EPH-24 | Hooked otherwise-passing run: a registered hook whose effect does not prevent any check from passing (for example `L3-skip` on a genuine cluster), every application completing S1 to S7 | status `NEGATIVE_FIXTURE_RESULT`, never `REPOSITORY_QUALIFIED`; the CI summary does not count it |
 | EPH-25 | Qualification-status substitution: after a run, its record edited to clear `negativeFixture`, remove a hook or set a status; a status passed as an option or environment variable; a record claiming `REPOSITORY_QUALIFIED` with a failed S7 or no recorded teardown (H5) | the option or variable refuses before L1; the consumer's recomputation or the record SHA-256 differs from the runner's emitted values, and the record is refused |
+| EPH-26 | Revision 2.7.5 (R274-B1). Clean, unhooked run (profile `none`, no hook id, `negativeFixture` false) refused at L2, with L6 teardown recorded `passed`. Shown at two layers: (a) the committed status function and the consumer recomputation, each given a run record of exactly that shape (no application started, every recorded check other than L2 passed); (b) end to end, with the L2 refusal induced only from outside the runner, never by a hook, option or environment variable: the daemon does not hold the pinned image digest and image pulls are blocked | status `NOT_QUALIFIED` from the runner; the consumer recomputes `NOT_QUALIFIED`; zero applied applications against at least one planned; never `REPOSITORY_QUALIFIED` |
+| EPH-27 | Revision 2.7.5 (R274-B1). Clean, unhooked run refused at L5, with L6 teardown recorded `passed`. Shown at the same two layers: (a) a run record of exactly that shape given to the status function and the consumer; (b) end to end, induced only from outside the runner: after L2 has recorded the container id, an external `docker exec` in the run's container creates a role without `SUPERUSER` and runs `ALTER ROLE postgres SET role` to it, so the next connection's `current_user` lacks `rolsuper`. The test asserts the recorded refusal stage is L5 and treats any other outcome as its own failure | the next connection refuses at L5 and opens no further connection; L6 runs; status `NOT_QUALIFIED` from the runner; the consumer recomputes `NOT_QUALIFIED`; never `REPOSITORY_QUALIFIED` |
 
 ##### 27.12.13.10 Evidence record
 
@@ -3538,6 +3584,7 @@ fail on purpose. Every earlier case of 27.12.9 stays in force.
 **Run evidence**, ephemeral mode only, per run:
 - mode; `runId`; `clusterNonce`; container id; `Created`; image reference;
 - the hook registry's blob SHA, the setup profile, the hook ids and `negativeFixture` (revision 2.7.4);
+- `plannedApplications`, and for every L and S step its recorded outcome (revision 2.7.5);
 - for each application, the SHA-256 of its run-bound baseline next to its declaration's, with their equal `mode` and
   `run` (revision 2.7.4);
 - the L3 and L5 results: system identifier, initdb time, postmaster start time and database names;
@@ -3555,7 +3602,7 @@ is recorded for information only, and is never authority.
 
 The hosted cutover record is that of 27.12.6 and 27.12.11, plus `mode`.
 
-##### 27.12.13.11 What revisions 2.7.3 and 2.7.4 do not change
+##### 27.12.13.11 What revisions 2.7.3 to 2.7.5 do not change
 
 - **Production and hosted authority.** No production authority is widened. Hosted mode is the 2.7.2 procedure plus
   refusals: the declaration's and the baseline's mode and `run` checks, and the read-only pre-application inventory
