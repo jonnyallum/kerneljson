@@ -59,6 +59,10 @@ R2.7.2 and R2.7.5 seal records are not altered by this record.
 
 Reproduced as relayed by Jonny on 09/10/2026. Nothing has been added to the reviewer's findings.
 
+Correction (child commit of `e02f026`): the reviewer's complete R2.7.9 review was supplied on 09/10/2026 and is
+stored verbatim in `docs/reviews/KJ_P8_ADR0023_R279_HOSTILE_REVIEW_af2f732.md`. It is the authoritative text; the
+block below is the summary relayed with the seal brief, kept unchanged.
+
 ```
 Grok independently reviewed exact:
 
@@ -104,39 +108,92 @@ Authority boundary, as relayed: design approval only. It does not grant B1 imple
 of B1 implementation, B1 deployment, production mutation, migration ledger repair, target baseline capture, or the
 start of P8A-0.
 
+## Reviewer's evidence (REVIEWER SAID, summarised from the stored review)
+
+Positive evidence the reviewer reported; the full wording is in the stored review, and nothing here is stronger
+than it:
+- **Collection.** Run on Linux with Node 22.19.0, the exact pinned environment, in a separate network namespace with
+  a real listener on 54999 recording every connect call: 2192 entries, 107 of 107 files, every entry located, zero
+  accepted connections and zero connect calls; a deliberate test connection was caught by both counters. No `.env`
+  file in the tree, and Vitest 5.0.0 does not load one.
+- **Completeness.** Every collected location has a report entry; 224 of 224 protected tests and 62 of 62 intentional
+  skips match by full name; the four files not run in CI contain exactly their declared skips.
+- **Skip gate.** The CON-37 attack (skip gate removed, `beforeAll` failing) reproduced: zero failed tests and an empty
+  failure message, but `success` false and the file status failed, which the new rule rejects.
+- **CON-47.** Every negative caught: static parse 104 files; no locations gives unlocated entries; no JSON gives
+  non-JSON output; a missing flag, a flag set to `0` or to `true` 106; no `KJ_TEST_PG_URL` 101. A different URL or an
+  extra `DATABASE_URL` still collects 107 files and is caught only by the static test's exact-environment assertion,
+  which the design requires.
+- **Log extraction and correlation.** On PostgreSQL 17.11 locally: `CONTEXT`, `STATEMENT` and `DETAIL` records
+  carrying `42501` not counted; a `FATAL` connection refusal by `kj_door` with no statement fails the suite as
+  specified; SQL containing a newline followed by `kjlog|` is read as a continuation, so it cannot forge a record;
+  exact matching with up to 100 concurrent backends, statements up to about 6 KB and both runtime roles; statements of
+  30 to 80 KB interleaved in the pipe, were marked untrusted and failed the suite (a limited false failure, not a
+  false pass).
+- **Fingerprints.** pg 8.23.0 sends the query text unchanged; log and trace hashes matched byte for byte across CRLF,
+  tabs, double spaces in literals, leading and trailing newlines, comments, `$n` placeholders with a cast, prepared
+  statements, statements over 600 characters, non-ASCII text and a trailing `;`.
+- **Projection and CON-48.** The same SQL from two tests counts twice, the same SQL from the other role is a separate
+  key, all 18 keys matched; CON-48 reproduced with 20 refusals across both roles, the `FATAL` case, the forgery
+  attempts and the concurrency runs.
+- **CON-43.** Base ACL `{postgres=X/postgres}`; the hook produces exactly owner, `anon` and `authenticated` EXECUTE;
+  after frozen B1 the ACL is exactly the owner ACL again, with `prosecdef` true and an empty `search_path`; a null
+  `proacl` cannot satisfy the exact three-item match.
+- **Regression.** None of the 28 removed lines is in sealed `c7c0fba`. All previous blockers CLOSED.
+
+**Recording session notes** (not the reviewer's words):
+- The stored review reads "'x y' and 'x y' hash differently" and "The separator is exactly STATEMENT: (two spaces)."
+  As supplied, both quoted literals show a single space, and the separator shows one space. The surrounding wording
+  (two literals that differ, "two spaces") indicates that double spaces were collapsed in transit. The review is
+  stored as supplied; this note is the only interpretation offered, and it is the recording session's, not the
+  reviewer's.
+- The reviewer's Linux collection output hash is quoted in the review as `e127d120...`; the author's Windows hash in
+  the regression inventory is `73ccff08...`. Neither is a pin (hardening item 6).
+
 ## Nonblocking hardening (implementation considerations)
 
-Relayed with the verdict. These are **not design blockers** and do not change revision 2.7.9. They are carried into
-B1 implementation and its own hostile review. Wording follows the relay.
+From the stored review (corrected in the child commit of `e02f026`). These are **not design blockers** and do not
+change revision 2.7.9. They are carried into B1 implementation and its own hostile review.
 
-1. Prefer `logging_collector=on` or `jsonlog`, or explicitly document the false-failure behaviour for large concurrent
-   statements.
-2. Define line endings for the log extraction as LF.
-3. Treat an empty log line as untrusted.
-4. Restrict marker provenance to the runner's process and user.
-5. Treat an orphan runtime-role `42501` `STATEMENT` record as untrusted.
-6. Optionally check `%l` continuity.
-7. Do not use the author's host-dependent collection standard-output hash as a portable pin. (The hash recorded in
-   the regression inventory, `73ccff08...2f88`, is evidence from one Windows host, not a pin.)
-8. The implementation obligations already carried forward from earlier reviews remain nonblocking: those listed in
+1. Pin `logging_collector=on` or `jsonlog` to avoid pipe interleaving, or state plainly that statements over 4 KB
+   under concurrency can cause false failures.
+2. Define a line as ending in LF only, because a CR inside a literal must not split a line.
+3. State explicitly that an empty line counts as untrusted.
+4. Accept markers only from the runner's own process and user.
+5. Treat an orphan `42501` `STATEMENT` from a runtime role as untrusted; optionally, check that `%l` line numbers run
+   consecutively within each event.
+6. Do not use the author's host-specific collection standard-output hash (`73ccff08...`, which depends on the file
+   path) as a portable pin; bind the normalised set of file, name and location instead.
+7. All previously carried-forward items stay nonblocking: the implementation obligations already carried forward from earlier reviews remain nonblocking: those listed in
    ADR-0023 27.12.15 ("Implementation obligations from the R2.7.7 review" and "... from the R2.7.6 review"), and the
    items the R2.7.9 brief kept nonblocking (`log_error_verbosity`, function-level `proconfig` logging settings, a scan
    for service-issued SQL exception handlers, exact-text pinning of each B1 `DO` block, the exact `", "` separator in
    the gapped-ledger message, the discover-twin intentional-skip clarification, result binding to commit, suite and
    digest, the stage T timeout, database OIDs, the Docker network id, paused state, Docker events, teardown order,
    compose restrictions, working directory and environment, the two-layer forms of CON-4 and CON-5, and the CON-9
-   hook). The seven hardening items of the R2.7.2 seal record and N3 to N9 of the R2.7.5 seal record also remain.
+   hook), the seven hardening items of the R2.7.2 seal record, and N3 to N9 of the R2.7.5 seal record.
 
 ## Evidence limitations
 
-- **Reviewer's evidence.** The relay gives the verdict, the closure statuses, the PASS checklist, the authority
-  boundary and the hardening list. It gives no separate statement of the reviewer's own evidence limitations, so this
-  record states none on the reviewer's behalf. The reviewer's earlier R2.7.7 and R2.7.8 reports (relayed in this
-  session, not committed) described their environment as Vitest 5.0.0 on Node 20 in an offline disposable copy and a
-  socket-only PostgreSQL 17.11 cluster, not the pinned 17.6 image, with no database-backed suite, Docker or runner
-  run; whether the same applied to the R2.7.9 review is not stated in the relay.
-- **The reviewer's complete R2.7.9 report is not held.** If it is later supplied, it is to be committed verbatim
-  beside this file, with a provenance file, as was done for revision 2.3.
+- **Reviewer's NOT VERIFIED list** (REVIEWER SAID, from the stored review; corrected in the child commit of
+  `e02f026`, which replaces the earlier statement that no reviewer limitations were supplied and that the full report
+  was not held):
+  1. the PostgreSQL 17.6 Docker image and reading the Docker log; the reviewer used PostgreSQL 17.11 locally because
+     their computer has no Docker;
+  2. a `HINT` record;
+  3. a live database run, including the recovery count of at least 27;
+  4. Windows collection;
+  5. CI on `af2f732`;
+  6. `lanes.json`, `b1-required.json`, the hook registry and the fixture SQL, which do not exist at this candidate;
+  7. for the CON-43 check, frozen B1 was applied with `psql` to a scratch database, not through the runner, only to
+     read the ACL.
+- **The reviewer's complete R2.7.9 review is held**, verbatim, in
+  `docs/reviews/KJ_P8_ADR0023_R279_HOSTILE_REVIEW_af2f732.md`. The reviewer's evidence files and scripts are on the
+  reviewer's computer and are not in this repository.
+- **Complementary coverage** (RECORDING SESSION NOTE): two of the reviewer's NOT VERIFIED items were covered by the
+  author, not by the reviewer: the pinned 17.6 image with the Docker log read (author's log experiment, recorded in
+  the regression inventory), and Windows collection (author's collection runs). CI on `af2f732` ran: run 37961376082
+  succeeded (see the checks below).
 - **Author-side evidence** (recorded in the regression inventory at `af2f732`): the pinned collection and its failing
   variants, reproduced on Windows with Node 25.2.1 (the repository pins 22.19.0); and the log extraction, reproduced
   on the pinned `postgres:17.6` image under Docker Desktop for Windows. Not reproduced by the author: the
@@ -161,6 +218,8 @@ B1 implementation and its own hostile review. Wording follows the relay.
 - the blob hashes in the table above were computed on the blobs at `af2f732`.
 
 ## Related records
+
+- `docs/reviews/KJ_P8_ADR0023_R279_HOSTILE_REVIEW_af2f732.md`: the complete R2.7.9 hostile review, verbatim.
 
 - `docs/reviews/KJ_P8_ADR0023_R275_HOSTILE_SEAL_c7c0fba.md`: the R2.7.5 seal, unchanged.
 - `docs/reviews/KJ_P8_ADR0023_R272_HOSTILE_SEAL_3acd6b2.md`: the R2.7.2 seal, unchanged.
