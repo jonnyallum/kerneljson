@@ -1,8 +1,14 @@
-# KJ-P8 R2.7.6: regression inventory against the B1 runner contract
+# KJ-P8 R2.7.6 and R2.7.7: regression inventory against the B1 runner contract
 
 Read-only inventory, taken on 09/10/2026 at the frozen B1 candidate `0ff2919c1bbf722b4842aa56fdc94ef9b74e5a51` (the
 parent of the B1 remediation branch). It supports ADR-0023 section 27.12.15. Nothing here was executed against a
 database; the classification is from the source.
+
+Revision 2.7.7 corrects this inventory (R276-B2). The 2.7.6 version classified `identity-cognition.integration`,
+`identity-migration.integration` and `runtime-roles-negative` at file level only, and gave the definers file a coarse
+line-range split. The corrected file rows, the block-by-block partition of every mixed file, the protected-test and
+intentional-skip facts and the mutation-suite facts are below. Where this document and an earlier version differ,
+this one governs.
 
 ## Method
 
@@ -51,7 +57,7 @@ switches `S1R_LIVE`, `S1B_REARM_LIVE` and `S1R_RUNTIME`. Each match was then rea
 | `evaluation-db.test.ts` | knowledge helper | yes | D | |
 | `execution-binding.test.ts` | knowledge helper | yes | D | |
 | `gateway.test.ts` | knowledge helper | yes | D | |
-| `identity-migration.integration.test.ts` | knowledge helper, plus own `identity_acl_*` | yes | D | A, under `mutation-check-identity` |
+| `identity-migration.integration.test.ts` | knowledge helper, plus own `identity_acl_*` | 19 blocks yes; the default-ACL block applies B1 only incidentally | mixed: D (19 blocks), A (the `identity_acl` block); see the block table | its tests also run under `mutation-check-identity` |
 | `memory-canonical.integration.test.ts` | knowledge helper | yes | D | A, under `mutation-check-memory` |
 | `memory.test.ts` | knowledge helper | yes | D | |
 | `mission-control.test.ts` | knowledge helper | yes | D | |
@@ -62,12 +68,12 @@ switches `S1R_LIVE`, `S1B_REARM_LIVE` and `S1R_RUNTIME`. Each match was then rea
 | `control-signing-store.integration.test.ts` | own `kj_p4b1_*` | yes | D | |
 | `database.test.ts` | own `test_*` | yes | D | A, under `mutation-check-identity` |
 | `health-collect-postgres.integration.test.ts` | own `kj_health_collect_*` | yes | D | receives copies of its run-bound declaration and baseline (27.12.15) |
-| `identity-cognition.integration.test.ts` | own | yes | D | A, under `mutation-check-identity-cognition` |
+| `identity-cognition.integration.test.ts` | own databases: `p7b_pre_*` (one per case), `p7b_acl_*`, `p7b_main_*` | `p7b_pre` never applies B1; `p7b_acl` applies it only incidentally; `p7b_main` yes | mixed: A (`p7b_pre`, `p7b_acl`), D (`p7b_main` and its nested blocks); see the block table | its tests also run under `mutation-check-identity-cognition` |
 | `mission-workflow.integration.test.ts` | own `kj_p3_*` | yes | D | A, under `mutation-check-faculties` |
 | `runtime-roles-catalogue.integration.test.ts` | own `kj_b1_cat_*` | yes | D | |
 | `runtime-roles-connection.integration.test.ts` | own `kj_b1_con_*` | yes | D | |
-| `runtime-roles-negative.integration.test.ts` | own `kj_b1_neg_*` | yes | D | privilege probes on a correctly applied B1; not a B1 tamper fixture |
-| `runtime-roles-definers.integration.test.ts` | own `kj_b1_def_*`, `_acl`, `_tamper`, `_ledger` | yes | mixed: B (lines 58 to 79, base then in-test snapshot then B1; lines 348 to 354, ACL), C (lines 361 to 371, tamper; 379 to 406, ledger row inserted and deleted by hand), D (the inventory and predicate assertions on an applied database) | the B and C parts move to runner runs |
+| `runtime-roles-negative.integration.test.ts` | own `kj_b1_neg_*`, migrated with B1 | yes | D, suite with `refusalPolicy` `probes` | the 27.6 item 4 negative qualification: per role, 51 `FORBIDDEN` probes plus 3 named tests; 8 `SEPARATION` probes; per role, 28 `PROBES` rows of 27.9.5 plus rows 25 to 27; writes `b1-negative-probes.json` and `b1-definer-probes.json`. Every probe is a required test (`tests/b1-required.json`). Rows counted by pattern; the collection at `R` is authoritative |
+| `runtime-roles-definers.integration.test.ts` | own `kj_b1_def_*` built by hand (base chain, hand-made ledger, schema `auth` with four platform-style definers, in-test snapshot, then B1), plus `_acl`, `_tamper`, `_ledger` | yes | mixed: A, B, C and D; see the block table | its 28 `FIXTURES` are health-detection fixtures on the applied database (lane D) |
 | `schedule-restate-live.integration.test.ts` | own, plus the Restate stack | yes | D and E | runs only with `S1R_LIVE=1`; `compose("pause", "db")` becomes a network disconnect |
 | `schedule-restate-rearm-live.integration.test.ts` | own, plus Restate | yes | D and E | runs only with `S1B_REARM_LIVE=1` |
 | `schedule-restate-runtime.integration.test.ts` | own | yes | D | runs only with `S1R_RUNTIME=1` |
@@ -119,10 +125,10 @@ URL and never connects.
 | `tests/support/worker.ts` | compose worker, `DATABASE_URL` from compose | lane E, reaches `kj-eph-db` on the run network |
 | `infrastructure/docker/validation.compose.yaml` | `db`, `restate`, `worker` | stays for lane A; a regression compose file without `db`, joined to the run network, for lane E |
 | `scripts/b1/qualify-ci.sh` | discover run of the whole suite; `kj_gated` migrated with B1 by `migrate()`; gated files | discover and gated become registered regression suites run in stage T |
-| `scripts/mutation-check-faculties.mjs` | mutates `20260923150000`, runs `faculty.test.ts` and `mission-workflow.integration.test.ts` (which call `migrate()`) | lane A |
-| `scripts/mutation-check-identity.mjs` | mutates `20260925120000`, runs ten files, three database-backed | lane A |
-| `scripts/mutation-check-memory.mjs` | mutates `20260921180000`, runs three files, two database-backed | lane A |
-| `scripts/mutation-check-identity-cognition.mjs` | mutates `20260929120000`; its own loop applies every file, B1 included (lines 165 to 168) | lane A: its loop applies the base set only |
+| `scripts/mutation-check-faculties.mjs` | 5 mutations, of `services/kernel/src/faculty/policy.ts` and of migration `20260923150000`; runs `faculty.test.ts` and `mission-workflow.integration.test.ts` (which call `migrate()`) | lane A; in the frozen CI (`validate`) |
+| `scripts/mutation-check-identity.mjs` | 44 mutations, of migration `20260925120000` and of application code; runs ten files, three database-backed | lane A; in the frozen CI (`validate`) |
+| `scripts/mutation-check-memory.mjs` | 23 mutations, of migration `20260921180000` and of application code; runs three files, two database-backed | lane A; not run by the frozen CI, not added |
+| `scripts/mutation-check-identity-cognition.mjs` | 56 mutations, of migration `20260929120000` and of application code; its own loop applies every file, B1 included (lines 165 to 168) | lane A, its loop applying the base set only; in the frozen CI (own job) |
 | `scripts/b1/build-manifest.mjs`, `static-inventory.mjs`, `analyse-trace.mjs`, `summarise.mjs`, `runtime-graph.mjs` | repository analysis, no database | unchanged |
 | `scripts/b1/platform-baseline-snapshot.ts` | operator snapshot tool | hosted snapshot (27.12.6), and the runner's S3 in ephemeral mode; no test connects through it |
 | `.github/workflows/qualification.yml` | `validate`: whole suite in enforce, mutation checks; `b1-qualification`: `qualify-ci.sh`; `identity-cognition-mutations` | lane B, C and D runs through the ephemeral entry point; lane A for the mutation checks |
@@ -135,14 +141,84 @@ URL and never connects.
 | tests create their own databases, under random names | 27.12.13.3 L1 (`plannedApplications` a runner constant) and "One cluster, several databases" |
 | tests and the worker connect to the B1 database themselves | 27.12.13.8 rule 5 and its last static bullet |
 | the compose worker reaches the database at `db:5432` | 27.12.13.3 L2 and L3 (the cluster's only port is on `127.0.0.1`, unreachable from a container on a Linux CI host) |
-| mutation checks re-apply a mutated base migration | 27.12.11 step 7 (exported files must equal their pins), so a mutated chain can never run in a runner cluster |
+| mutation checks edit a base migration or application code, then re-run tests | a mutated migration fails 27.12.11 step 7 (exported files must equal their pins); a mutated source file leaves the checkout dirty, which 27.12.6 step 1 refuses. Neither can run in a runner run |
 | a test pauses the database container | not forbidden in words, but the container would be the runner's cluster, which no test may reach (27.12.13.8, last static bullet) |
+
+## Block-level partition of the mixed files (revision 2.7.7)
+
+Each frozen describe block is assigned by what it executes. In the remediation every mixed file is split at these
+boundaries into single-lane files; the new file names are the implementation's, and this table is the trace from each
+frozen block to its lane. Nothing is deleted, skipped or downgraded.
+
+**`tests/identity-cognition.integration.test.ts`**
+
+| Frozen block | What it executes | Lane |
+|---|---|---|
+| "the migration's pre-COMMIT qualification refuses bad production states (and applies on the true one)", 3 tests | per test, a fresh `p7b_pre_*` database: the base chain before P7B (`migrateBefore`), seeded identity rows, then P7B (`20260929120000`) itself. B1 is never applied | A |
+| "least privilege under a Supabase-style default ACL (PR #47 harness), including service_role", 5 tests | `p7b_acl_*`: platform roles, `ALTER DEFAULT PRIVILEGES` granting everything to `public`, `anon`, `authenticated` and `service_role`, then `migrate()` (every file, B1 included); asserts those grantees' privileges on P7B objects | A, on the base chain. B1 creates no object and grants only to the runtime roles (case CON-32), so it cannot change an asserted fact. Residual: B1 is not applied under a Supabase default ACL in repository regression; target qualification covers the production ACL |
+| "KJ-P7B-1 against the real ledger" and its four nested blocks (SQL twin corpus, parity trigger and marker, latch table, missions under the contract) | `p7b_main_*` migrated with B1; production code paths | D, `refusalPolicy` `none` unless a test is shown to probe a runtime role, in which case it moves to a `probes` suite |
+
+**`tests/identity-migration.integration.test.ts`**
+
+| Frozen block | What it executes | Lane |
+|---|---|---|
+| the 19 blocks from "identity_profiles: bootstrap ownership guard" to "a second bootstrap is still refused once an identity exists" | the knowledge-helper database migrated with B1; identity triggers and guards, including "RLS: anon and authenticated have no access to any identity table" | D |
+| "least privilege under a Supabase-style default ACL: PUBLIC, anon and authenticated hold NO privilege on any P7A relation" | `identity_acl_*`: platform roles, default ACL granting to `public`, `anon` and `authenticated`, then `migrate()` (B1 included); asserts those grantees hold nothing on P7A relations | A, for the same reason and with the same residual as `p7b_acl` |
+
+**`tests/runtime-roles-negative.integration.test.ts`**: one database migrated with B1; every block probes the runtime
+roles directly. Lane D, in a suite with `refusalPolicy` `probes`; every probe required.
+
+**`tests/runtime-roles-definers.integration.test.ts`**
+
+| Frozen block or step | What it executes | Lane |
+|---|---|---|
+| `beforeAll`: base chain, hand-made ledger, schema `auth` with four definers, in-test snapshot, B1 | the fixture and the B1 application | B: the runner's S1 to S7 under setup profile `platform-definer-fixture` (S2 creates the same four definers, S3 is the snapshot, and the ledger is the engine's real one) |
+| "27.9.3 source digest", test "derivation A (catalogue of main without B1)..." | reads the stamp function's source before B1 | A, on the base chain |
+| "27.9.3 source digest", test "after B1 the catalogue source still equals the pin" | reads after B1 | D |
+| "27.9.4 the exception's exact catalogue values", 4 tests | reads after B1 | D |
+| "27.10.4 the read-only platform snapshot", 3 tests | the first two read the snapshot's result; the third calls the snapshot tool on the applied database and expects refusal | D, profile `platform-definer-fixture`, reading the copies of the run-bound baseline and declaration that stage T provides |
+| "27.10.1 ACTUAL equals EXPECTED(B1)...", 8 tests | health and inventory on the applied database, some creating schemas and functions to show detection | D, same suite |
+| "27.9.4 and 27.10: every assertion fails on purpose", 28 `FIXTURES` | tamper and restore on the applied database; health must report each | D, same suite |
+| "27.10.2 the excluded-schema predicate, observed", 2 tests | temporary schema names; `CREATE SCHEMA pg_kj_probe` refused | D |
+| "the B1 migration's pre-COMMIT self-check", test "removes any foreign EXECUTE grant..." (`_acl`) | a foreign EXECUTE grant on the stamp function before B1, then B1 | C: registered hook at `S2`, `expected` "S6 commits and S7 passes" (S7 checks the 27.9.4 ACL) |
+| same block, test "refuses to commit B1 when the stamp body differs from the pin (23514)" (`_tamper`) | the stamp body changed before B1 | C: registered hook at `S2`, `expected` `23514` |
+| "27.11.6 item 3: the snapshot needs the ledger at the expected head and the stamp function" (`_ledger`) | snapshot refusals with no ledger, a wrong head (a B1 row inserted and deleted by hand) and no stamp function; then success | C: three registered hooks at `S2`, each `expected` "S3 refuses"; the success case is B (EPH-1) |
+
+## Protected tests and intentional skips (facts at `0ff2919`)
+
+- `tests/baseline.json` (commit `705a1af`): 224 protected tests in 16 files: `capabilities` 25, `contracts` 29,
+  `database` 17, `evaluation-db` 3, `evaluation` 7, `kernel` 18, `memory` 8, `mission-control` 5, `models` 44,
+  `policy` 13, `recovery` 27, `routing` 6, `schedule-db` 2, `schedule` 4, `verification` 9, `world` 7. None is in a
+  block assigned to lane A, B or C above.
+- 62 `intentionalSkips` in 10 files: the six `KJ_TEST_PG_URL` files, `gate3-executor`, `schedule-restate-live`,
+  `schedule-restate-runtime` and `schedule-restate-rearm-live`.
+- `scripts/check-baseline.mjs` requires: report `success`; zero failed; each protected test passed; no skip outside
+  `intentionalSkips`; no intentional skip absent; `recovery.test.ts` passed at least 27.
+
+## Proposed primary suites (for the partition at `R`)
+
+| Suite | Lane | Profile | `refusalPolicy` | Files |
+|---|---|---|---|---|
+| `regression-enforce` | D | `none` | `none` | every lane D database-backed file not listed below, the six compose-stack files, and the 66 no-database files |
+| `regression-probes` | D | `none` | `probes` | `runtime-roles-negative`, and any file shown to probe a runtime role deliberately |
+| `regression-definers` | D | `platform-definer-fixture` | `probes` | the lane D part of the definers file |
+| `regression-gated` | D | `none` | `none` | the six `KJ_TEST_PG_URL` files |
+| `regression-helper-probes` | D | `pinned-helper` | `probes` | the case 21 and 22 probes as runtime roles |
+| `base-regression` | A | not a runner run | n/a | the lane A blocks above |
+| `runner-cases` | B and C | not a runner run | n/a | the files that invoke the ephemeral entry point (27.12.9, 27.12.13.9, the CON cases, the definers' B and C parts) |
+
+Secondary: a discover twin of each `regression-*` suite, and the faculty, identity and identity-cognition mutation
+suites. The final list is pinned in `tests/lanes.json` at `R` by the remediation and reviewed with it.
 
 ## Not established
 
 - The duration of one runner application (base set and B1 through the pinned CLI) is not measured, so the time a
   regression run with one plan database per file adds is unknown.
 - Whether every database-backed file needs exactly one database: counted from `create database` and helper calls, not
-  executed.
+  executed. `identity-cognition.integration` creates one `p7b_pre` database per case; those cases move to lane A.
+- Mutation counts are by pattern over the scripts; the gate pins the exact id sets from the scripts at `R`.
+- Whether any lane D block other than `runtime-roles-negative` deliberately provokes a runtime-role `42501`, which
+  would place it in a `probes` suite: the database-log check of 27.12.15 will show it, failing closed.
+- Whether `vitest list --json` collects every file without a database: to be shown by the static test.
 - Whether a network disconnect reproduces the paused-database fault closely enough for
   `schedule-restate-live.integration.test.ts` is to be shown by that file under the remediation.
