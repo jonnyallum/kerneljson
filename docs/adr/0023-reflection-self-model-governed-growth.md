@@ -1,7 +1,7 @@
 # ADR-0023: Reflection, self-model and governed identity growth (KJ-P8)
 
-Status: PROPOSED, revision 2.7.7 candidate (design only). Nothing here is implemented, migrated or deployed.
-Date: 09/10/2026 (revisions 2.7.3 to 2.7.7). Revisions 2.7, 2.7.1 and 2.7.2 are dated 08/10/2026, revision 2.3 01/10/2026, revision
+Status: PROPOSED, revision 2.7.8 candidate (design only). Nothing here is implemented, migrated or deployed.
+Date: 09/10/2026 (revisions 2.7.3 to 2.7.8). Revisions 2.7, 2.7.1 and 2.7.2 are dated 08/10/2026, revision 2.3 01/10/2026, revision
 2.4 02/10/2026, revision 2.5 05/10/2026 and revision 2.6 06/10/2026.
 Base: canonical `main` `750d5b7926f320d8e9d3f64789b8f7035eaa4f3d`. Production: epoch 13, release `cebbb0d`, cognition
 ON, Class C/D frozen (docs/operations/KJ_P7B_LIVE_RESULT_2026-09-30.md).
@@ -248,6 +248,20 @@ not rewritten. Revision 2.7.7 closes exactly those two:
 Nothing else changes: the four-lane model, stage T's place in the lifecycle, the status predicate, P1 to P3, the
 pins, the ACL rule, the engine and blob binding, the ledger gate and post-B1 ledger equality, hosted mode, the
 eligibility predicate, the rollout order and every production fence stand. It grants nothing.
+
+Revision 2.7.7 (`5ee7f6ce54cf44e80a79cf4efdc3a454ee15cc22`) was hostile-reviewed (`BLOCK_R277_DESIGN`: R276-B1
+closed, R276-B2 open) and is not rewritten. Revision 2.7.8 closes exactly the three findings of that review:
+
+| Finding | Defect in 2.7.7 | Resolved in |
+|---|---|---|
+| R277-B1 | The partition took test identity from `vitest list --json`. Observed by the reviewer on the frozen tree: 104 of 107 files collected, `.each` tests unexpanded, `describe.skip` titles lost, duplicate (file, name) pairs, 112 of 224 protected tests and 0 of 62 intentional skips matchable, so the completeness rules fail on correct code, and matching at template level would let a `.each` probe row disappear | 27.12.15 "Test identity and coverage" (collection proves source coverage only; identity is the expanded report entry with its location); "B1 evidence rows"; CI gate; cases CON-28 (corrected) and CON-33 to CON-37 |
+| R277-B2 | Probe suites had a blanket refusal exception: the database-log check was off, probe refusals were not traced, duplicate trace events collapsed, and the log names the session user, so a refusal after `SET ROLE` or caught inside PL/pgSQL is invisible to it | 27.12.15 "Refusal accounting" (an exact expected multiset for every stage T suite, empty unless the suite is a probe suite; trace and log must each equal it; probes only through genuine login sessions; settings re-read before the log is trusted); cases CON-38 to CON-42 |
+| R277-B3 | Outcome-valued hook expectations could pass without the perturbation having taken effect, or on the wrong rule, and the frozen `_ledger` test's six exact messages were reduced to three bare "S3 refuses" hooks | 27.12.13.8 (every expectation names the exact step and rule or message; every hook carries a precondition check; the fixture SQL pinned and statically bounded); the inventory (six `_ledger` hooks restored); cases CON-43 to CON-46 |
+
+It also corrects three facts the review found (the identity mutation suite has 57 mutations; `tests/baseline.json`
+was last changed by commit `1fbe6b2`; B1 does more than grant, so case CON-32 pins its whole shape and 27.6 item 3 no
+longer says B1 "cannot change any fact"), and folds in the two harness clarifications the review made a condition of
+cases CON-15 and CON-20 (genuine login pools are watched in every mode). Nothing else changes; it grants nothing.
 
 Section numbers changed from revision 1: section 18 (P8B adoption mechanics) and section 23 (same-tenant references)
 are new, and the later sections moved down.
@@ -2006,8 +2020,13 @@ inventory, and proved by the full suite before cutover.
    - every database-backed test file these suites use also runs unmutated in stage T under the runtime roles, under
      the zero-`42501` gates;
    - B1 creates no relation, sequence, view or function, and every GRANT and policy in it names only `kj_worker` or
-     `kj_door` (OBSERVED in the frozen B1 migration; pinned by a static test, case CON-32), so B1 cannot change any
-     fact these mutations test as the owner sees it.
+     `kj_door` (OBSERVED in the frozen B1 migration). Its other statements (corrected in revision 2.7.8) revoke from
+     `PUBLIC` (function EXECUTE on the enumerated set, `CREATE` on schema `public`, `TEMPORARY` on the database) and
+     from the runtime roles, alter the stamp function's security attributes (section 27.9), and create and alter the
+     two runtime roles. Case CON-32 pins that whole shape. So B1 does change catalogue facts, but only by removing
+     privileges from `PUBLIC` or the runtime roles or by changing the runtime roles and the stamp function. Without
+     B1, lane A's assertions about other grantees are therefore equal or stricter: lane A fails closed, it cannot pass
+     where the same assertion with B1 would fail.
 
    What is not retained: a mutated build is never run with production code under the runtime roles, so whether each
    mutation would still be killed there is not shown. This is a stated residual, not an equivalence.
@@ -2999,7 +3018,9 @@ read unset settings as an empty declaration; revision 2.7.1 withdraws that.
    baseline's mode and run binding, the hook registry, the computed qualification status and cases EPH-16 to EPH-25;
    and, from revision 2.7.6, the four lanes, stage T, the committed plans, the run network and cases CON-1 to CON-14
    of 27.12.15; and, from revision 2.7.7, the retained gates G1 to G9, the trace and database-log evidence, the
-   coverage partition, the CI gate over every registered suite and cases CON-15 to CON-32.
+   coverage partition, the CI gate over every registered suite and cases CON-15 to CON-32; and, from revision 2.7.8,
+   test identity from expanded report entries, the exact refusal accounting, structured hook expectations with
+   preconditions, and cases CON-33 to CON-46.
 
 **Not required by this revision.** Separate authorisation; these do not gate B1:
 - The forensic drift tool (audit branch `f19a37dea3e20d49eca4c3d34cf221bb3b18089b`, unchanged by this revision)
@@ -3536,7 +3557,12 @@ copy, and records its blob SHA. Its schema is exact at every level, and an unkno
     (`infrastructure/database/b1-fixture-platform-definers.sql`, read as a blob of `R`): schema `auth` and the four
     platform-style definers the frozen definers test creates (an `internal` function, a SQL-standard body, a `prosrc`
     function with `search_path=""` and one without configuration), with `PUBLIC` EXECUTE revoked. It gives the
-    snapshot a non-empty platform baseline exercising each digest rule of 27.10.4, as the frozen test did.
+    snapshot a non-empty platform baseline exercising each digest rule of 27.10.4, as the frozen test did. Revision
+    2.7.8 (R277-B3): the registry pins the file's SHA-256, the runner refuses before L1 on any other digest, and a
+    static test limits the file to exactly `CREATE SCHEMA auth`, the four `CREATE FUNCTION` statements in schema
+    `auth` with their exact identities, and one `REVOKE EXECUTE ... FROM PUBLIC` per function. It cannot touch
+    `public`, `kernel_private`, the ledger, any role or any setting, and every L and S step, including S7's
+    catalogue equality, still applies.
 
   A profile changes and skips no L or S step. It only creates the fixture the snapshot will then record.
 - **`hooks`**: a closed list. Each entry has exactly:
@@ -3546,7 +3572,15 @@ copy, and records its blob SHA. Its schema is exact at every level, and an unkno
   - `effect`, a fixed text naming the steps it changes or skips;
   - `callers`, the exact committed test files allowed to name it;
   - `expected`, the refusal or SQLSTATE it must produce, or (revision 2.7.7) a recorded outcome, for example "S6
-    commits and S7 passes" or "S3 refuses", which the committed test reads from the run record;
+    commits and S7 passes" or "S3 refuses", which the committed test reads from the run record. Revision 2.7.8
+    (R277-B3): `expected` is always structured and exact. It names the step where the run must end or the steps that
+    must pass; for a refusal, the SQLSTATE where one exists and the exact message, or an anchored pattern that names
+    the failed rule as 27.12.9 requires; and, for a commit, the named post-conditions S7 or the committed test must
+    observe. A refusal at the right step for another rule or message fails the case;
+  - `precondition` (revision 2.7.8): one committed read-only query and its exact expected result, which shows that the
+    hook's perturbation took effect. The runner runs it through its connection factory immediately after the hook,
+    before the next step, and records the result. If the result differs, the hook is recorded `not-effective` and the
+    case fails, whatever the run did afterwards;
   - `cases`, the case numbers of 27.12.9 and 27.12.13.9 it serves.
 
   No point or effect may name L5, L6, L1, S7 or the qualification status, so L5 cannot be skipped, teardown cannot be
@@ -3657,7 +3691,8 @@ fail on purpose. Every earlier case of 27.12.9 stays in force.
 - the regression suite id, the plan id, the run network id, and stage T's `regressionOutcome` with the report's
   SHA-256 and the results of the post-T database and network reads (revision 2.7.6); and the profile, the
   `refusalPolicy`, the trace files' SHA-256s and analysis, the log extract's SHA-256 and the G-gate results
-  (revision 2.7.7);
+  (revision 2.7.7); the expected and observed refusal multisets, the re-read log settings, and each hook's
+  precondition result (revision 2.7.8);
 - for each application, the SHA-256 of its run-bound baseline next to its declaration's, with their equal `mode` and
   `run` (revision 2.7.4);
 - the L3 and L5 results: system identifier, initdb time, postmaster start time and database names;
@@ -3675,7 +3710,7 @@ is recorded for information only, and is never authority.
 
 The hosted cutover record is that of 27.12.6 and 27.12.11, plus `mode`.
 
-##### 27.12.13.11 What revisions 2.7.3 to 2.7.7 do not change
+##### 27.12.13.11 What revisions 2.7.3 to 2.7.8 do not change
 
 - **Production and hosted authority.** No production authority is widened. Hosted mode is the 2.7.2 procedure plus
   refusals: the declaration's and the baseline's mode and `run` checks, and the read-only pre-application inventory
@@ -3905,22 +3940,54 @@ each fail.
   directory, never a path the suite names, and requires: at least one file; every file beginning with this run's
   header; at least one `use` event for each runtime role the suite's files exercise; then it hashes every file, runs
   `analyse-trace.mjs` at `R` over it, and applies G4 or G5.
-- **Database log.** At the start of stage T the runner sets `log_line_prefix` to include the SQLSTATE and the user
-  (`ALTER SYSTEM` and `pg_reload_conf()` in its own cluster, recorded) and writes a `RAISE LOG` marker; at the end it
-  writes a second marker. Before L6 it reads the cluster's log through the daemon. For a suite with `refusalPolicy`
-  `none`, no line between the markers may carry SQLSTATE `42501` with user `kj_worker` or `kj_door`, whoever caused it.
-  This realises 27.6 item 3's database-log clause and catches what a missing trace would hide. Deliberate refusal
-  probes therefore live in suites with `refusalPolicy` `probes`, where the trace gate alone applies (their probes are
-  test statements, not runtime statements). Every suite whose files use the compose worker or Restate has
-  `refusalPolicy` `none`.
-- A missing, unreadable or unmarked log, or trace evidence that is missing, empty, from another run or changed after
-  it was hashed, fails `regressionOutcome`.
+- **Harness coverage** (revision 2.7.8). In every mode, including discover, the harness watches every runtime-role
+  session: pools that log in as `kj_worker` or `kj_door`, the shadow pools of enforce mode, the `SET ROLE` emulation,
+  and the compose worker, which loads the harness in every stage T mode. Every `42501` on such a session is recorded,
+  whether or not the caller catches it, with the role, the SQLSTATE, the statement fingerprint (SHA-256 of the
+  statement text with runs of whitespace collapsed to one space and trimmed), whether it came from a deliberate probe
+  or from production code, and the expanded name of the running test where there is one. Refusal records carry a
+  sequence number and are never de-duplicated, so multiplicity is kept.
+- **Database log.** At the start of stage T the runner sets `log_line_prefix` to include the SQLSTATE (`%e`) and the
+  session user (`%u`), keeps `log_min_error_statement` at `error` so each error line is followed by its statement
+  (`ALTER SYSTEM` and `pg_reload_conf()` in its own cluster, recorded), and writes a `RAISE LOG` marker; at the end it
+  writes a second marker. Immediately before each marker it re-reads `log_line_prefix`, `log_min_error_statement`,
+  `log_min_messages`, `log_destination` and `logging_collector`, and every row of `pg_db_role_setting`, and refuses to
+  trust the log unless the settings are the recorded values and no row sets any `log_` parameter or
+  `client_min_messages` for any role or database. Before L6 it reads the cluster's log through the daemon.
+- **Scope of the log** (revision 2.7.8, R277-B2). `%u` is the session user, so a refusal after `SET ROLE` is logged
+  under the owner, and a refusal caught inside a PL/pgSQL exception handler is not logged at all. The log claim is
+  therefore narrowed to genuine login sessions of `kj_worker` and `kj_door`, which is how the compose worker, the
+  enforce shadow pools and every probe connect. The trace covers the `SET ROLE` paths. No migration defines a PL/pgSQL
+  handler that catches `insufficient_privilege`, SQLSTATE `42501` or `others` (OBSERVED at `0ff2919`; pinned by a
+  static test over every migration, case CON-42), so a refusal cannot be absorbed inside the database unseen.
+- A missing, unreadable or unmarked log, changed log settings, or trace evidence that is missing, empty, from another
+  run or changed after it was hashed, fails `regressionOutcome`.
 
-**B1 evidence rows.** `tests/b1-required.json` at `R` lists, by vitest full name, every B1-specific test that must
-pass: the forbidden-power, separation and 27.9.5 probes of `runtime-roles-negative` (the 27.6 item 4 negative
-qualification), the catalogue, connection and definer tests, the 27.12.9 and 27.12.13.9 cases, and cases CON-1 to
-CON-32. Each must be collected, assigned and passed. Removing one is a reviewed edit of that file at `R`. The evidence
-files of G8 must hold every row their test lists, each passed.
+**Refusal accounting** (revision 2.7.8, R277-B2; replaces the 2.7.7 meaning of `refusalPolicy`). Every stage T suite
+has an exact expected refusal multiset of entries (expanded test name, role, SQLSTATE, statement fingerprint,
+multiplicity):
+- for a suite with `refusalPolicy` `none`, it is empty;
+- for a suite with `refusalPolicy` `probes`, it is the union of the `refusals` that `tests/b1-required.json` declares
+  for the probe tests the suite runs. A probe suite may run only `tests/b1-required.json` probe tests (static test),
+  and each probe connects through a genuine login session of the role it probes, never through `SET ROLE`.
+
+Both observations must equal that multiset exactly:
+- the trace's refusal records, keyed the same way, with multiplicity;
+- the database log's lines between the markers whose SQLSTATE is `42501` and whose session user is `kj_worker` or
+  `kj_door`, each keyed by the fingerprint of the statement line that follows it, with multiplicity (the log carries
+  no test name, so the log comparison is over role, SQLSTATE, fingerprint and multiplicity).
+
+An extra refusal, a missing one, a duplicate beyond the declared multiplicity, a refusal attributed to production code
+in a probe suite, and a trace refusal on a genuine login session with no matching log line, or the reverse, each fail
+`regressionOutcome`. A blanket "refusals allowed in this suite" does not exist.
+
+**B1 evidence rows.** `tests/b1-required.json` at `R` lists, by file and expanded report name (revision 2.7.8: every
+`.each` row by its own expanded name, never a template), every B1-specific test that must pass: the forbidden-power,
+separation and 27.9.5 probes of `runtime-roles-negative` (the 27.6 item 4 negative qualification), the catalogue,
+connection and definer tests, the 27.12.9 and 27.12.13.9 cases, and the CON cases. Each probe entry also declares its
+`refusals` (role, SQLSTATE, statement fingerprint, multiplicity) for the refusal accounting above. Each entry must
+appear exactly once, passed, in the report of the suite its file is assigned to. Removing one is a reviewed edit of
+that file at `R`. The evidence files of G8 must hold every row their test lists, each passed.
 
 **Coverage partition** (revision 2.7.7, R276-B2). One committed file, `tests/lanes.json`
 (`kerneljson:test-lane-partition/v1`), read at `R`, with an exact schema and parsed by a parser that refuses duplicate
@@ -3937,15 +4004,31 @@ The unit of partition is the file. A file whose tests need different lanes is sp
 into single-lane files, so every executable test inherits exactly one lane from its file. The inventory maps every
 describe block of the frozen mixed files to its new file and lane; nothing is deleted, skipped or downgraded.
 
-Static qualification (a committed repository test with failing fixtures of its own), against vitest's own
-collection at `R` (`vitest list --json`, which needs no database):
-- every collected test's file is a key of `files`, and every key exists and collects at least one test;
-- no file is assigned twice, and each stage T suite's registry `files` equals its partition files;
-- every suite has at least one file, and every plan has at least one database per database-backed file;
-- a file assigned to a stage T suite imports no lane A helper, and a lane A file references no runtime role;
-- every test of `tests/baseline.json` and of `tests/b1-required.json` is collected.
+**Test identity and coverage** (revision 2.7.8, R277-B1). Vitest's collection is not a test identity: it lists
+`.each` tests as unexpanded templates, loses `describe.skip` titles, repeats some (file, name) pairs and omits files
+whose top-level suite is skipped (observed by the reviewer on the frozen tree). So:
+- **Collection proves source coverage only.** The static test runs `vitest list --json` with task locations, and with
+  the live-Restate flags of the `notRunInCi` files set so their suites are collected (`S1R_LIVE`, `S1B_REARM_LIVE`,
+  `S1R_RUNTIME`), with no database. Every `tests/*.test.ts` file must be a key of `files`; every key must exist;
+  every collected entry is a source location (file, line, column). A file that still collects nothing must be a
+  `notRunInCi` file, bound below.
+- **Identity is the expanded report entry.** Every primary suite runs with the JSON reporter and task locations
+  enabled. A test's identity is (file, location, expanded full name) from the report. Expanded full names must be
+  unique within a suite's report; a duplicate fails.
+- **Coverage.** Every collected location must map to at least one report entry in its own suite's report, with the
+  same file and location. A template with zero expansions therefore fails, and so does a file that crashes before its
+  tests run.
+- **Baselines.** `tests/baseline.json` (protected tests and `intentionalSkips`) and `tests/b1-required.json` are
+  matched against the expanded names in the reports, never against the collection.
+- **`notRunInCi` files** are bound through reported skip entries: each file's report entries must be exactly its
+  `intentionalSkips` entries, each skipped. If a file's skip gate is removed, its tests run and are no longer skipped,
+  and the binding fails.
+- Still static: no file assigned twice (a parser that refuses duplicate keys); each stage T suite's registry `files`
+  equal to its partition files; every suite with at least one file; every plan with a database per database-backed
+  file; no stage T file importing a lane A helper; no lane A file referring to a runtime role.
 
-A new file without an entry fails; a new test in an existing file is assigned with its file and must pass there.
+A new file without an entry fails; a new test or `.each` row in an existing file is assigned with its file and must
+pass there; a removed `.each` row that `tests/b1-required.json` or `tests/baseline.json` names fails by its name.
 
 **CI gate over every registered suite** (revision 2.7.7). The committed gate script at `R` refuses the commit unless,
 for every primary and secondary suite of the partition, exactly one valid result exists for this commit:
@@ -3956,10 +4039,11 @@ for every primary and secondary suite of the partition, exactly one valid result
 - each mutation suite: its verdict, as G7;
 - G1 to G9 and the coverage check below.
 
-A missing, stale (another commit), forged, duplicated or incomplete result fails. The coverage check merges every
-primary report and requires every collected test to appear in its own suite's report, passed or an accounted skip,
-and in no other primary report; it then runs G2 and G3 over the merged report. An empty or partly executed suite
-cannot pass, because its collected tests would be missing.
+A missing, stale (another commit), forged, duplicated or incomplete result fails. The coverage check (revision
+2.7.8) merges every primary report and requires: every collected location covered in its own suite as above; every
+report entry passed or an accounted skip; no expanded name duplicated within a suite, and no (file, expanded name)
+in two primary reports; then G2 and G3 over the merged report, and the `tests/b1-required.json` match. An empty or
+partly executed suite cannot pass, because its collected locations would have no report entries.
 
 **Cases** (committed automated cases under the rules of 27.12.9):
 
@@ -3992,13 +4076,31 @@ cannot pass, because its collected tests would be missing.
 | CON-25 | Incorrect partition: a block needing a pre-B1 database left in a stage T file; a lane D file importing a lane A helper; a lane A file needing a runtime role | the helper refuses at run time and the static test fails; the lane A file fails in harness `base` |
 | CON-26 | Duplicate assignment: a file listed twice in `tests/lanes.json` (duplicate key) or in two suites' registry `files` | the static test fails |
 | CON-27 | Missing suite record: a registered suite never run; its record from another commit; a second record for it; a record with status or outcome not passing; an edited record | the CI gate fails |
-| CON-28 | Incomplete report: a suite file that crashes in `beforeAll`; a report with fewer tests than collected; a report with zero tests; a test reported in two primary suites | the coverage check fails |
+| CON-28 | Incomplete report (corrected in revision 2.7.8): a suite file that crashes in `beforeAll`; a collected location with no report entry in its suite; a report with zero tests; a (file, expanded name) reported in two primary suites | the coverage check fails |
 | CON-29 | A new test added to an existing file | it is assigned with the file; if it fails or does not run, the coverage check fails |
 | CON-30 | A required negative probe removed from `FORBIDDEN`, `SEPARATION`, `PROBES` or the definers `FIXTURES`; an evidence row missing or not passed | the `tests/b1-required.json` check fails; G8 fails |
 | CON-31 | Profile binding: a regression suite run with a profile other than its registered one | refuses before L1 |
-| CON-32 | Static B1 shape: a generated B1 with a `CREATE FUNCTION`, `CREATE TABLE`, `CREATE VIEW` or `CREATE SEQUENCE`, or a GRANT or policy naming any role other than `kj_worker` or `kj_door` | the static test fails (it underpins the lane A assignment of the default-ACL blocks and 27.6 item 3) |
+| CON-32 | Static B1 shape (widened in revision 2.7.8): a generated B1 with a `CREATE FUNCTION`, `CREATE TABLE`, `CREATE VIEW` or `CREATE SEQUENCE`; a GRANT or policy naming any role other than `kj_worker` or `kj_door`; a REVOKE whose target or grantee is outside the pinned list (the enumerated function cleanup, `CREATE` on schema `public` and `TEMPORARY` on the database from `PUBLIC`, the stamp function from `PUBLIC`, and tables, sequences, functions and schemas from the runtime roles); an `ALTER FUNCTION` of anything but the stamp function's security attributes; an `ALTER ROLE` of anything but the two runtime roles' pinned attributes; a `DO` block outside the pinned set (role creation, the enumerated cleanup, `TEMPORARY` and `CONNECT` by `format`, the stamp ACL cleanup and the pre-COMMIT checks) | the static test fails (it underpins the lane A assignment of the default-ACL blocks and 27.6 item 3) |
+| CON-33 | Positive control: the identity and coverage checks over the unmodified suite after the partition | they pass; every collected location is covered and every baseline, intentional-skip and required entry matches |
+| CON-34 | A `.each` row removed from `FORBIDDEN`, `SEPARATION`, `PROBES` or the definers `FIXTURES` | its expanded name is missing from the report; the `tests/b1-required.json` match fails |
+| CON-35 | A `.each` template with zero expansions; a test whose suite crashes before it runs | its collected location has no report entry; the coverage check fails |
+| CON-36 | Two tests in one suite with the same expanded full name | the uniqueness check fails |
+| CON-37 | The skip gate of a `notRunInCi` file removed; a `notRunInCi` file whose report entries differ from its `intentionalSkips` | the binding fails |
+| CON-38 | One unexpected `42501` added to a probe suite (an extra probe statement not declared) | trace and log each exceed the expected multiset; `regressionOutcome` `failed` |
+| CON-39 | An expected probe that does not refuse (a grant added in a fixture build) | the multiset is short; fails, and the probe test itself fails |
+| CON-40 | One probe refusal duplicated (the statement issued twice) | multiplicity exceeds the declaration; fails |
+| CON-41 | A refusal after `SET ROLE kj_worker` on an owner session with the trace record suppressed; a genuine-login refusal with no log line, or a log line with no trace record | the trace and log do not both equal the multiset; fails |
+| CON-42 | Log trust: `log_min_error_statement` or `log_line_prefix` changed during stage T; an `ALTER ROLE kj_worker SET log_min_messages` row in `pg_db_role_setting`; a migration fixture adding a PL/pgSQL handler that catches `insufficient_privilege`, `42501` or `others` | the re-read refuses to trust the log; the static test fails for the handler |
+| CON-43 | A hook whose effect is a no-op, with `expected` "S6 commits and S7 passes" | the precondition result differs; the hook is `not-effective`; the case fails |
+| CON-44 | A hook that ends the run at the expected step for another rule or message (for example S3 refusing on the ledger head when the hook removed the stamp function) | the structured `expected` does not match; the case fails |
+| CON-45 | Any one of the six frozen `_ledger` messages missing or different | its hook's case fails |
+| CON-46 | The `platform-definer-fixture` SQL with a changed digest, or with a statement outside its pinned set | the runner refuses before L1; the static test fails |
 
 These cases are added to 27.12.8 item 14. They change none of the cases of 27.12.9 or 27.12.13.9.
+
+**Implementation obligations from the R2.7.7 review** (nonblocking, recorded, not design changes): results of
+`base-regression`, `runner-cases` and the mutation suites bound to the commit, the suite id and a digest; a stage T
+suite timeout.
 
 **Implementation obligations from the R2.7.6 review** (nonblocking, recorded, not design changes): database OID
 identity in the post-T database read; the run network's id, and the cluster's paused state, in L3; Docker events and
