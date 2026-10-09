@@ -1,0 +1,9 @@
+{
+  "name": "kj-console",
+  "version": "0.1.0",
+  "description": "KernelJSON MOD-0: read-only session console. Shows repo, branch, HEAD and local status; observes tool calls in shadow mode; never decides, rewrites or calls out.",
+  "author": {
+    "name": "Jonny Allum"
+  },
+  "types": "./types/index.d.ts"
+}
