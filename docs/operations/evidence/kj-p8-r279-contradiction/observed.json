@@ -1,0 +1,52 @@
+{
+  "diagnostic": "R279-HELPER-RETHROW",
+  "design": "af2f7320aae32eaa0ce699b1c09d015371f156d5",
+  "image": "postgres@sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929",
+  "sourceDigest": "2782e98b348aca7d6f6f73c420fd78d2e094957dd7a52b0483d4c34f29d2a7a1",
+  "sourceBytes": 953,
+  "b1Applied": false,
+  "productionConnected": false,
+  "qualified": false,
+  "serverVersion": "PostgreSQL 17.6 (Debian 17.6-2.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+  "sealedPin": {
+    "owner": "postgres",
+    "returns": "event_trigger",
+    "retset": false,
+    "kind": "f",
+    "securityDefiner": true,
+    "language": "plpgsql",
+    "config": [
+      "search_path=pg_catalog"
+    ],
+    "acl": null,
+    "volatility": "v",
+    "strict": false,
+    "leakproof": false,
+    "parallel": "u",
+    "binary": null,
+    "sqlBody": null,
+    "sourceBytes": 953,
+    "sourceDigest": "2782e98b348aca7d6f6f73c420fd78d2e094957dd7a52b0483d4c34f29d2a7a1",
+    "bindings": [
+      {
+        "name": "ensure_rls",
+        "owner": "postgres",
+        "event": "ddl_command_end",
+        "enabled": "O",
+        "tags": [
+          "CREATE TABLE",
+          "CREATE TABLE AS",
+          "SELECT INTO"
+        ]
+      }
+    ]
+  },
+  "positiveControlRls": true,
+  "creationCommitted": true,
+  "failureControlRls": false,
+  "directControlSqlstate": "42501",
+  "pinUnchanged": true,
+  "failureLogObserved": true,
+  "contradictionReproduced": true,
+  "teardownPassed": true
+}

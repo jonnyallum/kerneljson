@@ -1,5 +1,11 @@
 # KJ-P8 B1 implementation report: least-privilege runtime database roles
 
+> **R2.7.9 remediation branch notice (09/10/2026):** The report below describes frozen B1
+> `0ff2919c1bbf722b4842aa56fdc94ef9b74e5a51`, not an R279-qualified implementation.
+> The R279 sprint reproduced a contradiction between the sealed helper source pin and its stated
+> rethrow behaviour. See [the contradiction report](KJ_P8_B1_R279_DESIGN_CONTRADICTION.md).
+> Remediation is incomplete and no R279 qualification is claimed. Historical evidence below is retained.
+
 Status: ENGINEERING CANDIDATE, not merged, not deployed. **Repository-qualified; target platform baseline pending
 (section 12).** Production was not touched. No P8A-0 object exists in this candidate.
 
