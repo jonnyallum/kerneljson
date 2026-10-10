@@ -22,7 +22,7 @@ export function traceWriter(directory:string,token:TraceIdentity){
   if(!lstatSync(directory).isDirectory() || lstatSync(directory).isSymbolicLink()) throw Error("TRACE_UNTRUSTED: directory is not regular");
   const header=Header.parse({kind:"kerneljson:b1-trace/v1",token,pid:process.pid,processId:randomUUID()});
   const path=join(directory,`${header.pid}-${header.processId}.jsonl`);
-  writeFileSync(path,JSON.stringify(header)+"\n",{flag:"wx",mode:0o600});
+  writeFileSync(path,JSON.stringify(header)+"\n",{flag:"wx",mode:0o644});
   let sequence=0;
   const write=(statement:TraceStatement,error?:{code?:string;message?:string})=>{
     if(error && error.code!=="42501") return;

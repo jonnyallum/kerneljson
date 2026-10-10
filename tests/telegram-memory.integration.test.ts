@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createHash, randomUUID } from "node:crypto";
 import pg from "pg";
-import { DATABASE, compose, holdRuntime, migrate, until } from "./support/local.js";
+import { testDatabase, type TestDatabase } from "./support/database.js";
 import { deliverRows } from "../services/kernel/src/alerting/delivery-worker.js";
 import { RecordingNotifier } from "../services/kernel/src/alerting/notifier.js";
 import { PgNotificationOutboxStore } from "../services/kernel/src/alerting/pg-outbox-store.js";
@@ -17,33 +17,22 @@ import { FakeDoor, FakeSource, LIMITS, NOW, msg } from "./support/telegram-fixtu
  * Telegram itself (the update source) and the transport that would send the reply are doubles. This is the design
  * of the first live memory proof, run against persisted rows.
  */
-const name = `kj_p5_tg_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
-const admin = new pg.Pool({ connectionString: DATABASE, max: 1 });
+// ADR-0023 27.12.15: the plan database kj_telegram_memory, to which the runner applied B1 in this run (stage T), or in lane A
+// the base adapter's database; this file never creates, migrates or drops a database.
+let database: TestDatabase;
 let pool: pg.Pool;
 let memory: CanonicalMemory;
-let releaseRuntime = () => {};
 
 beforeAll(async () => {
-  releaseRuntime = holdRuntime();
-  compose("up", "-d", "db");
-  await until(() => admin.query("select 1"), (r) => r.rowCount === 1);
-  await admin.query(`create database ${name}`);
-  pool = new pg.Pool({ connectionString: DATABASE.replace(/\/kerneljson$/, `/${name}`), max: 6 });
+  database = await testDatabase("kj_telegram_memory");
+  pool = new pg.Pool({ connectionString: database.url, max: 6 });
   pool.on("error", () => {});
-  await migrate(pool);
   memory = new CanonicalMemory(pool);
 });
 
 afterAll(async () => {
   await pool?.end();
-  await until(
-    () => admin.query("select count(*)::int as n from pg_stat_activity where datname = $1", [name]),
-    (r) => r.rows[0].n === 0,
-    15000,
-  );
-  await admin.query(`drop database if exists ${name}`);
-  await admin.end();
-  releaseRuntime();
+  await database?.close();
 });
 
 beforeEach(async () => {

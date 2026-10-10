@@ -1,37 +1,29 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { randomUUID } from "node:crypto";
 import pg from "pg";
-import { DATABASE, compose, holdRuntime, migrate, until } from "./support/local.js";
+import { testDatabase, type TestDatabase } from "./support/database.js";
 import { RuntimeRoleRefusal, assertRuntimeRole, runtimePool } from "../services/kernel/src/database/runtime-roles.js";
 
 /**
  * KJ-P8 B1 gate 5 - no fallback to the owner. A runtime pool proves its session is exactly its sealed role before the
  * first statement; any other session (the owner above all) is refused and never runs a statement.
  */
-const name = `kj_b1_con_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
-const admin = new pg.Pool({ connectionString: DATABASE, max: 1 });
-const url = (user: string) => { const u = new URL(DATABASE.replace(/\/kerneljson$/, `/${name}`)); u.username = user; return u.toString(); };
+// ADR-0023 27.12.15: the plan database kj_b1_con, to which the runner applied B1 in this run (stage T), or in lane A
+// the base adapter's database; this file never creates, migrates or drops a database.
+let database: TestDatabase;
+const url = (user: string) => { const u = new URL(database.url); u.username = user; return u.toString(); };
 let owner: pg.Pool;
-let releaseRuntime = () => {};
 const pools: pg.Pool[] = [];
 const guarded = (user: string, role: "kj_worker" | "kj_door") => { const p = runtimePool({ connectionString: url(user), max: 2 }, role); pools.push(p); return p; };
 
 beforeAll(async () => {
-  releaseRuntime = holdRuntime();
-  compose("up", "-d", "db");
-  await until(() => admin.query("select 1"), (r) => r.rowCount === 1);
-  await admin.query(`create database ${name}`);
+  database = await testDatabase("kj_b1_con");
   owner = new pg.Pool({ connectionString: url("postgres"), max: 2 });
   owner.on("error", () => {});
-  await migrate(owner);
 });
 afterAll(async () => {
   for (const p of pools) await p.end().catch(() => undefined);
   await owner?.end();
-  await until(() => admin.query("select count(*)::int as n from pg_stat_activity where datname = $1", [name]), (r) => r.rows[0].n === 0, 15000);
-  await admin.query(`drop database if exists ${name}`);
-  await admin.end();
-  releaseRuntime();
+  await database?.close();
 });
 
 describe("B1 runtime pool guard", () => {

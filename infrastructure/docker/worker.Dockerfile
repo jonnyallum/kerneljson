@@ -11,6 +11,10 @@ COPY services/memory ./services/memory
 COPY infrastructure/database/runtime-role-manifest.json ./infrastructure/database/runtime-role-manifest.json
 COPY tests/support/worker.ts ./tests/support/worker.ts
 COPY tests/support/runtime-roles.ts ./tests/support/runtime-roles.ts
+# KJ-P8 B1 stage T: the harness writes the run-bound trace through these, and co-resident.ts reads the pins file.
+COPY scripts/b1/trace.ts ./scripts/b1/trace.ts
+COPY scripts/b1/refusal-accounting.ts ./scripts/b1/refusal-accounting.ts
+COPY infrastructure/database/co-resident-platform-pins.json ./infrastructure/database/co-resident-platform-pins.json
 COPY tests/support/model-probe.ts ./tests/support/model-probe.ts
 COPY tests/support/capability-probe.ts ./tests/support/capability-probe.ts
 COPY tests/support/policy-probe.ts ./tests/support/policy-probe.ts

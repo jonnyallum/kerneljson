@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
-import { DATABASE, compose, holdRuntime, migrate, until } from "./support/local.js";
+import { testDatabase, type TestDatabase } from "./support/database.js";
 import { CapabilityInvocation, PolicyEvaluation, Task, TaskEvent, TaskStep, type PrincipalRef } from "../packages/contracts/src/index.js";
 import { UPPERCASE, createBuiltinRegistry } from "../packages/capabilities/src/index.js";
 import { ApprovalError, ApprovalStore } from "../services/kernel/src/approval-store.js";
@@ -26,13 +26,13 @@ import { task as fixture } from "../evals/fixtures/contracts.js";
  * does, so every refusal below is the LEDGER refusing. The workflow and the real door are exercised
  * in telegram-approvals.integration.test.ts.
  */
-const name = `kj_p4b_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
-const admin = new pg.Pool({ connectionString: DATABASE, max: 1 });
+// ADR-0023 27.12.15: the plan database kj_telegram_approvals_store, to which the runner applied B1 in this run (stage T), or in lane A
+// the base adapter's database; this file never creates, migrates or drops a database.
+let database: TestDatabase;
 let pool: pg.Pool;
 let ledger: Ledger;
 let approvals: ApprovalStore;
 let cards: PgCardStore;
-let releaseRuntime = () => {};
 
 const tenantId = randomUUID();
 const owner: PrincipalRef = { id: randomUUID(), kind: "HUMAN" };
@@ -41,13 +41,9 @@ const stranger: PrincipalRef = { id: randomUUID(), kind: "HUMAN" };
 const registry = createBuiltinRegistry();
 
 beforeAll(async () => {
-  releaseRuntime = holdRuntime();
-  compose("up", "-d", "db");
-  await until(() => admin.query("select 1"), (r) => r.rowCount === 1);
-  await admin.query(`create database ${name}`);
-  pool = new pg.Pool({ connectionString: DATABASE.replace(/\/kerneljson$/, `/${name}`), max: 6 });
+  database = await testDatabase("kj_telegram_approvals_store");
+  pool = new pg.Pool({ connectionString: database.url, max: 6 });
   pool.on("error", () => {});
-  await migrate(pool);
   await pool.query("insert into tenants(id,name) values($1,'p4b')", [tenantId]);
   for (const [p, role] of [[owner, "owner"], [reviewer, "reviewer"], [stranger, "viewer"]] as const) {
     await pool.query("insert into principals(id,kind) values($1,'HUMAN')", [p.id]);
@@ -60,14 +56,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await pool?.end();
-  await until(
-    () => admin.query("select count(*)::int as n from pg_stat_activity where datname = $1", [name]),
-    (r) => r.rows[0].n === 0,
-    15000,
-  );
-  await admin.query(`drop database if exists ${name}`);
-  await admin.end();
-  releaseRuntime();
+  await database?.close();
 });
 
 const q = async <T extends pg.QueryResultRow>(sql: string, args: unknown[] = []) => (await pool.query<T>(sql, args)).rows;

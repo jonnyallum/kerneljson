@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import pg from "pg";
-import { ADMIN, DATABASE, INGRESS, compose, holdRuntime, migrate, until } from "./support/local.js";
+import { ADMIN, INGRESS, compose, until, useStackDatabase } from "./support/local.js";
+import { testDatabase, type TestDatabase } from "./support/database.js";
 import { buildDoorHandler, loadDoorConfig } from "../apps/gateway/src/main.js";
 import { ControlAuthError, InMemoryReplayStore, createControlSigner, createControlVerifier } from "../services/kernel/src/control-signing.js";
 import { CONTROL_OTHER_KEY, CONTROL_TEST_KEY, CONTROL_TEST_KEY_ID } from "./support/control-test-key.js";
@@ -33,7 +34,10 @@ import { CHAT, FakeSource, LIMITS } from "./support/telegram-fixture.js";
  * existing machinery and can do nothing that machinery would not allow, and (KJ-P4B.1) that what Restate
  * journals on that hop is assertions, never the long-lived key.
  */
-const pool = new pg.Pool({ connectionString: DATABASE });
+// ADR-0023 27.12.15: the plan database kj_telegram_approvals; the stack's worker connects to it (kj_worker in stage T, the owner in
+// lane A). This file never creates, migrates or drops a database.
+let database: TestDatabase;
+let pool: pg.Pool;
 
 const owner = fixture.principal.id;
 const reviewer = "70000000-0000-4000-8000-000000000002";
@@ -41,7 +45,7 @@ const DOOR_BEARER = `p4b-door-${randomUUID()}${randomUUID()}`;
 /** The REAL production door configuration, signing every request to the workflow with the synthetic key. */
 const doorConfig = (principal: string, bearer: string) =>
   loadDoorConfig({
-    DATABASE_URL: DATABASE,
+    DATABASE_URL: database.url,
     KJ_ADMISSION_BEARER: bearer,
     KJ_ADMISSION_TENANT_ID: fixture.tenant.id,
     KJ_ADMISSION_PRINCIPAL_ID: principal,
@@ -54,21 +58,22 @@ const doorConfig = (principal: string, bearer: string) =>
     KJ_CONTROL_KEY_ID: CONTROL_TEST_KEY_ID,
   });
 
-let releaseRuntime = () => {};
 let server: Server;
 let doorBase = "";
 let deps: OperatorDeps;
 const source = new FakeSource();
 const bot = new FakeBot();
-const cards = new PgCardStore(pool);
+let cards: PgCardStore;
 
 beforeAll(async () => {
-  releaseRuntime = holdRuntime();
   // Only this dedicated disposable validation stack is reset; never use remote URLs.
   compose("down", "--volumes");
+  database = await testDatabase("kj_telegram_approvals");
+  pool = new pg.Pool({ connectionString: database.url });
+  useStackDatabase(database.name);
+  cards = new PgCardStore(pool);
   compose("up", "-d", "--build");
   await until(() => pool.query("select 1"), (r) => r.rowCount === 1);
-  await migrate(pool);
   await pool.query("insert into principals(id,kind) values($1,$2)", [owner, fixture.principal.kind]);
   await pool.query("insert into tenants(id,name) values($1,$2)", [fixture.tenant.id, "p4b-test"]);
   await pool.query("insert into tenant_memberships(tenant_id,principal_id,role) values($1,$2,'owner')", [fixture.tenant.id, owner]);
@@ -113,8 +118,8 @@ beforeAll(async () => {
 afterAll(async () => {
   server?.closeAllConnections();
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
-  await pool.end();
-  releaseRuntime();
+  await pool?.end();
+  await database?.close();
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -576,7 +581,7 @@ describe("KJ-P4B.1 the door's hop, seen from the boundary (a Restate-equivalent 
     if (!address || typeof address === "string") throw new Error("no address");
     const DOOR = `p4b1-door-bearer-${randomUUID()}${randomUUID()}`;
     const config = loadDoorConfig({
-      DATABASE_URL: DATABASE,
+      DATABASE_URL: database.url,
       KJ_ADMISSION_BEARER: DOOR,
       KJ_ADMISSION_TENANT_ID: fixture.tenant.id,
       KJ_ADMISSION_PRINCIPAL_ID: owner,

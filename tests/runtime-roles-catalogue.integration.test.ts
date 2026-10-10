@@ -1,8 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import pg from "pg";
-import { DATABASE, compose, holdRuntime, migrate, until } from "./support/local.js";
+import { testDatabase, type TestDatabase } from "./support/database.js";
 import {
   RUNTIME_ROLES, TABLE_PRIVILEGES, actualFacts, compareRoleToManifest, diffFacts, expectedFacts, loadManifest, type RuntimeRole,
 } from "../services/kernel/src/database/runtime-roles.js";
@@ -13,29 +12,22 @@ import {
  * missing one does. Effective privileges are read (has_*_privilege), so anything inherited through PUBLIC counts.
  * All catalogue reads run as the owner (this file is test code); the comparison itself is production code.
  */
-const name = `kj_b1_cat_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
-const admin = new pg.Pool({ connectionString: DATABASE, max: 1 });
+// ADR-0023 27.12.15: the plan database kj_b1_cat, to which the runner applied B1 in this run (stage T), or in lane A
+// the base adapter's database; this file never creates, migrates or drops a database.
+let database: TestDatabase;
 let pool: pg.Pool;
-let releaseRuntime = () => {};
 const manifest = loadManifest();
 // Reads go through a plain owner client so the role harness never attributes them to a runtime role.
 const owner = { query: (sql: string, args?: unknown[]) => pool.query(sql, args) } as unknown as pg.Pool;
 
 beforeAll(async () => {
-  releaseRuntime = holdRuntime();
-  compose("up", "-d", "db");
-  await until(() => admin.query("select 1"), (r) => r.rowCount === 1);
-  await admin.query(`create database ${name}`);
-  pool = new pg.Pool({ connectionString: DATABASE.replace(/\/kerneljson$/, `/${name}`), max: 4 });
+  database = await testDatabase("kj_b1_cat");
+  pool = new pg.Pool({ connectionString: database.url, max: 4 });
   pool.on("error", () => {});
-  await migrate(pool);
 });
 afterAll(async () => {
   await pool?.end();
-  await until(() => admin.query("select count(*)::int as n from pg_stat_activity where datname = $1", [name]), (r) => r.rows[0].n === 0, 15000);
-  await admin.query(`drop database if exists ${name}`);
-  await admin.end();
-  releaseRuntime();
+  await database?.close();
 });
 
 describe("B1 frozen manifest and migration are generated, not hand-edited", () => {

@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { spawn, type ChildProcess } from "node:child_process";
 import { createConnection, createServer } from "node:net";
 import pg from "pg";
-import { migrate, until } from "./support/local.js";
+import { ADMIN, INGRESS, compose, until, useStackDatabase } from "./support/local.js";
+import { testDatabase, type TestDatabase } from "./support/database.js";
 import { monitorReport } from "./support/alert-runner-fixture.js";
 import { runMonitor } from "../services/kernel/src/alerting/runner.js";
 import { postgresMonitorExclusive } from "../services/kernel/src/alerting/runner-postgres.js";
@@ -13,12 +13,11 @@ import { evaluateHealthSnapshot } from "../services/kernel/src/health/run.js";
 import { loadHealthExpectations } from "../services/kernel/src/health/config.js";
 import { createRestateAdminClient } from "../services/kernel/src/health/restate-client.js";
 
-// Ungated, local disposable containers only. No supplied URL or production credential.
+// ADR-0023 27.12.15: the plan database kj_alert_runner and the stack's Restate (the run's regression compose project in
+// stage T, the validation stack in lane A). No container of its own, no supplied URL, no production credential. The
+// host monitor worker logs in as kj_worker in stage T and loads the trace harness; in lane A it uses the owner.
 describe("KJ-P1.3 disposable Postgres and Restate", () => {
-  const suffix = randomUUID().slice(0, 8);
-  const dbName = `kj-p13-db-${suffix}`;
-  const restateName = `kj-p13-restate-${suffix}`;
-  const created: string[] = [];
+  let database: TestDatabase;
   let pool: pg.Pool,
     dbUrl: string,
     ingress: string,
@@ -26,16 +25,6 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
     workerPort: number;
   let worker: ChildProcess | undefined;
   const logs: string[] = [];
-  const docker = (...args: string[]) =>
-    execFileSync("docker", ["--context", "default", ...args], {
-      encoding: "utf8",
-      timeout: 60000,
-      windowsHide: true,
-    });
-  const port = (container: string, internal: number) =>
-    Number(
-      docker("port", container, `${internal}/tcp`).trim().split(":").at(-1),
-    );
   async function startWorker() {
     worker = spawn(
       process.execPath,
@@ -44,7 +33,7 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
         env: {
           ...process.env,
           PORT: String(workerPort),
-          KJ_MONITOR_TEST_DB: dbUrl,
+          KJ_MONITOR_TEST_DB: workerUrl(),
         },
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
@@ -95,49 +84,19 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
     if (!response.ok) throw Error(`Monitor response ${response.status}`);
     return response.json() as Promise<Record<string, unknown>>;
   };
+  /** The monitor worker's database login: a genuine kj_worker session in stage T, the owner in lane A. */
+  const workerUrl = () => {
+    if (process.env["KJ_B1_STAGE_T"] !== "1") return dbUrl;
+    const u = new URL(dbUrl); u.username = "kj_worker"; return u.toString();
+  };
   beforeAll(async () => {
-    // Reject remote default Docker endpoints as well as caller-supplied URLs.
-    const endpoint = docker(
-      "context",
-      "inspect",
-      "default",
-      "--format",
-      "{{.Endpoints.docker.Host}}",
-    ).trim();
-    if (!endpoint.startsWith("npipe://") && !endpoint.startsWith("unix://"))
-      throw Error("Local Docker required");
-    docker(
-      "run",
-      "-d",
-      "--name",
-      dbName,
-      "-e",
-      "POSTGRES_HOST_AUTH_METHOD=trust",
-      "-e",
-      "POSTGRES_DB=monitor",
-      "-p",
-      "127.0.0.1::5432",
-      "postgres:17.6",
-    );
-    created.push(dbName);
-    docker(
-      "run",
-      "-d",
-      "--name",
-      restateName,
-      ...(process.platform === "linux"
-        ? ["--add-host", "host.docker.internal:host-gateway"]
-        : []),
-      "-p",
-      "127.0.0.1::8080",
-      "-p",
-      "127.0.0.1::9070",
-      "docker.restate.dev/restatedev/restate:1.7.9",
-    );
-    created.push(restateName);
-    dbUrl = `postgresql://postgres@127.0.0.1:${port(dbName, 5432)}/monitor`;
-    ingress = `http://127.0.0.1:${port(restateName, 8080)}`;
-    admin = `http://127.0.0.1:${port(restateName, 9070)}`;
+    compose("down", "--volumes");
+    database = await testDatabase("kj_alert_runner");
+    useStackDatabase(database.name);
+    compose("up", "-d", "restate");
+    dbUrl = database.url;
+    ingress = INGRESS;
+    admin = ADMIN;
     pool = new pg.Pool({
       connectionString: dbUrl,
       connectionTimeoutMillis: 1000,
@@ -147,7 +106,6 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
       () => true,
       30000,
     );
-    await migrate(pool);
     await until(
       () => fetch(`${admin}/health`),
       (r) => r.ok,
@@ -161,7 +119,7 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
   afterAll(async () => {
     await stopWorker();
     await pool?.end();
-    for (const name of created.reverse()) docker("rm", "-f", "-v", name);
+    await database?.close();
   });
   beforeEach(async () => {
     await pool.query("delete from kernel_private.notification_delivery_events");
@@ -371,14 +329,9 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
     );
     const stoppedAt = Number((await post("status")).nextSequence);
     await stopWorker();
-    // The journal/timer belongs to this disposable container and survives restart.
-    docker("restart", restateName);
-    // Docker can reassign ephemeral published ports on container restart, and publishes them one at a
-    // time: `docker port` for 8080 was seen failing ("no public port '8080/tcp' published") while 9070
-    // was already up (2026-09-28). Poll each until it is published - bounded, and a timeout throws.
-    const published = (internal: number) => until(async () => port(restateName, internal), (p) => Number.isInteger(p) && p > 0, 20000);
-    admin = `http://127.0.0.1:${await published(9070)}`;
-    ingress = `http://127.0.0.1:${await published(8080)}`;
+    // The journal/timer belongs to the stack's disposable Restate container and survives its restart; its published
+    // ports are fixed by the compose file, so ingress and admin are unchanged.
+    compose("restart", "restate");
     await until(
       () => fetch(`${admin}/health`),
       (r) => r.ok,

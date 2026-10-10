@@ -26,6 +26,6 @@ installBaseDatabaseFactory(async(name:string)=>{
     await assertBaseTarget(admin);await admin.query(`create database ${database}`);created=true;
     const url=DATABASE.replace(/\/kerneljson$/,`/${database}`);pool=new pg.Pool({connectionString:url,max:4});
     await migrate(pool);
-    return {pool,url,close};
+    return {name:database,pool,url,close};
   }catch(error){await close();throw error;}
 });

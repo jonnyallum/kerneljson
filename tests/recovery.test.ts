@@ -8,16 +8,8 @@ import { createRestateControls } from "../apps/gateway/src/index.js";
 import { createGateway, createRestateDispatch, bearerAuthenticator } from "../apps/gateway/src/server.js";
 import { readRouteObservations } from "../services/kernel/src/routing.js";
 import { compileSchedule } from "../services/kernel/src/schedule.js";
-import {
-  DATABASE,
-  INGRESS,
-  ADMIN,
-  compose,
-  migrate,
-  until,
-  post,
-  holdRuntime,
-} from "./support/local.js";
+import { INGRESS, ADMIN, compose, until, post, useStackDatabase } from "./support/local.js";
+import { testDatabase, type TestDatabase } from "./support/database.js";
 import { task as fixture } from "../evals/fixtures/contracts.js";
 import { Outcome, Task } from "../packages/contracts/src/index.js";
 import { stepB, stepA } from "../services/kernel/src/deterministic.js";
@@ -36,7 +28,10 @@ import {
   ModelCallReceipt,
   CapabilityResult,
 } from "../packages/contracts/src/index.js";
-const pool = new pg.Pool({ connectionString: DATABASE });
+// ADR-0023 27.12.15: the plan database kj_recovery; the stack's worker connects to it (kj_worker in stage T, the owner in
+// lane A). This file never creates, migrates or drops a database.
+let database: TestDatabase;
+let pool: pg.Pool;
 const client = new TaskClient(INGRESS);
 const kernel = new KernelClient(INGRESS);
 const reviewer = "70000000-0000-4000-8000-000000000002";
@@ -761,17 +756,17 @@ it("Phase 6 recovers capability receipt commit before acknowledgement without re
       .rowCount,
   ).toBe(0);
 });
-let releaseRuntime = () => {};
 beforeAll(async () => {
-  releaseRuntime = holdRuntime();
   // Only this dedicated disposable validation stack is reset; never use remote URLs.
   compose("down", "--volumes");
+  database = await testDatabase("kj_recovery");
+  pool = new pg.Pool({ connectionString: database.url });
+  useStackDatabase(database.name);
   compose("up", "-d", "--build");
   await until(
     () => pool.query("select 1"),
     (r) => r.rowCount === 1,
   );
-  await migrate(pool);
   await pool.query("insert into principals(id,kind) values($1,$2)", [
     fixture.principal.id,
     fixture.principal.kind,
@@ -808,8 +803,8 @@ beforeAll(async () => {
   expect(registration.ok, await registration.text()).toBe(true);
 }, 300000);
 afterAll(async () => {
-  await pool.end();
-  releaseRuntime();
+  await pool?.end();
+  await database?.close();
 });
 async function submit(): Promise<Task> {
   const task = Task.parse({

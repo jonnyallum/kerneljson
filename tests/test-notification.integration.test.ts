@@ -1,41 +1,24 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { randomUUID } from "node:crypto";
 import pg from "pg";
-import { DATABASE, compose, migrate, until, holdRuntime } from "./support/local.js";
+import { testDatabase, type TestDatabase } from "./support/database.js";
 import { PgNotificationOutboxStore } from "../services/kernel/src/alerting/pg-outbox-store.js";
 import { enqueueTestNotification } from "../services/kernel/src/alerting/test-notification.js";
 import { evaluateOutboxGate, readOutboxGateInput } from "../services/kernel/src/alerting/outbox-gate.js";
 
 // Real Postgres (the disposable validation stack), every migration applied.
-const name = `kj_p22b_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
-const admin = new pg.Pool({ connectionString: DATABASE, max: 1 });
+// ADR-0023 27.12.15: the plan database kj_test_notification, to which the runner applied B1 in this run (stage T), or in lane A
+// the base adapter's database; this file never creates, migrates or drops a database.
+let database: TestDatabase;
 let pool: pg.Pool;
-let releaseRuntime = () => {};
 
 beforeAll(async () => {
-  releaseRuntime = holdRuntime();
-  compose("up", "-d", "db");
-  await until(
-    () => admin.query("select 1"),
-    (r) => r.rowCount === 1,
-  );
-  await admin.query(`create database ${name}`);
-  pool = new pg.Pool({ connectionString: DATABASE.replace(/\/kerneljson$/, `/${name}`), max: 2 });
-  await migrate(pool);
+  database = await testDatabase("kj_test_notification");
+  pool = new pg.Pool({ connectionString: database.url, max: 2 });
 });
 
 afterAll(async () => {
   await pool?.end();
-  // Same race as tests/health-collect-postgres.integration.test.ts: pg-pool's end() can resolve while a
-  // client socket is still closing, and a forced drop would then deliver an unhandled FATAL 57P01.
-  await until(
-    () => admin.query<{ n: number }>("select count(*)::int as n from pg_stat_activity where datname=$1", [name]),
-    (r) => r.rows[0]!.n === 0,
-    10_000,
-  );
-  await admin.query(`drop database if exists ${name} with (force)`);
-  await admin.end();
-  releaseRuntime();
+  await database?.close();
 });
 
 /** Row count of every base table in every non-system schema, keyed schema.table. */

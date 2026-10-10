@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
-import { DATABASE, compose, holdRuntime, migrate, until } from "./support/local.js";
+import { testDatabase, type TestDatabase } from "./support/database.js";
 import {
   AuthenticatorUnavailableError,
   ControlAuthError,
@@ -17,33 +17,22 @@ import { CONTROL_TEST_KEY } from "./support/control-test-key.js";
  * KJ-P4B.1 against a real Postgres: the nonce table's SQL, its constraints, and the replay model on the
  * DATABASE's clock. Concurrency matters here because Restate can deliver the same durable work twice at once.
  */
-const name = `kj_p4b1_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
-const admin = new pg.Pool({ connectionString: DATABASE, max: 1 });
+// ADR-0023 27.12.15: the plan database kj_control_signing_store, to which the runner applied B1 in this run (stage T), or in lane A
+// the base adapter's database; this file never creates, migrates or drops a database.
+let database: TestDatabase;
 let pool: pg.Pool;
 let store: PgControlReplayStore;
-let releaseRuntime = () => {};
 
 beforeAll(async () => {
-  releaseRuntime = holdRuntime();
-  compose("up", "-d", "db");
-  await until(() => admin.query("select 1"), (r) => r.rowCount === 1);
-  await admin.query(`create database ${name}`);
-  pool = new pg.Pool({ connectionString: DATABASE.replace(/\/kerneljson$/, `/${name}`), max: 12 });
+  database = await testDatabase("kj_control_signing_store");
+  pool = new pg.Pool({ connectionString: database.url, max: 12 });
   pool.on("error", () => {});
-  await migrate(pool);
   store = new PgControlReplayStore(pool);
 });
 
 afterAll(async () => {
   await pool?.end();
-  await until(
-    () => admin.query("select count(*)::int as n from pg_stat_activity where datname = $1", [name]),
-    (r) => r.rows[0].n === 0,
-    15000,
-  );
-  await admin.query(`drop database if exists ${name}`);
-  await admin.end();
-  releaseRuntime();
+  await database?.close();
 });
 
 const q = async <T extends pg.QueryResultRow>(sql: string, args: unknown[] = []) => (await pool.query<T>(sql, args)).rows;

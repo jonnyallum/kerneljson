@@ -29,7 +29,7 @@ export interface StageTResult {
   reportSha256:string|null;traceHashes:Record<string,string>;logExtractSha256:string|null;
   logSettings:{before:unknown;after:unknown};markerPid:string|null;
   expected:Refusal[];trace:Refusal[];log:unknown[];databases:string[];network:string[];
-  workingDirectory:string;durationMs:number;
+  workingDirectory:string;durationMs:number;composeDown:boolean|null;
 }
 const LOG_SETTINGS_SQL=`select current_setting('log_line_prefix') as log_line_prefix,current_setting('log_min_error_statement') as log_min_error_statement,
   current_setting('log_min_messages') as log_min_messages,current_setting('log_destination') as log_destination,
@@ -118,6 +118,17 @@ export async function runStageT(input:StageTInput):Promise<StageTResult>{
     child.on("close",code=>{clearTimeout(timer);writeFileSync(join(work,"suite-output.log"),output);done(code);});
   });
   if(exitCode!==0) problems.push(`suite exited ${String(exitCode)}`);
+  // The services of the suite's compose file are the only containers a consumer may start; the runner stops them so L6
+  // can remove the run network, and records whether that succeeded.
+  let composeDown:boolean|null=null;
+  if(suite.compose){
+    const down=spawnSync("docker",["compose","-f",resolve(input.root,suite.compose),"down","--volumes","--remove-orphans"],
+      // compose interpolates the whole file even for down; the worker's plan database is irrelevant to stopping it.
+      {encoding:"utf8",timeout:300000,windowsHide:true,env:{...env,KJ_WORKER_DATABASE_URL:"postgresql://kj_worker@kj-eph-db:5432/kj_down",
+        KJ_TEST_OWNER_DATABASE_URL:"postgresql://postgres@kj-eph-db:5432/kj_down"}});
+    composeDown=down.status===0;
+    if(!composeDown) problems.push(`regression compose project not stopped: ${(down.stderr ?? "").slice(0,300)}`);
+  }
   // 4. Post-T reads through the factory (L3 and L5), then the end marker.
   const reader=await cluster.connect("postgres");let dbNames:string[]=[];
   try{dbNames=(await reader.query<{datname:string;oid:string}>("select datname,oid::text from pg_catalog.pg_database order by datname collate \"C\"")).rows.map(r=>r.datname);}
@@ -190,5 +201,5 @@ export async function runStageT(input:StageTInput):Promise<StageTResult>{
   }
   return {outcome:problems.length?"failed":"passed",problems,exitCode,reportSha256,traceHashes,logExtractSha256,
     logSettings:{before:begin.settings,after:end.settings},markerPid:begin.pid,expected,trace:traceRefusals,log:projectRefusals(logRefusalsTyped),
-    databases:dbNames,network:attached,workingDirectory:work,durationMs:Date.now()-started};
+    databases:dbNames,network:attached,workingDirectory:work,durationMs:Date.now()-started,composeDown};
 }

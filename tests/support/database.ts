@@ -9,7 +9,7 @@ const Copy=z.strictObject({path:z.string().min(1),sha256:HASH});
 const Context=z.strictObject({kind:z.literal("kerneljson:b1-consumer-context/v1"),runId:z.string().regex(/^[0-9a-f]{32}$/),
   databases:z.array(z.strictObject({name:z.string().regex(/^kj_[a-z0-9_]+$/),sequence:z.number().int().positive(),
     ownerUrl:z.string().url(),networkOwnerUrl:z.string().url(),run:RunBinding,baseline:Copy,declaration:Copy})).min(1)});
-export interface TestDatabase {pool:pg.Pool;url:string;close:()=>Promise<void>}
+export interface TestDatabase {name:string;pool:pg.Pool;url:string;close:()=>Promise<void>}
 type Factory=(name:string)=>Promise<TestDatabase>;
 let baseFactory:Factory|undefined;
 const stageT=process.env.KJ_B1_STAGE_T==="1";
@@ -53,7 +53,7 @@ export async function testDatabase(name:string):Promise<TestDatabase>{
     return baseFactory(name);
   }
   const entry=planned(name),pool=new pg.Pool({connectionString:entry.ownerUrl,max:4});
-  return {pool,url:entry.ownerUrl,close:()=>pool.end()};
+  return {name:entry.name,pool,url:entry.ownerUrl,close:()=>pool.end()};
 }
 export function testDatabaseArtifacts(name:string):{baseline:PlatformBaseline;declaration:Declaration}{
   const entry=planned(name);

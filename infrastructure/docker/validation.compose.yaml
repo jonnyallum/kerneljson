@@ -18,6 +18,8 @@ services:
     volumes: [restate-test-data:/restate-data]
     environment:
       RESTATE_BASE_DIR: /restate-data
+    # Host-process workers (alert runner, live schedule files) register as host.docker.internal on Linux as well.
+    extra_hosts: ["host.docker.internal:host-gateway"]
   worker:
     build:
       context: ../..
@@ -27,7 +29,7 @@ services:
       # and loads tests/support/runtime-roles.ts, which records refused privileges instead of stopping at the first.
       DATABASE_URL: ${KJ_WORKER_DATABASE_URL:-postgresql://kj_worker@db:5432/kerneljson}
       # Test-only: fault injection that deliberately corrupts a row needs the owner. Never read by production code.
-      KJ_TEST_OWNER_DATABASE_URL: postgresql://postgres@db:5432/kerneljson
+      KJ_TEST_OWNER_DATABASE_URL: ${KJ_TEST_OWNER_DATABASE_URL:-postgresql://postgres@db:5432/kerneljson}
       KJ_RUNTIME_ROLES: ${KJ_RUNTIME_ROLES:-enforce}
       KJ_RUNTIME_ROLE_FIXED: kj_worker
       KJ_B1_TRACE_DIR: /trace

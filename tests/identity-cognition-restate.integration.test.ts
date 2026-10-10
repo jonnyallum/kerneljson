@@ -2,7 +2,8 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import pg from "pg";
-import { ADMIN, DATABASE, INGRESS, compose, holdRuntime, migrate, until } from "./support/local.js";
+import { ADMIN, INGRESS, compose, until, useStackDatabase } from "./support/local.js";
+import { testDatabase, type TestDatabase } from "./support/database.js";
 import { principal } from "../evals/fixtures/contracts.js";
 import { MISSION_RECIPE, type IdentityDocument } from "../packages/contracts/src/index.js";
 import { compileIntent } from "../services/kernel/src/compiler/index.js";
@@ -12,19 +13,22 @@ import { identityCoreDigestV1 } from "../services/kernel/src/identity/canonical.
 import { REPO } from "./support/mission-fixture.js";
 
 // Real production KernelWorkflowV1 + real Restate 1.7.9 journal + real Postgres. Only provider/GitHub I/O is fake.
-const pool = new pg.Pool({ connectionString: DATABASE });
+// ADR-0023 27.12.15: the plan database kj_identity_cognition_restate; the stack's worker connects to it (kj_worker in stage T, the owner in
+// lane A). This file never creates, migrates or drops a database.
+let database: TestDatabase;
+let pool: pg.Pool;
 const corpus = JSON.parse(readFileSync("tests/fixtures/identity-core-v1.vectors.json", "utf8")) as {
   vectors: Array<{ name: string; inputJson: string }>;
 };
 const identity = JSON.parse(corpus.vectors.find(v => v.name === "kernel-v1-activated")!.inputJson) as IdentityDocument;
-let releaseRuntime = () => {};
 
 beforeAll(async () => {
-  releaseRuntime = holdRuntime();
   compose("down", "--volumes");
+  database = await testDatabase("kj_identity_cognition_restate");
+  pool = new pg.Pool({ connectionString: database.url });
+  useStackDatabase(database.name);
   compose("up", "-d", "--build");
   await until(() => pool.query("select 1"), r => r.rowCount === 1);
-  await migrate(pool);
   await pool.query("insert into principals(id,kind) values($1,'HUMAN')", [principal.id]);
   await pool.query("insert into tenants(id,name) values($1,'cognition-restate')", [identity.tenantId]);
   await pool.query("insert into tenant_memberships(tenant_id,principal_id,role) values($1,$2,'owner')", [identity.tenantId, principal.id]);
@@ -57,7 +61,7 @@ beforeAll(async () => {
   }), r => r.ok);
   expect(registration.ok, await registration.text()).toBe(true);
 }, 300000);
-afterAll(async () => { await pool.end(); releaseRuntime(); });
+afterAll(async () => { await pool?.end(); await database?.close(); });
 
 async function submit() {
   const body = { recipe: MISSION_RECIPE, intent: {

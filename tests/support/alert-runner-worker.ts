@@ -6,6 +6,8 @@ import { runMonitor } from "../../services/kernel/src/alerting/runner.js";
 import { ConsoleNotifier } from "../../services/kernel/src/alerting/notifier.js";
 import { monitorReport } from "./alert-runner-fixture.js";
 
+// KJ-P8 B1 stage T: the monitor is production code under the runtime role; the harness traces its statements.
+if (["discover", "enforce"].includes(process.env["KJ_RUNTIME_ROLES"] ?? "")) await import("./runtime-roles.js");
 // Only the collector and accelerated timer differ from production. No task APIs.
 const pool = new pg.Pool({
   connectionString: process.env["KJ_MONITOR_TEST_DB"],

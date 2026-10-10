@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import pg from "pg";
-import { DATABASE, compose, holdRuntime, migrate, until } from "./support/local.js";
+import { testDatabase, type TestDatabase } from "./support/database.js";
 import { buildDoorHandler, loadDoorConfig } from "../apps/gateway/src/main.js";
 import { KernelSubmission, MISSION_RECIPE, TaskEvent, parseMissionObjective } from "../packages/contracts/src/index.js";
 import { compileIntent } from "../services/kernel/src/compiler/index.js";
@@ -22,25 +22,21 @@ import { FakeSource, LIMITS, NOW, msg } from "./support/telegram-fixture.js";
  * send the reply are doubles. This is where "a Telegram message becomes exactly one IntentEnvelope,
  * and nothing else can" is proven against persisted rows, not against a mock of the door.
  */
-const name = `kj_p4a_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
-const admin = new pg.Pool({ connectionString: DATABASE, max: 1 });
+// ADR-0023 27.12.15: the plan database kj_telegram_channel, to which the runner applied B1 in this run (stage T), or in lane A
+// the base adapter's database; this file never creates, migrates or drops a database.
+let database: TestDatabase;
 const tenantId = randomUUID();
 const principalId = randomUUID();
 const BEARER = `tg-int-${randomUUID()}${randomUUID()}`;
 let pool: pg.Pool;
 let server: Server;
 let base = "";
-let releaseRuntime = () => {};
 
 beforeAll(async () => {
-  releaseRuntime = holdRuntime();
-  compose("up", "-d", "db");
-  await until(() => admin.query("select 1"), (r) => r.rowCount === 1);
-  await admin.query(`create database ${name}`);
-  const url = DATABASE.replace(/\/kerneljson$/, `/${name}`);
+  database = await testDatabase("kj_telegram_channel");
+  const url = database.url;
   pool = new pg.Pool({ connectionString: url, max: 6 });
   pool.on("error", () => {});
-  await migrate(pool);
   await pool.query("insert into principals(id,kind) values($1,'HUMAN')", [principalId]);
   await pool.query("insert into tenants(id,name) values($1,'tg-int')", [tenantId]);
   await pool.query("insert into tenant_memberships(tenant_id,principal_id,role) values($1,$2,'operator')", [tenantId, principalId]);
@@ -63,14 +59,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (server) await new Promise<void>((res, rej) => server.close((e) => (e ? rej(e) : res())));
   await pool?.end();
-  await until(
-    () => admin.query("select count(*)::int as n from pg_stat_activity where datname = $1", [name]),
-    (r) => r.rows[0].n === 0,
-    15000,
-  );
-  await admin.query(`drop database if exists ${name}`);
-  await admin.end();
-  releaseRuntime();
+  await database?.close();
 });
 
 beforeEach(async () => {

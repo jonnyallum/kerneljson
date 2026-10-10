@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
-import { ADMIN, DATABASE, INGRESS, compose, holdRuntime, migrate, until } from "./support/local.js";
+import { ADMIN, INGRESS, compose, until, useStackDatabase } from "./support/local.js";
+import { testDatabase, type TestDatabase } from "./support/database.js";
 import { policyOwner, policyReviewer } from "./support/golden-probe.js";
 import { secondHuman } from "./support/identity-probe.js";
 import { compileIntent } from "../services/kernel/src/compiler/index.js";
@@ -17,7 +18,10 @@ import { IDENTITY_CHANGE_RECIPE } from "../packages/contracts/src/index.js";
  * Every refusal below waits for the invocation to actually finish (Restate `attach`) and then asserts
  * the canonical end state - never a fixed sleep, and never a task left RECEIVED/COMPILED/VERIFYING.
  */
-const pool = new pg.Pool({ connectionString: DATABASE });
+// ADR-0023 27.12.15: the plan database kj_identity_workflow; the stack's worker connects to it (kj_worker in stage T, the owner in
+// lane A). This file never creates, migrates or drops a database.
+let database: TestDatabase;
+let pool: pg.Pool;
 const NON_TERMINAL = ["RECEIVED", "COMPILED", "READY", "RUNNING", "WAITING", "APPROVAL_REQUIRED", "VERIFYING"];
 
 function classA(overrides: Record<string, unknown> = {}) {
@@ -114,13 +118,13 @@ async function ownerChange(identityId: string, persona: string) {
   return { task, result: await finished(task.id) };
 }
 
-let releaseRuntime = () => {};
 beforeAll(async () => {
-  releaseRuntime = holdRuntime();
   compose("down", "--volumes");
+  database = await testDatabase("kj_identity_workflow");
+  pool = new pg.Pool({ connectionString: database.url });
+  useStackDatabase(database.name);
   compose("up", "-d", "--build");
   await until(() => pool.query("select 1"), (r) => r.rowCount === 1);
-  await migrate(pool);
   await pool.query("insert into principals(id,kind) values($1,'HUMAN')", [policyOwner]);
   await pool.query("insert into tenants(id,name) values($1,'identity-e2e')", [policyOwner]);
   await pool.query("insert into tenant_memberships(tenant_id,principal_id,role) values($1,$1,'owner')", [policyOwner]);
@@ -143,8 +147,8 @@ beforeAll(async () => {
   expect(registration.ok, await registration.text()).toBe(true);
 }, 300000);
 afterAll(async () => {
-  await pool.end();
-  releaseRuntime();
+  await pool?.end();
+  await database?.close();
 });
 
 // identity_profiles.tenant_id is UNIQUE (ADR-0021 D6: one tenant -> one identity), and the test

@@ -20,15 +20,39 @@ export function holdRuntime(): () => void {
   };
 }
 /**
- * Lane A (ADR-0023 27.12.15): no runtime role exists in the compose database, so in harness mode `base` the compose
- * worker connects as the owner, exactly as it did before B1. Lane A never applies B1 and establishes nothing about it.
+ * The compose stack of a database-backed file (ADR-0023 27.12.15). The file names its plan database with
+ * useStackDatabase() before it starts the stack, and the worker connects to that database:
+ *   - stage T: the suite's registered regression compose file (worker and Restate only, on the run network); the
+ *     worker logs in as kj_worker to kj-eph-db:5432/<plan database>; no database service exists to start or stop;
+ *   - lane A (harness mode `base`): the validation stack; no runtime role exists there, so the worker connects as the
+ *     owner, exactly as it did before B1. Lane A never applies B1 and establishes nothing about it.
  */
+const STAGE_T = process.env["KJ_B1_STAGE_T"] === "1";
+let stackDatabase: string | undefined;
+export function useStackDatabase(name: string): void {
+  if (!/^kj_[a-z0-9_]+$/.test(name)) throw new Error("STACK_REFUSED: invalid plan database name");
+  stackDatabase = name;
+}
 function composeEnvironment(): NodeJS.ProcessEnv {
+  if (STAGE_T) {
+    if (!stackDatabase) throw new Error("STACK_REFUSED: the file has not named its plan database");
+    return { ...process.env, KJ_WORKER_DATABASE_URL: `postgresql://kj_worker@kj-eph-db:5432/${stackDatabase}`,
+      KJ_TEST_OWNER_DATABASE_URL: `postgresql://postgres@kj-eph-db:5432/${stackDatabase}` };
+  }
   if (process.env["KJ_RUNTIME_ROLES"] !== "base") return process.env;
-  return { ...process.env, KJ_WORKER_DATABASE_URL: "postgresql://postgres@db:5432/kerneljson", KJ_RUNTIME_ROLES: "base" };
+  const database = stackDatabase ?? "kerneljson";
+  return { ...process.env, KJ_WORKER_DATABASE_URL: `postgresql://postgres@db:5432/${database}`,
+    KJ_TEST_OWNER_DATABASE_URL: `postgresql://postgres@db:5432/${database}`, KJ_RUNTIME_ROLES: "base" };
+}
+function composeFile(): string {
+  if (!STAGE_T) return resolve("infrastructure/docker/validation.compose.yaml");
+  const file = process.env["KJ_B1_COMPOSE_FILE"];
+  if (!file || !/regression\.compose\.yaml$/.test(file)) throw new Error("STACK_REFUSED: no regression compose file for this suite");
+  return file;
 }
 export function compose(...args: string[]): string {
-  const file = resolve("infrastructure/docker/validation.compose.yaml");
+  const file = composeFile();
+  if (STAGE_T && args.includes("db")) throw new Error("STACK_REFUSED: the run's cluster is not a compose service");
   const dockerArgs = ["compose", "-f", file, ...args];
   if (process.platform === "win32" && process.env["KERNELJSON_DOCKER_WSL"]) {
     const linuxFile =

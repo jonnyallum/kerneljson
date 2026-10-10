@@ -1,13 +1,7 @@
 import { beforeAll, afterAll, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
-import {
-  DATABASE,
-  compose,
-  migrate,
-  until,
-  holdRuntime,
-} from "./support/local.js";
+import { testDatabase, type TestDatabase } from "./support/database.js";
 import { Ledger } from "../services/kernel/src/ledger.js";
 import {
   Task,
@@ -29,12 +23,11 @@ import { CapabilityStore } from "../services/kernel/src/capability-store.js";
 import { ApprovalStore } from "../services/kernel/src/approval-store.js";
 import { evaluatePolicy } from "../services/kernel/src/policy.js";
 import { task as fixture, at } from "../evals/fixtures/contracts.js";
-const admin = new pg.Pool({ connectionString: DATABASE });
-const name = `test_${randomUUID().replaceAll("-", "")}`;
-const pool = new pg.Pool({
-  connectionString: DATABASE.replace("/kerneljson", `/${name}`),
-});
-const ledger = new Ledger(pool);
+// ADR-0023 27.12.15: the plan database kj_database, to which the runner applied B1 in this run (stage T), or in lane A
+// (mutation-check-identity) the base adapter's database; this file never creates, migrates or drops a database.
+let database: TestDatabase;
+let pool: pg.Pool;
+let ledger: Ledger;
 const task = Task.parse({ ...fixture, id: randomUUID() });
 const event = TaskEvent.parse({
   id: randomUUID(),
@@ -47,18 +40,14 @@ const event = TaskEvent.parse({
 });
 const write = { key: "create", task, event };
 const capabilities = createBuiltinRegistry();
-const capabilityStore = new CapabilityStore(pool, capabilities);
-const approvalStore = new ApprovalStore(pool);
-let releaseRuntime = () => {};
+let capabilityStore: CapabilityStore;
+let approvalStore: ApprovalStore;
 beforeAll(async () => {
-  releaseRuntime = holdRuntime();
-  compose("up", "-d", "db");
-  await until(
-    () => admin.query("select 1"),
-    (r) => r.rowCount === 1,
-  );
-  await admin.query(`create database ${name}`);
-  await migrate(pool);
+  database = await testDatabase("kj_database");
+  pool = new pg.Pool({ connectionString: database.url });
+  ledger = new Ledger(pool);
+  capabilityStore = new CapabilityStore(pool, capabilities);
+  approvalStore = new ApprovalStore(pool);
   await pool.query("insert into principals(id,kind) values($1,$2)", [
     task.principal.id,
     task.principal.kind,
@@ -74,10 +63,8 @@ beforeAll(async () => {
   await ledger.write(write);
 });
 afterAll(async () => {
-  await pool.end();
-  await admin.query(`drop database if exists ${name}`);
-  await admin.end();
-  releaseRuntime();
+  await pool?.end();
+  await database?.close();
 });
 
 async function capabilityFixture() {

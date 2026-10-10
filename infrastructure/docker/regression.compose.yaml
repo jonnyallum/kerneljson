@@ -1,0 +1,39 @@
+# ADR-0023 27.12.15 stage T: the regression services of a registered suite, never a database. They join the run network
+# kj-eph-<runId> as an external network and reach the run's cluster as kj-eph-db:5432. The worker logs in as kj_worker
+# to the plan database the consumer names. The only host mount is the trace directory the runner created; no privileged
+# mode, no daemon socket. The runner stops this project after stage T and before L6.
+name: kerneljson-regression
+services:
+  restate:
+    image: docker.restate.dev/restatedev/restate:1.7.9
+    ports: ["127.0.0.1:18080:8080", "127.0.0.1:19070:9070"]
+    volumes: [restate-regression-data:/restate-data]
+    environment:
+      RESTATE_BASE_DIR: /restate-data
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    networks: [run]
+  worker:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/worker.Dockerfile
+    environment:
+      DATABASE_URL: ${KJ_WORKER_DATABASE_URL:?the consumer names its plan database}
+      # Test-only fault injection that corrupts a row needs the owner of the same plan database; never production code.
+      KJ_TEST_OWNER_DATABASE_URL: ${KJ_TEST_OWNER_DATABASE_URL:?the consumer names its plan database}
+      KJ_RUNTIME_ROLES: ${KJ_RUNTIME_ROLES:?stage T sets the harness mode}
+      KJ_RUNTIME_ROLE_FIXED: kj_worker
+      KJ_B1_STAGE_T: "1"
+      KJ_B1_RUN_TOKEN: ${KJ_B1_RUN_TOKEN:?stage T sets the trace token}
+      KJ_B1_TRACE_DIR: /trace
+      PORT: 9080
+      KERNELJSON_RELEASE_ID: ${KERNELJSON_RELEASE_ID:-unreleased-development}
+    ports: ["127.0.0.1:19080:9080"]
+    volumes: ["${KJ_B1_TRACE_DIR:?stage T sets the trace directory}:/trace"]
+    networks: [run]
+    command: ["node", "--import", "tsx", "tests/support/worker.ts"]
+networks:
+  run:
+    external: true
+    name: ${KJ_B1_RUN_NETWORK:?stage T sets the run network}
+volumes:
+  restate-regression-data:

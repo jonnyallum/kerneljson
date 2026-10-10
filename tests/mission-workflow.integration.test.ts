@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createHash, randomUUID } from "node:crypto";
 import pg from "pg";
 import type { Context } from "@restatedev/restate-sdk";
-import { DATABASE, compose, migrate, until, holdRuntime } from "./support/local.js";
+import { testDatabase, type TestDatabase } from "./support/database.js";
 import {
   KernelSubmission,
   MISSION_RECIPE,
@@ -39,22 +39,18 @@ import {
  * first mission; here `ctx.run` simply calls its action, which is the same thing on first
  * execution.
  */
-const name = `kj_p3_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
-const admin = new pg.Pool({ connectionString: DATABASE, max: 1 });
+// ADR-0023 27.12.15: the plan database kj_mission_workflow, to which the runner applied B1 in this run (stage T), or in lane A
+// the base adapter's database; this file never creates, migrates or drops a database.
+let database: TestDatabase;
 let pool: pg.Pool;
 let ledger: Ledger;
 let outbox: PgNotificationOutboxStore;
-let releaseRuntime = () => {};
 
 beforeAll(async () => {
-  releaseRuntime = holdRuntime();
-  compose("up", "-d", "db");
-  await until(() => admin.query("select 1"), (r) => r.rowCount === 1);
-  await admin.query(`create database ${name}`);
-  pool = new pg.Pool({ connectionString: DATABASE.replace(/\/kerneljson$/, `/${name}`), max: 4 });
+  database = await testDatabase("kj_mission_workflow");
+  pool = new pg.Pool({ connectionString: database.url, max: 4 });
   // A late socket error on an idle client must never become an unhandled exception.
   pool.on("error", () => {});
-  await migrate(pool);
   await pool.query("insert into principals(id,kind) values($1,$2)", [principal.id, principal.kind]);
   await pool.query("insert into tenants(id,name) values($1,$2)", [fixtureId, "fixture"]);
   await pool.query("insert into tenant_memberships(tenant_id,principal_id,role) values($1,$2,$3)", [fixtureId, principal.id, "owner"]);
@@ -64,16 +60,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await pool?.end();
-  // Wait for the sessions to actually close, then drop without FORCE. Forcing while a client is
-  // still closing races its socket and surfaces as an unhandled 57P01 in the test run.
-  await until(
-    () => admin.query("select count(*)::int as n from pg_stat_activity where datname = $1", [name]),
-    (r) => r.rows[0].n === 0,
-    15000,
-  );
-  await admin.query(`drop database if exists ${name}`);
-  await admin.end();
-  releaseRuntime();
+  await database?.close();
 });
 
 /** Deterministic ids and clock, so a replay presents the ledger with byte-identical writes. */
