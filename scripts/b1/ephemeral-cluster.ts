@@ -38,6 +38,7 @@ export class EphemeralCluster {
   genuineContainerId="";
   private port=0;
   private skipNextAttestation=false;
+  private stageTBegun=false;
   /** The identity L5 read on the most recent connection; S4 compares the run files with it. */
   lastIdentity:LiveIdentity|null=null;
   readonly fixtures:{kind:"container"|"network";id:string;removed:boolean}[]=[];
@@ -115,6 +116,12 @@ export class EphemeralCluster {
   }
   /** Registered hook L3-skip: the attestation is omitted for the next connection only; L5 still runs. */
   skipAttestationOnce():void{this.skipNextAttestation=true;}
+  /**
+   * 27.12.15 "Network": until stage T begins the cluster is the only container on the run network. From then on the
+   * suite's compose services join it, and membership is the post-T network check's (it fails regressionOutcome); L3
+   * still requires the cluster on exactly that labelled network, running and unpaused, at every connection.
+   */
+  beginStageT():void{this.stageTBegun=true;}
   attest():void{
     try{
       const inspections=JSON.parse(this.docker(["inspect",this.containerId]));
@@ -134,7 +141,8 @@ export class EphemeralCluster {
         throw Error("container network differs");
       const networks=JSON.parse(this.docker(["network","inspect",this.networkId]));
       if(networks.length!==1 || networks[0].Name!==`kj-eph-${this.runId}` || networks[0].Labels?.["kj.b1.ephemeral.run"]!==this.runId ||
-        !equal(Object.keys(networks[0].Containers),[this.containerId])) throw Error("network membership differs");
+        (this.stageTBegun?!Object.keys(networks[0].Containers).includes(this.containerId):!equal(Object.keys(networks[0].Containers),[this.containerId])))
+        throw Error("network membership differs");
       if(c.Created!==this.created) throw Error("container creation time differs from L2");
       this.record({step:"L3",outcome:"passed",details:{containerId:this.containerId,created:this.created,port:this.port,networkId:this.networkId}});
     }catch(error){
@@ -151,6 +159,9 @@ export class EphemeralCluster {
     if(database!=="postgres" && !this.databases.includes(database)) throw Error("L4: unplanned database");
     const client=new pg.Client({host:"127.0.0.1",port:this.port,user:"postgres",database,password:"",ssl:false,
       application_name:"kj-b1-runner",connectionTimeoutMillis:10000,options:"",statement_timeout:60000});
+    // A server that goes away (the cluster removed during stage T, CON-10) must surface through the failing query and
+    // reach L6, never as an unhandled 'error' event that ends the runner before it records anything.
+    client.on("error",()=>undefined);
     try{
       await client.connect();this.record({step:"L4",outcome:"passed",details:{database,host:"127.0.0.1",port:this.port,user:"postgres"}});
       const live=(await client.query<LiveIdentity>(LIVE_IDENTITY_SQL)).rows[0];

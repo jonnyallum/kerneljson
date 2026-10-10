@@ -174,7 +174,13 @@ describe("CON-6 and CON-10 changes made during stage T", () => {
     const runId = o.record?.header.runId;
     if (runId) spawnSync("docker", ["network", "rm", `kj-eph-${runId}`]);
     expect(induced).toBe(true);
-    expectRegressionFailed(o, /foreign container on the run network/);
+    // The post-T network check fails regressionOutcome (27.12.15). The foreign container is still attached at L6, which
+    // the runner never touches, so removing the run network fails and the status is NOT_QUALIFIED as well.
+    expect(o.record!.regressionOutcome).toBe("failed");
+    expect(stageT(o).problems.join("\n")).toMatch(/foreign container on the run network/);
+    expect(o.record!.events.filter((e) => e.step === "L3").map((e) => e.outcome)).not.toContain("refused");
+    expect(o.record!.events.find((e) => e.step === "L6")).toMatchObject({ outcome: "refused" });
+    expect(o.summary?.status).toBe("NOT_QUALIFIED");
   }, CASE_TIMEOUT);
   it("CON-10 the cluster removed during stage T: L6 fails and the status is NOT_QUALIFIED", async () => {
     const run = runCase("CON-10 cluster removed during stage T", "pinned-helper", [], { suite: "regression-helper-probes" });

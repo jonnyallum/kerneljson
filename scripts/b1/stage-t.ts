@@ -70,6 +70,7 @@ function docker(args:string[]):{ok:boolean;stdout:string;stderr:string}{
 export async function runStageT(input:StageTInput):Promise<StageTResult>{
   const started=Date.now(),problems:string[]=[];
   const {cluster,suite,runId}=input;
+  cluster.beginStageT();
   // 1. Log settings in the run's own cluster, then the begin marker.
   const setup=await cluster.connect("postgres");
   try{
