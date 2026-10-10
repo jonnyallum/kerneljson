@@ -35,6 +35,9 @@ const STAMP = "kernel_private.stamp_binding_provenance()";
 const DIGEST_SQL = `select encode(sha256(convert_to(replace(prosrc, E'\\r\\n', E'\\n'), 'UTF8')), 'hex') as digest, prosrc
   from pg_proc where oid = '${STAMP}'::regprocedure`;
 let pool: pg.Pool;
+// A genuine kj_worker LOGIN session on the same plan database: the health check is read as kj_worker in every harness
+// mode. The harness never shadows, emulates or retries a pool that logs in as a runtime role (tests/support/runtime-roles.ts).
+let worker: pg.Pool;
 let baseline: PlatformBaseline;
 let declaration: Declaration;
 let run: Extract<Declaration, { mode: "EPHEMERAL_RUN_BOUND" }>["run"];
@@ -60,6 +63,10 @@ beforeAll(async () => {
   database = await testDatabase("kj_b1_def");
   pool = database.pool;
   pool.on("error", () => {});
+  const workerUrl = new URL(database.url);
+  workerUrl.username = "kj_worker";
+  worker = new pg.Pool({ connectionString: workerUrl.toString(), max: 2 });
+  worker.on("error", () => {});
   ({ baseline, declaration } = testDatabaseArtifacts("kj_b1_def"));
   if (declaration.mode !== "EPHEMERAL_RUN_BOUND") throw new Error("a run-bound declaration is required");
   run = declaration.run;
@@ -68,6 +75,7 @@ beforeAll(async () => {
 afterAll(async () => {
   mkdirSync("artifacts/local", { recursive: true });
   writeFileSync("artifacts/local/b1-definers.json", JSON.stringify({ ...evidence, fixtures }, null, 2) + "\n");
+  await worker?.end().catch(() => undefined);
   await database?.close();
 });
 
@@ -150,18 +158,18 @@ describe("27.10.1 ACTUAL equals EXPECTED(B1) = PLATFORM_BASELINE UNION { stamp_b
   it("holds on the migrated database", async () => {
     expect(await problems()).toEqual([]);
   });
-  it.skipIf(process.env["KJ_RUNTIME_ROLES"] === "discover")("database.runtimeRolesLeastPrivilege is green, read as kj_worker", async () => {
-    expect(await fetchRuntimeRoles(pool, { baseline, declaration, run })).toEqual({ available: true, problems: [] });
+  it("database.runtimeRolesLeastPrivilege is green, read as kj_worker", async () => {
+    expect(await fetchRuntimeRoles(worker, { baseline, declaration, run })).toEqual({ available: true, problems: [] });
   });
   it("without a frozen baseline the health check stays red with TARGET_PLATFORM_BASELINE_PENDING", async () => {
     const observed = await fetchRuntimeRoles(pool, { baseline: null, declaration, run });
     expect(observed.available && observed.problems).toContain("TARGET_PLATFORM_BASELINE_PENDING: no frozen platform SECURITY DEFINER baseline for this environment");
   });
-  // Like the green check above, this needs a genuine kj_worker session, so it runs in the enforce run only.
-  it.skipIf(process.env["KJ_RUNTIME_ROLES"] === "discover")("27.11: a platform function executable by PUBLIC in a schema the roles cannot USAGE is not a runtime fact", async () => {
+  // Like the green check above, this needs a genuine kj_worker session, which the worker pool gives in every mode.
+  it("27.11: a platform function executable by PUBLIC in a schema the roles cannot USAGE is not a runtime fact", async () => {
     await pool.query(`grant execute on function auth.kj_platform_uid() to public`);
     try {
-      expect(await fetchRuntimeRoles(pool, { baseline, declaration, run })).toEqual({ available: true, problems: [] });
+      expect(await fetchRuntimeRoles(worker, { baseline, declaration, run })).toEqual({ available: true, problems: [] });
     } finally { await pool.query(`revoke execute on function auth.kj_platform_uid() from public`); }
   });
   it("27.11: once that schema has USAGE, the schema grant and the function grant are both unexpected facts and the check goes red", async () => {
