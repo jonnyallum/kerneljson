@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { gatedDatabaseUrl } from "./support/database.js";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -14,7 +15,7 @@ import { seedAdmittedTask } from "./support/seed-admission.js";
  * ownership-sensitive ScheduleFire mutation after another worker took ownership.
  * Requires a LOCAL throwaway KJ_TEST_PG_URL; skips cleanly and never touches prod.
  */
-const URL = process.env["KJ_TEST_PG_URL"];
+const URL = gatedDatabaseUrl();
 const PROD_MARKERS = ["supabase.co", "supabase.com", "pooler.supabase", "supabase.in",
   "banqdzddfganzfhckdps", "lkwydqtfbdjhxaarelaz", "136.112.138.225", "35.242.183.206", "34.105.139.159"];
 const URL_ = globalThis.URL;

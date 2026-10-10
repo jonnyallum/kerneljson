@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { gatedDatabaseUrl } from "./support/database.js";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -19,7 +20,7 @@ import { seedAdmittedTask } from "./support/seed-admission.js";
  * Requires an explicit LOCAL throwaway test DB via KJ_TEST_PG_URL. Skips clearly
  * when unset. NEVER falls back to production; a production-looking target aborts.
  */
-const URL = process.env["KJ_TEST_PG_URL"];
+const URL = gatedDatabaseUrl();
 const PROD_MARKERS = [
   "supabase.co", "supabase.com", "pooler.supabase", "supabase.in",
   "banqdzddfganzfhckdps", "lkwydqtfbdjhxaarelaz", // known KernelJSON / Brain prod refs

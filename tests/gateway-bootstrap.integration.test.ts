@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { gatedDatabaseUrl } from "./support/database.js";
 import { createServer, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
-import { migrate } from "./support/local.js";
 import { buildDoorHandler, loadDoorConfig } from "../apps/gateway/src/main.js";
 
 /**
@@ -15,7 +15,7 @@ import { buildDoorHandler, loadDoorConfig } from "../apps/gateway/src/main.js";
  *
  * Gated on KJ_TEST_PG_URL; skips cleanly when unset; a production-looking target aborts.
  */
-const TEST_URL = process.env["KJ_TEST_PG_URL"];
+const TEST_URL = gatedDatabaseUrl();
 const PROD_MARKERS = [
   "supabase.co", "supabase.com", "pooler.supabase", "supabase.in",
   "banqdzddfganzfhckdps", "lkwydqtfbdjhxaarelaz",
@@ -63,8 +63,9 @@ run("admission door — Postgres admission qualification", () => {
   beforeAll(async () => {
     assertLocalTestTarget(TEST_URL!);
     pool = new pg.Pool({ connectionString: TEST_URL });
+    // The database is the runner's plan database, migrated with B1 in this run; nothing here migrates.
     const migrated = await pool.query("select to_regclass('kernel_private.task_admissions') as t");
-    if (!migrated.rows[0].t) await migrate(pool);
+    if (!migrated.rows[0].t) throw new Error("gated database is not migrated");
     // Identity: a HUMAN principal with an ACTIVE operator membership of the tenant.
     await pool.query("insert into principals(id,kind) values($1,'HUMAN')", [principalId]);
     await pool.query("insert into tenants(id,name) values($1,'gw-boot')", [tenantId]);

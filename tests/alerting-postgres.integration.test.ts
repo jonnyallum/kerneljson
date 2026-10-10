@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { gatedDatabaseUrl } from "./support/database.js";
 import pg from "pg";
 import { PgAlertStateStore } from "../services/kernel/src/alerting/pg-state-store.js";
 import { reduceCheck } from "../services/kernel/src/alerting/reducer.js";
@@ -20,7 +21,7 @@ import type { CheckResult } from "../services/kernel/src/health/types.js";
  * database — PgAlertStateStore itself holds no in-process state, so this is a
  * faithful stand-in for two separate `kerneljson alerts` process invocations.
  */
-const URL = process.env["KJ_TEST_PG_URL"];
+const URL = gatedDatabaseUrl();
 const PROD_MARKERS = [
   "supabase.co", "supabase.com", "pooler.supabase", "supabase.in",
   "banqdzddfganzfhckdps", "lkwydqtfbdjhxaarelaz",

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+import { gatedDatabaseUrl } from "./support/database.js";
 import pg from "pg";
 import { PgAlertStateStore } from "../services/kernel/src/alerting/pg-state-store.js";
 import { PgNotificationOutboxStore } from "../services/kernel/src/alerting/pg-outbox-store.js";
@@ -19,7 +20,7 @@ import type { CheckResult } from "../services/kernel/src/health/types.js";
  * to it. Skips clearly when unset. NEVER touches production — see the
  * tripwire below, identical to the existing integration suites' convention.
  */
-const URL = process.env["KJ_TEST_PG_URL"];
+const URL = gatedDatabaseUrl();
 const PROD_MARKERS = [
   "supabase.co", "supabase.com", "pooler.supabase", "supabase.in",
   "banqdzddfganzfhckdps", "lkwydqtfbdjhxaarelaz",

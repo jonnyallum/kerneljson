@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { gatedDatabaseUrl } from "./support/database.js";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
-import { migrate } from "./support/local.js";
 import { seedAdmittedTask } from "./support/seed-admission.js";
 import { PgScheduleStore } from "../services/kernel/src/scheduler/pg-store.js";
 import { PgIdentityGate, installDisabledCanary } from "../services/kernel/src/scheduler/canary-seed.js";
@@ -16,7 +16,7 @@ import type { AdmissionGateway, AdmissionRequestInput, AdmissionResult } from ".
  * admission machinery against a REAL local throwaway Postgres. Gated on KJ_TEST_PG_URL; skips
  * cleanly when unset; a production-looking target aborts (never touches production).
  */
-const URL = process.env["KJ_TEST_PG_URL"];
+const URL = gatedDatabaseUrl();
 const PROD_MARKERS = [
   "supabase.co", "supabase.com", "pooler.supabase", "supabase.in",
   "banqdzddfganzfhckdps", "lkwydqtfbdjhxaarelaz",
@@ -72,8 +72,9 @@ run("Gate 3 tooling — Postgres runtime qualification", () => {
   beforeAll(async () => {
     assertLocalTestTarget(URL!);
     pool = new pg.Pool({ connectionString: URL });
+    // The database is the runner's plan database, migrated with B1 in this run; nothing here migrates.
     const migrated = await pool.query("select to_regclass('public.schedule_specs') as t");
-    if (!migrated.rows[0].t) await migrate(pool);
+    if (!migrated.rows[0].t) throw new Error("gated database is not migrated");
     store = new PgScheduleStore(pool);
     gate = new PgIdentityGate(pool);
     await pool.query("insert into principals(id,kind) values($1,'SERVICE'),($2,'HUMAN')", [svc, owner]);

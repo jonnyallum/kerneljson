@@ -38,6 +38,14 @@ function planned(name:string){
   if(!entry) throw Error("DATABASE_REFUSED: database is not in this suite plan");
   return entry;
 }
+/**
+ * ADR-0023 27.12.15 suite regression-gated: the six formerly KJ_TEST_PG_URL-gated files share their plan database
+ * kj_gated inside stage T, as the frozen CI shared kj_gated. Outside stage T the explicit KJ_TEST_PG_URL still gates
+ * them (the pinned collection sets it to a placeholder that is never connected to).
+ */
+export function gatedDatabaseUrl():string|undefined{
+  return stageT?planned("kj_gated").ownerUrl:process.env["KJ_TEST_PG_URL"];
+}
 /** The caller names its committed plan database literally. No consumer creates or drops a database. */
 export async function testDatabase(name:string):Promise<TestDatabase>{
   if(!stageT){
