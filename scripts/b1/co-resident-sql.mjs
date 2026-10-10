@@ -90,9 +90,9 @@ begin
   end loop;
   -- P2(c), E3: a present pinned function carries exactly its complete sealed topology, every column, no other row.
   if helper is not null and ((select pg_catalog.count(*) from pg_catalog.pg_event_trigger where evtfoid=helper) <> 1
-    or not exists (select 1 from pg_catalog.pg_event_trigger e where e.evtfoid=helper and e.evtname='ensure_rls'
-      and pg_catalog.pg_get_userbyid(e.evtowner)='postgres' and e.evtevent='ddl_command_end' and e.evtenabled='O'
-      and (select pg_catalog.array_agg(tag order by tag collate "C") from pg_catalog.unnest(e.evttags) tag)
+    or not exists (select 1 from pg_catalog.pg_event_trigger t where t.evtfoid=helper and t.evtname='ensure_rls'
+      and pg_catalog.pg_get_userbyid(t.evtowner)='postgres' and t.evtevent='ddl_command_end' and t.evtenabled='O'
+      and (select pg_catalog.array_agg(tag order by tag collate "C") from pg_catalog.unnest(t.evttags) tag)
         is not distinct from array['CREATE TABLE','CREATE TABLE AS','SELECT INTO'])) then
     violations := violations || 'P2 (c) E3: sealed topology of the pinned function is incomplete or extended'::text;
   end if;
