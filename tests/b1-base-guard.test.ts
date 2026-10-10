@@ -21,11 +21,12 @@ describe("lane A refuses B1 before writing",()=>{
   it.each([undefined,"enforce","discover","typo"])("refuses mode %s",mode=>{
     expect(()=>assertBaseEnvironment({KJ_RUNTIME_ROLES:mode})).toThrow("BASE_REFUSED");
   });
+  // Each row is named: 27.12.15 requires every expanded report name to be unique within its suite.
   it.each([
-    [{cluster:"kj-eph-nonce",runtime:false,ledger:false},[]],
-    [{cluster:"base",runtime:true,ledger:false},[]],
-    [{cluster:"base",runtime:false,ledger:true},[{version:"20261002090000"}]],
-  ])("refuses a runner cluster, a runtime role or a recorded B1 using read-only queries",async(row,ledger)=>{
+    ["a runner cluster",{cluster:"kj-eph-nonce",runtime:false,ledger:false},[]],
+    ["a runtime role",{cluster:"base",runtime:true,ledger:false},[]],
+    ["a recorded B1",{cluster:"base",runtime:false,ledger:true},[{version:"20261002090000"}]],
+  ])("refuses %s using read-only queries",async(_label,row,ledger)=>{
     const query=vi.fn(async(sql:string)=>({rows:sql.includes("cluster_name")?[row]:ledger}));
     await expect(assertBaseTarget({query},{KJ_RUNTIME_ROLES:"base"})).rejects.toThrow("BASE_REFUSED");
     expect(query.mock.calls.every(([sql])=>sql.startsWith("select "))).toBe(true);

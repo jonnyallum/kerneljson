@@ -53,6 +53,8 @@ export function parseReport(raw:string,root:string):Report{
 const same=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
 const identity=(entry:{file:string;name:string})=>`${entry.file}\0${entry.name}`;
 const location=(entry:{file:string;location:{line:number;column:number}})=>`${entry.file}:${entry.location.line}:${entry.location.column}`;
+/** The expanded report name of a collected entry: its title parts joined by one space, as the JSON reporter writes them. */
+export function expandedName(entry:{name:string}):string{return entry.name.split(" > ").join(" ");}
 export function partitionProblems(partition:Partition,committedFiles:string[],collection:CollectedEntry[],registrySuites:{id:string;files:string[]}[]):string[]{
   const problems:string[]=[];
   if(!same(partition.suites.map(s=>s.id).sort(),[...PRIMARY_SUITES].sort())) problems.push("primary suite set differs");
@@ -73,6 +75,13 @@ export function partitionProblems(partition:Partition,committedFiles:string[],co
   }
   const collected=new Set(collection.map(e=>e.file));
   if(!same([...collected].sort(),[...committedFiles].sort())) problems.push("collection file set differs");
+  // CON-36: an expanded name collected twice within one primary suite (an .each row without its own title, two tests
+  // of the same name) would be refused by the report rule at run time; it is refused here from the collection first.
+  for(const suite of partition.suites){
+    const counts=new Map<string,number>();
+    for(const e of collection) if(partition.files[e.file]===suite.id){const n=expandedName(e);counts.set(n,(counts.get(n) ?? 0)+1);}
+    for(const [name,n] of counts) if(n>1) problems.push(`expanded name collected ${n} times in ${suite.id}: ${name}`);
+  }
   const expectedNotRun=["gate3-executor","schedule-restate-live","schedule-restate-runtime","schedule-restate-rearm-live"].map(n=>`tests/${n}.integration.test.ts`).sort();
   if(!same([...partition.notRunInCi].sort(),expectedNotRun)) problems.push("notRunInCi differs");
   const twins=partition.secondary.filter(s=>s.kind==="discover");

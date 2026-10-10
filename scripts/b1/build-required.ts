@@ -73,7 +73,7 @@ export async function generatedRequired(){
   const seen=new Set<string>();
   for(const entry of collection.entries.filter(e=>(B1_FILES as readonly string[]).includes(e.file))){
     const name=reportName(entry),key=`${entry.file}\0${name}`;
-    if(seen.has(key)) continue;seen.add(key);
+    if(seen.has(key)) throw Error(`expanded name collected twice in ${entry.file}: ${name}`);seen.add(key);
     const d=declared.get(name);
     if(d && d.file!==entry.file) throw Error(`declared probe in another file: ${name}`);
     entries.push({file:entry.file,name,refusals:d?.refusals ?? []});

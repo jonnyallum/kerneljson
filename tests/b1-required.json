@@ -23,7 +23,17 @@
     },
     {
       "file": "tests/b1-base-guard.test.ts",
-      "name": "lane A refuses B1 before writing refuses a runner cluster, a runtime role or a recorded B1 using read-only queries",
+      "name": "lane A refuses B1 before writing refuses a recorded B1 using read-only queries",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-base-guard.test.ts",
+      "name": "lane A refuses B1 before writing refuses a runner cluster using read-only queries",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-base-guard.test.ts",
+      "name": "lane A refuses B1 before writing refuses a runtime role using read-only queries",
       "refusals": []
     },
     {

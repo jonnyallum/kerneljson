@@ -44,6 +44,12 @@ describe("the coverage partition (tests/lanes.json)", () => {
     const text = readFileSync(PARTITION_PATH, "utf8").replace('"tests/world.test.ts": "regression-enforce"', '"tests/world.test.ts": "regression-enforce",\n    "tests/world.test.ts": "base-regression"');
     expect(() => strictJson(text)).toThrow();
   });
+  it("CON-36 refuses an expanded name collected twice within one suite (an .each row without its own title)", () => {
+    const dup = collection.find((e) => e.file === "tests/b1-base-guard.test.ts")!;
+    const problems = partitionProblems(partition(), committed(), [...collection, { ...dup, location: { line: dup.location.line, column: dup.location.column + 1 } }],
+      REGRESSION_SUITES.map((s) => ({ id: s.id, files: [...s.files] })));
+    expect(problems).toContain(`expanded name collected 2 times in base-regression: ${dup.name.split(" > ").join(" ")}`);
+  });
   it("CON-24 refuses a new test file with no entry, and an entry with no file", () => {
     expect(partitionProblems(partition(), [...committed(), "tests/new-file.test.ts"], collection, registry)).toContain("committed test file partition differs");
     const p = partition(); p.files["tests/vanished.test.ts"] = "base-regression";
