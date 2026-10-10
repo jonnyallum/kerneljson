@@ -79,7 +79,11 @@ export async function preLedgerGate(client:Client,manifest:StageManifest,baselin
  * kj_worker, kj_door`) applied to each member's pre-B1 ACL, then the runtime manifest's EXECUTE grants, must equal
  * the post-B1 ACL. A null ACL first materialises PostgreSQL's default for functions: PUBLIC and the owner.
  */
+export const STAMP_IDENTITY="kernel_private.stamp_binding_provenance()";
 export function frozenPairAcl(member:CleanupMember,granted:readonly string[]):string[]{
+  // B1's own statements on the stamp function (unchanged from frozen B1): REVOKE ALL FROM PUBLIC and a REVOKE ALL from
+  // every other non-owner grantee, so its ACL is exactly the owner's EXECUTE whatever it held before (27.9.4).
+  if(member.identity===STAMP_IDENTITY) return [`${member.owner}=X/${member.owner}`];
   const items=member.acl ?? [`=X/${member.owner}`,`${member.owner}=X/${member.owner}`];
   const kept=items.flatMap(item=>{
     const match=/^("?)([^=]*)\1=([^/]*)\/(.+)$/.exec(item);

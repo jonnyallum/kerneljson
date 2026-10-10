@@ -55,13 +55,15 @@ function resolveSettings(spec:Settings,d:Declaration):StartupSettings{
   const value=(v:Settings[keyof Settings],fromDeclaration:string)=>"from" in v?fromDeclaration:"omit" in v?undefined:v.value;
   return {digest:value(spec.digest,d.setSha256),sysid:value(spec.sysid,d.provenance.systemIdentifier),database:value(spec.database,d.provenance.database)};
 }
-function transform(text:string,t:FileTransform):string|null{
+interface ForeignRun {runId:string;clusterNonce:string;containerId:string;containerCreated:string;application:number}
+const foreignRun=():ForeignRun=>({runId:randomBytes(16).toString("hex"),clusterNonce:randomBytes(16).toString("hex"),
+  containerId:randomBytes(32).toString("hex"),containerCreated:"2026-01-01T00:00:00.000000000Z",application:1});
+/** `foreign` is drawn once per hook application, so a hook rewriting both files gives them the same other run. */
+function transform(text:string,t:FileTransform,foreign:ForeignRun):string|null{
   if(t==="delete") return null;
   if(t==="invalid-json") return "{"+text;
-  if(t==="bom") return "﻿"+text;
+  if(t==="bom") return "\uFEFF"+text;
   const o=JSON.parse(text);
-  const foreign={runId:randomBytes(16).toString("hex"),clusterNonce:randomBytes(16).toString("hex"),containerId:randomBytes(32).toString("hex"),
-    containerCreated:"2026-01-01T00:00:00.000000000Z",application:1};
   switch(t){
     case "edit-environment":o.environment=`${o.environment}-edited`;break;
     case "drop-mode":case "baseline-drop-mode":delete o.mode;break;
@@ -208,8 +210,9 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
         for(const def of byPoint("S3-files")){
           const m=def.mechanics;
           if(m.kind!=="files" || m.when!==when) continue;
+          const foreign=foreignRun();
           for(const key of m.target==="both"?["baseline","declaration"] as const:[m.target]){
-            const path=store.files[key],next=transform(readFileSync(path,"utf8"),m.transform);
+            const path=store.files[key],next=transform(readFileSync(path,"utf8"),m.transform,foreign);
             if(next===null) unlinkSync(path); else writeFileSync(path,next);
             if(m.rerecord) store.rerecord(key);
           }
@@ -334,10 +337,12 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
     failure=error instanceof Error?error.message:String(error);
     refusal={sqlstate:error instanceof EngineRefusal?error.sqlstate:null,message:failure};
     const step=active as Step,application=step.startsWith("S")?(evidence.applications.length+(step==="S7"?0:1)):undefined;
-    // A lifecycle refusal is already recorded by the factory at its own L step; nothing is added after it.
-    if(evidence.events.at(-1)?.outcome!=="refused")
+    // A lifecycle refusal is already recorded by the factory at its own L step; nothing is added after it, and no
+    // further connection is opened (27.12.13.3: a refusal opens no further connection).
+    const lifecycleRefusal=evidence.events.at(-1)?.outcome==="refused" && evidence.events.at(-1)!.step.startsWith("L");
+    if(!lifecycleRefusal)
       evidence.events.push({step,outcome:"refused",...(application?{application}:{}),details:failure});
-    if(step.startsWith("S")){
+    if(step.startsWith("S") && !lifecycleRefusal){
       try{afterFacts=await facts(plannedApplications[(application ?? 1)-1]!.database);}catch{afterFacts=null;}
     }
   }
