@@ -73,7 +73,8 @@ function fixture(){
       ...(["faculties","identity","identity-cognition"] as const).map(id=>({kind:"mutation" as const,id,script:`scripts/mutation-check-${id}.mjs`}))]};
   const collection:CollectedEntry[]=[...reports.values()].flatMap(r=>r.entries.map(e=>({file:e.file,name:e.name,location:e.location})));
   const required={kind:"kerneljson:b1-required-tests/v1" as const,entries:[{file:"tests/runner-cases.test.ts",name:"runner-cases control",refusals:[]}]};
-  const registry=partition.suites.filter(s=>s.kind==="stage-T").map(s=>({id:s.id,files:reports.get(s.id)!.files}));
+  const registry=partition.suites.filter(s=>s.kind==="stage-T").flatMap(s=>[{id:s.id,files:reports.get(s.id)!.files},
+    {id:`${s.id}-discover`,files:reports.get(s.id)!.files}]);
   return {baseline,reports,partition,collection,required,registry};
 }
 describe("coverage cannot be recovered from an empty table or a failed setup",()=>{

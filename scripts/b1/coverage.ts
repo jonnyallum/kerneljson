@@ -3,7 +3,7 @@ import { z } from "zod";
 import { strictJson } from "../../services/kernel/src/database/strict-json.js";
 import type { CollectedEntry } from "./collection.js";
 
-export const PRIMARY_SUITES=["base-regression","runner-cases","regression-enforce","regression-probes","regression-definers","regression-gated","regression-helper-probes"] as const;
+export const PRIMARY_SUITES=["base-regression","runner-cases","regression-enforce","regression-stack","regression-probes","regression-definers","regression-gated","regression-helper-probes"] as const;
 const SuiteId=z.enum(PRIMARY_SUITES),File=z.string().regex(/^tests\/[^/]+\.test\.ts$/);
 const Location=z.strictObject({line:z.number().int().positive(),column:z.number().int().positive()});
 export const PartitionSchema=z.strictObject({kind:z.literal("kerneljson:test-lane-partition/v1"),
@@ -64,7 +64,13 @@ export function partitionProblems(partition:Partition,committedFiles:string[],co
     if(!files.length) problems.push(`suite is empty: ${suite.id}`);
     if(suite.kind==="stage-T" && !same(files,registrySuites.find(s=>s.id===suite.id)?.files.slice().sort())) problems.push(`registry files differ: ${suite.id}`);
   }
-  if(!same(registrySuites.map(s=>s.id).sort(),partition.suites.filter(s=>s.kind==="stage-T").map(s=>s.id).sort())) problems.push("registry suite set differs");
+  // The registry holds each stage T primary and its discover twin (same files and profile).
+  const stageT=partition.suites.filter(s=>s.kind==="stage-T").map(s=>s.id);
+  if(!same(registrySuites.map(s=>s.id).sort(),[...stageT,...stageT.map(id=>`${id}-discover`)].sort())) problems.push("registry suite set differs");
+  for(const id of stageT){
+    const primary=registrySuites.find(s=>s.id===id),twin=registrySuites.find(s=>s.id===`${id}-discover`);
+    if(!primary || !twin || !same(primary.files.slice().sort(),twin.files.slice().sort())) problems.push(`discover twin differs: ${id}`);
+  }
   const collected=new Set(collection.map(e=>e.file));
   if(!same([...collected].sort(),[...committedFiles].sort())) problems.push("collection file set differs");
   const expectedNotRun=["gate3-executor","schedule-restate-live","schedule-restate-runtime","schedule-restate-rearm-live"].map(n=>`tests/${n}.integration.test.ts`).sort();

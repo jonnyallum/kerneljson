@@ -1,0 +1,226 @@
+{
+  "kind": "kerneljson:test-lane-partition/v1",
+  "suites": [
+    {
+      "id": "base-regression",
+      "lane": "A",
+      "kind": "base"
+    },
+    {
+      "id": "runner-cases",
+      "lane": "B/C",
+      "kind": "runner"
+    },
+    {
+      "id": "regression-definers",
+      "lane": "D",
+      "kind": "stage-T"
+    },
+    {
+      "id": "regression-enforce",
+      "lane": "D",
+      "kind": "stage-T"
+    },
+    {
+      "id": "regression-gated",
+      "lane": "D",
+      "kind": "stage-T"
+    },
+    {
+      "id": "regression-helper-probes",
+      "lane": "D",
+      "kind": "stage-T"
+    },
+    {
+      "id": "regression-probes",
+      "lane": "D",
+      "kind": "stage-T"
+    },
+    {
+      "id": "regression-stack",
+      "lane": "D",
+      "kind": "stage-T"
+    }
+  ],
+  "files": {
+    "tests/alert-runner.integration.test.ts": "regression-stack",
+    "tests/alert-runner.test.ts": "base-regression",
+    "tests/alerting-model.test.ts": "base-regression",
+    "tests/alerting-postgres.integration.test.ts": "regression-gated",
+    "tests/alerting-store-selection.test.ts": "base-regression",
+    "tests/approval-boundary.test.ts": "base-regression",
+    "tests/approval-test-cli.test.ts": "base-regression",
+    "tests/authority.test.ts": "regression-enforce",
+    "tests/b1-base-guard.test.ts": "base-regression",
+    "tests/b1-coverage.test.ts": "base-regression",
+    "tests/b1-evidence.test.ts": "base-regression",
+    "tests/b1-partition.test.ts": "base-regression",
+    "tests/b1-refusal-accounting.test.ts": "base-regression",
+    "tests/b1-relation-inventory.integration.test.ts": "base-regression",
+    "tests/b1-runner-coresident.test.ts": "runner-cases",
+    "tests/b1-runner-ledger.test.ts": "runner-cases",
+    "tests/b1-runner-lifecycle.test.ts": "runner-cases",
+    "tests/b1-runner-refusals.test.ts": "runner-cases",
+    "tests/b1-runner-settings.test.ts": "runner-cases",
+    "tests/b1-static.test.ts": "base-regression",
+    "tests/b1-trace.test.ts": "base-regression",
+    "tests/canary-config.test.ts": "base-regression",
+    "tests/canary-fire.test.ts": "base-regression",
+    "tests/canary-gateway-admission.test.ts": "base-regression",
+    "tests/canary-lifecycle.test.ts": "base-regression",
+    "tests/canary-runner.test.ts": "base-regression",
+    "tests/canary-seed.test.ts": "base-regression",
+    "tests/canary-tooling.integration.test.ts": "regression-gated",
+    "tests/capabilities.test.ts": "base-regression",
+    "tests/claude-md-check.test.ts": "base-regression",
+    "tests/contracts.test.ts": "base-regression",
+    "tests/control-signing-store.integration.test.ts": "regression-enforce",
+    "tests/control-signing.test.ts": "base-regression",
+    "tests/controls.test.ts": "regression-enforce",
+    "tests/database.test.ts": "regression-enforce",
+    "tests/docs-token-safety.test.ts": "base-regression",
+    "tests/evaluation-db.test.ts": "regression-enforce",
+    "tests/evaluation.test.ts": "base-regression",
+    "tests/execution-binding.test.ts": "regression-enforce",
+    "tests/faculty.test.ts": "base-regression",
+    "tests/gate3-executor.integration.test.ts": "base-regression",
+    "tests/gateway-bootstrap.integration.test.ts": "regression-gated",
+    "tests/gateway-bootstrap.test.ts": "base-regression",
+    "tests/gateway.test.ts": "regression-enforce",
+    "tests/github-read.test.ts": "base-regression",
+    "tests/health-collect-postgres.integration.test.ts": "regression-enforce",
+    "tests/health-model.test.ts": "base-regression",
+    "tests/identity-canonical.test.ts": "base-regression",
+    "tests/identity-cognition-base.integration.test.ts": "base-regression",
+    "tests/identity-cognition-restate.integration.test.ts": "regression-stack",
+    "tests/identity-cognition.integration.test.ts": "regression-enforce",
+    "tests/identity-cognition.test.ts": "base-regression",
+    "tests/identity-migration-base.integration.test.ts": "base-regression",
+    "tests/identity-migration.integration.test.ts": "regression-enforce",
+    "tests/identity-provisioning.test.ts": "base-regression",
+    "tests/identity-secret-scan.test.ts": "base-regression",
+    "tests/identity-topology.test.ts": "base-regression",
+    "tests/identity-workflow.integration.test.ts": "regression-stack",
+    "tests/kernel-worker-registration.test.ts": "base-regression",
+    "tests/kernel-workflow-capability.test.ts": "base-regression",
+    "tests/kernel.test.ts": "base-regression",
+    "tests/kj-000000.test.ts": "base-regression",
+    "tests/legacy-conductor-adapter.test.ts": "base-regression",
+    "tests/memory-canonical.integration.test.ts": "regression-enforce",
+    "tests/memory-canonical.test.ts": "base-regression",
+    "tests/memory.test.ts": "regression-enforce",
+    "tests/mission-cli.test.ts": "base-regression",
+    "tests/mission-control.test.ts": "regression-enforce",
+    "tests/mission-core.test.ts": "base-regression",
+    "tests/mission-workflow.integration.test.ts": "regression-enforce",
+    "tests/models.test.ts": "base-regression",
+    "tests/new-system-runtime.test.ts": "base-regression",
+    "tests/openrouter-port.test.ts": "base-regression",
+    "tests/outbox-gate.test.ts": "base-regression",
+    "tests/outbox-model.test.ts": "base-regression",
+    "tests/outbox-postgres.integration.test.ts": "regression-gated",
+    "tests/policy.test.ts": "base-regression",
+    "tests/primary-identity-contracts.test.ts": "base-regression",
+    "tests/recovery.test.ts": "regression-stack",
+    "tests/release-provenance-base.integration.test.ts": "base-regression",
+    "tests/release-provenance-postgres.test.ts": "regression-enforce",
+    "tests/release-provenance.test.ts": "base-regression",
+    "tests/routing.test.ts": "base-regression",
+    "tests/runtime-env-merge.test.ts": "base-regression",
+    "tests/runtime-roles-catalogue.integration.test.ts": "regression-enforce",
+    "tests/runtime-roles-connection.integration.test.ts": "regression-enforce",
+    "tests/runtime-roles-coresident-probes.integration.test.ts": "regression-helper-probes",
+    "tests/runtime-roles-definers-base.integration.test.ts": "base-regression",
+    "tests/runtime-roles-definers.integration.test.ts": "regression-definers",
+    "tests/runtime-roles-log-fixture.integration.test.ts": "regression-probes",
+    "tests/runtime-roles-negative.integration.test.ts": "regression-probes",
+    "tests/runtime-roles-topology.test.ts": "base-regression",
+    "tests/schedule-admission-identity.test.ts": "base-regression",
+    "tests/schedule-db.test.ts": "regression-enforce",
+    "tests/schedule-fencing-types.test.ts": "base-regression",
+    "tests/schedule-fencing.integration.test.ts": "regression-gated",
+    "tests/schedule-next-window-boundary.test.ts": "base-regression",
+    "tests/schedule-persistence.test.ts": "base-regression",
+    "tests/schedule-postgres.integration.test.ts": "regression-gated",
+    "tests/schedule-production-sim.test.ts": "base-regression",
+    "tests/schedule-production.test.ts": "base-regression",
+    "tests/schedule-restate-boundary.test.ts": "base-regression",
+    "tests/schedule-restate-live.integration.test.ts": "base-regression",
+    "tests/schedule-restate-rearm-live.integration.test.ts": "base-regression",
+    "tests/schedule-restate-runtime.integration.test.ts": "base-regression",
+    "tests/schedule.test.ts": "base-regression",
+    "tests/security-definers.test.ts": "base-regression",
+    "tests/telegram-adapter-units.test.ts": "base-regression",
+    "tests/telegram-approvals-store.integration.test.ts": "regression-enforce",
+    "tests/telegram-approvals.integration.test.ts": "regression-stack",
+    "tests/telegram-approvals.test.ts": "base-regression",
+    "tests/telegram-channel.integration.test.ts": "regression-enforce",
+    "tests/telegram-channel.test.ts": "base-regression",
+    "tests/telegram-commands.test.ts": "base-regression",
+    "tests/telegram-discover.test.ts": "base-regression",
+    "tests/telegram-memory.integration.test.ts": "regression-enforce",
+    "tests/telegram-notifier-http.test.ts": "base-regression",
+    "tests/telegram-notifier.test.ts": "base-regression",
+    "tests/telegram-outbox-reply.test.ts": "base-regression",
+    "tests/terminal-hardening.test.ts": "regression-enforce",
+    "tests/test-notification.integration.test.ts": "regression-enforce",
+    "tests/test-notification.test.ts": "base-regression",
+    "tests/topology-guard.test.ts": "base-regression",
+    "tests/transport-config.test.ts": "base-regression",
+    "tests/verification.test.ts": "base-regression",
+    "tests/world.test.ts": "regression-enforce"
+  },
+  "notRunInCi": [
+    "tests/gate3-executor.integration.test.ts",
+    "tests/schedule-restate-live.integration.test.ts",
+    "tests/schedule-restate-rearm-live.integration.test.ts",
+    "tests/schedule-restate-runtime.integration.test.ts"
+  ],
+  "secondary": [
+    {
+      "kind": "discover",
+      "id": "regression-definers-discover",
+      "primary": "regression-definers"
+    },
+    {
+      "kind": "discover",
+      "id": "regression-enforce-discover",
+      "primary": "regression-enforce"
+    },
+    {
+      "kind": "discover",
+      "id": "regression-gated-discover",
+      "primary": "regression-gated"
+    },
+    {
+      "kind": "discover",
+      "id": "regression-helper-probes-discover",
+      "primary": "regression-helper-probes"
+    },
+    {
+      "kind": "discover",
+      "id": "regression-probes-discover",
+      "primary": "regression-probes"
+    },
+    {
+      "kind": "discover",
+      "id": "regression-stack-discover",
+      "primary": "regression-stack"
+    },
+    {
+      "kind": "mutation",
+      "id": "faculties",
+      "script": "scripts/mutation-check-faculties.mjs"
+    },
+    {
+      "kind": "mutation",
+      "id": "identity",
+      "script": "scripts/mutation-check-identity.mjs"
+    },
+    {
+      "kind": "mutation",
+      "id": "identity-cognition",
+      "script": "scripts/mutation-check-identity-cognition.mjs"
+    }
+  ]
+}
