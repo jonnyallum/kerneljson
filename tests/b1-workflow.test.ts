@@ -21,6 +21,12 @@ export function workflowProblems(text: string): string[] {
   if (!/^permissions:\n {2}contents: read\n(?! )/m.test(text)) problems.push("permissions are not contents: read only");
   if (/secrets\.|^\s*environment:|continue-on-error|pull_request_target/m.test(text)) problems.push("a secret, environment, continue-on-error or pull_request_target");
   if (/pnpm test\b|qualify-ci\.sh|supabase (db|migration)|migrate\(/.test(text)) problems.push("a job runs the suite or migrations outside the governed entry point");
+  // YAML validity the runner depends on: an expression inside a flow mapping must be quoted, or GitHub rejects the whole
+  // file and no job (the gate included) runs at all (observed: run 38053042825).
+  for (const [i, line] of text.split("\n").entries()) {
+    const flow = /^\s*(?:-\s+)?[A-Za-z_-]+: \{(.*)\}\s*$/.exec(line)?.[1];
+    if (flow !== undefined && flow.replace(/'[^']*'|"[^"]*"/g, "").includes("${{")) problems.push(`line ${i + 1}: unquoted expression in a flow mapping`);
+  }
   if (!gate) return [...problems, "no gate job"];
   const others = [...all.keys()].filter((k) => k !== "gate").sort();
   const needs = /needs: \[([^\]]*)\]/.exec(gate)?.[1]?.split(",").map((s) => s.trim()).sort() ?? [];
@@ -46,6 +52,7 @@ describe("the qualification workflow is fail-closed", () => {
     ["a secret", (w: string) => w.replace("CI: 'true'", "CI: 'true'\n  TOKEN: ${{ secrets.X }}")],
     ["write permission", (w: string) => w.replace("  contents: read\n", "  contents: write\n")],
     ["the whole suite outside the runner", (w: string) => w.replace("      - run: pnpm build\n", "      - run: pnpm build\n      - run: pnpm test\n")],
+    ["an unquoted expression in a flow mapping (the file GitHub rejects)", (w: string) => w.replace("with: {name: 'gate-${{ github.sha }}',", "with: {name: gate-${{ github.sha }},")],
     ["a skip condition on a job", (w: string) => w.replace("  eph26:\n    runs-on", "  eph26:\n    if: github.event_name == 'push'\n    runs-on")],
   ])("fails with %s", (_label, perturb) => {
     const changed = perturb(WORKFLOW);

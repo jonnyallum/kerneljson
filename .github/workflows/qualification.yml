@@ -223,4 +223,4 @@ jobs:
             if(Object.keys(n).length!==7||bad.length){console.error(bad.map(([k,v])=>k+": "+v.result).join("\n")||"needs incomplete");process.exit(1)}'
       - uses: actions/upload-artifact@v4
         if: always()
-        with: {name: gate-${{ github.sha }}, path: '${{ runner.temp }}/evidence/gate.json', retention-days: 30}
+        with: {name: 'gate-${{ github.sha }}', path: '${{ runner.temp }}/evidence/gate.json', retention-days: 30}

@@ -1973,6 +1973,11 @@
     },
     {
       "file": "tests/b1-workflow.test.ts",
+      "name": "the qualification workflow is fail-closed fails with an unquoted expression in a flow mapping (the file GitHub rejects)",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-workflow.test.ts",
       "name": "the qualification workflow is fail-closed fails with no needs-result step",
       "refusals": []
     },
