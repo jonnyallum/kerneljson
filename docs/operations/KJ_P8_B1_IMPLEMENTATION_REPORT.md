@@ -1,9 +1,15 @@
 # KJ-P8 B1 implementation report: least-privilege runtime database roles
 
-> **Current status:** R279 implementation resumed under the [accepted narrow owner ruling](KJ_P8_B1_R279_OWNER_RULING.md). Design-review/seal update remains pending.
-> The helper diagnostic remains valid. Implementation is incomplete and no R279 qualification is claimed.
+> **Current status (10/10/2026):** the R2.7.9 implementation is complete on the remediation branch and submitted for
+> qualification at a single candidate SHA. The requirements matrix, the defects found by failing checks on purpose, the
+> findings for design review and the results at the candidate are in the
+> [independent reconciliation record](KJ_P8_B1_R279_RECONCILIATION.md), which supersedes the work-in-progress notes
+> below. Qualification is claimed only for the SHA and CI run named there, never from an intermediate commit. The
+> [narrow owner ruling](KJ_P8_B1_R279_OWNER_RULING.md) on the helper rethrow stands: the helper pin is preserved, the
+> ADR correction awaits independent design review, and the design is not resealed. No production, ledger, baseline,
+> deployment, merge, PR or P8A-0 action has been taken.
 
-### R279 work in progress — 10 October 2026
+### Earlier R279 progress notes (Codex, before takeover; retained as history)
 
 The owner approved preserving the helper pin and correcting the inaccurate rethrow inference. This is an owner ruling, not a new hostile seal.
 
@@ -69,7 +75,7 @@ Tags used below: **FACT** was observed in this work; **INFERENCE** was reasoned 
 | Stage-aware `SECURITY DEFINER` inventory (ADR 27.10) and the 27.9 exception checks | `services/kernel/src/database/security-definers.ts`, `infrastructure/database/security-definer-stage-manifest.json` (generated) |
 | Read-only platform baseline snapshot (deployment authority) | `services/kernel/src/database/platform-baseline-snapshot.ts`, `scripts/b1/platform-baseline-snapshot.ts` |
 | Definer qualification and the 27.9.5 probe matrix | `tests/security-definers.test.ts`, `tests/runtime-roles-definers.integration.test.ts`, `tests/runtime-roles-negative.integration.test.ts` |
-| CI job running the discover run, inventories and gated files | `.github/workflows/qualification.yml` job `b1-qualification`, `scripts/b1/qualify-ci.sh` |
+| Governed CI (R2.7.9): static, lane A, runner cases, twelve stage T suites, EPH-26, mutations, worker image and a recomputing gate | `.github/workflows/qualification.yml`, `scripts/b1/ci-*.ts`, `scripts/b1/gate-suite.ts` (the frozen `b1-qualification` job and `scripts/b1/qualify-ci.sh` are removed) |
 | Evidence | `docs/operations/evidence/kj-p8-b1/` |
 | Cutover plan (not executed) | `docs/operations/KJ_P8_B1_PRODUCTION_CUTOVER_PLAN.md` |
 
@@ -304,18 +310,32 @@ Stated so that nobody assumes otherwise:
 
 ## 11. Reproducing
 
+R2.7.9 (this branch). B1 is applied only by the governed entry point, on clusters it creates. Never run `pnpm test`
+over the whole suite: lane D files need a stage T run. Run one memory-heavy step at a time, and never two
+collections at once (they share the pinned placeholder port 54999).
+
 ```
 pnpm install --frozen-lockfile
-node scripts/b1/build-manifest.mjs --check          # manifest and migration match their inputs
-pnpm test                                           # enforce mode: production code runs as kj_worker / kj_door
-node scripts/b1/analyse-trace.mjs artifacts/local/b1-trace artifacts/local/b1-dynamic-inventory.json --fail-on-refusal
-KJ_RUNTIME_ROLES=discover KJ_WORKER_DATABASE_URL=postgresql://postgres@db:5432/kerneljson pnpm test   # discovery run
-bash scripts/b1/qualify-ci.sh                       # discovery run, inventories, gated files (CI job b1-qualification)
-node scripts/b1/summarise.mjs <artefact dir> docs/operations/evidence/kj-p8-b1
+node scripts/b1/build-manifest.mjs --check                 # manifest and migration match their inputs (G1)
+node --import tsx scripts/b1/build-hook-registry.ts --check
+node --import tsx scripts/b1/build-required.ts --check     # runs the pinned collection
+# lane A (base chain, never B1): the files tests/lanes.json assigns to base-regression
+KJ_RUNTIME_ROLES=base node node_modules/vitest/vitest.mjs run <base-regression files>
+# lanes B and C: the runner cases
+KJ_RUNTIME_ROLES=base node node_modules/vitest/vitest.mjs run tests/b1-runner-<file>.test.ts
+# lane D: one registered stage T suite through the governed entry point (profile as registered)
+node --import tsx scripts/b1/ephemeral.ts --release "$(git rev-parse HEAD)" --profile none --regression-suite regression-enforce
+# G7 in lane A
+KJ_RUNTIME_ROLES=base node scripts/mutation-check-identity.mjs
 ```
 
+The frozen B1 commands that used to be here (`pnpm test` in enforce mode and `scripts/b1/qualify-ci.sh`) applied
+B1 outside the runner. They are removed and must not be used.
+
 To change a grant: edit `runtime-role-decisions.json` with a reason, run `node scripts/b1/build-manifest.mjs`, and
-commit the regenerated manifest and migration together.
+commit the regenerated manifest and migration together. A changed migration also changes `migrationSha256` and the
+engine-written `statementsSha256` in `infrastructure/database/b1-ledger-contract.json`, which must be re-frozen from a
+pinned-engine run; until then every run stops at S7.
 
 ## 12. The stage-aware `SECURITY DEFINER` inventory (ADR 27.10) and the target baseline
 

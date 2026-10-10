@@ -91,3 +91,87 @@ any R2.7.9 commit.
   behaviour. The ruling therefore leaves every B1 requirement in this matrix independent of it.
 - The ADR correction is pending independent design review. The design is not resealed, and this record does not say
   it is.
+
+## 4. What changed after takeover
+
+All work is on the remediation branch, fast-forward from `8e4ea9b`, with no rewrite. Commit references below are to that
+branch. The headline changes:
+
+- **Closed hook registry** to the 27.12.13.8 schema: 105 hooks generated from committed definitions
+  (`scripts/b1/hook-definitions.ts`, `scripts/b1/build-hook-registry.ts`) over the eight registered points (S6-apply
+  33, S5 32, S3-files 21, S2 14, L2-target 2, L3-skip, S4-skip and S6-gate-inventory-skip one each). The runner
+  refuses a registry blob that differs from the one generated at `R`. Every hook point is implemented.
+- **B1 migration**: every violated P1 and P2 clause is named in one `23514`; P2 (c) checks the full sealed topology;
+  P2 (d) is identity-based. The statements digest is re-frozen from the pinned engine.
+- **Stage T** (`scripts/b1/stage-t.ts`), the twelve registered suites (`scripts/b1/plans.ts`), the coverage partition
+  (`tests/lanes.json`), the required rows (`tests/b1-required.json`, generated), and every lane D file converted to plan
+  database leases.
+- **CI replaced** (P0). `.github/workflows/qualification.yml` has governed jobs only. The gate (`scripts/b1/ci-gate.ts`,
+  `scripts/b1/gate-suite.ts`) recomputes every status from the evidence files. It also refuses unless every needed job
+  concluded `success`, so a skipped, cancelled or failed job never qualifies. `scripts/b1/qualify-ci.sh` is removed.
+  The only other workflow (`capabilities-validate.yml`) runs a Python catalogue check and touches no database.
+- **Runner cases** in lanes B and C: 230 cases in six files (`tests/b1-runner-{coresident,settings,ledger,lifecycle,
+  refusals,staget}.test.ts`). Each runs the governed entry point as a child process and acts as an independent
+  consumer of the record.
+
+## 5. Defects found by failing a check on purpose (self-review)
+
+Each was observed in a run on this branch, fixed and committed. None was found by reading alone.
+
+| Defect | Observed | Fix |
+|---|---|---|
+| Three stage T files resolved repository paths against the working directory, which 27.12.15 makes a fresh empty directory | regression-enforce pilot at `05b17e1`: 3 files failed with `ENOENT` | `tests/support/repo.ts`; static rule with failing fixtures (`b1-partition.test.ts`) (`6196b71`) |
+| The manifest check read the B1 migration from inside a stage T consumer, which 27.12.15 forbids | same pilot | moved unchanged to lane A (`tests/runtime-roles-manifest.test.ts`) (`6196b71`) |
+| Stage T accepted any skipped entry; 27.12.15 accepts only a `tests/baseline.json` intentional skip, and none in `regression-gated` | review of the report rule while writing CON-5 | skip accounting in stage T (`4abffe5`); CON-5 "listed file skipped" now fails on it |
+| `readTraces` threw on a refused production statement, so stage T and the gate never ran the G4 or G5 analyser that CON-15 requires to fail | reading CON-15 against the code path | production refusals returned beside probe refusals; G4 and the log check still run (`2313d9e`); CON-15 end to end |
+| Every regression-stack file called `compose down` before naming its plan database; stage T refused it, so the stack suite never ran | CON-16 run at `2313d9e`: 5 files failed in `beforeAll` | placeholder for `down` only, as the runner's own `down` (`a0ecd08`) |
+| L3 required sole run-network membership throughout; 27.12.15 requires it only until stage T begins, after which membership is the post-T check's | CON-10 run at `2313d9e`: L3 refused, stage T "not reached" | sole membership until `beginStageT()`; L3 still requires the cluster on exactly that labelled network (`7318eaf`) |
+| A server that vanished during stage T emitted an unhandled pg `error` event and ended the runner with no record and no L6 | CON-10 cluster removal at `2313d9e`: no summary emitted | an error listener on every factory client (`7318eaf`) |
+| G7 counted correctly but had never refused a real run | first identity mutation run: M44 INCONCLUSIVE (Docker build-cache error) | none needed: the G7 rule refused the verdict; the rerun killed 57/57 |
+
+My own process errors during the sprint, none of them shipped:
+- edits to a tree while a run was using it (case 17 refused a dirty tree);
+- concurrent collections on port 54999, so two pilots lost the port;
+- a background queue stopped by the host for low memory.
+
+Runs are now sequential, one collection-port user at a time.
+
+## 6. Findings for design review (not changes to the sealed design)
+
+The ADR is not resealed, and this record does not say it is.
+
+1. **R279-HELPER-RETHROW** (owner ruling): the helper pin is preserved byte for byte. 27.12.4's "on failure the pinned
+   body re-raises" is inaccurate, but no B1 requirement depends on it. B1 never claims the helper guarantees RLS
+   enablement. The correction is pending independent design review.
+2. **P2 naming.** Where several P2 clauses are violated at once, the migration names all of them. Some 27.12.9 cases
+   name a single sub-rule.
+3. **ACL-C.** The definer copy also violates P1, which is named alongside P2 (a) and E1.
+4. **EPH-13 and EPH-5.** EPH-13 at S2 is refused at S3 by the snapshot, not at the gate; LEDGER-E at S5 shows the
+   gate. EPH-5 is refused at S4 before the gate; with `s4-skip`, the gate refuses.
+5. **CON-32.** The DO-block list omits the two inherited cleanup loops, which the shape check admits by name.
+6. **Registry suite schema.** It gains `timeoutSeconds` and `roles`.
+7. **CON-10 status.** A foreign container still attached at L6 makes the network removal fail. The run is then
+   `NOT_QUALIFIED` as well as `regressionOutcome` `failed`. The ADR states only the latter. The runner never touches a
+   container it did not create.
+8. **CON-9 label clause.** A network's labels are immutable, so the outside construction replaces the run network. L3
+   then refuses on network identity, before the label clause is reached. The label clause is unreachable from outside
+   without a registered hook, which the R2.7.6 review left open.
+9. **CON-15 and CON-16 construction.** The sealed fixture removes a manifest grant. That changes the B1 migration and
+   its frozen statements digest, so the run stops at S7 before stage T. The same observable is built without touching
+   B1: production code (`packages/identity` `withTenant`) issues a statement no runtime role may run, and swallows the
+   error. CON-15 does this on the host only; CON-16 does it inside the compose worker only.
+10. **CON-13 ledger clause.** Lane A's `migrate()` writes no Supabase ledger table. "The compose ledger never records
+    `20261002090000`" therefore holds because there is no ledger. The check that carries weight is that the cluster
+    holds no `kj_*` role and no runtime-role policy.
+
+## 7. Blocked and not authorised
+
+- **Hosted-disposable application** (HOSTED_COMMITTED on a hosted target): BLOCKED, as no authorised hosted
+  disposable target exists. The hosted entry point's refusals are exercised; it has never connected to a hosted
+  target.
+- Production connection, baseline capture, ledger repair, deployment, merge, PR and P8A-0: not authorised and not done.
+- Branch protection requiring the `gate` check is a repository setting outside this sprint's authority. Until it is
+  set, "qualified" means the `gate` job of the qualification workflow concluded `success` for the exact SHA. A commit
+  whose workflow did not run (for example `[skip ci]`) has no gate result and is not qualified.
+- On `pull_request` events GitHub runs the workflow on a merge commit. Its gate qualifies that merge commit, not the
+  branch head. This sprint uses `push` results only.
