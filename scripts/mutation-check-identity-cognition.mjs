@@ -12,6 +12,9 @@
 //
 // Verdicts come from vitest's JSON report; every file is restored afterwards, including after a hard kill (a crash-safe
 // backup is written before each mutation and recovered on the next start, as in mutation-check-identity.mjs).
+import { assertBaseEnvironment, assertBaseTarget, baseMigrationFiles } from './b1/base-guard.mjs';
+process.env.KJ_RUNTIME_ROLES='base';
+assertBaseEnvironment();
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -32,7 +35,7 @@ const POL = "services/kernel/src/alerting/policy.ts";
 const EVAL = "services/kernel/src/health/evaluate.ts";
 const CANON = "services/kernel/src/identity/canonical.ts";
 const UNIT = ["tests/identity-cognition.test.ts"];
-const INT = ["tests/identity-cognition.integration.test.ts"];
+const INT = ["tests/identity-cognition.integration.test.ts", "tests/identity-cognition-base.integration.test.ts"];
 const TOPO = ["tests/identity-topology.test.ts"];
 const ALL = [...UNIT, ...INT, ...TOPO];
 
@@ -149,6 +152,7 @@ async function applyChain(supabaseAcl) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
+  await assertBaseTarget(admin);
   const name = `p7b_mut_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
   await admin.query(`create database ${name}`);
   const db = new pg.Client({ connectionString: DATABASE.replace(/\/kerneljson$/, `/${name}`) });
@@ -162,7 +166,7 @@ async function applyChain(supabaseAcl) {
     if (supabaseAcl)
       for (const kind of ["tables", "sequences", "functions"])
         await db.query(`alter default privileges in schema public grant all on ${kind} to public, anon, authenticated, service_role`);
-    for (const file of readdirSync("supabase/migrations").filter((f) => f.endsWith(".sql")).sort()) {
+    for (const file of baseMigrationFiles(readdirSync("supabase/migrations").filter((f) => f.endsWith(".sql")))) {
       try {
         await db.query("begin");
         await db.query(readFileSync(`supabase/migrations/${file}`, "utf8"));

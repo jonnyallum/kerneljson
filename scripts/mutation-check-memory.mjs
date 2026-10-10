@@ -9,6 +9,9 @@
 //   node scripts/mutation-check-memory.mjs --only M3  run one
 //
 // Every file is restored afterwards, including on Ctrl-C.
+import { assertBaseEnvironment } from './b1/base-guard.mjs';
+process.env.KJ_RUNTIME_ROLES='base';
+assertBaseEnvironment();
 import { readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 

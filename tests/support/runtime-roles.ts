@@ -28,7 +28,11 @@ import pg from "pg";
 
 export type RuntimeRole = "kj_worker" | "kj_door";
 export const RUNTIME_ROLES: readonly RuntimeRole[] = ["kj_worker", "kj_door"];
-const MODE: "enforce" | "discover" = process.env["KJ_RUNTIME_ROLES"] === "discover" ? "discover" : "enforce";
+const requestedMode=process.env["KJ_RUNTIME_ROLES"] ?? "enforce";
+if(!["base","enforce","discover"].includes(requestedMode)) throw Error("HARNESS_REFUSED: unknown runtime role mode");
+const MODE=requestedMode as "base"|"enforce"|"discover";
+if(MODE==="base" && ["KJ_B1_STAGE_T","KJ_B1_RUN_TOKEN","KJ_B1_RUN_DIR","KJ_B1_RUN_HEADER"].some(k=>process.env[k]!==undefined))
+  throw Error("HARNESS_REFUSED: base mode inside a runner stage");
 const TRACE_DIR = resolve(process.env["KJ_B1_TRACE_DIR"] ?? "artifacts/local/b1-trace");
 
 // Inside the worker container every production frame is the worker: the image holds no gateway code and no
@@ -167,6 +171,7 @@ async function emulate(client: AnyClient, role: RuntimeRole, caller: string, arg
 
 let installed = false;
 export function installRuntimeRoles(): void {
+  if(MODE==="base") return;
   if (installed) return;
   installed = true;
   Error.stackTraceLimit = Math.max(Error.stackTraceLimit ?? 10, 80);

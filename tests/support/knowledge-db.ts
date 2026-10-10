@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { DATABASE, compose, holdRuntime, migrate, until } from "./local.js";
+import { assertBaseEnvironment, assertBaseTarget } from "../../scripts/b1/base-guard.mjs";
 import { verificationFixture } from "../../evals/fixtures/verification.js";
 import {
   Task,
@@ -11,6 +12,7 @@ import {
 import { VerificationStore } from "../../services/kernel/src/verification-store.js";
 import { capabilityDigest } from "../../packages/capabilities/src/index.js";
 export async function knowledgeDatabase() {
+  assertBaseEnvironment();
   const release = holdRuntime(),
     name = `knowledge_${randomUUID().replaceAll("-", "")}`;
   const admin = new pg.Pool({ connectionString: DATABASE });
@@ -19,6 +21,7 @@ export async function knowledgeDatabase() {
     () => admin.query("select 1"),
     (r) => r.rowCount === 1,
   );
+  await assertBaseTarget(admin);
   await admin.query(`create database ${name}`);
   const pool = new pg.Pool({
     connectionString: DATABASE.replace("/kerneljson", `/${name}`),

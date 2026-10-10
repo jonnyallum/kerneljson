@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createHash, randomUUID } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import pg from "pg";
 import type { Context } from "@restatedev/restate-sdk";
@@ -46,7 +45,6 @@ import { REPO, fakeClaude, fakeGrok, githubResult } from "./support/mission-fixt
  * simulated exactly as the P6 suite does it: `ctx.run` returns a journaled value when present (replay) and runs the
  * action otherwise, so replay, lost-journal and journal/database disagreement are all exercised deterministically.
  */
-const P7B_MIGRATION = "20260929120000_identity_cognition_binding.sql";
 const corpus = JSON.parse(readFileSync("tests/fixtures/identity-core-v1.vectors.json", "utf8")) as {
   vectors: Array<{ name: string; inputJson: string; canonical?: string; sha256?: string; classASha256?: string; refuse?: string }>;
 };
@@ -66,32 +64,6 @@ async function freshDatabase(prefix: string): Promise<pg.Pool> {
   pool.on("error", () => {});
   return pool;
 }
-async function ensureRoles(pool: pg.Pool) {
-  await pool.query(`do $$ begin
-    if not exists(select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
-    if not exists(select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
-    if not exists(select 1 from pg_roles where rolname='service_role') then create role service_role nologin bypassrls; end if;
-  end $$`);
-}
-/** Every migration before P7B, then (optionally) P7B, each in its own transaction exactly like `migrate`. */
-async function migrateBefore(pool: pg.Pool): Promise<void> {
-  await ensureRoles(pool);
-  for (const file of (await readdir("supabase/migrations")).filter((f) => f.endsWith(".sql") && f < P7B_MIGRATION).sort()) await applyFile(pool, file);
-}
-async function applyFile(pool: pg.Pool, file: string): Promise<void> {
-  const db = await pool.connect();
-  try {
-    await db.query("begin");
-    await db.query(await readFile(`supabase/migrations/${file}`, "utf8"));
-    await db.query("commit");
-  } catch (error) {
-    await db.query("rollback");
-    throw error;
-  } finally {
-    db.release();
-  }
-}
-
 /** Seeds an activated identity with triggers bypassed (disposable test DBs only). Digests are always the true v1 ones
  *  unless `storedCore` overrides them, which is how a corrupt row is simulated. */
 async function seedIdentity(pool: pg.Pool, doc: IdentityDocument, opts: { versionRowId?: string; storedCore?: string; profile?: boolean } = {}) {
@@ -131,94 +103,6 @@ afterAll(async () => {
   }
   await admin.end();
   releaseRuntime();
-});
-
-// ---------------------------------------------------------------------------------------------------------------
-describe("the migration's pre-COMMIT qualification refuses bad production states (and applies on the true one)", () => {
-  const outcome = async (seed: (pool: pg.Pool) => Promise<void>) => {
-    const pool = await freshDatabase("p7b_pre");
-    try {
-      await migrateBefore(pool);
-      await pool.query("insert into principals(id,kind) values($1,'HUMAN')", [principal.id]);
-      await pool.query("insert into tenants(id,name) values($1,'kernel')", [KERNEL_TENANT]);
-      await seed(pool);
-      await applyFile(pool, P7B_MIGRATION);
-      return "APPLIED";
-    } catch (error) {
-      return (error as Error).message;
-    } finally {
-      await pool.end();
-    }
-  };
-  it("applies with the exact production Kernel v1 row present", async () => {
-    expect(await outcome((p) => seedIdentity(p, KERNEL_V1, { versionRowId: KERNEL_VERSION_ROW }))).toBe("APPLIED");
-  });
-  it("refuses when the persisted Kernel v1 row is not the approved document, even with self-consistent digests", async () => {
-    const tampered = structuredClone(KERNEL_V1);
-    tampered.sections.classC.persona += " (tampered)";
-    expect(await outcome((p) => seedIdentity(p, tampered, { versionRowId: KERNEL_VERSION_ROW }))).toContain("persisted Kernel v1 differs");
-  });
-  it("refuses when any existing version fails digest parity", async () => {
-    const other = { ...structuredClone(KERNEL_V1), id: randomUUID() };
-    expect(await outcome((p) => seedIdentity(p, other, { storedCore: "0".repeat(64) }))).toContain("fail digest parity");
-  });
-});
-
-// ---------------------------------------------------------------------------------------------------------------
-describe("least privilege under a Supabase-style default ACL (PR #47 harness), including service_role", () => {
-  let acl: pg.Pool;
-  beforeAll(async () => {
-    acl = await freshDatabase("p7b_acl");
-    await ensureRoles(acl);
-    await acl.query("alter default privileges in schema public grant all on tables to public, anon, authenticated, service_role");
-    await acl.query("alter default privileges in schema public grant all on sequences to public, anon, authenticated, service_role");
-    await acl.query("alter default privileges in schema public grant all on functions to public, anon, authenticated, service_role");
-    await migrate(acl);
-  });
-  afterAll(async () => acl?.end());
-  const has = async (role: string, rel: string, priv: string) =>
-    (await acl.query<{ ok: boolean }>("select has_table_privilege($1, $2, $3) as ok", [role, rel, priv])).rows[0]!.ok;
-  it("the reproduced default ACL is real (negative control)", async () => {
-    const c = await acl.connect();
-    try {
-      await c.query("begin");
-      await c.query("create function public.p7b_probe() returns int language sql as 'select 1'");
-      expect((await c.query("select has_function_privilege('anon','public.p7b_probe()','EXECUTE') ok")).rows[0].ok).toBe(true);
-    } finally { await c.query("rollback"); c.release(); }
-  });
-  it("latch: PUBLIC/anon/authenticated nothing; service_role SELECT+INSERT only", async () => {
-    const rel = "kernel_private.identity_cognition_latches";
-    for (const role of ["public", "anon", "authenticated"])
-      for (const priv of ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"]) expect(await has(role, rel, priv), `${role} ${priv}`).toBe(false);
-    expect(await has("service_role", rel, "SELECT")).toBe(true);
-    expect(await has("service_role", rel, "INSERT")).toBe(true);
-    for (const priv of ["UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"]) expect(await has("service_role", rel, priv), priv).toBe(false);
-  });
-  it("contract marker: service_role SELECT only; nobody else anything", async () => {
-    const rel = "kernel_private.identity_cognition_contract_v1";
-    for (const role of ["public", "anon", "authenticated"]) expect(await has(role, rel, "SELECT")).toBe(false);
-    expect(await has("service_role", rel, "SELECT")).toBe(true);
-    for (const priv of ["INSERT", "UPDATE", "DELETE", "TRUNCATE"]) expect(await has("service_role", rel, priv), priv).toBe(false);
-  });
-  it("the new USAGE on kernel_private exposes no other private relation, sequence or function to service_role", async () => {
-    const exposed = await acl.query(`
-      select 'relation ' || c.relname as obj from pg_class c join pg_namespace n on n.oid = c.relnamespace
-        where n.nspname = 'kernel_private' and c.relkind in ('r','v','m','S','p','f')
-          and c.relname not in ('identity_cognition_latches','identity_cognition_contract_v1')
-          and has_table_privilege('service_role', c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
-      union all
-      select 'function ' || p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-        where n.nspname = 'kernel_private' and has_function_privilege('service_role', p.oid, 'EXECUTE')`);
-    expect(exposed.rows).toEqual([]);
-    const inventory = await acl.query("select count(*)::int n from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='kernel_private'");
-    expect(inventory.rows[0].n).toBeGreaterThan(15); // the inventory really ran over the whole private schema
-  });
-  it("no new function is EXECUTE-able by PUBLIC, anon, authenticated or service_role", async () => {
-    const fns = ["kernel_private.identity_json_string_v1(text)", "kernel_private.identity_core_canonical_v1(jsonb)", "kernel_private.identity_core_digest_v1(jsonb)",
-      "kernel_private.identity_cognition_source_v1(uuid,uuid,integer)", "public.identity_version_digest_parity_v1()", "public.identity_pin_guard_v1()"];
-    for (const fn of fns) for (const role of ["public", "anon", "authenticated", "service_role"])
-      expect((await acl.query("select has_function_privilege($1,$2,'EXECUTE') ok", [role, fn])).rows[0].ok, `${role} ${fn}`).toBe(false);
-  });
 });
 
 // ---------------------------------------------------------------------------------------------------------------

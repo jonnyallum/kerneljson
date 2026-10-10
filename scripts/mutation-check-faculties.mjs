@@ -1,4 +1,7 @@
 // Run only on the local/disposable qualification database. Restores source after every mutant.
+import { assertBaseEnvironment } from './b1/base-guard.mjs';
+process.env.KJ_RUNTIME_ROLES='base';
+assertBaseEnvironment();
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 const policy = "services/kernel/src/faculty/policy.ts";

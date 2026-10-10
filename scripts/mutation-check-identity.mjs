@@ -24,6 +24,9 @@
 //     black-box test cannot distinguish "lock present" from "lock removed" - the concurrency test
 //     (tests/identity-migration.integration.test.ts) proves the PK-level guarantee instead, which is
 //     the one that actually matters to an external observer.
+import { assertBaseEnvironment } from './b1/base-guard.mjs';
+process.env.KJ_RUNTIME_ROLES='base';
+assertBaseEnvironment();
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -44,7 +47,7 @@ const CARDS = "services/kernel/src/channel/telegram/approval-cards.ts";
 // the DB-trigger suite proposes/activates candidates with raw SQL, bypassing the workflow entirely.
 // Running the full set for every one of 22 mutations was originally clocked at ~3 hours; scoping
 // each mutation to only the test file(s) that can actually see it brings this down to minutes.
-const DB_TESTS = ["tests/identity-migration.integration.test.ts"];
+const DB_TESTS = ["tests/identity-migration.integration.test.ts", "tests/identity-migration-base.integration.test.ts"];
 const WORKFLOW_TESTS = ["tests/identity-workflow.integration.test.ts"];
 const MEMORY_TESTS = ["tests/memory-canonical.test.ts"];
 const HEALTH_TESTS = ["tests/health-model.test.ts"];

@@ -2,6 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import pg from "pg";
+import { assertBaseEnvironment, assertBaseTarget, baseMigrationFiles } from "../../scripts/b1/base-guard.mjs";
 export const DATABASE = "postgresql://postgres@127.0.0.1:55432/kerneljson";
 export const INGRESS = "http://127.0.0.1:18080";
 export const ADMIN = "http://127.0.0.1:19070";
@@ -63,16 +64,17 @@ export async function until<T>(
   }
   throw new Error(`Local readiness timeout: ${String(last)}`);
 }
-/** Apply every migration in order. `options.exclude` leaves named files out (KJ-P8 B1: a database migrated from main without B1). */
+/** Lane A only: working-copy base migrations, including authorized mutants, never B1. */
 export async function migrate(pool: pg.Pool, options: { exclude?: readonly string[]; only?: readonly string[] } = {}): Promise<void> {
+  assertBaseEnvironment();
+  const files=baseMigrationFiles((await readdir("supabase/migrations")).filter(f=>f.endsWith(".sql")),options);
+  await assertBaseTarget(pool);
   await pool.query(`do $$ begin
     if not exists(select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
     if not exists(select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
     if not exists(select 1 from pg_roles where rolname='service_role') then create role service_role nologin bypassrls; end if;
   end $$`);
-  for (const file of (await readdir("supabase/migrations"))
-    .filter((f) => f.endsWith(".sql") && !options.exclude?.includes(f) && (!options.only || options.only.includes(f)))
-    .sort()) {
+  for (const file of files) {
     const db = await pool.connect();
     try {
       await db.query("begin");
@@ -85,6 +87,7 @@ export async function migrate(pool: pg.Pool, options: { exclude?: readonly strin
       db.release();
     }
   }
+  await assertBaseTarget(pool);
 }
 export async function post(path: string, body: unknown): Promise<Response> {
   return fetch(`${INGRESS}${path}`, {
