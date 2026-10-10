@@ -1,0 +1,57 @@
+{
+  "kind": "kerneljson:b1-con48-evidence/v1",
+  "case": "CON-48",
+  "R": "4abffe5bb3663b45a5ab67bba238d0f7c58f1533",
+  "suite": "regression-probes",
+  "profile": "none",
+  "runId": "b31ff6441fd24e898220b50b2496e757",
+  "recordSha256": "0749857bd2b5d818073e07a1e7c4b5106c09db030c170df5c598fb4f80f79932",
+  "status": "REPOSITORY_QUALIFIED",
+  "regressionOutcome": "passed",
+  "databaseLog": {
+    "file": "database-log.txt",
+    "sha256": "59570b1e7b96004a85d909db16eb9d2aa341d5a17c976fa1e14b96441cb87454",
+    "recordedSha256": "59570b1e7b96004a85d909db16eb9d2aa341d5a17c976fa1e14b96441cb87454"
+  },
+  "expectedRefusals": 234,
+  "traceRefusals": 234,
+  "positive": [],
+  "perturbations": [
+    {
+      "id": "P1",
+      "failed": true,
+      "how": "one of the two identical refusals dropped: log refusal projection differs"
+    },
+    {
+      "id": "P2",
+      "failed": true,
+      "how": "a third identical refusal added: log refusal projection differs"
+    },
+    {
+      "id": "P3",
+      "failed": true,
+      "how": "a STATEMENT attributed to another process id: LOG_UNTRUSTED: refusal has missing or ambiguous statement"
+    },
+    {
+      "id": "P4",
+      "failed": true,
+      "how": "the trace text truncated at 600 characters: trace refusal multiset differs"
+    },
+    {
+      "id": "P5",
+      "failed": true,
+      "how": "whitespace collapsed: log refusal projection differs"
+    },
+    {
+      "id": "P6",
+      "failed": true,
+      "how": "the next line taken as the statement when it is CONTEXT: log refusal projection differs"
+    },
+    {
+      "id": "P7",
+      "failed": true,
+      "how": "whitespace inside a quoted literal altered: log refusal projection differs"
+    }
+  ],
+  "checker": "scripts/b1/con48.ts (run by scripts/b1/ci-gate.ts through scripts/b1/gate-suite.ts)"
+}

@@ -10,3 +10,4 @@ infrastructure/database/b1-fixtures/** text eol=lf
 docs/operations/evidence/kj-p8-r279-contradiction/pinned-helper.sql text eol=lf
 supabase/migrations/*.sql text eol=lf
 supabase/config.toml text eol=lf
+docs/operations/evidence/kj-p8-r279/con48/database-log.txt -text

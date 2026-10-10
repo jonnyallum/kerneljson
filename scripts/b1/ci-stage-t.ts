@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
-import { cpSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { strictJson } from "../../services/kernel/src/database/strict-json.js";
+import { writeSuiteEvidence } from "./gate-suite.js";
 
 /**
  * CI wrapper for one governed run: it invokes the ephemeral entry point exactly as a developer would (release, profile
@@ -19,13 +20,7 @@ const code=await new Promise<number|null>(done=>child.on("close",done));
 mkdirSync(out,{recursive:true});
 writeFileSync(join(out,"runner-stdout.txt"),stdout);
 const line=stdout.trim().split(/\r?\n/).at(-1) ?? "";
-let summary:{directory?:string}={};
-try{summary=strictJson(line) as {directory?:string};}catch{summary={};}
-writeFileSync(join(out,"summary.json"),JSON.stringify({exitCode:code,summary},null,2)+"\n");
-if(summary.directory){
-  cpSync(summary.directory,join(out,"run"),{recursive:true});
-  const record=strictJson((await import("node:fs")).readFileSync(join(summary.directory,"record.json"),"utf8")) as {stageT?:{workingDirectory?:string}};
-  if(record.stageT?.workingDirectory) cpSync(record.stageT.workingDirectory,join(out,"stage-t"),{recursive:true});
-}
+const summary=((()=>{try{return strictJson(line) as {directory?:string};}catch{return {};}})());
+writeSuiteEvidence(out,code,summary);
 process.exitCode=code ?? 1;
 if(process.argv[1] && resolve(process.argv[1])!==fileURLToPath(import.meta.url)) process.exitCode=1;

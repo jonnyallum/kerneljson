@@ -180,7 +180,7 @@ export async function runStageT(input:StageTInput):Promise<StageTResult>{
     // The harness records Vitest's current test name ("describe > test"); identity is the expanded report name, whose
     // parts are joined by one space (27.12.15 "Identity is the expanded report entry").
     traceRefusals=traces.refusals.map(r=>({...r,test:r.test.split(" > ").join(" ")}));traceHashes=traces.hashes;
-    if(traces.events.some(e=>e.kind==="refused" && e.classification==="production")) problems.push("a production statement was refused");
+    if(traces.productionRefusals.length) problems.push(`a production statement was refused (${traces.productionRefusals.length})`);
     // G4 (enforce) and G5 (discover): the committed analyser at R over exactly these files; any production refusal or
     // production operation outside the frozen manifest fails the suite.
     const inventory=join(work,"dynamic-inventory.json");

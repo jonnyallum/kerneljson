@@ -124,10 +124,12 @@ describe("R279 trace integrity",()=>{
     const {dir,writer}=sample();rmSync(dir,{recursive:true});
     expect(()=>writer.write(statement(),error)).toThrow();
   });
-  it("rejects production refusals and probes through SET ROLE",()=>{
+  it("returns production refusals apart from the probe refusals, and rejects probes through SET ROLE",()=>{
     const dir=directory(),writer=traceWriter(dir,token);
     writer.write(statement());writer.write({...statement(),classification:"production"},error);
-    expect(()=>readTraces(dir,token,["kj_worker"])).toThrow("production refusal");
+    const read=readTraces(dir,token,["kj_worker"]);
+    expect(read.productionRefusals).toHaveLength(1);
+    expect(read.refusals).toEqual([]);
     const second=directory(),other=traceWriter(second,token);other.write({...statement(),via:"set-role"});
     expect(()=>readTraces(second,token,["kj_worker"])).toThrow("invalid event");
   });

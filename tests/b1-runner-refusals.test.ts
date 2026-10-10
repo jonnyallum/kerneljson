@@ -239,6 +239,26 @@ describe("CON-8 and CON-9: the run network and the cluster's attachment, changed
     expect(outcome.summary?.status).toBe("NOT_QUALIFIED");
   },CASE_TIMEOUT);
 });
+describe("CON-9 a run network without the exact label",()=>{
+  // A network's labels cannot change, so the only outside route is to replace it: the cluster is moved to an
+  // unlabelled network of the same name. L3 must refuse; which clause fires first (identity or label) is recorded.
+  it("the run network replaced by an unlabelled one of the same name: L3 refuses",async()=>{
+    const run=runCase("CON-9 unlabelled run network","none",[]);
+    const induced=await induce(run,(c,runId)=>{
+      const name=`kj-eph-${runId}`;
+      return spawnSync("docker",["network","disconnect","-f",name,c]).status===0 && spawnSync("docker",["network","rm",name]).status===0 &&
+        spawnSync("docker",["network","create",name]).status===0 && spawnSync("docker",["network","connect","--alias","kj-eph-db",name,c]).status===0;
+    },600000);
+    const outcome=await run;
+    const runId=outcome.record?.header.runId;
+    if(runId) spawnSync("docker",["network","rm",`kj-eph-${runId}`]);
+    expect(induced).toBe(true);
+    const refused=outcome.record!.events.filter(e=>e.outcome==="refused");
+    expect(refused[0]).toMatchObject({step:"L3"});
+    expect(String(refused[0]!.details)).toMatch(/container network differs|network membership differs/);
+    expect(outcome.summary?.status).toBe("NOT_QUALIFIED");
+  },CASE_TIMEOUT);
+});
 describe("CON-4 end to end: a run given a regression suite and refused at L5 never launches the suite",()=>{
   it("stage T is not run, the suite never starts, and the status is NOT_QUALIFIED",async()=>{
     const run=runCase("CON-4 suite run refused at L5","none",[],{suite:"regression-gated"});

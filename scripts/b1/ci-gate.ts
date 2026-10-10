@@ -2,15 +2,11 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { strictJson } from "../../services/kernel/src/database/strict-json.js";
-import { hash } from "../../services/kernel/src/database/co-resident.js";
 import { Release } from "./release.js";
-import { readRunRecord } from "./evidence.js";
 import { PartitionSchema, RequiredSchema, coverageProblems, parseReport, partitionProblems, type Report } from "./coverage.js";
 import { REGRESSION_SUITES } from "./plans.js";
-import { extractLogRefusals, refusalDifferences, type Refusal } from "./refusal-accounting.js";
-import { readTraces } from "./trace.js";
 import type { CollectedEntry } from "./collection.js";
-import { con48, con48Problems } from "./con48.js";
+import { stageTSuiteResult } from "./gate-suite.js";
 import { SEALED_MUTATIONS, mutationVerdictProblems, mutationVerdicts } from "./gates.js";
 
 /**
@@ -45,45 +41,13 @@ for(const p of pp) fail("partition",p);
 // Stage T suites: one record each, for R, recomputed status and regressionOutcome, and the accounting recomputed.
 const reports=new Map<string,Report>();
 for(const suite of REGRESSION_SUITES){
-  const dir=join(root!,"stage-t",suite.id);
-  const summaryPath=join(dir,"summary.json");
-  if(!existsSync(summaryPath)){fail(suite.id,"no result for this suite");continue;}
-  const {summary}=readJson(summaryPath) as {summary:{recordSha256?:string}};
-  try{
-    const record=readRunRecord(join(dir,"run","record.json"),summary.recordSha256 ?? "",release);
-    const st=record.stageT as {outcome?:string;problems?:string[];expected?:Refusal[];reportSha256?:string;traceHashes?:Record<string,string>;
-      logExtractSha256?:string;markerPid?:string};
-    if(record.header.R!==R) fail(suite.id,"record is for another commit");
-    if(record.header.regressionSuite!==suite.id || record.header.profile!==suite.profile) fail(suite.id,"record names another suite or profile");
-    if(record.status!=="REPOSITORY_QUALIFIED") fail(suite.id,`status ${record.status}`);
-    if(record.regressionOutcome!=="passed" || st.outcome!=="passed" || (st.problems ?? []).length) fail(suite.id,`regressionOutcome ${record.regressionOutcome}: ${(st.problems ?? []).join("; ")}`);
-    const work=join(dir,"stage-t");
-    const reportText=readFileSync(join(work,"report.json"),"utf8");
-    if(hash(reportText)!==st.reportSha256) fail(suite.id,"report differs from the recorded digest");
-    const report=parseReport(reportText,process.cwd());
-    if(!suite.id.endsWith("-discover")) reports.set(suite.id,report);
-    const token={runId:record.header.runId,suite:suite.id};
-    const traces=readTraces(join(work,"trace"),token,suite.roles,st.traceHashes);
-    const log=readFileSync(join(work,"database-log.txt"),"utf8");
-    if(hash(log)!==st.logExtractSha256) fail(suite.id,"database log differs from the recorded digest");
-    const logRefusals=extractLogRefusals(log,record.header.runId,st.markerPid ?? "");
-    const expected=suite.refusalPolicy==="probes"?required.entries.filter(e=>suite.files.includes(e.file)).flatMap(e=>e.refusals.map(r=>({test:e.name,...r}))):[];
-    const trace=traces.refusals.map(r=>({...r,test:r.test.split(" > ").join(" ")}));
-    for(const p of refusalDifferences(expected,trace,logRefusals)) fail(suite.id,p);
-    if(suite.id==="regression-probes"){
-      // CON-48 over this run's pinned-image log: the positive fixture reconciles and the seven perturbations fail.
-      const traceSql=traces.events.filter(e=>e.kind==="refused" && e.test).map(e=>({test:e.test!.split(" > ").join(" "),sql:e.sql}));
-      const con=con48({log,runId:record.header.runId,markerPid:st.markerPid ?? "",expected,trace,traceSql});
-      for(const p of con48Problems({log,runId:record.header.runId,markerPid:st.markerPid ?? "",expected,trace,traceSql})) fail("CON-48",p);
-      results["CON-48"]=con.perturbations.map(p=>`${p.id} ${p.failed?"FAILED":"RECONCILED"}`);
-    }
-    const inventory=spawnSync(process.execPath,[resolve("scripts/b1/analyse-trace.mjs"),join(work,"trace"),join(work,"gate-inventory.json"),"--fail-on-refusal"],{encoding:"utf8"});
-    if(inventory.status!==0) fail(suite.harness==="enforce"?"G4":"G5",`${suite.id}: ${inventory.stderr.slice(0,400)}`);
-    results[suite.id]={status:record.status,regressionOutcome:record.regressionOutcome,recordSha256:summary.recordSha256,tests:report.entries.length};
-  }catch(error){fail(suite.id,error instanceof Error?error.message:String(error));}
+  const r=stageTSuiteResult(join(root!,"stage-t",suite.id),suite,R!,release,required,process.cwd());
+  for(const [gate,message] of r.problems) fail(gate,message);
+  if(r.report && !suite.id.endsWith("-discover")) reports.set(suite.id,r.report);
+  Object.assign(results,r.results);
 }
 // base-regression and runner-cases: complete reports for this commit.
-for(const [suite,files] of [["base-regression",["base-regression.json"]],["runner-cases",readdirSync(join(root!,"runner-cases")).filter(f=>f.endsWith(".json")).sort()]] as const){
+for(const [suite,files] of [["base-regression",["base-regression.json"]],["runner-cases",existsSync(join(root!,"runner-cases"))?readdirSync(join(root!,"runner-cases")).filter(f=>f.endsWith(".json")).sort():[]]] as const){
   const merged:Report={files:[],entries:[]};
   try{
     for(const f of files){

@@ -312,6 +312,11 @@
       "refusals": []
     },
     {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-27 the CI gate over an empty evidence directory refuses the commit, naming every registered suite and gate as missing",
+      "refusals": []
+    },
+    {
       "file": "tests/b1-refusal-accounting.test.ts",
       "name": "R279 refusal accounting parser allows other backends between ERROR, CONTEXT and STATEMENT",
       "refusals": []
@@ -1128,6 +1133,11 @@
     },
     {
       "file": "tests/b1-runner-refusals.test.ts",
+      "name": "CON-9 a run network without the exact label the run network replaced by an unlabelled one of the same name: L3 refuses",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-refusals.test.ts",
       "name": "EPH-27 end to end: an unhooked run refused at L5 by an outside change a non-superuser default role set from outside the runner makes L5 refuse; teardown passes; NOT_QUALIFIED",
       "refusals": []
     },
@@ -1493,6 +1503,16 @@
     },
     {
       "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-15 and CON-16 an absorbed production refusal CON-15 on the host, in an enforce suite: the trace records it, G4 fails and the log check fails",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-15 and CON-16 an absorbed production refusal CON-16 inside the compose worker: the container's trace records it and the log check fails",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
       "name": "CON-5 a suite that does not run its listed tests completely and successfully a listed file missing from the report: the file set differs and its collected locations have no entries",
       "refusals": []
     },
@@ -1503,7 +1523,7 @@
     },
     {
       "file": "tests/b1-runner-staget.test.ts",
-      "name": "CON-5 a suite that does not run its listed tests completely and successfully one failed test: regressionOutcome failed, status unchanged",
+      "name": "CON-5 a suite that does not run its listed tests completely and successfully one failed test: regressionOutcome failed, status unchanged; the CI gate refuses it (CON-11, CON-27)",
       "refusals": []
     },
     {
@@ -1878,11 +1898,6 @@
     },
     {
       "file": "tests/b1-trace.test.ts",
-      "name": "R279 trace integrity rejects production refusals and probes through SET ROLE",
-      "refusals": []
-    },
-    {
-      "file": "tests/b1-trace.test.ts",
       "name": "R279 trace integrity rejects sequence corruption",
       "refusals": []
     },
@@ -1899,6 +1914,11 @@
     {
       "file": "tests/b1-trace.test.ts",
       "name": "R279 trace integrity retains exact long multiline SQL and duplicate refusal multiplicity",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-trace.test.ts",
+      "name": "R279 trace integrity returns production refusals apart from the probe refusals, and rejects probes through SET ROLE",
       "refusals": []
     },
     {

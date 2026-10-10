@@ -1,0 +1,553 @@
+********************************************************************************
+WARNING: POSTGRES_HOST_AUTH_METHOD has been set to "trust". This will allow
+         anyone with access to the Postgres port to access your database without
+         a password, even if POSTGRES_PASSWORD is set. See PostgreSQL
+         documentation about "trust":
+         https://www.postgresql.org/docs/current/auth-trust.html
+         In Docker's default configuration, this is effectively any other
+         container on the same system.
+
+         It is not recommended to use POSTGRES_HOST_AUTH_METHOD=trust. Replace
+         it with "-e POSTGRES_PASSWORD=password" instead to set a password in
+         "docker run".
+********************************************************************************
+initdb: warning: enabling "trust" authentication for local connections
+initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-10-10 09:43:39.540 UTC [1] LOG:  starting PostgreSQL 17.6 (Debian 17.6-2.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-10-10 09:43:39.541 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-10-10 09:43:39.541 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+2026-10-10 09:43:39.550 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-10-10 09:43:39.553 UTC [64] LOG:  database system was shut down at 2026-10-10 09:43:39 UTC
+2026-10-10 09:43:39.558 UTC [1] LOG:  database system is ready to accept connections
+2026-10-10 09:43:55.472 UTC [71] ERROR:  relation "supabase_migrations.schema_migrations" does not exist at character 21
+2026-10-10 09:43:55.472 UTC [71] STATEMENT:  SELECT version FROM supabase_migrations.schema_migrations ORDER BY version
+2026-10-10 09:44:33.469 UTC [85] ERROR:  relation "supabase_migrations.schema_migrations" does not exist at character 21
+2026-10-10 09:44:33.469 UTC [85] STATEMENT:  SELECT version FROM supabase_migrations.schema_migrations ORDER BY version
+2026-10-10 09:44:55.370 UTC [1] LOG:  received SIGHUP, reloading configuration files
+kjlog|1|7|00000||| LOG:  parameter "log_line_prefix" changed to "kjlog|%p|%l|%e|%u|%d| "
+kjlog|98|1|00000|postgres|postgres| LOG:  kj-t-begin b31ff6441fd24e898220b50b2496e757
+kjlog|98|2|00000|postgres|postgres| CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE
+kjlog|98|3|00000|postgres|postgres| STATEMENT:  do $kj$ begin raise log 'kj-t-begin b31ff6441fd24e898220b50b2496e757'; end $kj$
+kjlog|100|1|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for schema public at character 14
+kjlog|100|2|42501|kj_worker|kj_b1_neg| STATEMENT:  create table public.kj_b1_x (i int)
+kjlog|100|3|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for schema kernel_private at character 14
+kjlog|100|4|42501|kj_worker|kj_b1_neg| STATEMENT:  create table kernel_private.kj_b1_x (i int)
+kjlog|100|5|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for database kj_b1_neg
+kjlog|100|6|42501|kj_worker|kj_b1_neg| STATEMENT:  create schema kj_b1_x
+kjlog|100|7|42501|kj_worker|kj_b1_neg| ERROR:  permission denied to create temporary tables in database "kj_b1_neg" at character 24
+kjlog|100|8|42501|kj_worker|kj_b1_neg| STATEMENT:  create temporary table kj_b1_x (i int)
+kjlog|100|9|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for schema public
+kjlog|100|10|42501|kj_worker|kj_b1_neg| STATEMENT:  create view public.kj_b1_v as select 1
+kjlog|100|11|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for schema public
+kjlog|100|12|42501|kj_worker|kj_b1_neg| STATEMENT:  create function public.kj_b1_f() returns int language sql as 'select 1'
+kjlog|100|13|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for schema public
+kjlog|100|14|42501|kj_worker|kj_b1_neg| STATEMENT:  create or replace function public.reject_ledger_mutation() returns trigger language plpgsql as $f$ begin return new; end $f$
+kjlog|100|15|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of table tasks
+kjlog|100|16|42501|kj_worker|kj_b1_neg| STATEMENT:  alter table public.tasks add column kj_b1_x int
+kjlog|100|17|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of table tasks
+kjlog|100|18|42501|kj_worker|kj_b1_neg| STATEMENT:  alter table public.tasks owner to current_user
+kjlog|100|19|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of table tasks
+kjlog|100|20|42501|kj_worker|kj_b1_neg| STATEMENT:  drop table public.tasks
+kjlog|100|21|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of function public.reject_ledger_mutation
+kjlog|100|22|42501|kj_worker|kj_b1_neg| STATEMENT:  drop function public.reject_ledger_mutation()
+kjlog|100|23|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table task_events
+kjlog|100|24|42501|kj_worker|kj_b1_neg| STATEMENT:  truncate public.task_events
+kjlog|100|25|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of table task_events
+kjlog|100|26|42501|kj_worker|kj_b1_neg| STATEMENT:  alter table public.task_events disable trigger all
+kjlog|100|27|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table tasks
+kjlog|100|28|42501|kj_worker|kj_b1_neg| STATEMENT:  create trigger kj_b1_t before insert on public.tasks for each row execute function public.reject_ledger_mutation()
+kjlog|100|29|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of relation identity_activations
+kjlog|100|30|42501|kj_worker|kj_b1_neg| STATEMENT:  drop trigger identity_activation_guard on public.identity_activations
+kjlog|100|31|42501|kj_worker|kj_b1_neg| ERROR:  permission denied to set parameter "session_replication_role"
+kjlog|100|32|42501|kj_worker|kj_b1_neg| STATEMENT:  set session_replication_role = replica
+kjlog|100|33|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of table tasks
+kjlog|100|34|42501|kj_worker|kj_b1_neg| STATEMENT:  alter table public.tasks disable row level security
+kjlog|100|35|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of table tasks
+kjlog|100|36|42501|kj_worker|kj_b1_neg| STATEMENT:  alter table public.tasks force row level security
+kjlog|100|37|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of table tasks
+kjlog|100|38|42501|kj_worker|kj_b1_neg| STATEMENT:  create policy kj_b1_p on public.tasks for all using (true)
+kjlog|100|39|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of relation tasks
+kjlog|100|40|42501|kj_worker|kj_b1_neg| STATEMENT:  drop policy kj_worker_select on public.tasks
+kjlog|100|41|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of table tasks
+kjlog|100|42|42501|kj_worker|kj_b1_neg| STATEMENT:  alter policy kj_worker_select on public.tasks using (false)
+kjlog|100|43|42501|kj_worker|kj_b1_neg| ERROR:  query would be affected by row-level security policy for table "task_events"
+kjlog|100|44|42501|kj_worker|kj_b1_neg| STATEMENT:  set row_security = off; select 1 from public.task_events limit 1
+kjlog|100|45|42501|kj_worker|kj_b1_neg| ERROR:  permission denied to create role
+kjlog|100|46|42501|kj_worker|kj_b1_neg| DETAIL:  Only roles with the CREATEROLE attribute may create roles.
+kjlog|100|47|42501|kj_worker|kj_b1_neg| STATEMENT:  create role kj_b1_r
+kjlog|100|48|42501|kj_worker|kj_b1_neg| ERROR:  permission denied to alter role
+kjlog|100|49|42501|kj_worker|kj_b1_neg| DETAIL:  Only roles with the CREATEROLE attribute and the ADMIN option on role "kj_worker" may alter this role.
+kjlog|100|50|42501|kj_worker|kj_b1_neg| STATEMENT:  alter role current_user createdb
+kjlog|100|51|42501|kj_worker|kj_b1_neg| ERROR:  permission denied to alter role
+kjlog|100|52|42501|kj_worker|kj_b1_neg| DETAIL:  Only roles with the CREATEROLE attribute and the ADMIN option on role "kj_b1_probe_target" may alter this role.
+kjlog|100|53|42501|kj_worker|kj_b1_neg| STATEMENT:  alter role kj_b1_probe_target login
+kjlog|100|54|42501|kj_worker|kj_b1_neg| ERROR:  permission denied to drop role
+kjlog|100|55|42501|kj_worker|kj_b1_neg| DETAIL:  Only roles with the CREATEROLE attribute and the ADMIN option on the target roles may drop roles.
+kjlog|100|56|42501|kj_worker|kj_b1_neg| STATEMENT:  drop role kj_b1_probe_target
+kjlog|100|57|42501|kj_worker|kj_b1_neg| ERROR:  permission denied to set role "postgres"
+kjlog|100|58|42501|kj_worker|kj_b1_neg| STATEMENT:  set role postgres
+kjlog|100|59|42501|kj_worker|kj_b1_neg| ERROR:  permission denied to set session authorization "postgres"
+kjlog|100|60|42501|kj_worker|kj_b1_neg| STATEMENT:  set session authorization postgres
+kjlog|100|61|42501|kj_worker|kj_b1_neg| ERROR:  permission denied to grant role "postgres"
+kjlog|100|62|42501|kj_worker|kj_b1_neg| DETAIL:  Only roles with the SUPERUSER attribute may grant roles with the SUPERUSER attribute.
+kjlog|100|63|42501|kj_worker|kj_b1_neg| STATEMENT:  grant postgres to current_user
+kjlog|100|64|42501|kj_worker|kj_b1_neg| ERROR:  permission denied to set parameter "log_statement"
+kjlog|100|65|42501|kj_worker|kj_b1_neg| STATEMENT:  alter system set log_statement = 'none'
+kjlog|100|66|42501|kj_worker|kj_b1_neg| ERROR:  permission denied to COPY to or from an external program
+kjlog|100|67|42501|kj_worker|kj_b1_neg| DETAIL:  Only roles with privileges of the "pg_execute_server_program" role may COPY to or from an external program.
+kjlog|100|68|42501|kj_worker|kj_b1_neg| HINT:  Anyone can COPY to stdout or from stdin. psql's \copy command also works for anyone.
+kjlog|100|69|42501|kj_worker|kj_b1_neg| STATEMENT:  copy (select 1) to program 'true'
+kjlog|100|70|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table pg_authid
+kjlog|100|71|42501|kj_worker|kj_b1_neg| STATEMENT:  select rolpassword from pg_authid limit 1
+kjlog|100|72|42501|kj_worker|kj_b1_neg| ERROR:  permission denied to create extension "pgcrypto"
+kjlog|100|73|42501|kj_worker|kj_b1_neg| HINT:  Must have CREATE privilege on current database to create this extension.
+kjlog|100|74|42501|kj_worker|kj_b1_neg| STATEMENT:  create extension if not exists pgcrypto
+kjlog|100|75|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for function activate_release
+kjlog|100|76|42501|kj_worker|kj_b1_neg| STATEMENT:  select kernel_private.activate_release('00000000-0000-4000-8000-000000000001', 'kj-b1-probe', 1, '{"probe":true}'::jsonb)
+kjlog|100|77|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table release_activations
+kjlog|100|78|42501|kj_worker|kj_b1_neg| STATEMENT:  insert into kernel_private.release_activations(epoch, request_id, release_id, activated_at, created_by, evidence) values (999999, '00000000-0000-4000-8000-000000000001', 'x', now(), 'x', '{"x":1}')
+kjlog|100|79|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table release_activations
+kjlog|100|80|42501|kj_worker|kj_b1_neg| STATEMENT:  delete from kernel_private.release_activations
+kjlog|100|81|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table release_epoch
+kjlog|100|82|42501|kj_worker|kj_b1_neg| STATEMENT:  update kernel_private.release_epoch set epoch = epoch
+kjlog|100|83|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table release_epoch
+kjlog|100|84|42501|kj_worker|kj_b1_neg| STATEMENT:  update kernel_private.release_epoch set epoch = epoch + 1
+kjlog|100|85|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for function set_identity_freeze
+kjlog|100|86|42501|kj_worker|kj_b1_neg| STATEMENT:  select kernel_private.set_identity_freeze('00000000-0000-4000-8000-000000000001', false, 'kj-b1-probe')
+kjlog|100|87|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table identity_governance_state
+kjlog|100|88|42501|kj_worker|kj_b1_neg| STATEMENT:  insert into kernel_private.identity_governance_state(identity_id, frozen) values ('00000000-0000-4000-8000-000000000001', false)
+kjlog|100|89|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table task_events
+kjlog|100|90|42501|kj_worker|kj_b1_neg| STATEMENT:  update public.task_events set type = type
+kjlog|100|91|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table task_events
+kjlog|100|92|42501|kj_worker|kj_b1_neg| STATEMENT:  delete from public.task_events
+kjlog|100|93|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table evidence
+kjlog|100|94|42501|kj_worker|kj_b1_neg| STATEMENT:  delete from public.evidence
+kjlog|100|95|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table identity_versions
+kjlog|100|96|42501|kj_worker|kj_b1_neg| STATEMENT:  update public.identity_versions set version = version
+kjlog|100|97|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table identity_activations
+kjlog|100|98|42501|kj_worker|kj_b1_neg| STATEMENT:  delete from public.identity_activations
+kjlog|100|99|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table identity_candidates
+kjlog|100|100|42501|kj_worker|kj_b1_neg| STATEMENT:  update public.identity_candidates set origin = 'OPERATOR_INSTRUCTION'
+kjlog|100|101|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table faculty_versions
+kjlog|100|102|42501|kj_worker|kj_b1_neg| STATEMENT:  update public.faculty_versions set version = version
+kjlog|100|103|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table tenant_memberships
+kjlog|100|104|42501|kj_worker|kj_b1_neg| STATEMENT:  update public.tenant_memberships set role = 'owner'
+kjlog|100|105|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table principals
+kjlog|100|106|42501|kj_worker|kj_b1_neg| STATEMENT:  insert into public.principals(id, kind) values ('00000000-0000-4000-8000-000000000001', 'HUMAN')
+kjlog|100|107|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table tenants
+kjlog|100|108|42501|kj_worker|kj_b1_neg| STATEMENT:  insert into public.tenants(id) values ('00000000-0000-4000-8000-000000000001')
+kjlog|100|109|01007|kj_worker|kj_b1_neg| WARNING:  no privileges were granted for "identity_versions"
+kjlog|100|110|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table tenants
+kjlog|100|111|42501|kj_worker|kj_b1_neg| STATEMENT:  grant all on all tables in schema public to kj_b1_probe_target
+kjlog|100|112|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for function set_identity_freeze
+kjlog|100|113|42501|kj_worker|kj_b1_neg| STATEMENT:  grant execute on function kernel_private.set_identity_freeze(uuid, boolean, text) to kj_worker
+kjlog|100|114|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for "tasks"
+kjlog|100|115|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for column "tableoid" of relation "tasks"
+kjlog|100|116|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for column "cmax" of relation "tasks"
+kjlog|100|117|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for column "xmax" of relation "tasks"
+kjlog|100|118|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for column "cmin" of relation "tasks"
+kjlog|100|119|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for column "xmin" of relation "tasks"
+kjlog|100|120|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for column "ctid" of relation "tasks"
+kjlog|100|121|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for column "id" of relation "tasks"
+kjlog|100|122|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for column "tenant_id" of relation "tasks"
+kjlog|100|123|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for column "principal_id" of relation "tasks"
+kjlog|100|124|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for column "parent_task_id" of relation "tasks"
+kjlog|100|125|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for column "trace_id" of relation "tasks"
+kjlog|100|126|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for column "status" of relation "tasks"
+kjlog|100|127|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for column "contract" of relation "tasks"
+kjlog|100|128|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for column "created_at" of relation "tasks"
+kjlog|100|129|01006|kj_worker|kj_b1_neg| WARNING:  no privileges could be revoked for column "updated_at" of relation "tasks"
+kjlog|100|130|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table control_events
+kjlog|100|131|42501|kj_worker|kj_b1_neg| STATEMENT:  select 1 from kernel_private.control_events limit 1
+kjlog|100|132|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table dispatch_events
+kjlog|100|133|42501|kj_worker|kj_b1_neg| STATEMENT:  select 1 from kernel_private.dispatch_events limit 1
+kjlog|100|134|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table membership_events
+kjlog|100|135|42501|kj_worker|kj_b1_neg| STATEMENT:  select 1 from kernel_private.membership_events limit 1
+kjlog|100|136|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table artifacts
+kjlog|100|137|42501|kj_worker|kj_b1_neg| STATEMENT:  select 1 from public.artifacts limit 1
+kjlog|100|138|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table channels
+kjlog|100|139|42501|kj_worker|kj_b1_neg| STATEMENT:  select 1 from public.channels limit 1
+kjlog|100|140|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table entities
+kjlog|100|141|42501|kj_worker|kj_b1_neg| STATEMENT:  select 1 from public.entities limit 1
+kjlog|100|142|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table evaluations
+kjlog|100|143|42501|kj_worker|kj_b1_neg| STATEMENT:  select 1 from public.evaluations limit 1
+kjlog|100|144|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table memory_items
+kjlog|100|145|42501|kj_worker|kj_b1_neg| STATEMENT:  select 1 from public.memory_items limit 1
+kjlog|100|146|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table observations
+kjlog|100|147|42501|kj_worker|kj_b1_neg| STATEMENT:  select 1 from public.observations limit 1
+kjlog|100|148|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table relationships
+kjlog|100|149|42501|kj_worker|kj_b1_neg| STATEMENT:  select 1 from public.relationships limit 1
+kjlog|100|150|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table tenants
+kjlog|100|151|42501|kj_worker|kj_b1_neg| STATEMENT:  select 1 from public.tenants limit 1
+kjlog|101|1|42501|kj_door|kj_b1_neg| ERROR:  permission denied for schema public at character 14
+kjlog|101|2|42501|kj_door|kj_b1_neg| STATEMENT:  create table public.kj_b1_x (i int)
+kjlog|101|3|42501|kj_door|kj_b1_neg| ERROR:  permission denied for schema kernel_private at character 14
+kjlog|101|4|42501|kj_door|kj_b1_neg| STATEMENT:  create table kernel_private.kj_b1_x (i int)
+kjlog|101|5|42501|kj_door|kj_b1_neg| ERROR:  permission denied for database kj_b1_neg
+kjlog|101|6|42501|kj_door|kj_b1_neg| STATEMENT:  create schema kj_b1_x
+kjlog|101|7|42501|kj_door|kj_b1_neg| ERROR:  permission denied to create temporary tables in database "kj_b1_neg" at character 24
+kjlog|101|8|42501|kj_door|kj_b1_neg| STATEMENT:  create temporary table kj_b1_x (i int)
+kjlog|101|9|42501|kj_door|kj_b1_neg| ERROR:  permission denied for schema public
+kjlog|101|10|42501|kj_door|kj_b1_neg| STATEMENT:  create view public.kj_b1_v as select 1
+kjlog|101|11|42501|kj_door|kj_b1_neg| ERROR:  permission denied for schema public
+kjlog|101|12|42501|kj_door|kj_b1_neg| STATEMENT:  create function public.kj_b1_f() returns int language sql as 'select 1'
+kjlog|101|13|42501|kj_door|kj_b1_neg| ERROR:  permission denied for schema public
+kjlog|101|14|42501|kj_door|kj_b1_neg| STATEMENT:  create or replace function public.reject_ledger_mutation() returns trigger language plpgsql as $f$ begin return new; end $f$
+kjlog|101|15|42501|kj_door|kj_b1_neg| ERROR:  must be owner of table tasks
+kjlog|101|16|42501|kj_door|kj_b1_neg| STATEMENT:  alter table public.tasks add column kj_b1_x int
+kjlog|101|17|42501|kj_door|kj_b1_neg| ERROR:  must be owner of table tasks
+kjlog|101|18|42501|kj_door|kj_b1_neg| STATEMENT:  alter table public.tasks owner to current_user
+kjlog|101|19|42501|kj_door|kj_b1_neg| ERROR:  must be owner of table tasks
+kjlog|101|20|42501|kj_door|kj_b1_neg| STATEMENT:  drop table public.tasks
+kjlog|101|21|42501|kj_door|kj_b1_neg| ERROR:  must be owner of function public.reject_ledger_mutation
+kjlog|101|22|42501|kj_door|kj_b1_neg| STATEMENT:  drop function public.reject_ledger_mutation()
+kjlog|101|23|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table task_events
+kjlog|101|24|42501|kj_door|kj_b1_neg| STATEMENT:  truncate public.task_events
+kjlog|101|25|42501|kj_door|kj_b1_neg| ERROR:  must be owner of table task_events
+kjlog|101|26|42501|kj_door|kj_b1_neg| STATEMENT:  alter table public.task_events disable trigger all
+kjlog|101|27|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table tasks
+kjlog|101|28|42501|kj_door|kj_b1_neg| STATEMENT:  create trigger kj_b1_t before insert on public.tasks for each row execute function public.reject_ledger_mutation()
+kjlog|101|29|42501|kj_door|kj_b1_neg| ERROR:  must be owner of relation identity_activations
+kjlog|101|30|42501|kj_door|kj_b1_neg| STATEMENT:  drop trigger identity_activation_guard on public.identity_activations
+kjlog|101|31|42501|kj_door|kj_b1_neg| ERROR:  permission denied to set parameter "session_replication_role"
+kjlog|101|32|42501|kj_door|kj_b1_neg| STATEMENT:  set session_replication_role = replica
+kjlog|101|33|42501|kj_door|kj_b1_neg| ERROR:  must be owner of table tasks
+kjlog|101|34|42501|kj_door|kj_b1_neg| STATEMENT:  alter table public.tasks disable row level security
+kjlog|101|35|42501|kj_door|kj_b1_neg| ERROR:  must be owner of table tasks
+kjlog|101|36|42501|kj_door|kj_b1_neg| STATEMENT:  alter table public.tasks force row level security
+kjlog|101|37|42501|kj_door|kj_b1_neg| ERROR:  must be owner of table tasks
+kjlog|101|38|42501|kj_door|kj_b1_neg| STATEMENT:  create policy kj_b1_p on public.tasks for all using (true)
+kjlog|101|39|42501|kj_door|kj_b1_neg| ERROR:  must be owner of relation tasks
+kjlog|101|40|42501|kj_door|kj_b1_neg| STATEMENT:  drop policy kj_worker_select on public.tasks
+kjlog|101|41|42501|kj_door|kj_b1_neg| ERROR:  must be owner of table tasks
+kjlog|101|42|42501|kj_door|kj_b1_neg| STATEMENT:  alter policy kj_worker_select on public.tasks using (false)
+kjlog|101|43|42501|kj_door|kj_b1_neg| ERROR:  query would be affected by row-level security policy for table "task_events"
+kjlog|101|44|42501|kj_door|kj_b1_neg| STATEMENT:  set row_security = off; select 1 from public.task_events limit 1
+kjlog|101|45|42501|kj_door|kj_b1_neg| ERROR:  permission denied to create role
+kjlog|101|46|42501|kj_door|kj_b1_neg| DETAIL:  Only roles with the CREATEROLE attribute may create roles.
+kjlog|101|47|42501|kj_door|kj_b1_neg| STATEMENT:  create role kj_b1_r
+kjlog|101|48|42501|kj_door|kj_b1_neg| ERROR:  permission denied to alter role
+kjlog|101|49|42501|kj_door|kj_b1_neg| DETAIL:  Only roles with the CREATEROLE attribute and the ADMIN option on role "kj_door" may alter this role.
+kjlog|101|50|42501|kj_door|kj_b1_neg| STATEMENT:  alter role current_user createdb
+kjlog|101|51|42501|kj_door|kj_b1_neg| ERROR:  permission denied to alter role
+kjlog|101|52|42501|kj_door|kj_b1_neg| DETAIL:  Only roles with the CREATEROLE attribute and the ADMIN option on role "kj_b1_probe_target" may alter this role.
+kjlog|101|53|42501|kj_door|kj_b1_neg| STATEMENT:  alter role kj_b1_probe_target login
+kjlog|101|54|42501|kj_door|kj_b1_neg| ERROR:  permission denied to drop role
+kjlog|101|55|42501|kj_door|kj_b1_neg| DETAIL:  Only roles with the CREATEROLE attribute and the ADMIN option on the target roles may drop roles.
+kjlog|101|56|42501|kj_door|kj_b1_neg| STATEMENT:  drop role kj_b1_probe_target
+kjlog|101|57|42501|kj_door|kj_b1_neg| ERROR:  permission denied to set role "postgres"
+kjlog|101|58|42501|kj_door|kj_b1_neg| STATEMENT:  set role postgres
+kjlog|101|59|42501|kj_door|kj_b1_neg| ERROR:  permission denied to set session authorization "postgres"
+kjlog|101|60|42501|kj_door|kj_b1_neg| STATEMENT:  set session authorization postgres
+kjlog|101|61|42501|kj_door|kj_b1_neg| ERROR:  permission denied to grant role "postgres"
+kjlog|101|62|42501|kj_door|kj_b1_neg| DETAIL:  Only roles with the SUPERUSER attribute may grant roles with the SUPERUSER attribute.
+kjlog|101|63|42501|kj_door|kj_b1_neg| STATEMENT:  grant postgres to current_user
+kjlog|101|64|42501|kj_door|kj_b1_neg| ERROR:  permission denied to set parameter "log_statement"
+kjlog|101|65|42501|kj_door|kj_b1_neg| STATEMENT:  alter system set log_statement = 'none'
+kjlog|101|66|42501|kj_door|kj_b1_neg| ERROR:  permission denied to COPY to or from an external program
+kjlog|101|67|42501|kj_door|kj_b1_neg| DETAIL:  Only roles with privileges of the "pg_execute_server_program" role may COPY to or from an external program.
+kjlog|101|68|42501|kj_door|kj_b1_neg| HINT:  Anyone can COPY to stdout or from stdin. psql's \copy command also works for anyone.
+kjlog|101|69|42501|kj_door|kj_b1_neg| STATEMENT:  copy (select 1) to program 'true'
+kjlog|101|70|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table pg_authid
+kjlog|101|71|42501|kj_door|kj_b1_neg| STATEMENT:  select rolpassword from pg_authid limit 1
+kjlog|101|72|42501|kj_door|kj_b1_neg| ERROR:  permission denied to create extension "pgcrypto"
+kjlog|101|73|42501|kj_door|kj_b1_neg| HINT:  Must have CREATE privilege on current database to create this extension.
+kjlog|101|74|42501|kj_door|kj_b1_neg| STATEMENT:  create extension if not exists pgcrypto
+kjlog|101|75|42501|kj_door|kj_b1_neg| ERROR:  permission denied for function activate_release
+kjlog|101|76|42501|kj_door|kj_b1_neg| STATEMENT:  select kernel_private.activate_release('00000000-0000-4000-8000-000000000001', 'kj-b1-probe', 1, '{"probe":true}'::jsonb)
+kjlog|101|77|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table release_activations
+kjlog|101|78|42501|kj_door|kj_b1_neg| STATEMENT:  insert into kernel_private.release_activations(epoch, request_id, release_id, activated_at, created_by, evidence) values (999999, '00000000-0000-4000-8000-000000000001', 'x', now(), 'x', '{"x":1}')
+kjlog|101|79|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table release_activations
+kjlog|101|80|42501|kj_door|kj_b1_neg| STATEMENT:  delete from kernel_private.release_activations
+kjlog|101|81|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table release_epoch
+kjlog|101|82|42501|kj_door|kj_b1_neg| STATEMENT:  update kernel_private.release_epoch set epoch = epoch
+kjlog|101|83|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table release_epoch
+kjlog|101|84|42501|kj_door|kj_b1_neg| STATEMENT:  update kernel_private.release_epoch set epoch = epoch + 1
+kjlog|101|85|42501|kj_door|kj_b1_neg| ERROR:  permission denied for function set_identity_freeze
+kjlog|101|86|42501|kj_door|kj_b1_neg| STATEMENT:  select kernel_private.set_identity_freeze('00000000-0000-4000-8000-000000000001', false, 'kj-b1-probe')
+kjlog|101|87|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table identity_governance_state
+kjlog|101|88|42501|kj_door|kj_b1_neg| STATEMENT:  insert into kernel_private.identity_governance_state(identity_id, frozen) values ('00000000-0000-4000-8000-000000000001', false)
+kjlog|101|89|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table task_events
+kjlog|101|90|42501|kj_door|kj_b1_neg| STATEMENT:  update public.task_events set type = type
+kjlog|101|91|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table task_events
+kjlog|101|92|42501|kj_door|kj_b1_neg| STATEMENT:  delete from public.task_events
+kjlog|101|93|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table evidence
+kjlog|101|94|42501|kj_door|kj_b1_neg| STATEMENT:  delete from public.evidence
+kjlog|101|95|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table identity_versions
+kjlog|101|96|42501|kj_door|kj_b1_neg| STATEMENT:  update public.identity_versions set version = version
+kjlog|101|97|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table identity_activations
+kjlog|101|98|42501|kj_door|kj_b1_neg| STATEMENT:  delete from public.identity_activations
+kjlog|101|99|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table identity_candidates
+kjlog|101|100|42501|kj_door|kj_b1_neg| STATEMENT:  update public.identity_candidates set origin = 'OPERATOR_INSTRUCTION'
+kjlog|101|101|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table faculty_versions
+kjlog|101|102|42501|kj_door|kj_b1_neg| STATEMENT:  update public.faculty_versions set version = version
+kjlog|101|103|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table tenant_memberships
+kjlog|101|104|42501|kj_door|kj_b1_neg| STATEMENT:  update public.tenant_memberships set role = 'owner'
+kjlog|101|105|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table principals
+kjlog|101|106|42501|kj_door|kj_b1_neg| STATEMENT:  insert into public.principals(id, kind) values ('00000000-0000-4000-8000-000000000001', 'HUMAN')
+kjlog|101|107|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table tenants
+kjlog|101|108|42501|kj_door|kj_b1_neg| STATEMENT:  insert into public.tenants(id) values ('00000000-0000-4000-8000-000000000001')
+kjlog|101|109|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table identity_versions
+kjlog|101|110|42501|kj_door|kj_b1_neg| STATEMENT:  grant select on public.identity_versions to kj_door
+kjlog|101|111|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table tenants
+kjlog|101|112|42501|kj_door|kj_b1_neg| STATEMENT:  grant all on all tables in schema public to kj_b1_probe_target
+kjlog|101|113|42501|kj_door|kj_b1_neg| ERROR:  permission denied for function set_identity_freeze
+kjlog|101|114|42501|kj_door|kj_b1_neg| STATEMENT:  grant execute on function kernel_private.set_identity_freeze(uuid, boolean, text) to kj_door
+kjlog|101|115|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for "tasks"
+kjlog|101|116|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for column "tableoid" of relation "tasks"
+kjlog|101|117|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for column "cmax" of relation "tasks"
+kjlog|101|118|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for column "xmax" of relation "tasks"
+kjlog|101|119|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for column "cmin" of relation "tasks"
+kjlog|101|120|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for column "xmin" of relation "tasks"
+kjlog|101|121|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for column "ctid" of relation "tasks"
+kjlog|101|122|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for column "id" of relation "tasks"
+kjlog|101|123|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for column "tenant_id" of relation "tasks"
+kjlog|101|124|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for column "principal_id" of relation "tasks"
+kjlog|101|125|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for column "parent_task_id" of relation "tasks"
+kjlog|101|126|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for column "trace_id" of relation "tasks"
+kjlog|101|127|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for column "status" of relation "tasks"
+kjlog|101|128|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for column "contract" of relation "tasks"
+kjlog|101|129|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for column "created_at" of relation "tasks"
+kjlog|101|130|01006|kj_door|kj_b1_neg| WARNING:  no privileges could be revoked for column "updated_at" of relation "tasks"
+kjlog|101|131|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table alert_state
+kjlog|101|132|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from kernel_private.alert_state limit 1
+kjlog|101|133|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table control_assertions
+kjlog|101|134|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from kernel_private.control_assertions limit 1
+kjlog|101|135|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table identity_cognition_contract_v1
+kjlog|101|136|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from kernel_private.identity_cognition_contract_v1 limit 1
+kjlog|101|137|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table identity_cognition_latches
+kjlog|101|138|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from kernel_private.identity_cognition_latches limit 1
+kjlog|101|139|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table identity_governance_state
+kjlog|101|140|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from kernel_private.identity_governance_state limit 1
+kjlog|101|141|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table membership_events
+kjlog|101|142|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from kernel_private.membership_events limit 1
+kjlog|101|143|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table notification_delivery_events
+kjlog|101|144|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from kernel_private.notification_delivery_events limit 1
+kjlog|101|145|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table notification_outbox
+kjlog|101|146|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from kernel_private.notification_outbox limit 1
+kjlog|101|147|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table release_activations
+kjlog|101|148|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from kernel_private.release_activations limit 1
+kjlog|101|149|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table telegram_approval_cards
+kjlog|101|150|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from kernel_private.telegram_approval_cards limit 1
+kjlog|101|151|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table telegram_approval_handles
+kjlog|101|152|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from kernel_private.telegram_approval_handles limit 1
+kjlog|101|153|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table telegram_callback_inbox
+kjlog|101|154|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from kernel_private.telegram_callback_inbox limit 1
+kjlog|101|155|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table telegram_inbox
+kjlog|101|156|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from kernel_private.telegram_inbox limit 1
+kjlog|101|157|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table telegram_operator_state
+kjlog|101|158|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from kernel_private.telegram_operator_state limit 1
+kjlog|101|159|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table artifacts
+kjlog|101|160|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.artifacts limit 1
+kjlog|101|161|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table capabilities
+kjlog|101|162|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.capabilities limit 1
+kjlog|101|163|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table capability_runs
+kjlog|101|164|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.capability_runs limit 1
+kjlog|101|165|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table capability_versions
+kjlog|101|166|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.capability_versions limit 1
+kjlog|101|167|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table channels
+kjlog|101|168|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.channels limit 1
+kjlog|101|169|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table evaluations
+kjlog|101|170|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.evaluations limit 1
+kjlog|101|171|42501|kj_door|kj_b1_neg| ERROR:  permission denied for view faculty_current
+kjlog|101|172|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.faculty_current limit 1
+kjlog|101|173|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table faculty_pins
+kjlog|101|174|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.faculty_pins limit 1
+kjlog|101|175|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table faculty_versions
+kjlog|101|176|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.faculty_versions limit 1
+kjlog|101|177|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table identity_activations
+kjlog|101|178|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.identity_activations limit 1
+kjlog|101|179|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table identity_candidates
+kjlog|101|180|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.identity_candidates limit 1
+kjlog|101|181|42501|kj_door|kj_b1_neg| ERROR:  permission denied for view identity_current
+kjlog|101|182|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.identity_current limit 1
+kjlog|101|183|42501|kj_door|kj_b1_neg| ERROR:  permission denied for view identity_head
+kjlog|101|184|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.identity_head limit 1
+kjlog|101|185|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table identity_pins
+kjlog|101|186|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.identity_pins limit 1
+kjlog|101|187|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table identity_profiles
+kjlog|101|188|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.identity_profiles limit 1
+kjlog|101|189|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table identity_versions
+kjlog|101|190|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.identity_versions limit 1
+kjlog|101|191|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table memory_candidates
+kjlog|101|192|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.memory_candidates limit 1
+kjlog|101|193|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table memory_context_assemblies
+kjlog|101|194|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.memory_context_assemblies limit 1
+kjlog|101|195|42501|kj_door|kj_b1_neg| ERROR:  permission denied for view memory_current
+kjlog|101|196|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.memory_current limit 1
+kjlog|101|197|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table memory_promotions
+kjlog|101|198|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.memory_promotions limit 1
+kjlog|101|199|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table memory_relations
+kjlog|101|200|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.memory_relations limit 1
+kjlog|101|201|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table memory_versions
+kjlog|101|202|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.memory_versions limit 1
+kjlog|101|203|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table schedule_backfill_requests
+kjlog|101|204|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.schedule_backfill_requests limit 1
+kjlog|101|205|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table schedule_fires
+kjlog|101|206|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.schedule_fires limit 1
+kjlog|101|207|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table schedule_leases
+kjlog|101|208|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.schedule_leases limit 1
+kjlog|101|209|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table schedule_observations
+kjlog|101|210|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.schedule_observations limit 1
+kjlog|101|211|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table schedule_specs
+kjlog|101|212|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.schedule_specs limit 1
+kjlog|101|213|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table schedule_state
+kjlog|101|214|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.schedule_state limit 1
+kjlog|101|215|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table task_steps
+kjlog|101|216|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.task_steps limit 1
+kjlog|101|217|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table tenants
+kjlog|101|218|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.tenants limit 1
+kjlog|101|219|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table task_events
+kjlog|101|220|42501|kj_door|kj_b1_neg| STATEMENT:  insert into public.task_events(id) values ('00000000-0000-4000-8000-000000000001')
+kjlog|101|221|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table evidence
+kjlog|101|222|42501|kj_door|kj_b1_neg| STATEMENT:  insert into public.evidence(id) values ('00000000-0000-4000-8000-000000000001')
+kjlog|101|223|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table outcomes
+kjlog|101|224|42501|kj_door|kj_b1_neg| STATEMENT:  insert into public.outcomes(task_id) values ('00000000-0000-4000-8000-000000000001')
+kjlog|101|225|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table identity_activations
+kjlog|101|226|42501|kj_door|kj_b1_neg| STATEMENT:  insert into public.identity_activations(id) values ('00000000-0000-4000-8000-000000000001')
+kjlog|101|227|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table identity_versions
+kjlog|101|228|42501|kj_door|kj_b1_neg| STATEMENT:  select 1 from public.identity_versions limit 1
+kjlog|101|229|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table approvals
+kjlog|101|230|42501|kj_door|kj_b1_neg| STATEMENT:  update public.approvals set status = 'GRANTED'
+kjlog|100|152|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table task_admissions
+kjlog|100|153|42501|kj_worker|kj_b1_neg| STATEMENT:  insert into kernel_private.task_admissions(task_id) values ('00000000-0000-4000-8000-000000000001')
+kjlog|100|154|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table dispatch_events
+kjlog|100|155|42501|kj_worker|kj_b1_neg| STATEMENT:  insert into kernel_private.dispatch_events(id) values ('00000000-0000-4000-8000-000000000001')
+kjlog|100|156|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for function stamp_binding_provenance
+kjlog|100|157|42501|kj_worker|kj_b1_neg| STATEMENT:  select kernel_private.stamp_binding_provenance()
+kjlog|100|158|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table release_epoch
+kjlog|100|159|42501|kj_worker|kj_b1_neg| STATEMENT:  update kernel_private.release_epoch set epoch = epoch
+kjlog|100|160|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table release_epoch
+kjlog|100|161|42501|kj_worker|kj_b1_neg| STATEMENT:  update kernel_private.release_epoch set epoch = epoch + 1
+kjlog|100|162|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table release_epoch
+kjlog|100|163|42501|kj_worker|kj_b1_neg| STATEMENT:  insert into kernel_private.release_epoch(singleton, epoch) values (true, 99)
+kjlog|100|164|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table release_epoch
+kjlog|100|165|42501|kj_worker|kj_b1_neg| STATEMENT:  delete from kernel_private.release_epoch
+kjlog|100|166|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table release_activations
+kjlog|100|167|42501|kj_worker|kj_b1_neg| STATEMENT:  insert into kernel_private.release_activations(epoch, request_id, release_id, activated_at, created_by, evidence) values (999999, '00000000-0000-4000-8000-000000000001', 'x', now(), 'x', '{"x":1}')
+kjlog|100|168|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table release_activations
+kjlog|100|169|42501|kj_worker|kj_b1_neg| STATEMENT:  update kernel_private.release_activations set release_id = release_id
+kjlog|100|170|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table release_activations
+kjlog|100|171|42501|kj_worker|kj_b1_neg| STATEMENT:  delete from kernel_private.release_activations
+kjlog|100|172|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for function activate_release
+kjlog|100|173|42501|kj_worker|kj_b1_neg| STATEMENT:  select kernel_private.activate_release('00000000-0000-4000-8000-000000000001', 'kj-b1-probe', 7, '{"probe":true}'::jsonb)
+kjlog|100|174|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for schema kernel_private
+kjlog|100|175|42501|kj_worker|kj_b1_neg| STATEMENT:  create or replace function kernel_private.stamp_binding_provenance() returns trigger language plpgsql security invoker as $f$ begin return new; end $f$
+kjlog|100|176|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of function stamp_binding_provenance
+kjlog|100|177|42501|kj_worker|kj_b1_neg| STATEMENT:  alter function kernel_private.stamp_binding_provenance() owner to kj_worker
+kjlog|100|178|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of function kernel_private.stamp_binding_provenance
+kjlog|100|179|42501|kj_worker|kj_b1_neg| STATEMENT:  alter function kernel_private.stamp_binding_provenance() security invoker
+kjlog|100|180|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of function kernel_private.stamp_binding_provenance
+kjlog|100|181|42501|kj_worker|kj_b1_neg| STATEMENT:  alter function kernel_private.stamp_binding_provenance() set search_path = public
+kjlog|100|182|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of function kernel_private.stamp_binding_provenance
+kjlog|100|183|42501|kj_worker|kj_b1_neg| STATEMENT:  alter function kernel_private.stamp_binding_provenance() reset search_path
+kjlog|100|184|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for function stamp_binding_provenance
+kjlog|100|185|42501|kj_worker|kj_b1_neg| STATEMENT:  grant execute on function kernel_private.stamp_binding_provenance() to kj_worker
+kjlog|100|186|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for function stamp_binding_provenance
+kjlog|100|187|42501|kj_worker|kj_b1_neg| STATEMENT:  grant execute on function kernel_private.stamp_binding_provenance() to public
+kjlog|100|188|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table dispatch_events
+kjlog|100|189|42501|kj_worker|kj_b1_neg| STATEMENT:  create trigger kj_b1_attach before insert on kernel_private.dispatch_events for each row execute function kernel_private.stamp_binding_provenance()
+kjlog|100|190|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for table execution_bindings
+kjlog|100|191|42501|kj_worker|kj_b1_neg| STATEMENT:  create trigger kj_b1_second before insert on kernel_private.execution_bindings for each row execute function kernel_private.stamp_binding_provenance()
+kjlog|100|192|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of relation execution_bindings
+kjlog|100|193|42501|kj_worker|kj_b1_neg| STATEMENT:  drop trigger execution_bindings_provenance on kernel_private.execution_bindings
+kjlog|100|194|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of table execution_bindings
+kjlog|100|195|42501|kj_worker|kj_b1_neg| STATEMENT:  alter trigger execution_bindings_provenance on kernel_private.execution_bindings rename to kj_b1_renamed
+kjlog|100|196|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of table execution_bindings
+kjlog|100|197|42501|kj_worker|kj_b1_neg| STATEMENT:  alter table kernel_private.execution_bindings disable trigger execution_bindings_provenance
+kjlog|100|198|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of table execution_bindings
+kjlog|100|199|42501|kj_worker|kj_b1_neg| STATEMENT:  alter table kernel_private.execution_bindings disable trigger all
+kjlog|100|200|42501|kj_worker|kj_b1_neg| ERROR:  must be owner of table execution_bindings
+kjlog|100|201|42501|kj_worker|kj_b1_neg| STATEMENT:  alter table kernel_private.execution_bindings enable replica trigger execution_bindings_provenance
+kjlog|100|202|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for schema public
+kjlog|100|203|42501|kj_worker|kj_b1_neg| STATEMENT:  create function public.stamp_binding_provenance() returns trigger language plpgsql as $f$ begin return new; end $f$
+kjlog|100|204|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for schema kernel_private
+kjlog|100|205|42501|kj_worker|kj_b1_neg| STATEMENT:  create function kernel_private.stamp_binding_provenance(integer) returns trigger language plpgsql as $f$ begin return new; end $f$
+kjlog|100|206|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for database kj_b1_neg
+kjlog|100|207|42501|kj_worker|kj_b1_neg| STATEMENT:  create schema kj_b1_escape
+kjlog|100|208|42501|kj_worker|kj_b1_neg| ERROR:  permission denied to create temporary tables in database "kj_b1_neg" at character 24
+kjlog|100|209|42501|kj_worker|kj_b1_neg| STATEMENT:  create temporary table release_epoch (singleton boolean, epoch bigint)
+kjlog|100|210|42501|kj_worker|kj_b1_neg| ERROR:  permission denied for schema public at character 14
+kjlog|100|211|42501|kj_worker|kj_b1_neg| STATEMENT:  create table public.release_epoch (singleton boolean, epoch bigint)
+kjlog|101|231|42501|kj_door|kj_b1_neg| ERROR:  permission denied for function stamp_binding_provenance
+kjlog|101|232|42501|kj_door|kj_b1_neg| STATEMENT:  select kernel_private.stamp_binding_provenance()
+kjlog|101|233|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table release_epoch
+kjlog|101|234|42501|kj_door|kj_b1_neg| STATEMENT:  update kernel_private.release_epoch set epoch = epoch
+kjlog|101|235|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table release_epoch
+kjlog|101|236|42501|kj_door|kj_b1_neg| STATEMENT:  update kernel_private.release_epoch set epoch = epoch + 1
+kjlog|101|237|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table release_epoch
+kjlog|101|238|42501|kj_door|kj_b1_neg| STATEMENT:  insert into kernel_private.release_epoch(singleton, epoch) values (true, 99)
+kjlog|101|239|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table release_epoch
+kjlog|101|240|42501|kj_door|kj_b1_neg| STATEMENT:  delete from kernel_private.release_epoch
+kjlog|101|241|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table release_activations
+kjlog|101|242|42501|kj_door|kj_b1_neg| STATEMENT:  insert into kernel_private.release_activations(epoch, request_id, release_id, activated_at, created_by, evidence) values (999999, '00000000-0000-4000-8000-000000000001', 'x', now(), 'x', '{"x":1}')
+kjlog|101|243|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table release_activations
+kjlog|101|244|42501|kj_door|kj_b1_neg| STATEMENT:  update kernel_private.release_activations set release_id = release_id
+kjlog|101|245|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table release_activations
+kjlog|101|246|42501|kj_door|kj_b1_neg| STATEMENT:  delete from kernel_private.release_activations
+kjlog|101|247|42501|kj_door|kj_b1_neg| ERROR:  permission denied for function activate_release
+kjlog|101|248|42501|kj_door|kj_b1_neg| STATEMENT:  select kernel_private.activate_release('00000000-0000-4000-8000-000000000001', 'kj-b1-probe', 7, '{"probe":true}'::jsonb)
+kjlog|101|249|42501|kj_door|kj_b1_neg| ERROR:  permission denied for schema kernel_private
+kjlog|101|250|42501|kj_door|kj_b1_neg| STATEMENT:  create or replace function kernel_private.stamp_binding_provenance() returns trigger language plpgsql security invoker as $f$ begin return new; end $f$
+kjlog|101|251|42501|kj_door|kj_b1_neg| ERROR:  must be owner of function stamp_binding_provenance
+kjlog|101|252|42501|kj_door|kj_b1_neg| STATEMENT:  alter function kernel_private.stamp_binding_provenance() owner to kj_door
+kjlog|101|253|42501|kj_door|kj_b1_neg| ERROR:  must be owner of function kernel_private.stamp_binding_provenance
+kjlog|101|254|42501|kj_door|kj_b1_neg| STATEMENT:  alter function kernel_private.stamp_binding_provenance() security invoker
+kjlog|101|255|42501|kj_door|kj_b1_neg| ERROR:  must be owner of function kernel_private.stamp_binding_provenance
+kjlog|101|256|42501|kj_door|kj_b1_neg| STATEMENT:  alter function kernel_private.stamp_binding_provenance() set search_path = public
+kjlog|101|257|42501|kj_door|kj_b1_neg| ERROR:  must be owner of function kernel_private.stamp_binding_provenance
+kjlog|101|258|42501|kj_door|kj_b1_neg| STATEMENT:  alter function kernel_private.stamp_binding_provenance() reset search_path
+kjlog|101|259|42501|kj_door|kj_b1_neg| ERROR:  permission denied for function stamp_binding_provenance
+kjlog|101|260|42501|kj_door|kj_b1_neg| STATEMENT:  grant execute on function kernel_private.stamp_binding_provenance() to kj_door
+kjlog|101|261|42501|kj_door|kj_b1_neg| ERROR:  permission denied for function stamp_binding_provenance
+kjlog|101|262|42501|kj_door|kj_b1_neg| STATEMENT:  grant execute on function kernel_private.stamp_binding_provenance() to public
+kjlog|101|263|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table dispatch_events
+kjlog|101|264|42501|kj_door|kj_b1_neg| STATEMENT:  create trigger kj_b1_attach before insert on kernel_private.dispatch_events for each row execute function kernel_private.stamp_binding_provenance()
+kjlog|101|265|42501|kj_door|kj_b1_neg| ERROR:  permission denied for table execution_bindings
+kjlog|101|266|42501|kj_door|kj_b1_neg| STATEMENT:  create trigger kj_b1_second before insert on kernel_private.execution_bindings for each row execute function kernel_private.stamp_binding_provenance()
+kjlog|101|267|42501|kj_door|kj_b1_neg| ERROR:  must be owner of relation execution_bindings
+kjlog|101|268|42501|kj_door|kj_b1_neg| STATEMENT:  drop trigger execution_bindings_provenance on kernel_private.execution_bindings
+kjlog|101|269|42501|kj_door|kj_b1_neg| ERROR:  must be owner of table execution_bindings
+kjlog|101|270|42501|kj_door|kj_b1_neg| STATEMENT:  alter trigger execution_bindings_provenance on kernel_private.execution_bindings rename to kj_b1_renamed
+kjlog|101|271|42501|kj_door|kj_b1_neg| ERROR:  must be owner of table execution_bindings
+kjlog|101|272|42501|kj_door|kj_b1_neg| STATEMENT:  alter table kernel_private.execution_bindings disable trigger execution_bindings_provenance
+kjlog|101|273|42501|kj_door|kj_b1_neg| ERROR:  must be owner of table execution_bindings
+kjlog|101|274|42501|kj_door|kj_b1_neg| STATEMENT:  alter table kernel_private.execution_bindings disable trigger all
+kjlog|101|275|42501|kj_door|kj_b1_neg| ERROR:  must be owner of table execution_bindings
+kjlog|101|276|42501|kj_door|kj_b1_neg| STATEMENT:  alter table kernel_private.execution_bindings enable replica trigger execution_bindings_provenance
+kjlog|101|277|42501|kj_door|kj_b1_neg| ERROR:  permission denied for schema public
+kjlog|101|278|42501|kj_door|kj_b1_neg| STATEMENT:  create function public.stamp_binding_provenance() returns trigger language plpgsql as $f$ begin return new; end $f$
+kjlog|101|279|42501|kj_door|kj_b1_neg| ERROR:  permission denied for schema kernel_private
+kjlog|101|280|42501|kj_door|kj_b1_neg| STATEMENT:  create function kernel_private.stamp_binding_provenance(integer) returns trigger language plpgsql as $f$ begin return new; end $f$
+kjlog|101|281|42501|kj_door|kj_b1_neg| ERROR:  permission denied for database kj_b1_neg
+kjlog|101|282|42501|kj_door|kj_b1_neg| STATEMENT:  create schema kj_b1_escape
+kjlog|101|283|42501|kj_door|kj_b1_neg| ERROR:  permission denied to create temporary tables in database "kj_b1_neg" at character 24
+kjlog|101|284|42501|kj_door|kj_b1_neg| STATEMENT:  create temporary table release_epoch (singleton boolean, epoch bigint)
+kjlog|101|285|42501|kj_door|kj_b1_neg| ERROR:  permission denied for schema public at character 14
+kjlog|101|286|42501|kj_door|kj_b1_neg| STATEMENT:  create table public.release_epoch (singleton boolean, epoch bigint)
+kjlog|104|1|42501|kj_worker|kj_b1_log| ERROR:  permission denied for table pg_authid
+kjlog|104|2|42501|kj_worker|kj_b1_log| STATEMENT:  select rolpassword from pg_catalog.pg_authid limit 1
+kjlog|104|3|42501|kj_worker|kj_b1_log| ERROR:  permission denied for table pg_authid
+kjlog|104|4|42501|kj_worker|kj_b1_log| STATEMENT:  select rolpassword from pg_catalog.pg_authid limit 1
+kjlog|104|5|42501|kj_worker|kj_b1_log| ERROR:  permission denied for table pg_authid
+kjlog|104|6|42501|kj_worker|kj_b1_log| STATEMENT:  select rolpassword from pg_catalog.pg_authid
+		where rolname = 'kj  log	fixture'
+	  limit 1
+kjlog|104|7|42501|kj_worker|kj_b1_log| ERROR:  permission denied for table pg_authid
+kjlog|104|8|42501|kj_worker|kj_b1_log| CONTEXT:  SQL function "kj_log_fixture_peek" statement 1
+kjlog|104|9|42501|kj_worker|kj_b1_log| STATEMENT:  select public.kj_log_fixture_peek()
+kjlog|104|10|42501|kj_worker|kj_b1_log| ERROR:  permission denied for table pg_authid
+kjlog|104|11|42501|kj_worker|kj_b1_log| STATEMENT:  select rolpassword from pg_catalog.pg_authid where rolname = $1
+kjlog|104|12|42501|kj_worker|kj_b1_log| ERROR:  permission denied for table pg_authid
+kjlog|104|13|42501|kj_worker|kj_b1_log| STATEMENT:  select rolpassword from pg_catalog.pg_authid where rolname = $1
+kjlog|104|14|42501|kj_worker|kj_b1_log| ERROR:  permission denied for table pg_authid
+kjlog|104|15|42501|kj_worker|kj_b1_log| STATEMENT:  select rolpassword from pg_catalog.pg_authid where rolname = $1 and rolcanlogin = $2
+kjlog|104|16|42501|kj_worker|kj_b1_log| ERROR:  permission denied for table pg_authid
+kjlog|104|17|42501|kj_worker|kj_b1_log| STATEMENT:  select rolpassword from pg_catalog.pg_authid /* padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding */ limit 1
+kjlog|104|18|42501|kj_worker|kj_b1_log| ERROR:  permission denied for table pg_authid
+kjlog|104|19|42501|kj_worker|kj_b1_log| STATEMENT:  select rolpassword from pg_catalog.pg_authid where rolname = 'x  y'
+kjlog|104|20|42501|kj_worker|kj_b1_log| ERROR:  permission denied for table pg_authid
+kjlog|104|21|42501|kj_worker|kj_b1_log| STATEMENT:  select rolpassword from pg_catalog.pg_authid where rolname = 'x y'
+kjlog|98|4|00000|postgres|postgres| LOG:  kj-t-end b31ff6441fd24e898220b50b2496e757
+kjlog|98|5|00000|postgres|postgres| CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE
+kjlog|98|6|00000|postgres|postgres| STATEMENT:  do $kj$ begin raise log 'kj-t-end b31ff6441fd24e898220b50b2496e757'; end $kj$

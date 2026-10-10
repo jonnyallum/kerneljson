@@ -64,9 +64,11 @@ export function readTraces(directory:string,token:TraceIdentity,roles:readonly (
     throw Error("TRACE_UNTRUSTED: evidence changed");
   if(!events.length) throw Error("TRACE_UNTRUSTED: empty evidence");
   if(roles.some(role=>!events.some(e=>e.kind==="use" && e.role===role))) throw Error("TRACE_UNTRUSTED: runtime role has no use event");
-  const refusals:Refusal[]=events.filter(e=>e.kind==="refused").map(e=>{
-    if(e.classification!=="probe" || !e.test) throw Error("TRACE_UNTRUSTED: production refusal");
-    return {test:e.test,role:e.role,sqlstate:"42501",fingerprint:e.fingerprint,multiplicity:1};
-  });
-  return {hashes,events,refusals};
+  // A production refusal is evidence, not a reason to stop reading: the caller fails on it and still runs the inventory
+  // gate (G4, G5) and the database-log accounting over the same trace (CON-15, CON-16).
+  const refused=events.filter(e=>e.kind==="refused");
+  const refusals:Refusal[]=refused.filter(e=>e.classification==="probe" && e.test)
+    .map(e=>({test:e.test!,role:e.role,sqlstate:"42501",fingerprint:e.fingerprint,multiplicity:1}));
+  const productionRefusals=refused.filter(e=>e.classification!=="probe" || !e.test);
+  return {hashes,events,refusals,productionRefusals};
 }

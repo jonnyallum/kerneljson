@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { mutationVerdictProblems } from "../scripts/b1/gates.js";
+import { REGRESSION_SUITES } from "../scripts/b1/plans.js";
 
 /**
  * Failing fixtures for two CI gate rules (ADR-0023 27.12.15): CON-20, the discover/enforce inventory gate (G4, G5) of
@@ -29,6 +30,20 @@ describe("CON-21 mutation verdicts (G7)", () => {
   ])("fails with %s", (_label, id, text) => { expect(mutationVerdictProblems(id, text).length).toBeGreaterThan(0); });
 });
 
+describe("CON-27 the CI gate over an empty evidence directory", () => {
+  it("refuses the commit, naming every registered suite and gate as missing", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kj-b1-gate-empty-"));
+    try {
+      const R = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+      const r = spawnSync(process.execPath, ["--import", "tsx", "scripts/b1/ci-gate.ts", R, dir], { encoding: "utf8", timeout: 300_000 });
+      expect(r.status).toBe(1);
+      for (const suite of REGRESSION_SUITES) expect(r.stderr).toContain(`${suite.id}: no result for this suite`);
+      for (const line of ["CON-47: collection missing", "G1: did not pass", "G9: did not pass", "EPH-26: did not pass",
+        "G7: faculties did not run", "G7: identity did not run", "G7: identity-cognition did not run"]) expect(r.stderr).toContain(line);
+      expect(r.stdout).not.toContain("CI gate passed");
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
 describe("CON-20 the inventory gate over a trace (G4 enforce, G5 discover)", () => {
   const header = JSON.stringify({ kind: "kerneljson:b1-trace/v1", token: { runId: "a".repeat(32), suite: "regression-enforce" }, pid: 1, processId: "00000000-0000-4000-8000-000000000000" });
   const event = (e: Record<string, unknown>) => JSON.stringify({ kind: "use", sequence: 1, role: "kj_worker", caller: "services/kernel/src/x.ts", via: "login",

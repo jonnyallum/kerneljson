@@ -4,6 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CASE_TIMEOUT, ROOT, head, runCase, type RunnerOutcome } from "./support/b1-runner.js";
+import { strictJson } from "../services/kernel/src/database/strict-json.js";
+import { Release } from "../scripts/b1/release.js";
+import { RequiredSchema } from "../scripts/b1/coverage.js";
+import { REGRESSION_SUITES } from "../scripts/b1/plans.js";
+import { stageTSuiteResult, writeSuiteEvidence } from "../scripts/b1/gate-suite.js";
 
 /**
  * ADR-0023 27.12.15 stage T refusals, end to end through the ephemeral entry point (lane C). CON-5: a suite that fails,
@@ -55,10 +60,26 @@ const argvFor = (suite: string, files: string, extra: string) => (t: string) =>
   t.replace("argv:vitest(spec.files),", `argv:spec.id===${JSON.stringify(suite)}?[...vitest(${files}),${extra}]:vitest(spec.files),`);
 
 describe("CON-5 a suite that does not run its listed tests completely and successfully", () => {
-  it("one failed test: regressionOutcome failed, status unchanged", async () => {
+  it("one failed test: regressionOutcome failed, status unchanged; the CI gate refuses it (CON-11, CON-27)", async () => {
     const c = clone({ [HELPER_FILE]: (t) => t + '\nit("CON-5 fixture: a failing test", () => { expect(1).toBe(2); });\n' });
     const o = await runClone("CON-5 one failed test", c, "pinned-helper", "regression-helper-probes");
     expectRegressionFailed(o, /suite exited 1[\s\S]*REPORT_REFUSED/);
+    // The gate's own verification over this genuine record, laid out as CI lays it out.
+    const release = new Release(c.dir, c.R);
+    const required = RequiredSchema.parse(strictJson(release.blob("tests/b1-required.json").bytes.toString("utf8")));
+    const suite = REGRESSION_SUITES.find((x) => x.id === "regression-helper-probes")!;
+    const out = mkdtempSync(join(tmpdir(), "kj-b1-gate-evidence-"));
+    writeSuiteEvidence(out, o.exitCode, o.summary!);
+    const gate = (dir: string, R = c.R, s = suite) => stageTSuiteResult(dir, s, R, release, required, c.dir).problems.map((p) => p.join(": "));
+    expect(gate(out).join("\n")).toMatch(/regressionOutcome failed/);
+    expect(gate(out, head()).join("\n")).toMatch(/record is for another commit/);
+    expect(gate(out, c.R, REGRESSION_SUITES.find((x) => x.id === "regression-probes")!).join("\n")).toMatch(/record names another suite or profile/);
+    expect(gate(join(out, "absent"))).toEqual(["regression-helper-probes: no result for this suite"]);
+    const recordPath = join(out, "run", "record.json");
+    const edited = readFileSync(recordPath, "utf8").replace(/"regressionOutcome":\s*"failed"/, '"regressionOutcome": "passed"');
+    expect(edited).toMatch(/"regressionOutcome": "passed"/);
+    writeFileSync(recordPath, edited);
+    expect(gate(out).join("\n")).toMatch(/emitted record hash differs/);
   }, CASE_TIMEOUT);
   it("a listed file skipped: the skips are not intentional, and the declared probes never ran", async () => {
     const c = clone({ [HELPER_FILE]: (t) => t.replace("describe.each(RUNTIME_ROLES)(", "describe.skip.each(RUNTIME_ROLES)(") });
@@ -78,6 +99,36 @@ describe("CON-5 a suite that does not run its listed tests completely and succes
     expectRegressionFailed(o, /report file set differs from the suite's files/);
     expect(stageT(o).problems.join("\n")).toMatch(/collected location without a report entry: tests\/runtime-roles-negative/);
   }, CASE_TIMEOUT);
+});
+
+/**
+ * CON-15 and CON-16: an absorbed refusal. The sealed construction removes a manifest grant on a path whose code catches
+ * the error; that changes the B1 migration and so its frozen statements digest, and the run would stop at S7 before
+ * stage T. The same observable is built here without touching B1: production code (packages/identity withTenant) issues
+ * a statement no runtime role may run and swallows the error. CON-15 issues it on the host only, CON-16 only inside the
+ * compose worker (the one process with KJ_RUNTIME_ROLE_FIXED), whose image the stack builds from the clone.
+ */
+const absorbed = (where: "host" | "worker") => (t: string) => t.replace(
+  " const db=await pool.connect();try{\n  await db.query(\"begin\");const context=await authorize(db,raw,permission);",
+  ` if(${where === "worker" ? "" : "!"}process.env["KJ_RUNTIME_ROLE_FIXED"]) await pool.query("select rolpassword from pg_catalog.pg_authid limit 1").catch(()=>undefined);\n` +
+  " const db=await pool.connect();try{\n  await db.query(\"begin\");const context=await authorize(db,raw,permission);");
+function expectAbsorbedRefusalCaught(o: RunnerOutcome, gate: "G4") {
+  expectRegressionFailed(o, /a production statement was refused/);
+  const problems = stageT(o).problems.join("\n");
+  expect(problems).toContain(`trace inventory gate (${gate}) failed`);
+  expect(problems).toMatch(/log refusal projection differs/);
+}
+describe("CON-15 and CON-16 an absorbed production refusal", () => {
+  it("CON-15 on the host, in an enforce suite: the trace records it, G4 fails and the log check fails", async () => {
+    const c = clone({ "packages/identity/src/index.ts": absorbed("host") });
+    const o = await runClone("CON-15 absorbed refusal on the host", c, "none", "regression-gated");
+    expectAbsorbedRefusalCaught(o, "G4");
+  }, 2 * CASE_TIMEOUT);
+  it("CON-16 inside the compose worker: the container's trace records it and the log check fails", async () => {
+    const c = clone({ "packages/identity/src/index.ts": absorbed("worker") });
+    const o = await runClone("CON-16 absorbed refusal in the worker", c, "none", "regression-stack");
+    expectAbsorbedRefusalCaught(o, "G4");
+  }, 4 * CASE_TIMEOUT);
 });
 
 /** Watch for this run's cluster, then for its stage T working directory (the suite is about to start), then act. */
