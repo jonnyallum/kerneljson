@@ -1,9 +1,11 @@
 # KJ-P8 B1 implementation report: least-privilege runtime database roles
 
-> **Current status (10/10/2026):** the R2.7.9 implementation is complete on the remediation branch and submitted for
-> qualification at a single candidate SHA. The requirements matrix, the defects found by failing checks on purpose, the
-> findings for design review and the results at the candidate are in the
-> [independent reconciliation record](KJ_P8_B1_R279_RECONCILIATION.md), which supersedes the work-in-progress notes
+> **Current status (10/10/2026):** the R2.7.9 implementation is NOT complete and NOT qualified. The governed `gate` job
+> has not concluded `success` at any SHA; the `regression-definers-discover` intentional-skip contradiction is open; and
+> the CON-4/CON-9 changes in `042d327` have not yet run on Linux. The requirements matrix, the defects found by failing
+> checks on purpose, the findings for design review and the CI results are in the
+> [reconciliation record](KJ_P8_B1_R279_RECONCILIATION.md) (an implementer self-review, not an independent or hostile
+> review), which supersedes the work-in-progress notes
 > below. Qualification is claimed only for the SHA and CI run named there, never from an intermediate commit. The
 > [narrow owner ruling](KJ_P8_B1_R279_OWNER_RULING.md) on the helper rethrow stands: the helper pin is preserved, the
 > ADR correction awaits independent design review, and the design is not resealed. No production, ledger, baseline,
