@@ -77,6 +77,23 @@ describe("CON-25 and plan selection: what a stage T file may use", () => {
   it("a lane D file importing a lane A helper fails the rule", () => {
     expect(helpersImported('import { DATABASE, until } from "./support/local.js";')).toEqual(["DATABASE"]);
   });
+  // A stage T suite runs in a fresh empty working directory (27.12.15 "Process"): a repository path is resolved through
+  // tests/support/repo.ts, a child process is given cwd REPO_ROOT, and nothing names a file under supabase/migrations/.
+  const cwdRelative = (text: string) => [
+    ...[...text.matchAll(/\b(?:readFileSync|readFile|readdirSync|readdir|existsSync|statSync|execFileSync|execSync)\(\s*["'`](?:apps|services|packages|runtimes|scripts|supabase|tests|infrastructure|docs|evals)\b[^"'`]*["'`]/g)].map((m) => m[0]),
+    ...[...text.matchAll(/\bspawn(?:Sync)?\([^;]*?\[\s*"--import",\s*"tsx",\s*"(?:tests|services|apps|scripts)\/[^"]+"[^\]]*\]\s*,\s*\{(?![^}]*\bcwd:)/g)].map((m) => m[0].slice(0, 80)),
+    ...[...text.matchAll(/build-manifest\.mjs/g)].map((m) => m[0]),
+  ];
+  it("no stage T file resolves a repository path against the working directory or reads a migration", () => {
+    for (const file of stageT) expect(cwdRelative(readFileSync(file, "utf8")), file).toEqual([]);
+  });
+  it("a cwd-relative read, a spawn without cwd and a migration path each fail the rule", () => {
+    expect(cwdRelative('readFileSync("tests/fixtures/x.json", "utf8")')).toHaveLength(1);
+    expect(cwdRelative('spawn(process.execPath, ["--import", "tsx", "tests/support/w.ts"], { env: {} })')).toHaveLength(1);
+    expect(cwdRelative('spawn(process.execPath, ["--import", "tsx", "tests/support/w.ts"], { cwd: REPO_ROOT, env: {} })')).toHaveLength(0);
+    expect(cwdRelative('execFileSync("node", ["scripts/b1/build-manifest.mjs", "--check"])')).toHaveLength(1);
+    expect(cwdRelative('readFile(`supabase/migrations/${f}`)')).toHaveLength(1);
+  });
   it("no lane A database-backed file names a runtime role", () => {
     for (const file of laneA) {
       const text = readFileSync(file, "utf8");

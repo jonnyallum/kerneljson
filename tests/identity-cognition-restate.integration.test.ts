@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { repoPath } from "./support/repo.js";
 import pg from "pg";
 import { ADMIN, INGRESS, compose, until, useStackDatabase } from "./support/local.js";
 import { testDatabase, type TestDatabase } from "./support/database.js";
@@ -17,7 +18,7 @@ import { REPO } from "./support/mission-fixture.js";
 // lane A). This file never creates, migrates or drops a database.
 let database: TestDatabase;
 let pool: pg.Pool;
-const corpus = JSON.parse(readFileSync("tests/fixtures/identity-core-v1.vectors.json", "utf8")) as {
+const corpus = JSON.parse(readFileSync(repoPath("tests/fixtures/identity-core-v1.vectors.json"), "utf8")) as {
   vectors: Array<{ name: string; inputJson: string }>;
 };
 const identity = JSON.parse(corpus.vectors.find(v => v.name === "kernel-v1-activated")!.inputJson) as IdentityDocument;

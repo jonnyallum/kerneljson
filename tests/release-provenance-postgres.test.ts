@@ -4,6 +4,7 @@ import { readFile, readdir } from "node:fs/promises";
 import type pg from "pg";
 import { knowledgeDatabase } from "./support/knowledge-db.js";
 import { until } from "./support/local.js";
+import { repoPath } from "./support/repo.js";
 import { bindingFor, persistBinding, workflowTargets } from "../services/kernel/src/execution-binding.js";
 import { Task } from "../packages/contracts/src/index.js";
 import { collectBindingProvenance, bindingProvenanceVerdict } from "../services/kernel/src/health/release-provenance.js";
@@ -200,10 +201,10 @@ it("aborted binding is absent and activation can then commit", async () => {
 it("all application binding inserts go through the canonical helper", async () => {
   const matches: string[] = [];
   async function walk(dir: string) {
-    for (const entry of await readdir(dir, { withFileTypes: true })) {
+    for (const entry of await readdir(repoPath(dir), { withFileTypes: true })) {
       const path = `${dir}/${entry.name}`;
       if (entry.isDirectory()) await walk(path);
-      else if (entry.name.endsWith(".ts") && /insert\s+into\s+kernel_private\.execution_bindings/i.test(await readFile(path,"utf8"))) matches.push(path);
+      else if (entry.name.endsWith(".ts") && /insert\s+into\s+kernel_private\.execution_bindings/i.test(await readFile(repoPath(path),"utf8"))) matches.push(path);
     }
   }
   for (const dir of ["apps", "services", "packages"]) await walk(dir);

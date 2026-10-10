@@ -5,6 +5,7 @@ import pg from "pg";
 import { ADMIN, INGRESS, compose, until, useStackDatabase } from "./support/local.js";
 import { testDatabase, type TestDatabase } from "./support/database.js";
 import { monitorReport } from "./support/alert-runner-fixture.js";
+import { REPO_ROOT } from "./support/repo.js";
 import { runMonitor } from "../services/kernel/src/alerting/runner.js";
 import { postgresMonitorExclusive } from "../services/kernel/src/alerting/runner-postgres.js";
 import { RecordingNotifier } from "../services/kernel/src/alerting/notifier.js";
@@ -30,6 +31,7 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
       process.execPath,
       ["--import", "tsx", "tests/support/alert-runner-worker.ts"],
       {
+        cwd: REPO_ROOT,
         env: {
           ...process.env,
           PORT: String(workerPort),
@@ -220,6 +222,7 @@ describe("KJ-P1.3 disposable Postgres and Restate", () => {
           process.execPath,
           ["--import", "tsx", "services/kernel/src/alerting/cli.ts", "--json"],
           {
+            cwd: REPO_ROOT,
             env: {
               ...process.env,
               // KJ-P8 B1: the alert CLI is a runtime process; it refuses any session that is not kj_worker.

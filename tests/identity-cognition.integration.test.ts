@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { repoPath } from "./support/repo.js";
 import type pg from "pg";
 import type { Context } from "@restatedev/restate-sdk";
 import { testDatabase, type TestDatabase } from "./support/database.js";
@@ -45,7 +46,7 @@ import { REPO, fakeClaude, fakeGrok, githubResult } from "./support/mission-fixt
  * simulated exactly as the P6 suite does it: `ctx.run` returns a journaled value when present (replay) and runs the
  * action otherwise, so replay, lost-journal and journal/database disagreement are all exercised deterministically.
  */
-const corpus = JSON.parse(readFileSync("tests/fixtures/identity-core-v1.vectors.json", "utf8")) as {
+const corpus = JSON.parse(readFileSync(repoPath("tests/fixtures/identity-core-v1.vectors.json"), "utf8")) as {
   vectors: Array<{ name: string; inputJson: string; canonical?: string; sha256?: string; classASha256?: string; refuse?: string }>;
 };
 const KERNEL_V1 = JSON.parse(corpus.vectors.find((v) => v.name === "kernel-v1-activated")!.inputJson) as IdentityDocument;

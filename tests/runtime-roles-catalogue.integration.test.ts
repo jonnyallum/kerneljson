@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { execFileSync } from "node:child_process";
 import pg from "pg";
 import { testDatabase, type TestDatabase } from "./support/database.js";
 import {
@@ -28,12 +27,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await pool?.end();
   await database?.close();
-});
-
-describe("B1 frozen manifest and migration are generated, not hand-edited", () => {
-  it("the committed manifest and migration equal what the inventory and decisions produce", () => {
-    expect(execFileSync("node", ["scripts/b1/build-manifest.mjs", "--check"], { encoding: "utf8" })).toContain("match their inputs");
-  });
 });
 
 describe.each(RUNTIME_ROLES)("B1 catalogue equality for %s", (role: RuntimeRole) => {

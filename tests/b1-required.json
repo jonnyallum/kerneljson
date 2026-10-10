@@ -62,6 +62,21 @@
       "refusals": []
     },
     {
+      "file": "tests/b1-con48.test.ts",
+      "name": "CON-48 checker fails when the log lacks one literal variant",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-con48.test.ts",
+      "name": "CON-48 checker fails when the trace and the declared refusals disagree",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-con48.test.ts",
+      "name": "CON-48 checker reconciles the positive fixture and fails every perturbation",
+      "refusals": []
+    },
+    {
       "file": "tests/b1-coverage.test.ts",
       "name": "coverage cannot be recovered from an empty table or a failed setup refuses a file omitted from the partition or registry",
       "refusals": []
@@ -224,6 +239,76 @@
     {
       "file": "tests/b1-evidence.test.ts",
       "name": "run evidence consumer requires the exact bytes whose hash the runner emitted",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-20 the inventory gate over a trace (G4 enforce, G5 discover) does not count a declared probe, which the refusal multiset accounts for",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-20 the inventory gate over a trace (G4 enforce, G5 discover) fails a production operation outside the manifest (a manifest missing a grant the suite uses)",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-20 the inventory gate over a trace (G4 enforce, G5 discover) fails a refused production statement",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-20 the inventory gate over a trace (G4 enforce, G5 discover) passes production statements inside the manifest",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-21 mutation verdicts (G7) accepts exactly the sealed number of mutations, every one killed",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-21 mutation verdicts (G7) fails with a failed baseline",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-21 mutation verdicts (G7) fails with a missing mutation id",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-21 mutation verdicts (G7) fails with a suite that did not run",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-21 mutation verdicts (G7) fails with a survivor",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-21 mutation verdicts (G7) fails with an apply failure counted as a kill",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-21 mutation verdicts (G7) fails with an extra mutation id",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-21 mutation verdicts (G7) fails with an inconclusive run",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-21 mutation verdicts (G7) fails with an unknown suite",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-21 mutation verdicts (G7) fails with no final line",
       "refusals": []
     },
     {
@@ -1927,11 +2012,6 @@
       "refusals": []
     },
     {
-      "file": "tests/runtime-roles-catalogue.integration.test.ts",
-      "name": "B1 frozen manifest and migration are generated, not hand-edited the committed manifest and migration equal what the inventory and decisions produce",
-      "refusals": []
-    },
-    {
       "file": "tests/runtime-roles-connection.integration.test.ts",
       "name": "B1 runtime pool guard SET ROLE does not satisfy the guard: the session itself must be the role",
       "refusals": []
@@ -2433,6 +2513,11 @@
           "multiplicity": 1
         }
       ]
+    },
+    {
+      "file": "tests/runtime-roles-manifest.test.ts",
+      "name": "B1 frozen manifest and migration are generated, not hand-edited the committed manifest and migration equal what the inventory and decisions produce",
+      "refusals": []
     },
     {
       "file": "tests/runtime-roles-negative.integration.test.ts",

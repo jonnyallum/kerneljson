@@ -10,6 +10,7 @@ import { REGRESSION_SUITES } from "./plans.js";
 import { extractLogRefusals, refusalDifferences, type Refusal } from "./refusal-accounting.js";
 import { readTraces } from "./trace.js";
 import type { CollectedEntry } from "./collection.js";
+import { con48, con48Problems } from "./con48.js";
 import { SEALED_MUTATIONS, mutationVerdictProblems, mutationVerdicts } from "./gates.js";
 
 /**
@@ -69,6 +70,13 @@ for(const suite of REGRESSION_SUITES){
     const expected=suite.refusalPolicy==="probes"?required.entries.filter(e=>suite.files.includes(e.file)).flatMap(e=>e.refusals.map(r=>({test:e.name,...r}))):[];
     const trace=traces.refusals.map(r=>({...r,test:r.test.split(" > ").join(" ")}));
     for(const p of refusalDifferences(expected,trace,logRefusals)) fail(suite.id,p);
+    if(suite.id==="regression-probes"){
+      // CON-48 over this run's pinned-image log: the positive fixture reconciles and the seven perturbations fail.
+      const traceSql=traces.events.filter(e=>e.kind==="refused" && e.test).map(e=>({test:e.test!.split(" > ").join(" "),sql:e.sql}));
+      const con=con48({log,runId:record.header.runId,markerPid:st.markerPid ?? "",expected,trace,traceSql});
+      for(const p of con48Problems({log,runId:record.header.runId,markerPid:st.markerPid ?? "",expected,trace,traceSql})) fail("CON-48",p);
+      results["CON-48"]=con.perturbations.map(p=>`${p.id} ${p.failed?"FAILED":"RECONCILED"}`);
+    }
     const inventory=spawnSync(process.execPath,[resolve("scripts/b1/analyse-trace.mjs"),join(work,"trace"),join(work,"gate-inventory.json"),"--fail-on-refusal"],{encoding:"utf8"});
     if(inventory.status!==0) fail(suite.harness==="enforce"?"G4":"G5",`${suite.id}: ${inventory.stderr.slice(0,400)}`);
     results[suite.id]={status:record.status,regressionOutcome:record.regressionOutcome,recordSha256:summary.recordSha256,tests:report.entries.length};
