@@ -60,6 +60,9 @@ const P2B="P2 (b) E2: event-trigger binding differs";
 const P2C="P2 (c) E3: sealed topology of the pinned function is incomplete or extended";
 const P2D="P2 (d): co-resident name uniqueness differs";
 const P1="P1: KernelJSON definer identity set differs";
+// 27.12.7 P2: CR_ACTUAL is every function in public and kernel_private that is a definer or returns event_trigger,
+// other than the stamp function. An extra KernelJSON definer is therefore in CR_ACTUAL and equals no pin: it breaks
+// P1 and P2 (a) together, and B1 names both. The gate's read of the co-resident surface reports it first.
 const P3=(step:number,text:string)=>`P3 step ${step}: ${text}`;
 const STEP1=P3(1,"three declaration settings are required"),STEP2=P3(2,"malformed declaration settings");
 const STEP3=P3(3,"target database differs"),STEP4=P3(4,"target system identifier differs"),STEP5=P3(5,"co-resident set digest differs");
@@ -127,7 +130,7 @@ add({id:"ledger-middle-missing",point:"S2",effect:"the owner deletes the 11th ba
 add({id:"helper-crlf",point:"S2",effect:"the owner replaces the pinned helper body by the same text with every LF as CRLF before the snapshot",callers:[CO],
   expected:[completed(["s7-passed","declaration-crlf-forensic"],HELPER_ONLY)],
   precondition:sqlPre(`select ${helperDigest}='2782e98b348aca7d6f6f73c420fd78d2e094957dd7a52b0483d4c34f29d2a7a1'
-    and (select pg_catalog.position(E'\\r' in p.prosrc)>0 from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)
+    and (select pg_catalog.strpos(p.prosrc,E'\\r')>0 from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)
     and (select p.proacl is null from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure) as effective`),
   cases:["18"]},
   {kind:"sql",sql:replaceHelper(PIN_BODY.replaceAll("\n","\r\n"))});
@@ -146,6 +149,16 @@ add({id:"stamp-foreign-grants",point:"S2",effect:"the owner grants EXECUTE on th
     expected:[{acl:["anon=X/postgres","authenticated=X/postgres","postgres=X/postgres"]}]},
   cases:["27.9.4 ACL (frozen _acl hook)","CON-43 positive"]},
   {kind:"sql",sql:"grant execute on function kernel_private.stamp_binding_provenance() to anon, authenticated"});
+add({id:"stamp-body-tamper",point:"S2",effect:"the owner appends one space to the stamp function's body before the snapshot",callers:[LI],
+  expected:[refused("S6",{sqlstate:"23514",pattern:"^B1: source digest of kernel_private\\.stamp_binding_provenance\\(\\) is [0-9a-f]{64}, pinned 468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e439b$"},
+    true,UNCHANGED,["none","platform-definer-fixture"])],
+  precondition:sqlPre(`select (select pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.replace(p.prosrc,E'\\r\\n',E'\\n'),'UTF8')),'hex')
+    from pg_catalog.pg_proc p where p.oid='kernel_private.stamp_binding_provenance()'::pg_catalog.regprocedure)
+    <> '468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e439b' as effective`),cases:["27.9.4 tamper (frozen _tamper hook)","27.9.3"]},
+  {kind:"sql",sql:`do $f$ declare src text; begin
+  select p.prosrc into src from pg_catalog.pg_proc p where p.oid='kernel_private.stamp_binding_provenance()'::pg_catalog.regprocedure;
+  execute pg_catalog.format('create or replace function kernel_private.stamp_binding_provenance() returns trigger language plpgsql as %L', src || ' ');
+end $f$`});
 add({id:"stamp-and-head",point:"S2",effect:"the owner renames the stamp function and deletes the newest base ledger row before the snapshot",callers:[LI],
   expected:[SNAPSHOT("kernel_private.stamp_binding_provenance() does not exist")],
   precondition:sqlPre("select pg_catalog.to_regprocedure('kernel_private.stamp_binding_provenance()') is null as effective"),cases:["CON-44"]},
@@ -153,8 +166,8 @@ add({id:"stamp-and-head",point:"S2",effect:"the owner renames the stamp function
 delete from supabase_migrations.schema_migrations where version='${V.at(-1)}'`});
 
 // --- S5: drift after the snapshot, two layers (27.12.9 rev 2.7.4) ---------------------------------------------------
-const drift=(id:string,effect:string,sql:string,precondition:string,cases:string[],_profiles:Profile[],gate:Expectation,skipped:Expectation)=>
-  add({id,point:"S5",effect,callers:[CO],expected:[gate,skipped],precondition:sqlPre(precondition),cases},{kind:"sql",sql});
+const drift=(id:string,effect:string,sql:string,precondition:string,cases:string[],_profiles:Profile[],gate:Expectation,skipped:Expectation,callers:string[]=[CO])=>
+  add({id,point:"S5",effect,callers,expected:[gate,skipped],precondition:sqlPre(precondition),cases},{kind:"sql",sql});
 const CO_GATE=(profiles:Profile[])=>GATE("co-resident surface",profiles);
 const CO_SKIP=(message:string,profiles:Profile[])=>B1(message,profiles,[SKIP]);
 const AB=`${P2A}; ${P2B}`;
@@ -180,8 +193,8 @@ drift("drift-helper-acl-grant-worker","the owner creates role kj_worker and gran
   `select (select pg_catalog.array_agg(a order by a collate "C") from pg_catalog.unnest((${HELPER}).proacl::pg_catalog.text[]) a)
     = array['=X/postgres','kj_worker=X/postgres','postgres=X/postgres'] as effective`,["6 grant"],HELPER_ONLY,CO_GATE(HELPER_ONLY),CO_SKIP(AB,HELPER_ONLY));
 drift("drift-ensure-rls-dropped","the owner drops event trigger ensure_rls after the snapshot","drop event trigger ensure_rls",
-  "select not exists(select 1 from pg_catalog.pg_event_trigger where evtname='ensure_rls') as effective",["7","EPH-8 ensure_rls dropped"],
-  HELPER_ONLY,CO_GATE(HELPER_ONLY),CO_SKIP(P2C,HELPER_ONLY));
+  "select not exists(select 1 from pg_catalog.pg_event_trigger where evtname='ensure_rls') as effective",["7","EPH-8 ensure_rls dropped","26"],
+  HELPER_ONLY,CO_GATE(HELPER_ONLY),CO_SKIP(P2C,HELPER_ONLY),[CO,SE]);
 for(const [mode,clause,label] of [["disable","D","disabled"],["enable replica","R","replica"],["enable always","A","always"]] as const)
   drift(`drift-ensure-rls-${label}`,`the owner sets ensure_rls to ${label} after the snapshot`,`alter event trigger ensure_rls ${mode}`,
     ensure(`e.evtenabled='${clause}'`),[`8 ${label}`],HELPER_ONLY,CO_GATE(HELPER_ONLY),CO_SKIP(`${P2B}; ${P2C}`,HELPER_ONLY));
@@ -222,10 +235,10 @@ drift("drift-set-schema-extensions","the owner moves the helper to schema extens
 const DEF="returns void language plpgsql security definer set search_path = '' as $f$ begin end $f$";
 drift("drift-extra-definer-kernel-private","the owner creates a definer kernel_private.kj_fixture_definer() after the snapshot",
   `create function kernel_private.kj_fixture_definer() ${DEF}`,"select (select prosecdef from pg_catalog.pg_proc where oid=pg_catalog.to_regprocedure('kernel_private.kj_fixture_definer()')) as effective",
-  ["15 kernel_private"],NONE,GATE("definer inventory",NONE,"extra kernel_private\\.kj_fixture_definer\\(\\)"),CO_SKIP(P1,NONE));
+  ["15 kernel_private"],NONE,CO_GATE(NONE),CO_SKIP(`${P1}; ${P2A}`,NONE));
 drift("drift-extra-definer-public","the owner creates a definer public.kj_fixture_definer() after the snapshot",
   `create function public.kj_fixture_definer() ${DEF}`,"select (select prosecdef from pg_catalog.pg_proc where oid=pg_catalog.to_regprocedure('public.kj_fixture_definer()')) as effective",
-  ["15 public","EPH-8 extra definer in public"],NONE,CO_GATE(NONE),CO_SKIP(P1,NONE));
+  ["15 public","EPH-8 extra definer in public"],NONE,CO_GATE(NONE),CO_SKIP(`${P1}; ${P2A}`,NONE));
 add({id:"drift-extra-definer-extensions",point:"S5",effect:"the owner creates a definer extensions.kj_fixture_definer() after the snapshot",callers:[CO],
   expected:[GATE("definer inventory",NONE,"extra extensions\\.kj_fixture_definer\\(\\)"),
     refused("S7",{pattern:"^POST_LEDGER_REFUSED: inventory: unlisted SECURITY DEFINER function extensions\\.kj_fixture_definer\\(\\)"},true,[],NONE,[SKIP])],
@@ -264,7 +277,7 @@ add({id:"noop-precondition",point:"S5",effect:"the owner runs select 1 and chang
   {kind:"sql",sql:"select 1"});
 
 // --- skips -----------------------------------------------------------------------------------------------------------
-add({id:SKIP,point:"S6-gate-inventory-skip",effect:"the gate omits its inventory, co-resident and name-uniqueness part once",callers:[CO,LE,LI],
+add({id:SKIP,point:"S6-gate-inventory-skip",effect:"the gate omits its inventory, co-resident and name-uniqueness part once",callers:[CO,SE,LI],
   expected:[completed(["s7-passed"],["none","pinned-helper","platform-definer-fixture"])],
   precondition:runnerPre("skipped-check",{check:"gate-inventory"}),cases:["27.12.9 two layers","EPH-8","EPH-24"]},{kind:"skip",check:"gate-inventory"});
 add({id:"s4-skip",point:"S4-skip",effect:"S4 validation of the run files is omitted once",callers:[LI],

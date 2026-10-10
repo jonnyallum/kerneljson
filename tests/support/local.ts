@@ -19,6 +19,14 @@ export function holdRuntime(): () => void {
     child.stdin.end();
   };
 }
+/**
+ * Lane A (ADR-0023 27.12.15): no runtime role exists in the compose database, so in harness mode `base` the compose
+ * worker connects as the owner, exactly as it did before B1. Lane A never applies B1 and establishes nothing about it.
+ */
+function composeEnvironment(): NodeJS.ProcessEnv {
+  if (process.env["KJ_RUNTIME_ROLES"] !== "base") return process.env;
+  return { ...process.env, KJ_WORKER_DATABASE_URL: "postgresql://postgres@db:5432/kerneljson", KJ_RUNTIME_ROLES: "base" };
+}
 export function compose(...args: string[]): string {
   const file = resolve("infrastructure/docker/validation.compose.yaml");
   const dockerArgs = ["compose", "-f", file, ...args];
@@ -43,6 +51,7 @@ export function compose(...args: string[]): string {
   return execFileSync("docker", dockerArgs, {
     encoding: "utf8",
     timeout: 300000,
+    env: composeEnvironment(),
   });
 }
 export async function until<T>(

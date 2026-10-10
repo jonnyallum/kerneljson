@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { readRunRecord, type RunRecord } from "../../scripts/b1/evidence.js";
 import { Release } from "../../scripts/b1/release.js";
 import type { Profile } from "../../scripts/b1/hooks.js";
@@ -12,6 +13,8 @@ import type { Profile } from "../../scripts/b1/hooks.js";
  */
 export const ROOT=resolve(".");
 const ENTRY=resolve("scripts/b1/ephemeral.ts");
+/** Absolute, so a throwaway clone without node_modules can run the entry point of this checkout. */
+const TSX=pathToFileURL(resolve("node_modules/tsx/dist/loader.mjs")).href;
 export const EVIDENCE=resolve("artifacts/local/b1-runner-cases");
 export const head=()=>spawnSync("git",["rev-parse","HEAD"],{encoding:"utf8"}).stdout.trim();
 export interface Summary {directory:string;recordSha256:string;status:string;fixtureOutcome:string;consumer:string;failure:string|null;problems:string[]}
@@ -23,7 +26,7 @@ function childEnvironment(extra:Record<string,string>={}):NodeJS.ProcessEnv{
 }
 export function runEntry(args:readonly string[],options:{cwd?:string;env?:Record<string,string>;entry?:string}={}):Promise<{exitCode:number|null;stdout:string;stderr:string}>{
   return new Promise((done,fail)=>{
-    const child=spawn(process.execPath,["--import","tsx",options.entry ?? ENTRY,...args],
+    const child=spawn(process.execPath,["--import",TSX,options.entry ?? ENTRY,...args],
       {cwd:options.cwd ?? ROOT,env:childEnvironment(options.env),windowsHide:true});
     let stdout="",stderr="";
     child.stdout.on("data",d=>{stdout+=d;});child.stderr.on("data",d=>{stderr+=d;});
@@ -31,12 +34,12 @@ export function runEntry(args:readonly string[],options:{cwd?:string;env?:Record
   });
 }
 /** One registered runner case: release R is HEAD of the clean checkout; the record is re-validated here. */
-export async function runCase(label:string,profile:Profile,hooks:readonly string[],options:{suite?:string;cwd?:string}={}):Promise<RunnerOutcome>{
+export async function runCase(label:string,profile:Profile,hooks:readonly string[],options:{suite?:string;cwd?:string;env?:Record<string,string>}={}):Promise<RunnerOutcome>{
   const R=head();
   const args=["--release",R,"--profile",profile,...hooks.flatMap(h=>["--hook",h]),...(options.suite?["--regression-suite",options.suite]:[])];
-  const result=await runEntry(args,options.cwd?{cwd:options.cwd}:{});
+  const result=await runEntry(args,{...(options.cwd?{cwd:options.cwd}:{}),...(options.env?{env:options.env}:{})});
   const line=result.stdout.trim().split(/\r?\n/).at(-1) ?? "";
-  let summary:Summary|null=null,record:RunRecord|null=null,consumerError:string|null=null;
+  let summary:Summary|null,record:RunRecord|null=null,consumerError:string|null=null;
   try{summary=JSON.parse(line) as Summary;}catch{summary=null;}
   if(summary){
     try{record=readRunRecord(join(summary.directory,"record.json"),summary.recordSha256,new Release(options.cwd ?? ROOT,R));}

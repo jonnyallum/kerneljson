@@ -384,7 +384,7 @@
       ],
       "precondition": {
         "kind": "sql",
-        "sql": "select (select pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.replace(p.prosrc,E'\\r\\n',E'\\n'),'UTF8')),'hex')\n  from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)='2782e98b348aca7d6f6f73c420fd78d2e094957dd7a52b0483d4c34f29d2a7a1'\n    and (select pg_catalog.position(E'\\r' in p.prosrc)>0 from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)\n    and (select p.proacl is null from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure) as effective",
+        "sql": "select (select pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.replace(p.prosrc,E'\\r\\n',E'\\n'),'UTF8')),'hex')\n  from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)='2782e98b348aca7d6f6f73c420fd78d2e094957dd7a52b0483d4c34f29d2a7a1'\n    and (select pg_catalog.strpos(p.prosrc,E'\\r')>0 from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)\n    and (select p.proacl is null from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure) as effective",
         "expected": [
           {
             "effective": true
@@ -522,6 +522,50 @@
       "cases": [
         "27.9.4 ACL (frozen _acl hook)",
         "CON-43 positive"
+      ]
+    },
+    {
+      "id": "stamp-body-tamper",
+      "point": "S2",
+      "effect": "the owner appends one space to the stamp function's body before the snapshot",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "platform-definer-fixture"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": null,
+            "pattern": "^B1: source digest of kernel_private\\.stamp_binding_provenance\\(\\) is [0-9a-f]{64}, pinned 468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e439b$"
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select (select pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.replace(p.prosrc,E'\\r\\n',E'\\n'),'UTF8')),'hex')\n    from pg_catalog.pg_proc p where p.oid='kernel_private.stamp_binding_provenance()'::pg_catalog.regprocedure)\n    <> '468979611a28ca8e2ec7b46f16402e90ae6622a228e186e1acc7ac45186e439b' as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "27.9.4 tamper (frozen _tamper hook)",
+        "27.9.3"
       ]
     },
     {
@@ -1084,7 +1128,8 @@
       "point": "S5",
       "effect": "the owner drops event trigger ensure_rls after the snapshot",
       "callers": [
-        "tests/b1-runner-coresident.test.ts"
+        "tests/b1-runner-coresident.test.ts",
+        "tests/b1-runner-settings.test.ts"
       ],
       "expected": [
         {
@@ -1141,7 +1186,8 @@
       },
       "cases": [
         "7",
-        "EPH-8 ensure_rls dropped"
+        "EPH-8 ensure_rls dropped",
+        "26"
       ]
     },
     {
@@ -1998,7 +2044,7 @@
           "refusal": {
             "sqlstate": null,
             "message": null,
-            "pattern": "^LEDGER_GATE_REFUSED: definer inventory: extra kernel_private\\.kj_fixture_definer\\(\\)"
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
           },
           "b1EngineInvoked": false,
           "post": [
@@ -2019,7 +2065,7 @@
           },
           "refusal": {
             "sqlstate": "23514",
-            "message": "B1 P1: KernelJSON definer identity set differs",
+            "message": "B1 P1: KernelJSON definer identity set differs; P2 (a) E1: co-resident function differs from sealed pin",
             "pattern": null
           },
           "b1EngineInvoked": true,
@@ -2083,7 +2129,7 @@
           },
           "refusal": {
             "sqlstate": "23514",
-            "message": "B1 P1: KernelJSON definer identity set differs",
+            "message": "B1 P1: KernelJSON definer identity set differs; P2 (a) E1: co-resident function differs from sealed pin",
             "pattern": null
           },
           "b1EngineInvoked": true,
@@ -2467,7 +2513,7 @@
       "effect": "the gate omits its inventory, co-resident and name-uniqueness part once",
       "callers": [
         "tests/b1-runner-coresident.test.ts",
-        "tests/b1-runner-ledger.test.ts",
+        "tests/b1-runner-settings.test.ts",
         "tests/b1-runner-lifecycle.test.ts"
       ],
       "expected": [

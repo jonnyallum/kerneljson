@@ -11,9 +11,9 @@ import { TABLE_PRIVILEGES, loadManifest } from "../services/kernel/src/database/
 import { engineEnvironment, startupUrl } from "../scripts/b1/engine.js";
 import { identityProblems, type LiveIdentity } from "../scripts/b1/ephemeral-cluster.js";
 import { qualificationStatus, type RunEvidence } from "../scripts/b1/run-status.js";
-import { ephemeralArguments } from "../scripts/b1/ephemeral.js";
+import { environmentProblems, ephemeralArguments } from "../scripts/b1/ephemeral.js";
 import { hostedArguments, hostedPassfile, parseHostedTarget } from "../scripts/b1/hosted.js";
-import { HookSchema, LEDGER_EFFECTS, RegistrySchema, ledgerHook } from "../scripts/b1/hooks.js";
+import { HookSchema, RegistrySchema, selectExpectation } from "../scripts/b1/hooks.js";
 import { strictJson } from "../services/kernel/src/database/strict-json.js";
 import { CO_RESIDENT_SQL, EMPTY_SET_DIGEST, GOLDEN, hash, parseDeclaration, pins, pinText, setDigest,
   type CoResidentEntry } from "../services/kernel/src/database/co-resident.js";
@@ -24,27 +24,41 @@ import { CO_RESIDENT_SQL, EMPTY_SET_DIGEST, GOLDEN, hash, parseDeclaration, pins
  * has a negative case that makes it fail on purpose. The catalogue side is tests/runtime-roles-definers.integration.test.ts.
  */
 const manifest = loadStageManifest();
-describe("closed ledger fixture registry",()=>{
+describe("closed hook registry (27.12.13.8)",()=>{
   const registry=()=>strictJson(readFileSync("infrastructure/database/b1-runner-hooks.json","utf8"));
-  it("contains exactly the six snapshot faults with fixed S2 effects and S3 refusals",()=>{
+  it("contains the six frozen _ledger snapshot faults with S2 effects, exact S3 messages and ledger preconditions",()=>{
     const value=RegistrySchema.parse(registry());
-    expect(value.hooks.map(h=>h.id)).toEqual([...LEDGER_EFFECTS]);
-    for(const hook of value.hooks){
-      expect(hook.negativeFixture).toBe(true);
-      expect(hook.expected.message).toBe(ledgerHook(hook.effect).message);
-      expect(ephemeralArguments(["--release","a".repeat(40),"--profile","none","--hook",hook.id]).hook).toBe(hook.id);
+    const ledger=["ledger-absent","ledger-wrong-head","ledger-gap","ledger-extra","ledger-b1-recorded","stamp-missing"];
+    for(const id of ledger){
+      const hook=value.hooks.find(h=>h.id===id)!;
+      expect(hook.point).toBe("S2");
+      expect(hook.expected).toHaveLength(1);
+      expect(hook.expected[0]!.end).toEqual({step:"S3",outcome:"refused"});
+      expect(hook.expected[0]!.refusal!.message).toMatch(/^PLATFORM_BASELINE_REFUSED: /);
+      expect(hook.precondition.kind).toBe("sql");
+      expect(ephemeralArguments(["--release","a".repeat(40),"--profile","none","--hook",id]).hooks).toEqual([id]);
     }
+    expect(value.hooks.find(h=>h.id==="ledger-gap")!.expected[0]!.refusal!.message).toBe("PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; missing 20260908234849, 20260910180000, 20260915220000");
   });
-  it("refuses widened, duplicated, unknown or mislabeled hooks",()=>{
+  it("refuses widened, duplicated, unknown, mislabelled or vacuous hooks",()=>{
     const value=RegistrySchema.parse(registry()),hook=value.hooks[0]!;
-    for(const change of [{point:"L5"},{effect:"connect"},{negativeFixture:false},{expected:{...hook.expected,message:"any error"}},{address:"localhost"}])
-      expect(()=>HookSchema.parse({...hook,...change})).toThrow();
+    for(const change of [{point:"L5"},{effect:"skips L5"},{effect:"sets the status"},{callers:[]},{callers:["tests/other.test.ts"]},{cases:[]},
+      {expected:[]},{expected:[{...hook.expected[0]!,refusal:{sqlstate:null,message:null,pattern:null}}]},
+      {expected:[{...hook.expected[0]!,refusal:{sqlstate:null,message:null,pattern:"any error"}}]},
+      {precondition:{kind:"runner",fact:"anything",expected:true}},{address:"localhost"}])
+      expect(()=>HookSchema.parse({...hook,...change}),JSON.stringify(change)).toThrow();
     expect(()=>RegistrySchema.parse({...value,hooks:[...value.hooks,hook]})).toThrow();
-    expect(()=>RegistrySchema.parse({...value,hooks:[]})).toThrow();
+    expect(()=>RegistrySchema.parse({...value,hooks:[{...hook,id:hook.id.toUpperCase()},...value.hooks]})).toThrow();
+    expect(()=>RegistrySchema.parse({...value,setupProfiles:value.setupProfiles.slice(1)})).toThrow();
   });
-  it("retains the frozen three-row gap and its comma-space message separator",()=>{
-    expect(ledgerHook("ledger-gap").message).toBe("PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; missing 20260908234849, 20260910180000, 20260915220000");
-    expect(ledgerHook("ledger-absent").sql).toBe("drop table supabase_migrations.schema_migrations");
+  it("selects exactly one registered expectation for a hook set and profile, and refuses any other combination",()=>{
+    const value=RegistrySchema.parse(registry());
+    expect(selectExpectation(value,["drift-ensure-rls-dropped"],"pinned-helper").expectation.end.step).toBe("S6");
+    expect(selectExpectation(value,["drift-ensure-rls-dropped","gate-inventory-skip"],"pinned-helper").expectation.refusal!.message)
+      .toBe("B1 P2 (c) E3: sealed topology of the pinned function is incomplete or extended");
+    expect(()=>selectExpectation(value,["drift-ensure-rls-dropped"],"none")).toThrow(/not registered/);
+    expect(()=>selectExpectation(value,["ledger-absent","ledger-gap"],"none")).toThrow(/not registered/);
+    expect(()=>selectExpectation(value,["ledger-absent","ledger-absent"],"none")).toThrow(/repeated/);
   });
 });
 describe("hosted entry point boundaries", () => {
@@ -290,11 +304,17 @@ describe("27.12 co-resident authority artifacts",()=>{
   });
   it("accepts only the exact current ephemeral argument contract",()=>{
     const args=["--release","a".repeat(40),"--profile","none"];
-    expect(ephemeralArguments(args)).toEqual({R:"a".repeat(40),profile:"none"});
-    for(const extra of ["--url","--host","--port","--database","--baseline","--declaration","--status","--mode"])
+    expect(ephemeralArguments(args)).toEqual({R:"a".repeat(40),profile:"none",hooks:[],suite:null});
+    expect(ephemeralArguments([...args,"--hook","l3-skip","--hook","s4-skip"]).hooks).toEqual(["l3-skip","s4-skip"]);
+    expect(ephemeralArguments([...args,"--regression-suite","regression-enforce"]).suite).toBe("regression-enforce");
+    for(const extra of ["--url","--host","--port","--database","--baseline","--declaration","--status","--mode","--suite"])
       expect(()=>ephemeralArguments([...args,extra,"x"])).toThrow(/EPHEMERAL_REFUSED/);
+    expect(()=>ephemeralArguments([...args,"--regression-suite","a","--regression-suite","b"])).toThrow(/EPHEMERAL_REFUSED/);
+    expect(()=>ephemeralArguments([...args,"--hook","Ledger-Absent"])).toThrow(/EPHEMERAL_REFUSED/);
+    expect(()=>ephemeralArguments([...args,"--hook"])).toThrow(/EPHEMERAL_REFUSED/);
     expect(()=>ephemeralArguments(["--release","HEAD","--profile","none"])).toThrow();
     expect(()=>ephemeralArguments(["--release","a".repeat(40),"--profile","unknown"])).toThrow();
+    expect(environmentProblems({KJ_B1_STATUS:"x",KJ_RUNTIME_ROLES:"base",PATH:"p"})).toEqual(["KJ_B1_STATUS"]);
   });
   it("pins the platform fixture to its four exact functions and per-function revokes",()=>{
     const fixture=readFileSync("infrastructure/database/b1-fixture-platform-definers.sql","utf8");

@@ -99,5 +99,11 @@ export async function runHosted(argv:string[],root=process.cwd()):Promise<void>{
   }
 }
 if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  runHosted(process.argv.slice(2)).catch(()=>{console.error("HOSTED_REFUSED: preflight failed");process.exitCode=1;});
+  // Preflight messages are fixed texts or artifact validation results; the credential file is only ever parsed by
+  // parseHostedTarget, whose refusal is one fixed message, so no credential can reach this output.
+  runHosted(process.argv.slice(2)).catch(error=>{
+    const first=(error instanceof Error?error.message:"").split("\n")[0]!.slice(0,300);
+    console.error(/^(HOSTED_REFUSED|RELEASE_REFUSED|ENGINE_REFUSED|co-resident [a-zA-Z0-9 ]+)/.test(first)?`HOSTED_REFUSED: preflight failed: ${first}`:"HOSTED_REFUSED: preflight failed");
+    process.exitCode=1;
+  });
 }
