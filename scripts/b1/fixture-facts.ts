@@ -29,4 +29,9 @@ export async function catalogueFacts(client:pg.Client):Promise<CatalogueFacts>{
     (select d.datacl::pg_catalog.text from pg_catalog.pg_database d where d.datname=pg_catalog.current_database()) as "databaseAcl"`)).rows[0];
   return {ledger,...row} as CatalogueFacts;
 }
-export const noB1Effect=(f:CatalogueFacts)=>f.stampDefiner===false && !(f.ledger ?? []).includes("20261002090000");
+/**
+ * B1 committed none of its own effects: the stamp function (if a hook left it present) is not SECURITY DEFINER and no
+ * kj_ policy exists. A B1 ledger row is not used here, because LEDGER-C and the frozen _ledger hook write one themselves;
+ * "catalogue-unchanged" already requires the ledger to be exactly as the hook left it.
+ */
+export const noB1Effect=(f:CatalogueFacts)=>f.stampDefiner!==true && f.policies===0;
