@@ -17,7 +17,17 @@ Implemented in the current worktree:
 
 Checks observed: TypeScript typechecking; 149 tests passed across `security-definers`, `health-model`, `runtime-roles-topology` and `b1-refusal-accounting`; focused ESLint; generated manifest/migration reproducibility. These checks establish neither a successful B1 application nor repository qualification.
 
-Outstanding: runner entry-point orchestration and closed registries; stage-T plans and consumers; lane partition and frozen collection/report coverage; full login/session/worker tracing; all required pinned-image positive/negative cases; migration-engine statement digest qualification; mutation suites; governed CI replacement and full G1–G9 evidence. No B1 application, hosted connection, production action, merge, deployment or later P8 stage has been performed during this resumption. The inherited CI must remain skipped until its ungoverned application paths are replaced.
+Update: the governed base-plan entry point now completes S1–S7 and L6 for all three setup profiles at release `86c674ea026fd42e3f28d005b7db64c2643a13db`. The pinned Windows engine applied B1 only to runner-created disposable clusters. The observed statements digest is frozen in `b1-ledger-contract.json` and reproduced by all three profiles. These are base-plan runner results, not full sprint qualification; stage T was not run. The hosted entry point is implemented separately and has not connected to a hosted target.
+
+| Profile | Runner status | SHA-256 of emitted run record |
+|---|---|---|
+| none | REPOSITORY_QUALIFIED | `06b39d92ce2399b6d0510143d73b15bc1e8294be6e0f7ebd7dd3cf3e34659aea` |
+| pinned-helper | REPOSITORY_QUALIFIED | `f8eac8bd3387b9c9d8461e7128e7727e9712cca3bf4e0b559384988639259fb6` |
+| platform-definer-fixture | REPOSITORY_QUALIFIED | `9f6929ef4c79baf6285187db6e68e17d28a47b930f6509843a3b409da2117d34` |
+
+Run-bound artifacts remain outside Git. An earlier run correctly returned NOT_QUALIFIED at S7 before the statements digest was frozen; a preceding run refused before application because the driver returned the primary-key `name[]` as text, corrected by an explicit `text[]` query cast. Neither failure is counted as qualification.
+
+Outstanding: complete closed hook registries; stage-T plans and consumers; lane partition and frozen collection/report coverage; full login/session/worker tracing; all required pinned-image positive/negative cases; Linux engine qualification; hosted disposable qualification; mutation suites; governed CI replacement and full G1–G9 evidence. No hosted connection, production action, merge, deployment or later P8 stage has been performed during this resumption. The inherited CI must remain skipped until its ungoverned application paths are replaced.
 
 > **R2.7.9 remediation branch notice (09/10/2026):** The report below describes frozen B1
 > `0ff2919c1bbf722b4842aa56fdc94ef9b74e5a51`, not an R279-qualified implementation.

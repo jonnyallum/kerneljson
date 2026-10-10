@@ -1,10 +1,89 @@
 {
   "kind": "kerneljson:b1-runner-hook-registry/v1",
   "setupProfiles": [
-    {"id":"none","sql":null,"sha256":null},
-    {"id":"pinned-helper","sql":"docs/operations/evidence/kj-p8-r279-contradiction/pinned-helper.sql","sha256":"7195032747ac82a1ebf166c4fcd9e920c52c5cabd5ceda4bcf291a5bcfc1909b"},
-    {"id":"platform-definer-fixture","sql":"infrastructure/database/b1-fixture-platform-definers.sql","sha256":"272681f3aec95c0d7ff99865c80d54643bafd7bf21c5d7faf68a70d5771048b4"}
+    {
+      "id": "none",
+      "sql": null,
+      "sha256": null
+    },
+    {
+      "id": "pinned-helper",
+      "sql": "docs/operations/evidence/kj-p8-r279-contradiction/pinned-helper.sql",
+      "sha256": "7195032747ac82a1ebf166c4fcd9e920c52c5cabd5ceda4bcf291a5bcfc1909b"
+    },
+    {
+      "id": "platform-definer-fixture",
+      "sql": "infrastructure/database/b1-fixture-platform-definers.sql",
+      "sha256": "272681f3aec95c0d7ff99865c80d54643bafd7bf21c5d7faf68a70d5771048b4"
+    }
   ],
-  "hooks": [],
+  "hooks": [
+    {
+      "id": "ledger-absent",
+      "point": "S2",
+      "effect": "ledger-absent",
+      "negativeFixture": true,
+      "expected": {
+        "stage": "S3",
+        "message": "PLATFORM_BASELINE_REFUSED: the migration ledger supabase_migrations.schema_migrations does not exist",
+        "b1EngineInvoked": false
+      }
+    },
+    {
+      "id": "ledger-wrong-head",
+      "point": "S2",
+      "effect": "ledger-wrong-head",
+      "negativeFixture": true,
+      "expected": {
+        "stage": "S3",
+        "message": "PLATFORM_BASELINE_REFUSED: the migration ledger head is 20260925120000, not 20260929120000, the final base migration before B1",
+        "b1EngineInvoked": false
+      }
+    },
+    {
+      "id": "ledger-gap",
+      "point": "S2",
+      "effect": "ledger-gap",
+      "negativeFixture": true,
+      "expected": {
+        "stage": "S3",
+        "message": "PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; missing 20260908234849, 20260910180000, 20260915220000, 20260916205049",
+        "b1EngineInvoked": false
+      }
+    },
+    {
+      "id": "ledger-extra",
+      "point": "S2",
+      "effect": "ledger-extra",
+      "negativeFixture": true,
+      "expected": {
+        "stage": "S3",
+        "message": "PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; unexpected 20250101000000",
+        "b1EngineInvoked": false
+      }
+    },
+    {
+      "id": "ledger-b1-recorded",
+      "point": "S2",
+      "effect": "ledger-b1-recorded",
+      "negativeFixture": true,
+      "expected": {
+        "stage": "S3",
+        "message": "PLATFORM_BASELINE_REFUSED: B1 is already applied to this database; a baseline must be taken before B1",
+        "b1EngineInvoked": false
+      }
+    },
+    {
+      "id": "stamp-missing",
+      "point": "S2",
+      "effect": "stamp-missing",
+      "negativeFixture": true,
+      "expected": {
+        "stage": "S3",
+        "message": "PLATFORM_BASELINE_REFUSED: kernel_private.stamp_binding_provenance() does not exist",
+        "b1EngineInvoked": false
+      }
+    }
+  ],
   "regressionSuites": []
 }

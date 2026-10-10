@@ -12,6 +12,8 @@ import { engineEnvironment, startupUrl } from "../scripts/b1/engine.js";
 import { identityProblems, type LiveIdentity } from "../scripts/b1/ephemeral-cluster.js";
 import { qualificationStatus, type RunEvidence } from "../scripts/b1/run-status.js";
 import { ephemeralArguments } from "../scripts/b1/ephemeral.js";
+import { hostedArguments, hostedPassfile, parseHostedTarget } from "../scripts/b1/hosted.js";
+import { HookSchema, LEDGER_EFFECTS, RegistrySchema, ledgerHook } from "../scripts/b1/hooks.js";
 import { strictJson } from "../services/kernel/src/database/strict-json.js";
 import { CO_RESIDENT_SQL, EMPTY_SET_DIGEST, GOLDEN, hash, parseDeclaration, pins, pinText, setDigest,
   type CoResidentEntry } from "../services/kernel/src/database/co-resident.js";
@@ -22,6 +24,51 @@ import { CO_RESIDENT_SQL, EMPTY_SET_DIGEST, GOLDEN, hash, parseDeclaration, pins
  * has a negative case that makes it fail on purpose. The catalogue side is tests/runtime-roles-definers.integration.test.ts.
  */
 const manifest = loadStageManifest();
+describe("closed ledger fixture registry",()=>{
+  const registry=()=>strictJson(readFileSync("infrastructure/database/b1-runner-hooks.json","utf8"));
+  it("contains exactly the six snapshot faults with fixed S2 effects and S3 refusals",()=>{
+    const value=RegistrySchema.parse(registry());
+    expect(value.hooks.map(h=>h.id)).toEqual([...LEDGER_EFFECTS]);
+    for(const hook of value.hooks){
+      expect(hook.negativeFixture).toBe(true);
+      expect(hook.expected.message).toBe(ledgerHook(hook.effect).message);
+      expect(ephemeralArguments(["--release","a".repeat(40),"--profile","none","--hook",hook.id]).hook).toBe(hook.id);
+    }
+  });
+  it("refuses widened, duplicated, unknown or mislabeled hooks",()=>{
+    const value=RegistrySchema.parse(registry()),hook=value.hooks[0]!;
+    for(const change of [{point:"L5"},{effect:"connect"},{negativeFixture:false},{expected:{...hook.expected,message:"any error"}},{address:"localhost"}])
+      expect(()=>HookSchema.parse({...hook,...change})).toThrow();
+    expect(()=>RegistrySchema.parse({...value,hooks:[...value.hooks,hook]})).toThrow();
+    expect(()=>RegistrySchema.parse({...value,hooks:[]})).toThrow();
+  });
+});
+describe("hosted entry point boundaries", () => {
+  const R="a".repeat(40);
+  const target={kind:"kerneljson:b1-hosted-target/v1",host:"db.example.internal",port:5432,database:"postgres",user:"owner",password:"p:a\\ss",ca:"fixture CA"};
+  it("accepts only a release and credential file, never an authority path or suite", () => {
+    expect(hostedArguments(["--release",R,"--target-file","credentials.json"]).R).toBe(R);
+    for(const option of ["--profile","--hook","--regression-suite","--baseline","--declaration","--status"])
+      expect(()=>hostedArguments(["--release",R,option,"value"])).toThrow("HOSTED_REFUSED");
+  });
+  it("refuses duplicate, unknown, wildcard and incomplete connection fields without echoing credentials", () => {
+    for(const raw of [JSON.stringify({...target,ssl:false}),JSON.stringify({...target,host:"*"}),
+      JSON.stringify({...target,port:0}),JSON.stringify({...target,user:""}),JSON.stringify({...target,password:"a\nb"}),
+      JSON.stringify(target).replace('"port":5432','"port":5432,"port":5433')]) {
+      expect(()=>parseHostedTarget(raw)).toThrow(/^HOSTED_REFUSED: invalid target credential file$/);
+    }
+  });
+  it("creates one exact passfile entry with libpq escaping", () => {
+    expect(hostedPassfile(parseHostedTarget(JSON.stringify(target)))).toBe("db.example.internal:5432:postgres:owner:p\\:a\\\\ss\n");
+  });
+  it("contains no ephemeral, hook or regression import or fallback", () => {
+    const source=readFileSync("scripts/b1/hosted.ts","utf8");
+    expect(source).not.toMatch(/from\s+["'][^"']*(?:ephemeral|run-artifacts|run-status|regression|hooks)[^"']*["']/);
+    expect(source).not.toMatch(/(?:createContainer|docker|runEphemeral|process\.env)/);
+    expect(source).toContain('ssl:{ca:target.ca,rejectUnauthorized:true}');
+    expect(source).toContain("unlinkSync(passfile)");
+  });
+});
 const lf = (t: string) => t.replaceAll("\r\n", "\n");
 const hex = (t: string) => createHash("sha256").update(t, "utf8").digest("hex");
 const MIGRATIONS = "supabase/migrations";

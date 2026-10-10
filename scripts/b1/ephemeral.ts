@@ -14,22 +14,25 @@ import { EphemeralCluster } from "./ephemeral-cluster.js";
 import { freezeArtifacts } from "./run-artifacts.js";
 import { preLedgerGate, postLedgerGate } from "./ledger.js";
 import { qualificationStatus, type RunEvidence, type Step } from "./run-status.js";
+import { LEDGER_EFFECTS, RegistrySchema, ledgerHook } from "./hooks.js";
+import { ledgerFixtureFacts, ledgerFixturePrecondition } from "./ephemeral-ledger-fixture.js";
 
 // Deliberately closed while the negative-case and stage-T registries are being implemented.
 // Unsupported hooks/suites refuse before L1; no partial registry can authorize a consumer.
-const Registry=z.strictObject({kind:z.literal("kerneljson:b1-runner-hook-registry/v1"),
-  setupProfiles:z.array(z.strictObject({id:z.enum(["none","pinned-helper","platform-definer-fixture"]),sql:z.string().nullable(),sha256:HASH.nullable()})),
-  hooks:z.array(z.never()),regressionSuites:z.array(z.never())});
 const Contract=z.strictObject({kind:z.literal("kerneljson:b1-ledger-contract/v1"),migrationSha256:HASH,statementsSha256:HASH,engineVersion:z.literal("2.120.0")});
-export function ephemeralArguments(argv:string[]):{R:string;profile:string}{
-  if(argv.length!==4 || argv[0]!=="--release" || !/^[0-9a-f]{40}$/.test(argv[1]!) || argv[2]!=="--profile" ||
+export function ephemeralArguments(argv:string[]):{R:string;profile:string;hook?:string}{
+  if(![4,6].includes(argv.length) || argv[0]!=="--release" || !/^[0-9a-f]{40}$/.test(argv[1]!) || argv[2]!=="--profile" ||
     !["none","pinned-helper","platform-definer-fixture"].includes(argv[3]!)) throw Error("EPHEMERAL_REFUSED: expected --release <SHA> --profile <registered profile>; no other input accepted");
-  return {R:argv[1]!,profile:argv[3]!};
+  if(argv.length===6 && (argv[4]!=="--hook" || !(LEDGER_EFFECTS as readonly string[]).includes(argv[5]!))) throw Error("EPHEMERAL_REFUSED: unknown hook input");
+  return {R:argv[1]!,profile:argv[3]!,...(argv.length===6?{hook:argv[5]!}:{})};
 }
 export async function runEphemeral(argv:string[],root=process.cwd()):Promise<void>{
   const input=ephemeralArguments(argv),release=new Release(root,input.R);
   const {manifest,files}=release.migrations(),migration=files.get(B1_FILE)!;
-  const registryBlob=release.blob(HOOKS_PATH),registry=Registry.parse(release.json(HOOKS_PATH));
+  const registryBlob=release.blob(HOOKS_PATH),registry=RegistrySchema.parse(release.json(HOOKS_PATH));
+  const hook=input.hook?registry.hooks.find(h=>h.id===input.hook):undefined;
+  if(input.hook && (!hook || input.profile!=="none")) throw Error("EPHEMERAL_REFUSED: hook/profile combination not registered");
+  const hookIds=hook?[hook.id]:[],negativeFixture=Boolean(hook);
   if(JSON.stringify(registry.setupProfiles.map(p=>p.id))!==JSON.stringify(["none","pinned-helper","platform-definer-fixture"])) throw Error("EPHEMERAL_REFUSED: setup profile set differs");
   for(const profile of registry.setupProfiles){
     if(profile.id==="none"){if(profile.sql!==null || profile.sha256!==null) throw Error("EPHEMERAL_REFUSED: none profile mutated");}
@@ -47,10 +50,10 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
   const runId=randomBytes(16).toString("hex"),clusterNonce=randomBytes(16).toString("hex");
   const directory=mkdtempSync(join(tmpdir(),`kj-b1-${runId}-`));
   const migrationBlob={id:migration.id,sha256:migration.sha256};
-  const evidence:RunEvidence={negativeFixture:false,hookIds:[],migrationBlob,baseVersions:[...SEALED_BASE_VERSIONS],
+  const evidence:RunEvidence={negativeFixture,hookIds,migrationBlob,baseVersions:[...SEALED_BASE_VERSIONS],
     plannedApplications:[{sequence:1,database:"kj_b1",version:"20261002090000",migrationBlob}],events:[],applications:[]};
   const header={kind:"kerneljson:b1-ephemeral-run/v1",runId,clusterNonce,R:input.R,runnerBlob:release.blob("scripts/b1/ephemeral.ts").id,
-    registryBlob:registryBlob.id,profile:input.profile,hookIds:[],negativeFixture:false,planId:"base",regressionSuite:null,
+    registryBlob:registryBlob.id,profile:input.profile,hookIds,negativeFixture,planId:"base",regressionSuite:null,
     plannedApplications:evidence.plannedApplications,hostTime:new Date().toISOString()};
   writeFileSync(join(directory,"header.json"),JSON.stringify(header,null,2)+"\n",{flag:"wx",mode:0o600});
   evidence.events.push({step:"L1",outcome:"passed",details:{headerSha256:hash(JSON.stringify(header,null,2)+"\n")}});
@@ -64,6 +67,7 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
   }
   const cluster=new EphemeralCluster(runId,clusterNonce,engine.pins.image,engine.pins.serverVersion,["kj_b1"],hostedIds,event=>evidence.events.push(event));
   let active:Step="L2",failure:string|null=null;
+  let fixtureBefore:Awaited<ReturnType<typeof ledgerFixtureFacts>>|undefined,fixtureOutcome:"not-run"|"passed"|"failed"="not-run";
   const observed:Record<string,unknown>={engine:{version:engine.pins.version,platform:engine.platform,hashes:engine.executableHashes}};
   const passed=(step:Step,details:unknown)=>{evidence.events.push({step,outcome:"passed",application:1,details});};
   try{
@@ -82,7 +86,16 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
     if(JSON.stringify(baseVersions)!==JSON.stringify(SEALED_BASE_VERSIONS)) throw Error("S1: base ledger differs");
     passed("S1",{files:baseFiles,engine:baseResult,baseVersions});active="S2";
     if(profile.sql){const client=await cluster.connect("kj_b1");try{await client.query(release.blob(profile.sql).bytes.toString("utf8"));}finally{await client.end();}}
-    passed("S2",{profile:profile.id});active="S3";
+    if(hook){
+      const fixtureClient=await cluster.connect("kj_b1");
+      try{
+        await fixtureClient.query(ledgerHook(hook.effect).sql);
+        fixtureBefore=await ledgerFixtureFacts(fixtureClient);
+        if(!ledgerFixturePrecondition(hook.effect,fixtureBefore)) throw Error("FIXTURE_REFUSED: ledger fault precondition differs");
+        observed.fixtureBefore=fixtureBefore;
+      }finally{await fixtureClient.end();}
+    }
+    passed("S2",{profile:profile.id,hooks:hookIds});active="S3";
     const client=await cluster.connect("kj_b1");
     let pair;
     try{pair=await snapshotArtifacts(client,"ephemeral",manifest,{mode:"EPHEMERAL_RUN_BOUND",run:{runId,clusterNonce,containerId:cluster.containerId,containerCreated:cluster.created,application:1}});}
@@ -111,13 +124,28 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
       const post=await postLedgerGate(postClient,manifest,release.json(MANIFEST_PATH) as RuntimeRoleManifest,current.baseline,current.declaration,contract?.statementsSha256 ?? "");
       evidence.applications[0]!.postLedgerCompared=true;evidence.applications[0]!.postLedgerPassed=true;passed("S7",post);
     }finally{await postClient.end();}
-  }catch(error){failure=error instanceof Error?error.message:String(error);evidence.events.push({step:active,outcome:"refused",...(active.startsWith("S")?{application:1}:{}),details:failure});}
+  }catch(error){
+    failure=error instanceof Error?error.message:String(error);
+    evidence.events.push({step:active,outcome:"refused",...(active.startsWith("S")?{application:1}:{}),details:failure});
+    if(hook){
+      fixtureOutcome="failed";
+      if(active===hook.expected.stage && failure===hook.expected.message && !observed.S6Engine && fixtureBefore){
+        try{
+          const client=await cluster.connect("kj_b1");
+          try{
+            const after=await ledgerFixtureFacts(client);observed.fixtureAfter=after;
+            if(JSON.stringify(after)===JSON.stringify(fixtureBefore)) fixtureOutcome="passed";
+          }finally{await client.end();}
+        }catch{fixtureOutcome="failed";}
+      }
+    }
+  }
   finally{
-    try{cluster.teardown();}catch(error){failure??=String(error);}
-    const status=qualificationStatus(evidence),record={header,...evidence,observed,failure,status,regressionOutcome:"not-run"};
+    try{cluster.teardown();}catch(error){failure??=String(error);if(hook) fixtureOutcome="failed";}
+    const status=qualificationStatus(evidence),record={header,...evidence,observed,failure,status,fixtureOutcome,regressionOutcome:"not-run"};
     const bytes=JSON.stringify(record,null,2)+"\n";writeFileSync(join(directory,"record.json"),bytes,{flag:"wx",mode:0o600});
-    console.log(JSON.stringify({directory,recordSha256:hash(bytes),status,failure}));
-    if(status!=="REPOSITORY_QUALIFIED") process.exitCode=1;
+    console.log(JSON.stringify({directory,recordSha256:hash(bytes),status,fixtureOutcome,failure}));
+    if(hook?fixtureOutcome!=="passed":status!=="REPOSITORY_QUALIFIED") process.exitCode=1;
   }
 }
 if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)){
