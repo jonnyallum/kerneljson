@@ -42,6 +42,10 @@ describe("closed ledger fixture registry",()=>{
     expect(()=>RegistrySchema.parse({...value,hooks:[...value.hooks,hook]})).toThrow();
     expect(()=>RegistrySchema.parse({...value,hooks:[]})).toThrow();
   });
+  it("retains the frozen three-row gap and its comma-space message separator",()=>{
+    expect(ledgerHook("ledger-gap").message).toBe("PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; missing 20260908234849, 20260910180000, 20260915220000");
+    expect(ledgerHook("ledger-absent").sql).toBe("drop table supabase_migrations.schema_migrations");
+  });
 });
 describe("hosted entry point boundaries", () => {
   const R="a".repeat(40);

@@ -47,7 +47,7 @@
       "negativeFixture": true,
       "expected": {
         "stage": "S3",
-        "message": "PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; missing 20260908234849, 20260910180000, 20260915220000, 20260916205049",
+        "message": "PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; missing 20260908234849, 20260910180000, 20260915220000",
         "b1EngineInvoked": false
       }
     },

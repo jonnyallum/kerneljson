@@ -8,12 +8,12 @@ export type LedgerEffect=typeof LEDGER_EFFECTS[number];
 export function ledgerHook(effect:LedgerEffect):{sql:string;message:string}{
   const prefix="PLATFORM_BASELINE_REFUSED: ";
   switch(effect){
-    case "ledger-absent":return {sql:"alter table supabase_migrations.schema_migrations rename to fixture_hidden_ledger",
+    case "ledger-absent":return {sql:"drop table supabase_migrations.schema_migrations",
       message:prefix+"the migration ledger supabase_migrations.schema_migrations does not exist"};
     case "ledger-wrong-head":return {sql:`delete from supabase_migrations.schema_migrations where version='${SEALED_BASE_VERSIONS.at(-1)}'`,
       message:prefix+`the migration ledger head is ${SEALED_BASE_VERSIONS.at(-2)}, not ${SEALED_BASE_VERSIONS.at(-1)}, the final base migration before B1`};
-    case "ledger-gap":return {sql:`delete from supabase_migrations.schema_migrations where version in (${SEALED_BASE_VERSIONS.slice(10,14).map(v=>`'${v}'`).join(",")})`,
-      message:prefix+`the migration ledger does not record exactly the 22 base migrations before B1; missing ${SEALED_BASE_VERSIONS.slice(10,14).join(", ")}`};
+    case "ledger-gap":return {sql:`delete from supabase_migrations.schema_migrations where version in (${SEALED_BASE_VERSIONS.slice(10,13).map(v=>`'${v}'`).join(",")})`,
+      message:prefix+`the migration ledger does not record exactly the 22 base migrations before B1; missing ${SEALED_BASE_VERSIONS.slice(10,13).join(", ")}`};
     case "ledger-extra":return {sql:"insert into supabase_migrations.schema_migrations(version) values ('20250101000000')",
       message:prefix+"the migration ledger does not record exactly the 22 base migrations before B1; unexpected 20250101000000"};
     case "ledger-b1-recorded":return {sql:"insert into supabase_migrations.schema_migrations(version) values ('20261002090000')",
