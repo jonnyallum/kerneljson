@@ -16,6 +16,7 @@ import { preLedgerGate, postLedgerGate } from "./ledger.js";
 import { qualificationStatus, type RunEvidence, type Step } from "./run-status.js";
 import { LEDGER_EFFECTS, RegistrySchema, ledgerHook } from "./hooks.js";
 import { ledgerFixtureFacts, ledgerFixturePrecondition } from "./ephemeral-ledger-fixture.js";
+import { validateRunRecord } from "./evidence.js";
 
 // Deliberately closed while the negative-case and stage-T registries are being implemented.
 // Unsupported hooks/suites refuse before L1; no partial registry can authorize a consumer.
@@ -67,7 +68,7 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
   }
   const cluster=new EphemeralCluster(runId,clusterNonce,engine.pins.image,engine.pins.serverVersion,["kj_b1"],hostedIds,event=>evidence.events.push(event));
   let active:Step="L2",failure:string|null=null;
-  let fixtureBefore:Awaited<ReturnType<typeof ledgerFixtureFacts>>|undefined,fixtureOutcome:"not-run"|"passed"|"failed"="not-run";
+  let fixtureBefore:Awaited<ReturnType<typeof ledgerFixtureFacts>>|undefined,fixtureOutcome:"not-run"|"passed"|"failed"=hook?"failed":"not-run";
   const observed:Record<string,unknown>={engine:{version:engine.pins.version,platform:engine.platform,hashes:engine.executableHashes}};
   const passed=(step:Step,details:unknown)=>{evidence.events.push({step,outcome:"passed",application:1,details});};
   try{
@@ -144,6 +145,7 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
     try{cluster.teardown();}catch(error){failure??=String(error);if(hook) fixtureOutcome="failed";}
     const status=qualificationStatus(evidence),record={header,...evidence,observed,failure,status,fixtureOutcome,regressionOutcome:"not-run"};
     const bytes=JSON.stringify(record,null,2)+"\n";writeFileSync(join(directory,"record.json"),bytes,{flag:"wx",mode:0o600});
+    validateRunRecord(record,release);
     console.log(JSON.stringify({directory,recordSha256:hash(bytes),status,fixtureOutcome,failure}));
     if(hook?fixtureOutcome!=="passed":status!=="REPOSITORY_QUALIFIED") process.exitCode=1;
   }
