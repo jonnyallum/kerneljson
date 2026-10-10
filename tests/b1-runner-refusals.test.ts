@@ -54,7 +54,8 @@ describe("27.12.13.3 the ephemeral entry point accepts no other input (EPH-3, EP
   it("refuses an unknown profile",()=>refusedBeforeL1(["--release",head(),"--profile","platform"],/EPHEMERAL_REFUSED: expected --release/),CASE_TIMEOUT);
 });
 describe("27.12.6 step 1 and case 40: the release is exact, clean and unflagged",()=>{
-  it("refuses a release other than HEAD (case 36)",()=>{const {dir}=clone();return refusedBeforeL1(eph(git(dir,["rev-parse","HEAD~1"])),/RELEASE_REFUSED: HEAD differs from R/,{cwd:dir});},CASE_TIMEOUT);
+  // One fixture commit in the clone, so its parent (this checkout's HEAD) exists at any clone depth; CI checks out shallow.
+  it("refuses a release other than HEAD (case 36)",()=>{const {dir}=clone({"docs/AUTHORITY_MAP.md":t=>t+"\n"});return refusedBeforeL1(eph(git(dir,["rev-parse","HEAD~1"])),/RELEASE_REFUSED: HEAD differs from R/,{cwd:dir});},CASE_TIMEOUT);
   it("refuses a tracked change in the working tree (case 36; EPH-14 working-copy B1 edit)",()=>{
     const {dir,R}=clone();writeFileSync(join(dir,"supabase/migrations/20261002090000_runtime_least_privilege_roles.sql"),"-- edited in the working copy only\n",{flag:"a"});
     return refusedBeforeL1(eph(R),/RELEASE_REFUSED: tracked changes or untracked migration/,{cwd:dir});
@@ -246,8 +247,12 @@ describe("CON-9 a run network without the exact label",()=>{
     const run=runCase("CON-9 unlabelled run network","none",[]);
     const induced=await induce(run,(c,runId)=>{
       const name=`kj-eph-${runId}`;
-      return spawnSync("docker",["network","disconnect","-f",name,c]).status===0 && spawnSync("docker",["network","rm",name]).status===0 &&
-        spawnSync("docker",["network","create",name]).status===0 && spawnSync("docker",["network","connect","--alias","kj-eph-db",name,c]).status===0;
+      // The runner may reach its next connection between these steps; L3 then refuses and L6 removes the cluster before
+      // the re-connect, which is best effort. The induction is the labelled network replaced by an unlabelled one.
+      const replaced=spawnSync("docker",["network","disconnect","-f",name,c]).status===0 && spawnSync("docker",["network","rm",name]).status===0 &&
+        spawnSync("docker",["network","create",name]).status===0;
+      if(replaced) spawnSync("docker",["network","connect","--alias","kj-eph-db",name,c]);
+      return replaced;
     },600000);
     const outcome=await run;
     const runId=outcome.record?.header.runId;
