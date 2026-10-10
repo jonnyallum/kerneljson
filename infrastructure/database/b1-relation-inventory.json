@@ -1,0 +1,253 @@
+{
+  "kind": "kerneljson:b1-relation-inventory/v1",
+  "relations": [
+    {
+      "name": "kernel_private.alert_state",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.control_assertions",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.control_events",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.dispatch_events",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.effect_receipts",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.execution_bindings",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.identity_cognition_contract_v1",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.identity_cognition_latches",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.identity_governance_state",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.membership_events",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.notification_delivery_events",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.notification_outbox",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.release_activations",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.release_epoch",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.task_admissions",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.telegram_approval_cards",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.telegram_approval_handles",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.telegram_callback_inbox",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.telegram_inbox",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.telegram_operator_state",
+      "kind": "r"
+    },
+    {
+      "name": "kernel_private.terminal_results",
+      "kind": "r"
+    },
+    {
+      "name": "public.approvals",
+      "kind": "r"
+    },
+    {
+      "name": "public.artifacts",
+      "kind": "r"
+    },
+    {
+      "name": "public.capabilities",
+      "kind": "r"
+    },
+    {
+      "name": "public.capability_runs",
+      "kind": "r"
+    },
+    {
+      "name": "public.capability_versions",
+      "kind": "r"
+    },
+    {
+      "name": "public.channels",
+      "kind": "r"
+    },
+    {
+      "name": "public.entities",
+      "kind": "r"
+    },
+    {
+      "name": "public.evaluations",
+      "kind": "r"
+    },
+    {
+      "name": "public.evidence",
+      "kind": "r"
+    },
+    {
+      "name": "public.faculty_current",
+      "kind": "v"
+    },
+    {
+      "name": "public.faculty_pins",
+      "kind": "r"
+    },
+    {
+      "name": "public.faculty_versions",
+      "kind": "r"
+    },
+    {
+      "name": "public.identity_activations",
+      "kind": "r"
+    },
+    {
+      "name": "public.identity_candidates",
+      "kind": "r"
+    },
+    {
+      "name": "public.identity_current",
+      "kind": "v"
+    },
+    {
+      "name": "public.identity_head",
+      "kind": "v"
+    },
+    {
+      "name": "public.identity_pins",
+      "kind": "r"
+    },
+    {
+      "name": "public.identity_profiles",
+      "kind": "r"
+    },
+    {
+      "name": "public.identity_versions",
+      "kind": "r"
+    },
+    {
+      "name": "public.memory_candidates",
+      "kind": "r"
+    },
+    {
+      "name": "public.memory_context_assemblies",
+      "kind": "r"
+    },
+    {
+      "name": "public.memory_current",
+      "kind": "v"
+    },
+    {
+      "name": "public.memory_items",
+      "kind": "r"
+    },
+    {
+      "name": "public.memory_promotions",
+      "kind": "r"
+    },
+    {
+      "name": "public.memory_relations",
+      "kind": "r"
+    },
+    {
+      "name": "public.memory_versions",
+      "kind": "r"
+    },
+    {
+      "name": "public.observations",
+      "kind": "r"
+    },
+    {
+      "name": "public.outcomes",
+      "kind": "r"
+    },
+    {
+      "name": "public.principals",
+      "kind": "r"
+    },
+    {
+      "name": "public.relationships",
+      "kind": "r"
+    },
+    {
+      "name": "public.schedule_backfill_requests",
+      "kind": "r"
+    },
+    {
+      "name": "public.schedule_fires",
+      "kind": "r"
+    },
+    {
+      "name": "public.schedule_leases",
+      "kind": "r"
+    },
+    {
+      "name": "public.schedule_observations",
+      "kind": "r"
+    },
+    {
+      "name": "public.schedule_specs",
+      "kind": "r"
+    },
+    {
+      "name": "public.schedule_state",
+      "kind": "r"
+    },
+    {
+      "name": "public.task_events",
+      "kind": "r"
+    },
+    {
+      "name": "public.task_steps",
+      "kind": "r"
+    },
+    {
+      "name": "public.tasks",
+      "kind": "r"
+    },
+    {
+      "name": "public.tenant_memberships",
+      "kind": "r"
+    },
+    {
+      "name": "public.tenants",
+      "kind": "r"
+    }
+  ]
+}

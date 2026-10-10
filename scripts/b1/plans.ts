@@ -10,9 +10,30 @@ export interface PlanEntry {sequence:number;database:string}
 export interface Plan {id:string;entries:readonly PlanEntry[]}
 export const BASE_PLAN:Plan=Object.freeze({id:"base",entries:Object.freeze([{sequence:1,database:"kj_b1"}])});
 
-/** Stage T suites (27.12.15). Each suite's `databases` equal its plan's sequence numbers (static test). */
-export const REGRESSION_SUITES:readonly Suite[]=Object.freeze([]);
-export const SUITE_PLANS:Readonly<Record<string,Plan>>=Object.freeze({});
+/**
+ * Stage T suites (27.12.15). Each suite's `databases` equal its plan's sequence numbers (static test). `argv` is run by
+ * the runner with node, in a fresh working directory; `${checkout}` is the clean checkout of R and `${report}` the
+ * report path the runner chose. Every primary stage T suite has a discover twin with the same files and profile.
+ */
+const vitest=(files:readonly string[])=>["${checkout}/node_modules/vitest/vitest.mjs","run","--root","${checkout}","--reporter=default",
+  "--reporter=json","--outputFile.json=${report}","--includeTaskLocation",...files];
+interface SuiteSpec {id:string;files:readonly string[];databases:readonly string[];profile:Suite["profile"];refusalPolicy:Suite["refusalPolicy"];
+  compose:string|null;timeoutSeconds:number;roles:Suite["roles"]}
+const SPECS:readonly SuiteSpec[]=[
+  {id:"regression-probes",files:["tests/runtime-roles-log-fixture.integration.test.ts","tests/runtime-roles-negative.integration.test.ts"],
+    databases:["kj_b1_log","kj_b1_neg"],profile:"none",refusalPolicy:"probes",compose:null,timeoutSeconds:1800,roles:["kj_worker","kj_door"]},
+  {id:"regression-helper-probes",files:["tests/runtime-roles-coresident-probes.integration.test.ts"],
+    databases:["kj_b1_helper"],profile:"pinned-helper",refusalPolicy:"probes",compose:null,timeoutSeconds:900,roles:["kj_worker","kj_door"]},
+];
+const suites:Suite[]=[],plans:Record<string,Plan>={};
+for(const spec of SPECS) for(const harness of ["enforce","discover"] as const){
+  const id=harness==="enforce"?spec.id:`${spec.id}-discover`;
+  suites.push({id,argv:vitest(spec.files),harness,files:[...spec.files],databases:spec.databases.map((_,i)=>i+1),compose:spec.compose,
+    profile:spec.profile,refusalPolicy:spec.refusalPolicy,timeoutSeconds:spec.timeoutSeconds,roles:[...spec.roles]});
+  plans[id]=Object.freeze({id,entries:Object.freeze(spec.databases.map((database,i)=>({sequence:i+1,database})))});
+}
+export const REGRESSION_SUITES:readonly Suite[]=Object.freeze(suites);
+export const SUITE_PLANS:Readonly<Record<string,Plan>>=Object.freeze(plans);
 
 export function planFor(suite:string|null):Plan{
   if(suite===null) return BASE_PLAN;

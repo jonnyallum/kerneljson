@@ -56,7 +56,10 @@ export const SuiteSchema=z.strictObject({
   compose:z.string().nullable(),
   profile:z.enum(PROFILES),
   refusalPolicy:z.enum(["none","probes"]),
+  // Implementation fields, recorded as such in the reconciliation: the R2.7.7 review's suite timeout obligation, and the
+  // runtime roles the suite's files exercise, for the trace rule "at least one use event for each role exercised".
   timeoutSeconds:z.number().int().positive(),
+  roles:z.array(z.enum(["kj_worker","kj_door"])).min(1),
 });
 export type Suite=z.infer<typeof SuiteSchema>;
 export const RegistrySchema=z.strictObject({

@@ -5138,5 +5138,128 @@
       ]
     }
   ],
-  "regressionSuites": []
+  "regressionSuites": [
+    {
+      "id": "regression-probes",
+      "argv": [
+        "${checkout}/node_modules/vitest/vitest.mjs",
+        "run",
+        "--root",
+        "${checkout}",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile.json=${report}",
+        "--includeTaskLocation",
+        "tests/runtime-roles-log-fixture.integration.test.ts",
+        "tests/runtime-roles-negative.integration.test.ts"
+      ],
+      "harness": "enforce",
+      "files": [
+        "tests/runtime-roles-log-fixture.integration.test.ts",
+        "tests/runtime-roles-negative.integration.test.ts"
+      ],
+      "databases": [
+        1,
+        2
+      ],
+      "compose": null,
+      "profile": "none",
+      "refusalPolicy": "probes",
+      "timeoutSeconds": 1800,
+      "roles": [
+        "kj_worker",
+        "kj_door"
+      ]
+    },
+    {
+      "id": "regression-probes-discover",
+      "argv": [
+        "${checkout}/node_modules/vitest/vitest.mjs",
+        "run",
+        "--root",
+        "${checkout}",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile.json=${report}",
+        "--includeTaskLocation",
+        "tests/runtime-roles-log-fixture.integration.test.ts",
+        "tests/runtime-roles-negative.integration.test.ts"
+      ],
+      "harness": "discover",
+      "files": [
+        "tests/runtime-roles-log-fixture.integration.test.ts",
+        "tests/runtime-roles-negative.integration.test.ts"
+      ],
+      "databases": [
+        1,
+        2
+      ],
+      "compose": null,
+      "profile": "none",
+      "refusalPolicy": "probes",
+      "timeoutSeconds": 1800,
+      "roles": [
+        "kj_worker",
+        "kj_door"
+      ]
+    },
+    {
+      "id": "regression-helper-probes",
+      "argv": [
+        "${checkout}/node_modules/vitest/vitest.mjs",
+        "run",
+        "--root",
+        "${checkout}",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile.json=${report}",
+        "--includeTaskLocation",
+        "tests/runtime-roles-coresident-probes.integration.test.ts"
+      ],
+      "harness": "enforce",
+      "files": [
+        "tests/runtime-roles-coresident-probes.integration.test.ts"
+      ],
+      "databases": [
+        1
+      ],
+      "compose": null,
+      "profile": "pinned-helper",
+      "refusalPolicy": "probes",
+      "timeoutSeconds": 900,
+      "roles": [
+        "kj_worker",
+        "kj_door"
+      ]
+    },
+    {
+      "id": "regression-helper-probes-discover",
+      "argv": [
+        "${checkout}/node_modules/vitest/vitest.mjs",
+        "run",
+        "--root",
+        "${checkout}",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile.json=${report}",
+        "--includeTaskLocation",
+        "tests/runtime-roles-coresident-probes.integration.test.ts"
+      ],
+      "harness": "discover",
+      "files": [
+        "tests/runtime-roles-coresident-probes.integration.test.ts"
+      ],
+      "databases": [
+        1
+      ],
+      "compose": null,
+      "profile": "pinned-helper",
+      "refusalPolicy": "probes",
+      "timeoutSeconds": 900,
+      "roles": [
+        "kj_worker",
+        "kj_door"
+      ]
+    }
+  ]
 }

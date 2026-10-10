@@ -45,7 +45,7 @@ export async function collectTests(root:string){
   try{
     const code=await new Promise<number|null>((yes,no)=>{
       const child=spawn(process.execPath,[...COLLECTION_ARGS],{cwd:root,env,windowsHide:true,stdio:["ignore","pipe","pipe"]});
-      const timer=setTimeout(()=>{child.kill();no(Error("COLLECTION_REFUSED: collection timed out"));},180000);
+      const timer=setTimeout(()=>{child.kill();no(Error("COLLECTION_REFUSED: collection timed out"));},900000);
       const consume=(channel:"stdout"|"stderr",chunk:string)=>{
         if(channel==="stdout") stdout+=chunk;else stderr+=chunk;
         if(Buffer.byteLength(stdout)+Buffer.byteLength(stderr)>32*1024*1024){child.kill();no(Error("COLLECTION_REFUSED: output limit exceeded"));}

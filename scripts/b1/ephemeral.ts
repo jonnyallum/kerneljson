@@ -22,6 +22,8 @@ import { generatedRegistry, registryText } from "./build-hook-registry.js";
 import { planFor, planProblems } from "./plans.js";
 import { catalogueFacts, noB1Effect, type CatalogueFacts } from "./fixture-facts.js";
 import { validateRunRecord } from "./evidence.js";
+import { collectTests } from "./collection.js";
+import { runStageT, type StageTResult } from "./stage-t.js";
 
 const Contract=z.strictObject({kind:z.literal("kerneljson:b1-ledger-contract/v1"),migrationSha256:HASH,statementsSha256:HASH,engineVersion:z.literal("2.120.0")});
 export interface EphemeralInput {R:string;profile:Profile;hooks:string[];suite:string|null}
@@ -106,6 +108,9 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
     if(suite.profile!==input.profile) refuse("regression suite profile differs");
   }
   const plan=planFor(input.suite);
+  if(suite && canonicalJson(suite.databases)!==canonicalJson(plan.entries.map(e=>e.sequence))) refuse("suite databases differ from its committed plan");
+  // Stage T needs the pinned collection at R (27.12.15): it is taken before L1, so a collection failure creates nothing.
+  const collection=suite?await collectTests(root):null;
   if(planProblems(plan).length) refuse(`plan invalid: ${planProblems(plan).join("; ")}`);
   if(!migration.bytes.toString("utf8").includes(`-- Sealed pins: ${JSON.stringify(release.json(PINS_PATH))}`) ||
     JSON.stringify(release.json(PINS_PATH))!==JSON.stringify(pins)) refuse("migration or checkout pins differ");
@@ -157,6 +162,8 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
   const ownerSql=async(database:string,sql:string)=>{const c=await cluster.connect(database);try{await c.query(sql);}finally{await c.end();}};
   const passed=(step:Step,application:number,details:unknown)=>{evidence.events.push({step,outcome:"passed",application,details});};
   let cleanupBefore:CleanupMember[]|null=null;
+  const stageTInputs:{sequence:number;database:string;run:unknown;artifacts:FrozenArtifacts}[]=[];
+  let stageT:StageTResult|null=null,stageTReason:string=input.suite?"not reached":"no regression suite";
   try{
     const target=byPoint("L2-target")[0];
     const {substituted}=await cluster.create(target?.mechanics.kind==="target"?target.mechanics.fixture:undefined);
@@ -195,6 +202,7 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
         run:{runId,clusterNonce,containerId:cluster.genuineContainerId,containerCreated:cluster.created,application:seq}});}
       finally{await snapshotClient.end();}
       const artifacts=freezeArtifacts(directory,seq,pair,manifest);
+      stageTInputs.push({sequence:seq,database:db,run:pair.declaration.mode==="EPHEMERAL_RUN_BOUND"?pair.declaration.run:null,artifacts});
       passed("S3",seq,artifacts.digests());
       const fileHooks=(when:"after-S3"|"after-S4"|"after-S6",store:FrozenArtifacts)=>{
         for(const def of byPoint("S3-files")){
@@ -313,6 +321,15 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
         passed("S7",seq,post);
       }finally{await postClient.end();}
     }
+    // Stage T: only an unhooked run with a suite, every planned application having passed S1 to S7 (27.12.15).
+    if(suite && !negativeFixture){
+      const allPassed=plannedApplications.every(p=>["S1","S2","S3","S4","S5","S6","S7"].every(step=>
+        evidence.events.some(e=>e.application===p.sequence && e.step===step && e.outcome==="passed")));
+      if(allPassed){
+        stageT=await runStageT({cluster,release,root,runId,suite,applications:stageTInputs,collection:collection!.entries,partitionFiles:suite.files});
+        stageTReason="run";
+      } else stageTReason="an application did not pass S1 to S7";
+    }
   }catch(error){
     failure=error instanceof Error?error.message:String(error);
     refusal={sqlstate:error instanceof EngineRefusal?error.sqlstate:null,message:failure};
@@ -342,13 +359,19 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
     const problems=selected?fixtureProblems(selected.expectation,observation,input.hooks):[];
     const fixtureOutcome=selected?(problems.length?"failed":"passed"):"not-run";
     const status=qualificationStatus(evidence);
+    if(stageT && !teardownPassed) stageT.problems.push("L6 teardown did not pass");
+    const regressionOutcome=stageT?(stageT.outcome==="passed" && teardownPassed?"passed":"failed"):"not-run";
     const record={header,...evidence,observed:{...observed,factsAt,lastFacts,afterFacts},fixture:selected?{primary:selected.primary,observation,problems}:null,
-      failure,status,fixtureOutcome,regressionOutcome:"not-run",stageT:{outcome:"not-run",reason:input.suite?"stage T is not implemented in this runner revision":"no regression suite"}};
+      failure,status,fixtureOutcome,regressionOutcome,
+      stageT:stageT?{...stageT,outcome:regressionOutcome,stageOutcome:stageT.outcome,reason:stageTReason,
+        collection:{entriesSha256:collection!.entriesSha256,entries:collection!.entries.length}}:
+        {outcome:"not-run",reason:stageTReason}};
     const bytes=JSON.stringify(record,null,2)+"\n";writeFileSync(join(directory,"record.json"),bytes,{flag:"wx",mode:0o600});
     let consumer="accepted";
     try{validateRunRecord(strictJson(bytes),release);}catch(error){consumer=error instanceof Error?error.message:String(error);process.exitCode=1;}
-    console.log(JSON.stringify({directory,recordSha256:hash(bytes),status,fixtureOutcome,consumer,failure,problems}));
-    if(selected?fixtureOutcome!=="passed":status!=="REPOSITORY_QUALIFIED") process.exitCode=1;
+    console.log(JSON.stringify({directory,recordSha256:hash(bytes),status,fixtureOutcome,regressionOutcome,consumer,failure,problems,
+      stageTProblems:stageT?.problems ?? []}));
+    if(selected?fixtureOutcome!=="passed":status!=="REPOSITORY_QUALIFIED" || (input.suite!==null && regressionOutcome!=="passed")) process.exitCode=1;
   }
 }
 if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)){
