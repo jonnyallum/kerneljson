@@ -55,4 +55,3 @@ it("migration baselines preexisting immutable bindings without inventing their i
     expect((await db.query("select contract from kernel_private.execution_bindings where task_id=$1", [old.taskId])).rows[0].contract).toEqual(old);
   } finally { await db.query("rollback"); db.release(); }
 });
-

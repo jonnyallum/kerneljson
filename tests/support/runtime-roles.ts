@@ -22,9 +22,11 @@
  * It never widens anything in production: it is test-only and is not imported by any runtime module.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import pg from "pg";
+import { TraceToken, traceWriter, type TraceStatement } from "../../scripts/b1/trace.js";
+import { strictJson } from "../../services/kernel/src/database/strict-json.js";
 
 export type RuntimeRole = "kj_worker" | "kj_door";
 export const RUNTIME_ROLES: readonly RuntimeRole[] = ["kj_worker", "kj_door"];
@@ -80,22 +82,67 @@ export function attribute(stack: string | undefined): { role: RuntimeRole | null
 }
 
 const passthrough = new AsyncLocalStorage<true>();
-const seen = new Set<string>();
-function record(event: Record<string, unknown>): void {
-  const key = JSON.stringify(event);
-  if (seen.has(key)) return;
-  seen.add(key);
+let writer: ReturnType<typeof traceWriter> | undefined;
+let currentTest = (): string | null => null;
+if (process.env.VITEST) {
+  const { expect } = await import("vitest");
+  currentTest = () => expect.getState().currentTestName ?? null;
+}
+function record(statement: TraceStatement, error?: {code?:string;message?:string}): void {
   try {
-    mkdirSync(TRACE_DIR, { recursive: true });
-    appendFileSync(resolve(TRACE_DIR, `${process.pid}.jsonl`), key + "\n");
-  } catch {
-    /* tracing must never change a test result */
+  if (!writer) {
+    const stageT = process.env.KJ_B1_STAGE_T === "1";
+    const token = stageT ? TraceToken.parse(strictJson(process.env.KJ_B1_RUN_TOKEN ?? "")) :
+      {runId:"0".repeat(32),suite:"local-"+MODE};
+    if(stageT && !process.env.KJ_B1_TRACE_DIR) throw Error("TRACE_UNTRUSTED: trace directory absent");
+    if(!stageT) mkdirSync(TRACE_DIR, {recursive:true});
+    writer=traceWriter(TRACE_DIR,token);
+  }
+  writer.write(statement,error);
+  } catch (failure) {
+    process.exitCode=1;
+    throw failure;
   }
 }
-const sqlOf = (args: unknown[]): string => {
-  const a = args[0] as string | { text?: string } | undefined;
-  return (typeof a === "string" ? a : (a?.text ?? "")).replace(/\s+/g, " ").trim().slice(0, 600);
-};
+const prepared = new WeakMap<object,Map<string,string>>();
+function sqlOf(args: unknown[], session?:object): string {
+  const config = args[0] as string | {text?:string;name?:string} | undefined;
+  if(typeof config === "string") return config;
+  if(config?.text !== undefined) {
+    if(config.name && session) {
+      let texts=prepared.get(session);
+      if(!texts) prepared.set(session,texts=new Map());
+      if(!texts.has(config.name)) texts.set(config.name,config.text);
+    }
+    return config.text;
+  }
+  const cached=config?.name && session ? prepared.get(session)?.get(config.name) : undefined;
+  if(cached!==undefined) return cached;
+  throw Error("TRACE_UNTRUSTED: runtime statement text unavailable");
+}
+function statement(role:RuntimeRole,caller:string,via:"login"|"set-role",sql:string,production:boolean):TraceStatement {
+  return {role,caller,via,sql,test:currentTest(),classification:production?"production":"probe"};
+}
+/** Preserve callback and promise APIs while observing errors before the caller can absorb them. */
+function dispatch(args:unknown[],run:(args:unknown[])=>Promise<unknown>,event:TraceStatement,observe=true):Promise<unknown> {
+  const actual=[...args];
+  let callback=typeof actual.at(-1)==="function" ? actual.pop() as (error:unknown,value?:unknown)=>void : undefined;
+  const config=actual[0] as {callback?:typeof callback}|undefined;
+  if(!callback && typeof config?.callback==="function") {
+    callback=config.callback;actual[0]={...config,callback:undefined};
+  }
+  record(event);
+  const result=Promise.resolve().then(()=>run(actual)).catch(error=>{
+    if(observe && error?.code==="42501") record(event,error);
+    throw error;
+  });
+  if(callback){
+    const done=callback;
+    void result.then(value=>done(null,value),error=>done(error));
+    return undefined as unknown as Promise<unknown>;
+  }
+  return result;
+}
 
 /** A pool that already logs in as a runtime role is a genuine runtime pool: never shadowed, never emulated. */
 function genuine(pool: pg.Pool): RuntimeRole | null {
@@ -105,16 +152,7 @@ function genuine(pool: pg.Pool): RuntimeRole | null {
   return (RUNTIME_ROLES as readonly string[]).includes(user ?? "") ? (user as RuntimeRole) : null;
 }
 
-/** Enforce mode: a refusal of a runtime statement is recorded (and still thrown), so "zero unexpected 42501" is a count. */
-function watch<T>(result: T, role: RuntimeRole, caller: string, sql: string): T {
-  if (MODE === "enforce" && result && typeof (result as unknown as Promise<unknown>).then === "function")
-    (result as unknown as Promise<unknown>).then(undefined, (error: { code?: string; message?: string }) => {
-      if (error?.code === "42501") record({ kind: "refused", role, caller, message: error.message, sql });
-    });
-  return result;
-}
-
-type AnyClient = pg.ClientBase & { __kjRole?: RuntimeRole; __kjBusy?: boolean; getTransactionStatus?: () => string | null };
+type AnyClient = pg.ClientBase & { __kjRole?: RuntimeRole; getTransactionStatus?: () => string | null };
 type Query = (...args: unknown[]) => Promise<unknown>;
 const P = pg.Pool.prototype as unknown as { query: Query; connect: Query; end: Query };
 const C = pg.Client.prototype as unknown as { query: Query };
@@ -142,14 +180,16 @@ function shadow(pool: pg.Pool, role: RuntimeRole): pg.Pool {
 }
 
 /** Run one statement on an owner session with the privileges of `role`. */
-async function emulate(client: AnyClient, role: RuntimeRole, caller: string, args: unknown[]): Promise<unknown> {
+async function emulate(client: AnyClient, role: RuntimeRole, event: TraceStatement, args: unknown[]): Promise<unknown> {
   const run = (...a: unknown[]) => clientQuery.apply(client, a);
-  client.__kjBusy = true;
   try {
     const inTx = client.getTransactionStatus?.() === "T";
-    try { await run(`set role ${role}`); } catch { return await run(...args); } // aborted transaction: fail as it would
+    try { await run(`set role ${role}`); } catch (error) {
+      if((error as {code?:string}).code!=="25P02") throw error;
+      return await run(...args); // Already-aborted transaction retains PostgreSQL's error semantics.
+    }
     // Never wrap transaction control: releasing the probe savepoint would destroy a savepoint the code just made.
-    const probe = MODE === "discover" && inTx && !/^(begin|start|commit|end|rollback|abort|savepoint|release)\b/i.test(sqlOf(args));
+    const probe = MODE === "discover" && inTx && !/^(begin|start|commit|end|rollback|abort|savepoint|release)\b/i.test(event.sql.trimStart());
     if (probe) await run("savepoint kj_b1_probe");
     try {
       const result = await run(...args);
@@ -157,15 +197,14 @@ async function emulate(client: AnyClient, role: RuntimeRole, caller: string, arg
       return result;
     } catch (error) {
       const e = error as { code?: string; message?: string };
+      if (e.code === "42501") record(event,e);
       if (MODE !== "discover" || e.code !== "42501") throw error;
-      record({ kind: "denied", role, caller, message: e.message, sql: sqlOf(args) });
       if (probe) await run("rollback to savepoint kj_b1_probe");
       await run("reset role");
       return await run(...args);
     }
   } finally {
     await run("reset role").catch(() => undefined);
-    client.__kjBusy = false;
   }
 }
 
@@ -177,25 +216,35 @@ export function installRuntimeRoles(): void {
   Error.stackTraceLimit = Math.max(Error.stackTraceLimit ?? 10, 80);
 
   P.query = function (this: pg.Pool, ...args: unknown[]) {
-    if (passthrough.getStore() || typeof args.at(-1) === "function") return poolQuery.apply(this, args);
-    if (genuine(this)) return passthrough.run(true, () => poolQuery.apply(this, args));
-    const { role, caller } = attribute(new Error().stack);
-    if (!role) return passthrough.run(true, () => poolQuery.apply(this, args));
-    record({ kind: "use", role, caller, via: MODE === "enforce" ? "login" : "set-role", sql: sqlOf(args) });
-    if (MODE === "enforce") return watch(passthrough.run(true, () => poolQuery.apply(shadow(this, role), args)), role, caller, sqlOf(args));
-    return (async () => {
-      const client = (await passthrough.run(true, () => poolConnect.apply(this, []))) as AnyClient & { release: () => void };
-      try { return await emulate(client, role, caller, args); } finally { client.release(); }
-    })();
+    if (passthrough.getStore()) return poolQuery.apply(this,args);
+    const {role:asked,caller}=attribute(new Error().stack),own=genuine(this),role=own ?? asked;
+    if(!role) return passthrough.run(true,()=>poolQuery.apply(this,args));
+    const login=Boolean(own) || MODE==="enforce";
+    const event=statement(role,caller,login?"login":"set-role",sqlOf(args,this),Boolean(asked)||Boolean(FIXED));
+    return dispatch(args,async actual=>{
+      if(login) return passthrough.run(true,()=>poolQuery.apply(own?this:shadow(this,role),actual));
+      const client=await passthrough.run(true,()=>poolConnect.apply(this,[])) as AnyClient & {release:()=>void};
+      try{return await emulate(client,role,event,actual);}finally{client.release();}
+    },event,login);
   };
 
   P.connect = function (this: pg.Pool, ...args: unknown[]) {
-    if (passthrough.getStore() || args.length) return poolConnect.apply(this, args);
-    const own = genuine(this);
-    if (own) return (poolConnect.apply(this, args) as Promise<AnyClient>).then((c) => { c.__kjRole = own; return c; });
-    const { role } = attribute(new Error().stack);
-    if (!role || MODE === "discover") return poolConnect.apply(this, args);
-    return passthrough.run(true, () => poolConnect.apply(shadow(this, role), args));
+    if(passthrough.getStore()) return poolConnect.apply(this,args);
+    const own=genuine(this),{role:asked}=attribute(new Error().stack);
+    const role=own ?? (MODE==="enforce"?asked:null);
+    const target=role && !own ? shadow(this,role) : this;
+    if(args.length){
+      const callback=args[0] as (error:unknown,client?:AnyClient,release?:()=>void)=>void;
+      if(typeof callback!=="function") return poolConnect.apply(target,args);
+      return passthrough.run(true,()=>poolConnect.apply(target,[(error:unknown,client?:AnyClient,release?:()=>void)=>{
+        if(client && role) client.__kjRole=role;
+        passthrough.exit(()=>callback(error,client,release));
+      }]));
+    }
+    return (passthrough.run(true,()=>poolConnect.apply(target,[])) as Promise<AnyClient>).then(client=>{
+      if(role) client.__kjRole=role;
+      return client;
+    });
   };
 
   P.end = async function (this: pg.Pool, ...args: unknown[]) {
@@ -204,21 +253,15 @@ export function installRuntimeRoles(): void {
   };
 
   C.query = function (this: AnyClient, ...args: unknown[]) {
-    if (this.__kjBusy || typeof args.at(-1) === "function") return clientQuery.apply(this, args);
-    const text = sqlOf(args);
-    if (this.__kjRole) {
-      if (passthrough.getStore()) return clientQuery.apply(this, args);
-      const { caller, role: asked } = attribute(new Error().stack);
-      record({ kind: "use", role: this.__kjRole, caller, via: "login", sql: text });
-      // Only production statements count as runtime refusals; a test probing the role directly is a deliberate probe.
-      return asked ? watch(clientQuery.apply(this, args), this.__kjRole, caller, text) : clientQuery.apply(this, args);
-    }
-    if (passthrough.getStore()) return clientQuery.apply(this, args);
-    const { role, caller } = attribute(new Error().stack);
-    if (!role) return clientQuery.apply(this, args);
-    record({ kind: "use", role, caller, via: "set-role", sql: text });
-    return watch(emulate(this, role, caller, args), role, caller, text);
+    if(passthrough.getStore()) return clientQuery.apply(this,args);
+    const user=(this as unknown as {user?:string}).user;
+    const own=this.__kjRole ?? ((RUNTIME_ROLES as readonly string[]).includes(user ?? "") ? user as RuntimeRole : null);
+    const {role:asked,caller}=attribute(new Error().stack),role=own ?? asked;
+    if(!role) return clientQuery.apply(this,args);
+    const event=statement(role,caller,own?"login":"set-role",sqlOf(args,this),Boolean(asked)||Boolean(FIXED));
+    return dispatch(args,actual=>own?clientQuery.apply(this,actual):emulate(this,role,event,actual),event,Boolean(own));
   };
+
 }
 
 if(MODE==="base") await import("./base-database.js");
