@@ -9,7 +9,7 @@ let db: Awaited<ReturnType<typeof knowledgeDatabase>>,
   server: Server,
   url: string;
 beforeAll(async () => {
-  db = await knowledgeDatabase();
+  db = await knowledgeDatabase("kj_mission_control");
   let handler: ReturnType<typeof createMissionControl>;
   server = createServer((req, res) => {
     void handler(req, res);

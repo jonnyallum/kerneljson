@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   INVENTORY_SQL, INVENTORY_SQL_SHA256, SEALED_DESIGN, STAGES, baselineEligibilityProblems, baselineEntry, baselineProblems, canonicalJson,
   compareDefiners, excludedSchemaSql, expectedDefiners, identityKey, isExcludedSchema, loadStageManifest, sha256, sortEntries,
-  stageBindingProblems, stageFunctions, type DefinerEntry, type PlatformBaseline, type StageManifest,
+  stageBindingProblems, stageFunctions, healthArtifactModeProblems, type DefinerEntry, type PlatformBaseline, type StageManifest,
 } from "../services/kernel/src/database/security-definers.js";
 import { expectedLedgerHead, expectedLedgerVersions, ledgerSetProblems, parseConnectionFile, scrubPgEnvironment } from "../services/kernel/src/database/platform-baseline-snapshot.js";
 import { TABLE_PRIVILEGES, loadManifest } from "../services/kernel/src/database/runtime-roles.js";
@@ -230,6 +230,19 @@ describe("27.12 co-resident authority artifacts",()=>{
   const declaration=()=>({kind:"kerneljson:co-resident-platform-exceptions/v1",mode:"HOSTED_COMMITTED",environment:"unit",
     provenance:{...baseline.provenance,querySha256:hash(CO_RESIDENT_SQL)},pinsSha256:hash(pinText),
     setSha256:setDigest([entry]),entries:[structuredClone(entry)]});
+  it("keeps deployed health hosted-only and binds disposable health to every expected run field",()=>{
+    const hosted=parseDeclaration(JSON.stringify(declaration()));
+    expect(healthArtifactModeProblems(baseline,hosted)).toEqual([]);
+    const run={runId:"a".repeat(32),clusterNonce:"b".repeat(32),containerId:"c".repeat(64),containerCreated:"2026-10-10T00:00:00Z",application:1};
+    const ephemeral=parseDeclaration(JSON.stringify({...declaration(),mode:"EPHEMERAL_RUN_BOUND",run}));
+    const paired={...baseline,mode:"EPHEMERAL_RUN_BOUND" as const,run};
+    expect(healthArtifactModeProblems(paired,ephemeral,run)).toEqual([]);
+    expect(healthArtifactModeProblems(paired,ephemeral).length).toBe(1);
+    expect(healthArtifactModeProblems(baseline,hosted,run).length).toBe(1);
+    for(const changed of [{runId:"d".repeat(32)},{clusterNonce:"d".repeat(32)},{containerId:"d".repeat(64)},
+      {containerCreated:"2026-10-11T00:00:00Z"},{application:2}])
+      expect(healthArtifactModeProblems(paired,ephemeral,{...run,...changed}).length).toBe(1);
+  });
   it("pins every source attribute and the complete topology independently",()=>{
     expect(pins).toEqual({kind:"kerneljson:co-resident-platform-pins/v1",entries:[{
       schema:"public",name:"rls_auto_enable",args:[],returns:"pg_catalog.event_trigger",retset:false,kind:"f",owner:"postgres",

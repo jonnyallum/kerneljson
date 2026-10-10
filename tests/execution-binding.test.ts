@@ -5,7 +5,7 @@ import { bindingFor, persistBinding, readBinding, workflowTargets } from "../ser
 import { Ledger } from "../services/kernel/src/ledger.js";
 import { ExecutionBinding, Task, TaskEvent } from "../packages/contracts/src/index.js";
 let fixture: Awaited<ReturnType<typeof knowledgeDatabase>>;
-beforeAll(async()=>{fixture=await knowledgeDatabase();await fixture.pool.query("select kernel_private.activate_release($1,$2,0,$3)",[randomUUID(),process.env['KERNELJSON_RELEASE_ID']??'unreleased-development',{qualification:'ledger writers'}]);});
+beforeAll(async()=>{fixture=await knowledgeDatabase("kj_execution_binding");await fixture.pool.query("select kernel_private.activate_release($1,$2,0,$3)",[randomUUID(),process.env['KERNELJSON_RELEASE_ID']??'unreleased-development',{qualification:'ledger writers'}]);});
 afterAll(async()=>{await fixture?.close();});
 it("reads historical tasks without guessing an execution binding",async()=>{
  expect(await readBinding(fixture.pool,fixture.task.id)).toBeNull();

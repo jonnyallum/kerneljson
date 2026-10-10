@@ -29,7 +29,7 @@ import { IDENTITY_APPLY_A, IDENTITY_APPLY_BOOTSTRAP, IDENTITY_APPLY_C, IDENTITY_
 let db: Awaited<ReturnType<typeof knowledgeDatabase>>;
 
 beforeAll(async () => {
-  db = await knowledgeDatabase();
+  db = await knowledgeDatabase("kj_identity_migration_integration");
 });
 afterAll(async () => {
   await db?.close();

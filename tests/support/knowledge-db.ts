@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import pg from "pg";
-import { DATABASE, compose, holdRuntime, migrate, until } from "./local.js";
-import { assertBaseEnvironment, assertBaseTarget } from "../../scripts/b1/base-guard.mjs";
+import { testDatabase } from "./database.js";
 import { verificationFixture } from "../../evals/fixtures/verification.js";
 import {
   Task,
@@ -11,22 +9,8 @@ import {
 } from "../../packages/contracts/src/index.js";
 import { VerificationStore } from "../../services/kernel/src/verification-store.js";
 import { capabilityDigest } from "../../packages/capabilities/src/index.js";
-export async function knowledgeDatabase() {
-  assertBaseEnvironment();
-  const release = holdRuntime(),
-    name = `knowledge_${randomUUID().replaceAll("-", "")}`;
-  const admin = new pg.Pool({ connectionString: DATABASE });
-  compose("up", "-d", "db");
-  await until(
-    () => admin.query("select 1"),
-    (r) => r.rowCount === 1,
-  );
-  await assertBaseTarget(admin);
-  await admin.query(`create database ${name}`);
-  const pool = new pg.Pool({
-    connectionString: DATABASE.replace("/kerneljson", `/${name}`),
-  });
-  await migrate(pool);
+export async function knowledgeDatabase(name:string) {
+  const database=await testDatabase(name),pool=database.pool;
   const bundle = verificationFixture(),
     task = Task.parse(bundle.task),
     step = TaskStep.parse(bundle.steps[0]),
@@ -126,11 +110,6 @@ export async function knowledgeDatabase() {
     task,
     evidence,
     outcome,
-    close: async () => {
-      await pool.end();
-      await admin.query(`drop database ${name}`);
-      await admin.end();
-      release();
-    },
+    close: database.close,
   };
 }

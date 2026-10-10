@@ -5,7 +5,7 @@ import { createRestateControls } from "../apps/gateway/src/index.js";
 import { bindingFor,persistBinding,workflowTargets } from "../services/kernel/src/execution-binding.js";
 import { Task } from "../packages/contracts/src/index.js";
 let fixture:Awaited<ReturnType<typeof knowledgeDatabase>>;
-beforeAll(async()=>{fixture=await knowledgeDatabase();});afterAll(async()=>{await fixture?.close();});
+beforeAll(async()=>{fixture=await knowledgeDatabase("kj_controls");});afterAll(async()=>{await fixture?.close();});
 async function seed(name:keyof typeof workflowTargets){
  const initial=Task.parse({...fixture.task,id:randomUUID(),status:'RECEIVED'});
  const status=['TaskWorkflow','KernelWorkflowV1','BoundedScheduleWorkflowV1'].includes(name)?'WAITING':'APPROVAL_REQUIRED';

@@ -49,7 +49,7 @@ const rejects = async (sql: string, params: unknown[] = []) => {
 };
 
 beforeAll(async () => {
-  db = await knowledgeDatabase();
+  db = await knowledgeDatabase("kj_memory_canonical_integration");
   tenantId = db.context.tenantId;
   const add = async (kind: "HUMAN" | "SERVICE", role: string, tenant = tenantId): Promise<TenantContext> => {
     const principal: PrincipalRef = { id: randomUUID(), kind };

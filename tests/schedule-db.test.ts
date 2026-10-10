@@ -11,7 +11,7 @@ import { finishSchedule } from "../services/kernel/src/schedule-store.js";
 import { Task, TaskStep } from "../packages/contracts/src/index.js";
 let fixture: Awaited<ReturnType<typeof knowledgeDatabase>>;
 beforeAll(async () => {
-  fixture = await knowledgeDatabase();
+  fixture = await knowledgeDatabase("kj_schedule_db");
 });
 afterAll(async () => {
   await fixture?.close();

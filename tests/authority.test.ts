@@ -4,7 +4,7 @@ import {knowledgeDatabase} from "./support/knowledge-db.js";
 import {authorize,withTenant,permissions} from "../packages/identity/src/index.js";
 import {MissionControlStore} from "../apps/mission-control/src/store.js";
 let fixture:Awaited<ReturnType<typeof knowledgeDatabase>>;
-beforeAll(async()=>{fixture=await knowledgeDatabase();});afterAll(async()=>{await fixture?.close();});
+beforeAll(async()=>{fixture=await knowledgeDatabase("kj_authority");});afterAll(async()=>{await fixture?.close();});
 it.each(['REVOKED','REMOVED'] as const)("%s denies every current permission and retains historical task attribution",async(status)=>{
  await fixture.pool.query("update tenant_memberships set status=$1 where tenant_id=$2 and principal_id=$3",[status,fixture.context.tenantId,fixture.context.principal.id]);
  try{

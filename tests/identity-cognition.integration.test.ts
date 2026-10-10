@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import pg from "pg";
+import type pg from "pg";
 import type { Context } from "@restatedev/restate-sdk";
-import { DATABASE, compose, migrate, until, holdRuntime } from "./support/local.js";
+import { testDatabase, type TestDatabase } from "./support/database.js";
 import {
   IdentityCognitionPin,
   KernelSubmission,
@@ -53,17 +53,6 @@ const KERNEL_TENANT = KERNEL_V1.tenantId;
 const KERNEL_VERSION_ROW = "08be5e20-2606-4809-b81f-11552bb67502";
 const ROUTES = { analyst: { provider: "openrouter" as const, model: "anthropic/claude-test" }, reviewer: { provider: "openrouter" as const, model: "x-ai/grok-test" } };
 
-const admin = new pg.Pool({ connectionString: DATABASE, max: 1 });
-const databases: string[] = [];
-let releaseRuntime = () => {};
-async function freshDatabase(prefix: string): Promise<pg.Pool> {
-  const name = `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
-  await admin.query(`create database ${name}`);
-  databases.push(name);
-  const pool = new pg.Pool({ connectionString: DATABASE.replace(/\/kerneljson$/, `/${name}`), max: 4 });
-  pool.on("error", () => {});
-  return pool;
-}
 /** Seeds an activated identity with triggers bypassed (disposable test DBs only). Digests are always the true v1 ones
  *  unless `storedCore` overrides them, which is how a corrupt row is simulated. */
 async function seedIdentity(pool: pg.Pool, doc: IdentityDocument, opts: { versionRowId?: string; storedCore?: string; profile?: boolean } = {}) {
@@ -91,23 +80,10 @@ async function seedIdentity(pool: pg.Pool, doc: IdentityDocument, opts: { versio
   }
 }
 
-beforeAll(async () => {
-  releaseRuntime = holdRuntime();
-  compose("up", "-d", "db");
-  await until(() => admin.query("select 1"), (r) => r.rowCount === 1);
-});
-afterAll(async () => {
-  for (const name of databases) {
-    await until(() => admin.query<{ n: number }>("select count(*)::int as n from pg_stat_activity where datname=$1", [name]), (r) => r.rows[0]!.n === 0, 15_000).catch(() => undefined);
-    await admin.query(`drop database if exists ${name} with (force)`);
-  }
-  await admin.end();
-  releaseRuntime();
-});
-
 // ---------------------------------------------------------------------------------------------------------------
 // The main database: legacy epoch 1, then the contract activated atomically at epoch 2.
 let pool: pg.Pool;
+let database: TestDatabase;
 let ledger: Ledger;
 let faculties: PgFacultyRegistry;
 let enabled = false;
@@ -241,8 +217,8 @@ const insertPin = (p: IdentityCognitionPin, tenant = KERNEL_TENANT): [string, un
 describe("KJ-P7B-1 against the real ledger", () => {
   let contractEpoch: number;
   beforeAll(async () => {
-    pool = await freshDatabase("p7b_main");
-    await migrate(pool);
+    database = await testDatabase("kj_identity_cognition");
+    pool = database.pool;
     await pool.query("insert into principals(id,kind) values($1,'HUMAN')", [principal.id]);
     await pool.query("insert into tenants(id,name) values($1,'kernel')", [KERNEL_TENANT]);
     await pool.query("insert into tenant_memberships(tenant_id,principal_id,role) values($1,$2,'owner')", [KERNEL_TENANT, principal.id]);
@@ -256,7 +232,7 @@ describe("KJ-P7B-1 against the real ledger", () => {
     legacyTask = (await runMission()).taskId;
     await runMission({ ...lateLegacy, stopBeforeMission: true });
   });
-  afterAll(async () => pool?.end());
+  afterAll(async () => database?.close());
 
   describe("the SQL twin reproduces the shared corpus", () => {
     for (const v of corpus.vectors)

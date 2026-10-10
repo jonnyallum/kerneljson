@@ -285,6 +285,15 @@ export function artifactPairProblems(baseline:PlatformBaseline, declaration:Decl
     problems.push("baseline and declaration mode/run differ");
   return problems;
 }
+/** Deployed health is hosted-only. An explicit expected run binds disposable health to its runner application. */
+export function healthArtifactModeProblems(baseline:PlatformBaseline|null,declaration:Declaration|null,run?:z.infer<typeof RunBinding>):string[]{
+  if(run===undefined) return baseline?.mode==="HOSTED_COMMITTED" && declaration?.mode==="HOSTED_COMMITTED" &&
+    !baseline.run && !("run" in declaration) ? []:["deployed health requires HOSTED_COMMITTED artifacts without run bindings"];
+  if(!RunBinding.safeParse(run).success || baseline?.mode!=="EPHEMERAL_RUN_BOUND" || declaration?.mode!=="EPHEMERAL_RUN_BOUND" ||
+    canonicalJson(baseline.run ?? null)!==canonicalJson(run) || canonicalJson(declaration.run)!==canonicalJson(run))
+    return ["ephemeral health requires both artifacts bound to the expected application"];
+  return [];
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // Equality (27.10.1)

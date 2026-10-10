@@ -12,7 +12,7 @@ let db: Awaited<ReturnType<typeof knowledgeDatabase>>,
   a: WorldEntity,
   b: WorldEntity;
 beforeAll(async () => {
-  db = await knowledgeDatabase();
+  db = await knowledgeDatabase("kj_world");
   store = new WorldStore(db.pool);
   a = await store.entity(db.context, {
     identityKey: "document:a",

@@ -1,5 +1,5 @@
 import { RUNTIME_ROLES, RuntimeRoleRefusal, assertRuntimeRole, compareRoleToManifest, loadManifest } from "../database/runtime-roles.js";
-import { definerInventoryProblems, loadDeclaration, loadPlatformBaseline, loadStageManifest, type PlatformBaseline } from "../database/security-definers.js";
+import { definerInventoryProblems, healthArtifactModeProblems, loadDeclaration, loadPlatformBaseline, loadStageManifest, type PlatformBaseline } from "../database/security-definers.js";
 import type { Declaration } from "../database/co-resident.js";
 import { collectBindingProvenance } from "./release-provenance.js";
 import type pg from "pg";
@@ -317,7 +317,8 @@ export interface CollectDeps {
  * `baseline` defaults to the committed frozen platform baseline; while none is committed the check reports
  * TARGET_PLATFORM_BASELINE_PENDING and stays red.
  */
-export async function fetchRuntimeRoles(pool: pg.Pool, options: { baseline?: PlatformBaseline | null; declaration?:Declaration|null } = {}): Promise<HealthSnapshot["database"]["runtimeRoles"]> {
+export async function fetchRuntimeRoles(pool: pg.Pool, options: { baseline?: PlatformBaseline | null; declaration?:Declaration|null;
+  run?:Extract<Declaration,{mode:"EPHEMERAL_RUN_BOUND"}>["run"] } = {}): Promise<HealthSnapshot["database"]["runtimeRoles"]> {
   try {
     const manifest = loadManifest();
     const stages = loadStageManifest();
@@ -335,8 +336,7 @@ export async function fetchRuntimeRoles(pool: pg.Pool, options: { baseline?: Pla
       for (const f of diff.missing) problems.push(`${role} lacks ${f}`);
       for (const f of diff.extra) problems.push(`${role} holds unlisted ${f}`);
     }
-    if (baseline?.mode !== "HOSTED_COMMITTED" || declaration?.mode !== "HOSTED_COMMITTED" || baseline?.run || (declaration && "run" in declaration))
-      problems.push("deployed health requires HOSTED_COMMITTED artifacts without run bindings");
+    problems.push(...healthArtifactModeProblems(baseline,declaration,options.run));
     problems.push(...(await definerInventoryProblems(pool, stages, baseline, declaration)));
     return { available: true, problems };
   } catch (error) {

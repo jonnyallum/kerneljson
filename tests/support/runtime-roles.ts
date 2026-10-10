@@ -221,4 +221,5 @@ export function installRuntimeRoles(): void {
   };
 }
 
+if(MODE==="base") await import("./base-database.js");
 installRuntimeRoles();

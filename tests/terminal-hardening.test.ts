@@ -8,7 +8,7 @@ import { verificationFixture } from "../evals/fixtures/verification.js";
 import { verifyTaskEvidence } from "../services/kernel/src/verification.js";
 import { Task,TaskStep, Evidence } from "../packages/contracts/src/index.js";
 let fixture:Awaited<ReturnType<typeof knowledgeDatabase>>;
-beforeAll(async()=>{fixture=await knowledgeDatabase();});afterAll(async()=>{await fixture?.close();});
+beforeAll(async()=>{fixture=await knowledgeDatabase("kj_terminal_hardening");});afterAll(async()=>{await fixture?.close();});
 it.each(["FAILED","CANCELLED"] as const)("keeps durable %s result when a legacy workflow emits no Outcome",async(status)=>{
  const ledger=new Ledger(fixture.pool).forWorkflow("TaskWorkflow");
  const task=Task.parse({...fixture.task,id:randomUUID(),status:"RECEIVED"});

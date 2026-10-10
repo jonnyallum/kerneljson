@@ -1,9 +1,10 @@
 // Loopback-only synthetic preview, never imported by a production entry point.
+import "./runtime-roles.js";
 import { createServer } from "node:http";
 import { knowledgeDatabase } from "./knowledge-db.js";
 import { createMissionControl } from "../../apps/mission-control/src/server.js";
 import { MissionControlStore } from "../../apps/mission-control/src/store.js";
-const db = await knowledgeDatabase();
+const db = await knowledgeDatabase("kj_mission_preview");
 const handler = createMissionControl({
   store: new MissionControlStore(db.pool),
   origin: "http://127.0.0.1:19090",

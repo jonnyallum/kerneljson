@@ -5,7 +5,7 @@ import { MemoryStore } from "../services/memory/src/index.js";
 import { MemoryItem } from "../packages/contracts/src/index.js";
 let db: Awaited<ReturnType<typeof knowledgeDatabase>>, store: MemoryStore;
 beforeAll(async () => {
-  db = await knowledgeDatabase();
+  db = await knowledgeDatabase("kj_memory");
   store = new MemoryStore(db.pool);
 });
 afterAll(async () => {

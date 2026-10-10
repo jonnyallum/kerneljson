@@ -9,7 +9,7 @@ let db: Awaited<ReturnType<typeof knowledgeDatabase>>,
   id: string,
   calls = 0;
 beforeAll(async () => {
-  db = await knowledgeDatabase();
+  db = await knowledgeDatabase("kj_evaluation_db");
   const candidate = uppercaseCandidate("c".repeat(64));
   store = new EvaluationStore(db.pool, uppercaseSuite, {
     ...candidate,

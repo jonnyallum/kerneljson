@@ -16,7 +16,7 @@ async function post(path:string,body:unknown,token='owner',key=randomUUID()){
  return fetch(url+path,{method:'POST',headers:{...headers(token),'idempotency-key':key},body:JSON.stringify(body)});
 }
 beforeAll(async()=>{
- fixture=await knowledgeDatabase();foreign={...fixture.context,tenantId:randomUUID()};reader={...fixture.context,principal:{id:randomUUID(),kind:'HUMAN'}};
+ fixture=await knowledgeDatabase("kj_gateway");foreign={...fixture.context,tenantId:randomUUID()};reader={...fixture.context,principal:{id:randomUUID(),kind:'HUMAN'}};
  await fixture.pool.query("select kernel_private.activate_release($1,'test-release',0,$2)",[randomUUID(),{qualification:'gateway integration'}]);
  await fixture.pool.query("insert into tenants(id,name) values($1,'foreign')",[foreign.tenantId]);
  await fixture.pool.query("insert into tenant_memberships(tenant_id,principal_id,role) values($1,$2,'owner')",[foreign.tenantId,foreign.principal.id]);
