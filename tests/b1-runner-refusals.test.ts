@@ -260,15 +260,24 @@ describe("CON-9 a run network without the exact label",()=>{
     expect(induced).toBe(true);
     const refused=outcome.record!.events.filter(e=>e.outcome==="refused");
     expect(refused[0]).toMatchObject({step:"L3"});
-    expect(String(refused[0]!.details)).toMatch(/container network differs|network membership differs/);
+    // Whichever L3 clause the replacement trips first: on Linux the published port goes with the network.
+    expect(String(refused[0]!.details)).toMatch(/L3: (container network differs|network membership differs|port binding differs)/);
     expect(outcome.summary?.status).toBe("NOT_QUALIFIED");
   },CASE_TIMEOUT);
 });
 describe("CON-4 end to end: a run given a regression suite and refused at L5 never launches the suite",()=>{
   it("stage T is not run, the suite never starts, and the status is NOT_QUALIFIED",async()=>{
     const run=runCase("CON-4 suite run refused at L5","none",[],{suite:"regression-gated"});
-    const induced=await induce(run,c=>spawnSync("docker",["exec",c,"psql","-U","postgres","-v","ON_ERROR_STOP=1","-c",
-      "create role kj_fixture_nonsuper nologin; alter role postgres set role kj_fixture_nonsuper;"]).status===0,900000);
+    // The first readiness line can come from the image's temporary init server; the outside change is retried until it
+    // lands on the real server (or the run ends), as EPH-27 does.
+    const induced=await induce(run,c=>{
+      for(let i=0;i<200;i++){
+        if(spawnSync("docker",["exec",c,"psql","-U","postgres","-v","ON_ERROR_STOP=1","-c",
+          "create role kj_fixture_nonsuper nologin; alter role postgres set role kj_fixture_nonsuper;"]).status===0) return true;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,50);
+      }
+      return false;
+    },900000);
     const outcome=await run;
     expect(induced).toBe(true);
     const refused=outcome.record!.events.filter(e=>e.outcome==="refused").map(e=>e.step);
