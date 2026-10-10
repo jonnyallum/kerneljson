@@ -165,6 +165,7 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
   const passed=(step:Step,application:number,details:unknown)=>{evidence.events.push({step,outcome:"passed",application,details});};
   let cleanupBefore:CleanupMember[]|null=null;
   const stageTInputs:{sequence:number;database:string;run:unknown;artifacts:FrozenArtifacts}[]=[];
+  const databaseOids=new Map<string,string>();
   let stageT:StageTResult|null=null,stageTReason:string=input.suite?"not reached":"no regression suite";
   try{
     const target=byPoint("L2-target")[0];
@@ -181,7 +182,12 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
       const seq=entry.sequence,db=entry.database;
       active="S1";
       const creator=await cluster.connect("postgres");
-      try{await creator.query(`create database ${db} template template0`);}finally{await creator.end();}
+      try{
+        await creator.query(`create database ${db} template template0`);
+        // The R2.7.6 review's obligation: database identity in the post-T read is the OID, so a database dropped and
+        // re-created under the same name during stage T is detected.
+        databaseOids.set(db,(await creator.query<{oid:string}>("select oid::text from pg_catalog.pg_database where datname=$1",[db])).rows[0]!.oid);
+      }finally{await creator.end();}
       const baseExport=join(directory,`${seq}-base-export`),baseFiles=release.exportMigrations(baseExport,true);
       const baseResult=engine.apply(baseExport,await cluster.engineTarget(db));
       if(baseResult.exitStatus!==0) throw Error(`S1: engine failed: ${engineRefusal(baseResult.stdout+baseResult.stderr).message}`);
@@ -329,7 +335,8 @@ export async function runEphemeral(argv:string[],root=process.cwd()):Promise<voi
       const allPassed=plannedApplications.every(p=>["S1","S2","S3","S4","S5","S6","S7"].every(step=>
         evidence.events.some(e=>e.application===p.sequence && e.step===step && e.outcome==="passed")));
       if(allPassed){
-        stageT=await runStageT({cluster,release,root,runId,suite,applications:stageTInputs,collection:collection!.entries,partitionFiles:suite.files});
+        stageT=await runStageT({cluster,release,root,runId,suite,applications:stageTInputs.map(a=>({...a,oid:databaseOids.get(a.database)!})),
+          collection:collection!.entries,partitionFiles:suite.files});
         stageTReason="run";
       } else stageTReason="an application did not pass S1 to S7";
     }

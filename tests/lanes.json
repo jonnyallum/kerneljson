@@ -54,6 +54,7 @@
     "tests/b1-base-guard.test.ts": "base-regression",
     "tests/b1-coverage.test.ts": "base-regression",
     "tests/b1-evidence.test.ts": "base-regression",
+    "tests/b1-gates.test.ts": "base-regression",
     "tests/b1-partition.test.ts": "base-regression",
     "tests/b1-refusal-accounting.test.ts": "base-regression",
     "tests/b1-relation-inventory.integration.test.ts": "base-regression",

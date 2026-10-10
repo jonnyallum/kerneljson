@@ -21,7 +21,7 @@ import type { CollectedEntry } from "./collection.js";
  */
 export interface StageTInput {
   cluster:EphemeralCluster;release:Release;root:string;runId:string;suite:Suite;
-  applications:{sequence:number;database:string;run:unknown;artifacts:FrozenArtifacts}[];
+  applications:{sequence:number;database:string;oid:string;run:unknown;artifacts:FrozenArtifacts}[];
   collection:CollectedEntry[];partitionFiles:string[];
 }
 export interface StageTResult {
@@ -130,9 +130,14 @@ export async function runStageT(input:StageTInput):Promise<StageTResult>{
     if(!composeDown) problems.push(`regression compose project not stopped: ${(down.stderr ?? "").slice(0,300)}`);
   }
   // 4. Post-T reads through the factory (L3 and L5), then the end marker.
-  const reader=await cluster.connect("postgres");let dbNames:string[]=[];
-  try{dbNames=(await reader.query<{datname:string;oid:string}>("select datname,oid::text from pg_catalog.pg_database order by datname collate \"C\"")).rows.map(r=>r.datname);}
+  const reader=await cluster.connect("postgres");let dbNames:string[]=[],dbRows:{datname:string;oid:string}[]=[];
+  try{dbRows=(await reader.query<{datname:string;oid:string}>("select datname,oid::text as oid from pg_catalog.pg_database order by datname collate \"C\"")).rows;}
   finally{await reader.end();}
+  dbNames=dbRows.map(r=>r.datname);
+  for(const a of input.applications){
+    const row=dbRows.find(r=>r.datname===a.database);
+    if(row && row.oid!==a.oid) problems.push(`planned database ${a.database} has another OID after stage T (re-created)`);
+  }
   const wantDbs=[...input.applications.map(a=>a.database),"postgres","template0","template1"].sort();
   if(canonicalJson(dbNames)!==canonicalJson(wantDbs)) problems.push(`post-T database list differs: ${dbNames.join(", ")}`);
   const net=docker(["network","inspect",`kj-eph-${runId}`]);let attached:string[]=[];

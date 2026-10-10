@@ -187,3 +187,70 @@ describe("EPH-27 end to end: an unhooked run refused at L5 by an outside change"
     throw Error(`the outside change did not land before the runner's next connection in three attempts: ${last}`);
   },3*CASE_TIMEOUT);
 });
+
+/** Watch for the run's own container, wait until its server reports ready, then apply an outside change to it. */
+async function induce(run:Promise<unknown>,change:(container:string,runId:string)=>boolean,windowMs:number):Promise<boolean>{
+  const before=new Set(docker(["ps","-aq","--filter","label=kj.b1.ephemeral.run"]));
+  let finished=false;
+  run.then(()=>{finished=true;},()=>{finished=true;});
+  for(const deadline=Date.now()+windowMs;Date.now()<deadline && !finished;){
+    const fresh=docker(["ps","-q","--filter","label=kj.b1.ephemeral.run"]).filter(id=>!before.has(id));
+    if(fresh.length===1){
+      const logs=spawnSync("docker",["logs",fresh[0]!],{encoding:"utf8"});
+      if((logs.stdout+logs.stderr).includes("database system is ready to accept connections")){
+        const runId=spawnSync("docker",["inspect","--format","{{index .Config.Labels \"kj.b1.ephemeral.run\"}}",fresh[0]!],{encoding:"utf8"}).stdout.trim();
+        return change(fresh[0]!,runId);
+      }
+    }
+    await Promise.race([run,new Promise(r=>setTimeout(r,25))]);
+  }
+  return false;
+}
+describe("CON-8 and CON-9: the run network and the cluster's attachment, changed from outside the runner",()=>{
+  it("CON-8 a foreign container attached to the run network before stage T: L3 refuses at the next connection",async()=>{
+    let foreign="";
+    const run=runCase("CON-8 foreign container on the run network","none",[]);
+    const induced=await induce(run,(_c,runId)=>{
+      const r=spawnSync("docker",["run","-d","--network",`kj-eph-${runId}`,"-e","POSTGRES_HOST_AUTH_METHOD=trust",
+        "postgres@sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929"],{encoding:"utf8"});
+      foreign=r.stdout.trim();return r.status===0;
+    },600000);
+    const outcome=await run;
+    if(foreign) spawnSync("docker",["rm","-f",foreign]);
+    const runId=outcome.record?.header.runId;
+    if(runId) spawnSync("docker",["network","rm",`kj-eph-${runId}`]);
+    expect(induced).toBe(true);
+    const refused=outcome.record!.events.filter(e=>e.outcome==="refused");
+    expect(refused[0]).toMatchObject({step:"L3"});
+    expect(String(refused[0]!.details)).toMatch(/network membership differs/);
+    expect(outcome.summary?.status).toBe("NOT_QUALIFIED");
+  },CASE_TIMEOUT);
+  it("CON-9 the cluster attached to a second network: L3 refuses",async()=>{
+    const net=`kj-induced-${Date.now()}`;
+    spawnSync("docker",["network","create",net]);
+    const run=runCase("CON-9 second network on the cluster","none",[]);
+    const induced=await induce(run,c=>spawnSync("docker",["network","connect",net,c]).status===0,600000);
+    const outcome=await run;
+    spawnSync("docker",["network","rm",net]);
+    expect(induced).toBe(true);
+    const refused=outcome.record!.events.filter(e=>e.outcome==="refused");
+    expect(refused[0]).toMatchObject({step:"L3"});
+    expect(String(refused[0]!.details)).toMatch(/container network differs/);
+    expect(outcome.summary?.status).toBe("NOT_QUALIFIED");
+  },CASE_TIMEOUT);
+});
+describe("CON-4 end to end: a run given a regression suite and refused at L5 never launches the suite",()=>{
+  it("stage T is not run, the suite never starts, and the status is NOT_QUALIFIED",async()=>{
+    const run=runCase("CON-4 suite run refused at L5","none",[],{suite:"regression-gated"});
+    const induced=await induce(run,c=>spawnSync("docker",["exec",c,"psql","-U","postgres","-v","ON_ERROR_STOP=1","-c",
+      "create role kj_fixture_nonsuper nologin; alter role postgres set role kj_fixture_nonsuper;"]).status===0,900000);
+    const outcome=await run;
+    expect(induced).toBe(true);
+    const refused=outcome.record!.events.filter(e=>e.outcome==="refused").map(e=>e.step);
+    expect(refused).toEqual(["L5"]);
+    expect(outcome.summary?.status).toBe("NOT_QUALIFIED");
+    expect(outcome.record!.regressionOutcome).toBe("not-run");
+    expect(outcome.record!.stageT).toMatchObject({outcome:"not-run"});
+    expect(outcome.record!.stageT).not.toHaveProperty("workingDirectory");
+  },2*CASE_TIMEOUT);
+});

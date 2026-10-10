@@ -1028,6 +1028,21 @@
     },
     {
       "file": "tests/b1-runner-refusals.test.ts",
+      "name": "CON-4 end to end: a run given a regression suite and refused at L5 never launches the suite stage T is not run, the suite never starts, and the status is NOT_QUALIFIED",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-refusals.test.ts",
+      "name": "CON-8 and CON-9: the run network and the cluster's attachment, changed from outside the runner CON-8 a foreign container attached to the run network before stage T: L3 refuses at the next connection",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-refusals.test.ts",
+      "name": "CON-8 and CON-9: the run network and the cluster's attachment, changed from outside the runner CON-9 the cluster attached to a second network: L3 refuses",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-refusals.test.ts",
       "name": "EPH-27 end to end: an unhooked run refused at L5 by an outside change a non-superuser default role set from outside the runner makes L5 refuse; teardown passes; NOT_QUALIFIED",
       "refusals": []
     },

@@ -10,6 +10,7 @@ import { REGRESSION_SUITES } from "./plans.js";
 import { extractLogRefusals, refusalDifferences, type Refusal } from "./refusal-accounting.js";
 import { readTraces } from "./trace.js";
 import type { CollectedEntry } from "./collection.js";
+import { SEALED_MUTATIONS, mutationVerdictProblems, mutationVerdicts } from "./gates.js";
 
 /**
  * ADR-0023 27.12.15 "CI gate over every registered suite": the commit is refused unless, for every primary and
@@ -96,19 +97,12 @@ const g2=spawnSync(process.execPath,["scripts/check-baseline.mjs",join(root!,"me
 if(g2.status!==0) fail("G2/G3",g2.stderr.slice(0,800));
 results["G2/G3"]=g2.stdout.trim();
 // G7: each mutation suite ran, lists exactly its sealed number of mutations, every one killed.
-const SEALED:Record<string,number>={"faculties":5,"identity":57,"identity-cognition":62};
-for(const [id,count] of Object.entries(SEALED)){
+for(const id of Object.keys(SEALED_MUTATIONS)){
   const out=join(root!,"mutations",`${id}.txt`);
   if(!existsSync(out)){fail("G7",`${id} did not run`);continue;}
   const text=readFileSync(out,"utf8");
-  const verdicts=id==="faculties"?[...text.matchAll(/^(F[0-9]+): detected by ([0-9]+) failed assertions$/gm)].map(m=>[m[1]!,"KILLED"]):
-    [...text.matchAll(/^([A-Z][0-9]+) (KILLED-PRECOMMIT|KILLED|SURVIVED|INCONCLUSIVE|CANNOT APPLY)\b/gm)].map(m=>[m[1]!,m[2]!]);
-  const ids=new Set(verdicts.map(v=>v[0]));
-  if(ids.size!==count || verdicts.length!==count) fail("G7",`${id}: ${ids.size} mutation verdicts, sealed ${count}`);
-  const bad=verdicts.filter(v=>!["KILLED","KILLED-PRECOMMIT"].includes(v[1]!));
-  if(bad.length) fail("G7",`${id}: not killed: ${bad.map(v=>v.join(" ")).join(", ")}`);
-  if(id!=="faculties" && !/ALL MUTATIONS KILLED/.test(text)) fail("G7",`${id}: no ALL MUTATIONS KILLED line`);
-  results[`G7 ${id}`]={verdicts:verdicts.length};
+  for(const p of mutationVerdictProblems(id,text)) fail("G7",p);
+  results[`G7 ${id}`]={verdicts:mutationVerdicts(id,text).length};
 }
 // G8: the B1 evidence files of the probe and definer suites, every row present and passed.
 const evidenceFile=(suite:string,file:string)=>join(root!,"stage-t",suite,"stage-t","artifacts","local",file);
