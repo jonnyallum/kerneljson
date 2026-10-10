@@ -33,11 +33,14 @@ export function useStackDatabase(name: string): void {
   if (!/^kj_[a-z0-9_]+$/.test(name)) throw new Error("STACK_REFUSED: invalid plan database name");
   stackDatabase = name;
 }
-function composeEnvironment(): NodeJS.ProcessEnv {
+function composeEnvironment(args: readonly string[]): NodeJS.ProcessEnv {
   if (STAGE_T) {
-    if (!stackDatabase) throw new Error("STACK_REFUSED: the file has not named its plan database");
-    return { ...process.env, KJ_WORKER_DATABASE_URL: `postgresql://kj_worker@kj-eph-db:5432/${stackDatabase}`,
-      KJ_TEST_OWNER_DATABASE_URL: `postgresql://postgres@kj-eph-db:5432/${stackDatabase}` };
+    // compose interpolates the whole file even for `down`, which connects to nothing: a file may stop the project
+    // before it names its plan database, with the same placeholder the runner uses for its own `down` after stage T.
+    const database = stackDatabase ?? (args[0] === "down" ? "kj_down" : undefined);
+    if (!database) throw new Error("STACK_REFUSED: the file has not named its plan database");
+    return { ...process.env, KJ_WORKER_DATABASE_URL: `postgresql://kj_worker@kj-eph-db:5432/${database}`,
+      KJ_TEST_OWNER_DATABASE_URL: `postgresql://postgres@kj-eph-db:5432/${database}` };
   }
   if (process.env["KJ_RUNTIME_ROLES"] !== "base") return process.env;
   const database = stackDatabase ?? "kerneljson";
@@ -75,7 +78,7 @@ export function compose(...args: string[]): string {
   return execFileSync("docker", dockerArgs, {
     encoding: "utf8",
     timeout: 300000,
-    env: composeEnvironment(),
+    env: composeEnvironment(args),
   });
 }
 export async function until<T>(
