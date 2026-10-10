@@ -17,7 +17,7 @@ export async function catalogueFacts(client:pg.Client):Promise<CatalogueFacts>{
     pg_catalog.to_regprocedure('public.rls_auto_enable()') is not null as "helperPresent",
     (select p.proacl::pg_catalog.text[] from pg_catalog.pg_proc p where p.oid=pg_catalog.to_regprocedure('public.rls_auto_enable()')) as "helperAcl",
     coalesce((select pg_catalog.array_agg(rolname::pg_catalog.text order by rolname collate "C") from pg_catalog.pg_roles where rolname in ('kj_worker','kj_door')),'{}') as roles,
-    coalesce((select pg_catalog.array_agg(e.evtname||':'||e.evtenabled||':'||e.evtfoid::pg_catalog.regprocedure::pg_catalog.text||':'||coalesce(e.evttags::pg_catalog.text,'')
+    coalesce((select pg_catalog.array_agg(e.evtname||':'||e.evtenabled::pg_catalog.text||':'||e.evtfoid::pg_catalog.regprocedure::pg_catalog.text||':'||coalesce(e.evttags::pg_catalog.text,'')
       order by e.evtname collate "C") from pg_catalog.pg_event_trigger e),'{}') as "eventTriggers",
     coalesce((select pg_catalog.array_agg(p.oid::pg_catalog.regprocedure::pg_catalog.text order by p.oid::pg_catalog.regprocedure::pg_catalog.text collate "C")
       from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace
