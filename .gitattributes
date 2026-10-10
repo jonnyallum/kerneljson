@@ -4,6 +4,7 @@ infrastructure/database/co-resident-platform-exceptions.json text eol=lf
 infrastructure/database/security-definer-platform-baseline.json text eol=lf
 infrastructure/database/b1-fixture-platform-definers.sql text eol=lf
 infrastructure/database/b1-runner-hooks.json text eol=lf
+tests/b1-required.json text eol=lf
 infrastructure/database/b1-ledger-contract.json text eol=lf
 infrastructure/database/b1-engine-pins.json text eol=lf
 infrastructure/database/b1-fixtures/** text eol=lf
