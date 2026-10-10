@@ -161,7 +161,9 @@ export async function runStageT(input:StageTInput):Promise<StageTResult>{
   let traceRefusals:Refusal[]=[],traceHashes:Record<string,string>={};
   try{
     const traces=readTraces(traceDir,token,suite.roles);
-    traceRefusals=traces.refusals;traceHashes=traces.hashes;
+    // The harness records Vitest's current test name ("describe > test"); identity is the expanded report name, whose
+    // parts are joined by one space (27.12.15 "Identity is the expanded report entry").
+    traceRefusals=traces.refusals.map(r=>({...r,test:r.test.split(" > ").join(" ")}));traceHashes=traces.hashes;
     if(suite.harness==="enforce" && traces.events.some(e=>e.kind==="refused" && e.classification==="production")) problems.push("a production statement was refused");
   }catch(error){problems.push(error instanceof Error?error.message:String(error));}
   // 7. Expected refusal multiset: empty, or the declared refusals of the probe tests the suite runs.
