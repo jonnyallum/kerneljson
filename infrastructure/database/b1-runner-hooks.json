@@ -5228,8 +5228,7 @@
       "refusalPolicy": "none",
       "timeoutSeconds": 1200,
       "roles": [
-        "kj_worker",
-        "kj_door"
+        "kj_worker"
       ]
     },
     {
@@ -5257,8 +5256,7 @@
       "refusalPolicy": "none",
       "timeoutSeconds": 1200,
       "roles": [
-        "kj_worker",
-        "kj_door"
+        "kj_worker"
       ]
     },
     {
