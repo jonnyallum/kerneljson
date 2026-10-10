@@ -15,10 +15,10 @@ export async function ledgerShape(client:Client):Promise<void>{
     where a.attrelid='supabase_migrations.schema_migrations'::pg_catalog.regclass and a.attnum>0 and not a.attisdropped order by a.attnum`)).rows;
   if(JSON.stringify(columns)!==JSON.stringify([{name:"version",type:"text",notNull:true},
     {name:"statements",type:"_text",notNull:false},{name:"name",type:"text",notNull:false}])) throw Error("LEDGER_GATE_REFUSED: column contract differs");
-  const keys=(await client.query(`select array(select a.attname from unnest(c.conkey) with ordinality k(attnum,i)
+  const keys=(await client.query(`select array(select a.attname::text from unnest(c.conkey) with ordinality k(attnum,i)
     join pg_catalog.pg_attribute a on a.attrelid=c.conrelid and a.attnum=k.attnum order by k.i) as columns
     from pg_catalog.pg_constraint c where c.conrelid='supabase_migrations.schema_migrations'::pg_catalog.regclass and c.contype='p'`)).rows;
-  if(JSON.stringify(keys)!==JSON.stringify([{columns:["version"]}])) throw Error("LEDGER_GATE_REFUSED: primary key contract differs");
+  if(JSON.stringify(keys)!==JSON.stringify([{columns:["version"]}])) throw Error(`LEDGER_GATE_REFUSED: primary key contract differs: ${JSON.stringify(keys)}`);
 }
 async function readVersions(client:Client):Promise<string[]>{
   return (await client.query<{version:string}>("select version from supabase_migrations.schema_migrations order by version collate \"C\" ")).rows.map(r=>r.version);
