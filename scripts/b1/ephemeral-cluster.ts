@@ -181,12 +181,16 @@ export class EphemeralCluster {
   teardown():void{
     const removed:{kind:string;id:string}[]=[];
     const genuine=this.genuineContainerId;
+    // 27.12.15 CON-10: a cluster removed by anyone but L6 makes L6 fail. `docker rm -f` succeeds on a missing container,
+    // so presence is read first; the network and fixtures are still removed, and L6 then refuses.
+    let vanished=false;
     try{
       if(genuine){
+        vanished=spawnSync("docker",["inspect",genuine],{encoding:"utf8",timeout:10000,windowsHide:true}).status!==0;
         this.docker(["rm","-f",genuine]);
         const result=spawnSync("docker",["inspect",genuine],{encoding:"utf8",timeout:10000,windowsHide:true});
         if(result.status===0 || !/No such (object|container)/i.test(result.stderr)) throw Error("container removal unverified");
-        removed.push({kind:"container",id:genuine});
+        if(!vanished) removed.push({kind:"container",id:genuine});
       }
       if(this.networkId){
         this.docker(["network","rm",this.networkId]);
@@ -200,6 +204,7 @@ export class EphemeralCluster {
         if(r.status===0) throw Error("fixture removal unverified");
         f.removed=true;removed.push({kind:`fixture-${kind}`,id:f.id});
       }
+      if(vanished) throw Error("the run's container was gone before L6 removed it");
       this.record({step:"L6",outcome:"passed",details:removed});
     }catch(error){this.record({step:"L6",outcome:"refused",details:{removed,error:String(error)}});throw error;}
   }
