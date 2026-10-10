@@ -10,7 +10,7 @@ import { MANIFEST_PATH, type RuntimeRoleManifest } from "../../services/kernel/s
 import { strictJson } from "../../services/kernel/src/database/strict-json.js";
 import { B1_FILE, Release } from "./release.js";
 import { prepareEngine, startupUrl } from "./engine.js";
-import { postLedgerGate, preLedgerGate } from "./ledger.js";
+import { postLedgerGate, preLedgerGate, type CleanupMember } from "./ledger.js";
 
 // No wildcard passfile matches or ambient connection defaults. TLS trust is explicit.
 const field=z.string().min(1).refine(s=>Array.from(s).every(c=>c.charCodeAt(0)>=32 && c.charCodeAt(0)!==127 && c!=="*"));
@@ -67,7 +67,9 @@ export async function runHosted(argv:string[],root=process.cwd()):Promise<void>{
   let passfileCreated=false;
   try{
     const pre=await connect();
-    try{record.before=await preLedgerGate(pre,authority.manifest,authority.baseline,authority.declaration);}finally{await pre.end();}
+    let cleanup:CleanupMember[]|null=null;
+    try{const before=await preLedgerGate(pre,authority.manifest,authority.baseline,authority.declaration);cleanup=before.cleanup;
+      record.before={versions:before.versions,inventory:before.inventory};}finally{await pre.end();}
     // Recheck release cleanliness and immutable authority immediately before engine invocation.
     const current=hostedAuthority(new Release(root,input.R));
     if(JSON.stringify(current.blobs)!==JSON.stringify(authority.blobs)) throw Error("HOSTED_REFUSED: authority blobs changed");
@@ -86,7 +88,7 @@ export async function runHosted(argv:string[],root=process.cwd()):Promise<void>{
     if(JSON.stringify(afterAuthority.blobs)!==JSON.stringify(authority.blobs)) throw Error("HOSTED_REFUSED: post-application authority changed");
     const post=await connect();
     try{record.after=await postLedgerGate(post,authority.manifest,release.json(MANIFEST_PATH) as RuntimeRoleManifest,
-      afterAuthority.baseline,afterAuthority.declaration,authority.contract.statementsSha256);}finally{await post.end();}
+      afterAuthority.baseline,afterAuthority.declaration,authority.contract.statementsSha256,cleanup);}finally{await post.end();}
     record.status="HOSTED_APPLICATION_CHECKS_PASSED";
   }catch{record.failure="Hosted application or qualification refused";process.exitCode=1;}
   finally{

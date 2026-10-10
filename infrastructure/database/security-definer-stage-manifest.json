@@ -116,7 +116,7 @@
       "migrations": [
         {
           "file": "20261002090000_runtime_least_privilege_roles.sql",
-          "sha256": "20d989e497fd3cf02a75ef7824e217705a47eb6e45b03fa21c275a44b5827d49"
+          "sha256": "a98a8aaf0ede6176ef603ced8dfb772395d1df29734887a9815eac496dce9922"
         }
       ],
       "adds": [

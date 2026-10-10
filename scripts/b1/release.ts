@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hash } from "../../services/kernel/src/database/co-resident.js";
 import { strictJson } from "../../services/kernel/src/database/strict-json.js";
@@ -64,5 +64,17 @@ export class Release {
     }
     if(hash(readFileSync(join(directory,"supabase","config.toml")))!==config.sha256) throw Error("RELEASE_REFUSED: exported config differs");
     return exported;
+  }
+  /**
+   * Immediately before the engine runs: the export directory holds exactly the exported files with their blob bytes.
+   * `replaced` names the one file a registered S6-apply variant hook substituted, which is recorded instead.
+   */
+  verifyExport(directory:string,exported:readonly {file:string;sha256:string}[],replaced?:string):void{
+    const names=readdirSync(join(directory,"supabase","migrations")).sort();
+    if(JSON.stringify(names)!==JSON.stringify(exported.map(f=>f.file).sort())) throw Error("RELEASE_REFUSED: exported bytes differ: file set changed");
+    for(const f of exported){
+      if(f.file===replaced) continue;
+      if(hash(readFileSync(join(directory,"supabase","migrations",f.file)))!==f.sha256) throw Error(`RELEASE_REFUSED: exported bytes differ: ${f.file}`);
+    }
   }
 }

@@ -1,7 +1,7 @@
 import type pg from "pg";
 import { expectedLedgerVersions, expectedLedgerHead, ledgerSetProblems } from "./ledger-contract.js";
 export { expectedLedgerVersions, expectedLedgerHead, ledgerSetProblems } from "./ledger-contract.js";
-import { CO_RESIDENT_SQL, hash, pinText, readCoResident, setDigest, parseDeclaration, type Declaration } from "./co-resident.js";
+import { CO_RESIDENT_SQL, coResidentProblems, hash, pinText, readCoResidentObserved, setDigest, parseDeclaration, type Declaration } from "./co-resident.js";
 import {
   B1_MIGRATION_VERSION, INVENTORY_SQL, INVENTORY_SQL_SHA256, SEALED_DESIGN, baselineEligibilityProblems, baselineEntry, canonicalJson, sha256,
   sortEntries, type DefinerEntry, type PlatformBaseline, type StageManifest,
@@ -57,7 +57,10 @@ export async function snapshotArtifacts(client: pg.Client | pg.PoolClient, envir
     const set = ledgerSetProblems(versions, expectedLedgerVersions(manifest));
     if (set) throw new Error(`PLATFORM_BASELINE_REFUSED: ${set}`);
     if (stampRow.length !== 1) throw new Error("PLATFORM_BASELINE_REFUSED: kernel_private.stamp_binding_provenance() does not exist");
-    const coResident=await readCoResident(client);
+    // 27.12.6: an entry is written only for an object equal to a sealed pin; anything else in the two KernelJSON schemas
+    // that is a definer, returns event_trigger or carries an event trigger, or the pinned name anywhere, refuses.
+    const coResident=await readCoResidentObserved(client),notAdmitted=coResidentProblems(coResident);
+    if (notAdmitted.length) throw new Error(`PLATFORM_BASELINE_REFUSED: co-resident surface not admitted: ${notAdmitted.join("; ")}`);
     const entries = sortEntries((await client.query<DefinerEntry>(INVENTORY_SQL)).rows)
       .filter(e=>!(e.schema==="public" && e.name==="rls_auto_enable" && e.args.length===0)).map(baselineEntry);
     const ineligible = baselineEligibilityProblems(entries, manifest);

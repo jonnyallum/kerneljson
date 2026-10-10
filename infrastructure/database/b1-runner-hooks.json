@@ -21,68 +21,5075 @@
     {
       "id": "ledger-absent",
       "point": "S2",
-      "effect": "ledger-absent",
-      "negativeFixture": true,
-      "expected": {
-        "stage": "S3",
-        "message": "PLATFORM_BASELINE_REFUSED: the migration ledger supabase_migrations.schema_migrations does not exist",
-        "b1EngineInvoked": false
-      }
+      "effect": "the owner drops supabase_migrations.schema_migrations before the snapshot",
+      "callers": [
+        "tests/b1-runner-ledger.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S3",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": "PLATFORM_BASELINE_REFUSED: the migration ledger supabase_migrations.schema_migrations does not exist",
+            "pattern": null
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select pg_catalog.to_regclass('supabase_migrations.schema_migrations') is null as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "CON-45",
+        "27.11.6 item 3"
+      ]
     },
     {
       "id": "ledger-wrong-head",
       "point": "S2",
-      "effect": "ledger-wrong-head",
-      "negativeFixture": true,
-      "expected": {
-        "stage": "S3",
-        "message": "PLATFORM_BASELINE_REFUSED: the migration ledger head is 20260925120000, not 20260929120000, the final base migration before B1",
-        "b1EngineInvoked": false
-      }
+      "effect": "the owner deletes the newest base ledger row before the snapshot",
+      "callers": [
+        "tests/b1-runner-ledger.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S3",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": "PLATFORM_BASELINE_REFUSED: the migration ledger head is 20260925120000, not 20260929120000, the final base migration before B1",
+            "pattern": null
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select pg_catalog.array_agg(version order by version collate \"C\")::text\n  from supabase_migrations.schema_migrations),'') = '{20260905153656,20260905153700,20260905153704,20260905153708,20260905173500,20260905173800,20260905174200,20260908233816,20260908234518,20260908234711,20260908234849,20260910180000,20260915220000,20260916205049,20260917120000,20260920120000,20260920150000,20260920180000,20260921180000,20260923150000,20260925120000}' as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "CON-45",
+        "EPH-13 newest",
+        "27.11.6 item 3"
+      ]
     },
     {
       "id": "ledger-gap",
       "point": "S2",
-      "effect": "ledger-gap",
-      "negativeFixture": true,
-      "expected": {
-        "stage": "S3",
-        "message": "PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; missing 20260908234849, 20260910180000, 20260915220000",
-        "b1EngineInvoked": false
-      }
+      "effect": "the owner deletes the 11th to 13th base ledger rows before the snapshot",
+      "callers": [
+        "tests/b1-runner-ledger.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S3",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": "PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; missing 20260908234849, 20260910180000, 20260915220000",
+            "pattern": null
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select pg_catalog.array_agg(version order by version collate \"C\")::text\n  from supabase_migrations.schema_migrations),'') = '{20260905153656,20260905153700,20260905153704,20260905153708,20260905173500,20260905173800,20260905174200,20260908233816,20260908234518,20260908234711,20260916205049,20260917120000,20260920120000,20260920150000,20260920180000,20260921180000,20260923150000,20260925120000,20260929120000}' as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "CON-45"
+      ]
     },
     {
       "id": "ledger-extra",
       "point": "S2",
-      "effect": "ledger-extra",
-      "negativeFixture": true,
-      "expected": {
-        "stage": "S3",
-        "message": "PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; unexpected 20250101000000",
-        "b1EngineInvoked": false
-      }
+      "effect": "the owner inserts ledger version 20250101000000 before the snapshot",
+      "callers": [
+        "tests/b1-runner-ledger.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S3",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": "PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; unexpected 20250101000000",
+            "pattern": null
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select pg_catalog.array_agg(version order by version collate \"C\")::text\n  from supabase_migrations.schema_migrations),'') = '{20250101000000,20260905153656,20260905153700,20260905153704,20260905153708,20260905173500,20260905173800,20260905174200,20260908233816,20260908234518,20260908234711,20260908234849,20260910180000,20260915220000,20260916205049,20260917120000,20260920120000,20260920150000,20260920180000,20260921180000,20260923150000,20260925120000,20260929120000}' as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "CON-45"
+      ]
     },
     {
       "id": "ledger-b1-recorded",
       "point": "S2",
-      "effect": "ledger-b1-recorded",
-      "negativeFixture": true,
-      "expected": {
-        "stage": "S3",
-        "message": "PLATFORM_BASELINE_REFUSED: B1 is already applied to this database; a baseline must be taken before B1",
-        "b1EngineInvoked": false
-      }
+      "effect": "the owner inserts ledger version 20261002090000 before the snapshot",
+      "callers": [
+        "tests/b1-runner-ledger.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S3",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": "PLATFORM_BASELINE_REFUSED: B1 is already applied to this database; a baseline must be taken before B1",
+            "pattern": null
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select pg_catalog.array_agg(version order by version collate \"C\")::text\n  from supabase_migrations.schema_migrations),'') = '{20260905153656,20260905153700,20260905153704,20260905153708,20260905173500,20260905173800,20260905174200,20260908233816,20260908234518,20260908234711,20260908234849,20260910180000,20260915220000,20260916205049,20260917120000,20260920120000,20260920150000,20260920180000,20260921180000,20260923150000,20260925120000,20260929120000,20261002090000}' as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "CON-45"
+      ]
     },
     {
       "id": "stamp-missing",
       "point": "S2",
-      "effect": "stamp-missing",
-      "negativeFixture": true,
-      "expected": {
-        "stage": "S3",
-        "message": "PLATFORM_BASELINE_REFUSED: kernel_private.stamp_binding_provenance() does not exist",
-        "b1EngineInvoked": false
-      }
+      "effect": "the owner renames kernel_private.stamp_binding_provenance() before the snapshot",
+      "callers": [
+        "tests/b1-runner-ledger.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S3",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": "PLATFORM_BASELINE_REFUSED: kernel_private.stamp_binding_provenance() does not exist",
+            "pattern": null
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select pg_catalog.to_regprocedure('kernel_private.stamp_binding_provenance()') is null and pg_catalog.to_regprocedure('kernel_private.fixture_hidden_stamp()') is not null as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "CON-45"
+      ]
+    },
+    {
+      "id": "ledger-oldest-missing",
+      "point": "S2",
+      "effect": "the owner deletes the oldest base ledger row before the snapshot",
+      "callers": [
+        "tests/b1-runner-ledger.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S3",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": "PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; missing 20260905153656",
+            "pattern": null
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select pg_catalog.array_agg(version order by version collate \"C\")::text\n  from supabase_migrations.schema_migrations),'') = '{20260905153700,20260905153704,20260905153708,20260905173500,20260905173800,20260905174200,20260908233816,20260908234518,20260908234711,20260908234849,20260910180000,20260915220000,20260916205049,20260917120000,20260920120000,20260920150000,20260920180000,20260921180000,20260923150000,20260925120000,20260929120000}' as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "EPH-13 oldest"
+      ]
+    },
+    {
+      "id": "ledger-middle-missing",
+      "point": "S2",
+      "effect": "the owner deletes the 11th base ledger row before the snapshot",
+      "callers": [
+        "tests/b1-runner-ledger.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S3",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": "PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; missing 20260908234849",
+            "pattern": null
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select pg_catalog.array_agg(version order by version collate \"C\")::text\n  from supabase_migrations.schema_migrations),'') = '{20260905153656,20260905153700,20260905153704,20260905153708,20260905173500,20260905173800,20260905174200,20260908233816,20260908234518,20260908234711,20260910180000,20260915220000,20260916205049,20260917120000,20260920120000,20260920150000,20260920180000,20260921180000,20260923150000,20260925120000,20260929120000}' as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "EPH-13 middle"
+      ]
+    },
+    {
+      "id": "helper-crlf",
+      "point": "S2",
+      "effect": "the owner replaces the pinned helper body by the same text with every LF as CRLF before the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "L6",
+            "outcome": "completed"
+          },
+          "refusal": null,
+          "b1EngineInvoked": true,
+          "post": [
+            "s7-passed",
+            "declaration-crlf-forensic"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select (select pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.replace(p.prosrc,E'\\r\\n',E'\\n'),'UTF8')),'hex')\n  from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)='2782e98b348aca7d6f6f73c420fd78d2e094957dd7a52b0483d4c34f29d2a7a1'\n    and (select pg_catalog.position(E'\\r' in p.prosrc)>0 from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)\n    and (select p.proacl is null from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure) as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "18"
+      ]
+    },
+    {
+      "id": "helper-copy-extensions",
+      "point": "S2",
+      "effect": "the owner creates a definer copy extensions.rls_auto_enable() before the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S3",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^PLATFORM_BASELINE_REFUSED: co-resident surface not admitted: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select pg_catalog.to_regprocedure('extensions.rls_auto_enable()') is not null as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "14 before snapshot",
+        "27.12.8 item 4"
+      ]
+    },
+    {
+      "id": "unpinned-event-trigger-before",
+      "point": "S2",
+      "effect": "the owner creates an invoker event-trigger function public.kj_fixture_et() before the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S3",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^PLATFORM_BASELINE_REFUSED: co-resident surface not admitted: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select pg_catalog.to_regprocedure('public.kj_fixture_et()') is not null as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "ACL-C before snapshot",
+        "27.12.8 item 4"
+      ]
+    },
+    {
+      "id": "stamp-foreign-grants",
+      "point": "S2",
+      "effect": "the owner grants EXECUTE on the stamp function to anon and authenticated before the snapshot",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "L6",
+            "outcome": "completed"
+          },
+          "refusal": null,
+          "b1EngineInvoked": true,
+          "post": [
+            "s7-passed"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select pg_catalog.array_agg(a::pg_catalog.text order by a::pg_catalog.text collate \"C\") as acl\n    from pg_catalog.pg_proc p, pg_catalog.unnest(p.proacl) a where p.oid='kernel_private.stamp_binding_provenance()'::pg_catalog.regprocedure",
+        "expected": [
+          {
+            "acl": [
+              "anon=X/postgres",
+              "authenticated=X/postgres",
+              "postgres=X/postgres"
+            ]
+          }
+        ]
+      },
+      "cases": [
+        "27.9.4 ACL (frozen _acl hook)",
+        "CON-43 positive"
+      ]
+    },
+    {
+      "id": "stamp-and-head",
+      "point": "S2",
+      "effect": "the owner renames the stamp function and deletes the newest base ledger row before the snapshot",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S3",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": "PLATFORM_BASELINE_REFUSED: kernel_private.stamp_binding_provenance() does not exist",
+            "pattern": null
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select pg_catalog.to_regprocedure('kernel_private.stamp_binding_provenance()') is null as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "CON-44"
+      ]
+    },
+    {
+      "id": "drift-helper-body-byte",
+      "point": "S5",
+      "effect": "the owner changes one byte of the pinned helper body after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (a) E1: co-resident function differs from sealed pin; P2 (b) E2: event-trigger binding differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce(((select pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.replace(p.prosrc,E'\\r\\n',E'\\n'),'UTF8')),'hex')\n  from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)='1043b6dc78bc4a5b5db466aad7db64d9989c4ff1b13d524336d82a4f017951d5'),false) as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "2",
+        "EPH-8 helper body"
+      ]
+    },
+    {
+      "id": "drift-helper-body-upstream",
+      "point": "S5",
+      "effect": "the owner replaces the helper body by the upstream 536fbd5 text after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (a) E1: co-resident function differs from sealed pin; P2 (b) E2: event-trigger binding differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce(((select pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.replace(p.prosrc,E'\\r\\n',E'\\n'),'UTF8')),'hex')\n  from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)='325ae266d9b166715ef5230ceaf7ff9d523e483cf5610dfb9779ab3f183f4af9'),false) as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "2 upstream"
+      ]
+    },
+    {
+      "id": "drift-helper-owner",
+      "point": "S5",
+      "effect": "the owner changes the helper's owner to kj_fixture_owner after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (a) E1: co-resident function differs from sealed pin; P2 (b) E2: event-trigger binding differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select pg_catalog.pg_get_userbyid(((select p from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)).proowner)='kj_fixture_owner' as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "3"
+      ]
+    },
+    {
+      "id": "drift-helper-invoker",
+      "point": "S5",
+      "effect": "the owner makes the helper SECURITY INVOKER after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (a) E1: co-resident function differs from sealed pin; P2 (b) E2: event-trigger binding differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select not ((select p from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)).prosecdef as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "4"
+      ]
+    },
+    {
+      "id": "drift-helper-config-reset",
+      "point": "S5",
+      "effect": "the owner resets the helper's search_path after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (a) E1: co-resident function differs from sealed pin; P2 (b) E2: event-trigger binding differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select ((select p from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)).proconfig is null as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "5 reset"
+      ]
+    },
+    {
+      "id": "drift-helper-config-public",
+      "point": "S5",
+      "effect": "the owner sets the helper's search_path to public, pg_catalog after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (a) E1: co-resident function differs from sealed pin; P2 (b) E2: event-trigger binding differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select ((select p from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)).proconfig::pg_catalog.text='{\"search_path=public, pg_catalog\"}' as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "5 public"
+      ]
+    },
+    {
+      "id": "drift-helper-acl-revoke-public",
+      "point": "S5",
+      "effect": "the owner revokes EXECUTE on the helper from PUBLIC after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (a) E1: co-resident function differs from sealed pin; P2 (b) E2: event-trigger binding differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select ((select p from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)).proacl::pg_catalog.text[] = array['postgres=X/postgres'] as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "6 revoke"
+      ]
+    },
+    {
+      "id": "drift-helper-acl-grant-worker",
+      "point": "S5",
+      "effect": "the owner creates role kj_worker and grants it EXECUTE on the helper after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (a) E1: co-resident function differs from sealed pin; P2 (b) E2: event-trigger binding differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select (select pg_catalog.array_agg(a order by a collate \"C\") from pg_catalog.unnest(((select p from pg_catalog.pg_proc p where p.oid='public.rls_auto_enable()'::pg_catalog.regprocedure)).proacl::pg_catalog.text[]) a)\n    = array['=X/postgres','kj_worker=X/postgres','postgres=X/postgres'] as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "6 grant"
+      ]
+    },
+    {
+      "id": "drift-ensure-rls-dropped",
+      "point": "S5",
+      "effect": "the owner drops event trigger ensure_rls after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (c) E3: sealed topology of the pinned function is incomplete or extended",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select not exists(select 1 from pg_catalog.pg_event_trigger where evtname='ensure_rls') as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "7",
+        "EPH-8 ensure_rls dropped"
+      ]
+    },
+    {
+      "id": "drift-ensure-rls-disabled",
+      "point": "S5",
+      "effect": "the owner sets ensure_rls to disabled after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (b) E2: event-trigger binding differs; P2 (c) E3: sealed topology of the pinned function is incomplete or extended",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select e.evtenabled='D' from pg_catalog.pg_event_trigger e where e.evtname='ensure_rls'),false) as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "8 disabled"
+      ]
+    },
+    {
+      "id": "drift-ensure-rls-replica",
+      "point": "S5",
+      "effect": "the owner sets ensure_rls to replica after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (b) E2: event-trigger binding differs; P2 (c) E3: sealed topology of the pinned function is incomplete or extended",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select e.evtenabled='R' from pg_catalog.pg_event_trigger e where e.evtname='ensure_rls'),false) as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "8 replica"
+      ]
+    },
+    {
+      "id": "drift-ensure-rls-always",
+      "point": "S5",
+      "effect": "the owner sets ensure_rls to always after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (b) E2: event-trigger binding differs; P2 (c) E3: sealed topology of the pinned function is incomplete or extended",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select e.evtenabled='A' from pg_catalog.pg_event_trigger e where e.evtname='ensure_rls'),false) as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "8 always"
+      ]
+    },
+    {
+      "id": "drift-tags-create-table-only",
+      "point": "S5",
+      "effect": "the owner re-creates ensure_rls with the tag CREATE TABLE only after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (b) E2: event-trigger binding differs; P2 (c) E3: sealed topology of the pinned function is incomplete or extended",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select e.evttags::pg_catalog.text='{\"CREATE TABLE\"}' from pg_catalog.pg_event_trigger e where e.evtname='ensure_rls'),false) as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "9 one tag"
+      ]
+    },
+    {
+      "id": "drift-tags-alter-table-added",
+      "point": "S5",
+      "effect": "the owner re-creates ensure_rls with ALTER TABLE added to its tags after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (b) E2: event-trigger binding differs; P2 (c) E3: sealed topology of the pinned function is incomplete or extended",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select pg_catalog.cardinality(e.evttags)=4 from pg_catalog.pg_event_trigger e where e.evtname='ensure_rls'),false) as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "9 extra tag"
+      ]
+    },
+    {
+      "id": "drift-ensure-rls-rebound-public",
+      "point": "S5",
+      "effect": "the owner re-binds ensure_rls to a new invoker event-trigger function in public after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (a) E1: co-resident function differs from sealed pin; P2 (b) E2: event-trigger binding differs; P2 (c) E3: sealed topology of the pinned function is incomplete or extended",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select e.evtfoid='public.kj_fixture_et()'::pg_catalog.regprocedure from pg_catalog.pg_event_trigger e where e.evtname='ensure_rls'),false) as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "10 public"
+      ]
+    },
+    {
+      "id": "drift-ensure-rls-rebound-extensions",
+      "point": "S5",
+      "effect": "the owner re-binds ensure_rls to a new event-trigger function in schema extensions after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (c) E3: sealed topology of the pinned function is incomplete or extended",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select e.evtfoid='extensions.kj_fixture_et()'::pg_catalog.regprocedure from pg_catalog.pg_event_trigger e where e.evtname='ensure_rls'),false) as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "10 other schema"
+      ]
+    },
+    {
+      "id": "drift-second-event-trigger",
+      "point": "S5",
+      "effect": "the owner adds a second event trigger kj_fixture_second on the helper after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (b) E2: event-trigger binding differs; P2 (c) E3: sealed topology of the pinned function is incomplete or extended",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select (select pg_catalog.count(*) from pg_catalog.pg_event_trigger where evtfoid='public.rls_auto_enable()'::pg_catalog.regprocedure)=2 as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "11"
+      ]
+    },
+    {
+      "id": "drift-definer-copy-public",
+      "point": "S5",
+      "effect": "the owner creates an exact definer copy public.rls_auto_enable_copy() after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P1: KernelJSON definer identity set differs; P2 (a) E1: co-resident function differs from sealed pin",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select pg_catalog.to_regprocedure('public.rls_auto_enable_copy()') is not null as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "12 definer copy",
+        "ACL-C definer copy"
+      ]
+    },
+    {
+      "id": "drift-invoker-event-trigger-public",
+      "point": "S5",
+      "effect": "the owner creates an invoker event-trigger function public.kj_fixture_et() after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (a) E1: co-resident function differs from sealed pin",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select pg_catalog.to_regprocedure('public.kj_fixture_et()') is not null as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "12 invoker",
+        "ACL-C invoker"
+      ]
+    },
+    {
+      "id": "drift-overload-text",
+      "point": "S5",
+      "effect": "the owner creates an overload public.rls_auto_enable(text) after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (d): co-resident name uniqueness differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select pg_catalog.to_regprocedure('public.rls_auto_enable(text)') is not null as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "13"
+      ]
+    },
+    {
+      "id": "drift-copy-extensions",
+      "point": "S5",
+      "effect": "the owner creates a definer copy extensions.rls_auto_enable() after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (d): co-resident name uniqueness differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select pg_catalog.to_regprocedure('extensions.rls_auto_enable()') is not null as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "14 after snapshot"
+      ]
+    },
+    {
+      "id": "drift-set-schema-extensions",
+      "point": "S5",
+      "effect": "the owner moves the helper to schema extensions after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (d): co-resident name uniqueness differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select pg_catalog.to_regprocedure('public.rls_auto_enable()') is null and pg_catalog.to_regprocedure('extensions.rls_auto_enable()') is not null as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "14 set schema"
+      ]
+    },
+    {
+      "id": "drift-extra-definer-kernel-private",
+      "point": "S5",
+      "effect": "the owner creates a definer kernel_private.kj_fixture_definer() after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: definer inventory: extra kernel_private\\.kj_fixture_definer\\(\\)"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P1: KernelJSON definer identity set differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select (select prosecdef from pg_catalog.pg_proc where oid=pg_catalog.to_regprocedure('kernel_private.kj_fixture_definer()')) as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "15 kernel_private"
+      ]
+    },
+    {
+      "id": "drift-extra-definer-public",
+      "point": "S5",
+      "effect": "the owner creates a definer public.kj_fixture_definer() after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: co-resident surface: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P1: KernelJSON definer identity set differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select (select prosecdef from pg_catalog.pg_proc where oid=pg_catalog.to_regprocedure('public.kj_fixture_definer()')) as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "15 public",
+        "EPH-8 extra definer in public"
+      ]
+    },
+    {
+      "id": "drift-extra-definer-extensions",
+      "point": "S5",
+      "effect": "the owner creates a definer extensions.kj_fixture_definer() after the snapshot",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: definer inventory: extra extensions\\.kj_fixture_definer\\(\\)"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S7",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^POST_LEDGER_REFUSED: inventory: unlisted SECURITY DEFINER function extensions\\.kj_fixture_definer\\(\\)"
+          },
+          "b1EngineInvoked": true,
+          "post": []
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select (select prosecdef from pg_catalog.pg_proc where oid=pg_catalog.to_regprocedure('extensions.kj_fixture_definer()')) as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "EPH-8 extra definer in extensions"
+      ]
+    },
+    {
+      "id": "ledger-b1-row-after-snapshot",
+      "point": "S5",
+      "effect": "the owner records ledger version 20261002090000 after the snapshot",
+      "callers": [
+        "tests/b1-runner-ledger.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: ledger set: the migration ledger does not record exactly the 22 base migrations before B1; unexpected 20261002090000$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select pg_catalog.array_agg(version order by version collate \"C\")::text\n  from supabase_migrations.schema_migrations),'') = '{20260905153656,20260905153700,20260905153704,20260905153708,20260905173500,20260905173800,20260905174200,20260908233816,20260908234518,20260908234711,20260908234849,20260910180000,20260915220000,20260916205049,20260917120000,20260920120000,20260920150000,20260920180000,20260921180000,20260923150000,20260925120000,20260929120000,20261002090000}' as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "LEDGER-C"
+      ]
+    },
+    {
+      "id": "ledger-commit-failure",
+      "point": "S5",
+      "effect": "the owner adds a deferred constraint trigger on the ledger that raises at COMMIT for version 20261002090000",
+      "callers": [
+        "tests/b1-runner-ledger.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "P0001",
+            "message": "LEDGER-D fixture: commit-time failure",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select exists(select 1 from pg_catalog.pg_trigger where tgname='kj_fixture_commit_failure' and tgdeferrable and tginitdeferred) as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "LEDGER-D"
+      ]
+    },
+    {
+      "id": "ledger-oldest-missing-after-snapshot",
+      "point": "S5",
+      "effect": "the owner deletes the oldest base ledger row after the snapshot",
+      "callers": [
+        "tests/b1-runner-ledger.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: ledger set: the migration ledger does not record exactly the 22 base migrations before B1; missing 20260905153656$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select pg_catalog.array_agg(version order by version collate \"C\")::text\n  from supabase_migrations.schema_migrations),'') = '{20260905153700,20260905153704,20260905153708,20260905173500,20260905173800,20260905174200,20260908233816,20260908234518,20260908234711,20260908234849,20260910180000,20260915220000,20260916205049,20260917120000,20260920120000,20260920150000,20260920180000,20260921180000,20260923150000,20260925120000,20260929120000}' as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "LEDGER-E oldest"
+      ]
+    },
+    {
+      "id": "ledger-middle-missing-after-snapshot",
+      "point": "S5",
+      "effect": "the owner deletes the middle base ledger row after the snapshot",
+      "callers": [
+        "tests/b1-runner-ledger.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: ledger set: the migration ledger does not record exactly the 22 base migrations before B1; missing 20260908234849$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select pg_catalog.array_agg(version order by version collate \"C\")::text\n  from supabase_migrations.schema_migrations),'') = '{20260905153656,20260905153700,20260905153704,20260905153708,20260905173500,20260905173800,20260905174200,20260908233816,20260908234518,20260908234711,20260910180000,20260915220000,20260916205049,20260917120000,20260920120000,20260920150000,20260920180000,20260921180000,20260923150000,20260925120000,20260929120000}' as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "LEDGER-E middle"
+      ]
+    },
+    {
+      "id": "ledger-newest-missing-after-snapshot",
+      "point": "S5",
+      "effect": "the owner deletes the newest base ledger row after the snapshot",
+      "callers": [
+        "tests/b1-runner-ledger.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: ledger set: the migration ledger does not record exactly the 22 base migrations before B1; missing 20260929120000$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select pg_catalog.array_agg(version order by version collate \"C\")::text\n  from supabase_migrations.schema_migrations),'') = '{20260905153656,20260905153700,20260905153704,20260905153708,20260905173500,20260905173800,20260905174200,20260908233816,20260908234518,20260908234711,20260908234849,20260910180000,20260915220000,20260916205049,20260917120000,20260920120000,20260920150000,20260920180000,20260921180000,20260923150000,20260925120000}' as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "LEDGER-E newest"
+      ]
+    },
+    {
+      "id": "ledger-extra-after-snapshot",
+      "point": "S5",
+      "effect": "the owner inserts ledger version 20250101000000 after the snapshot",
+      "callers": [
+        "tests/b1-runner-ledger.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: ledger set: the migration ledger does not record exactly the 22 base migrations before B1; unexpected 20250101000000$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select coalesce((select pg_catalog.array_agg(version order by version collate \"C\")::text\n  from supabase_migrations.schema_migrations),'') = '{20250101000000,20260905153656,20260905153700,20260905153704,20260905153708,20260905173500,20260905173800,20260905174200,20260908233816,20260908234518,20260908234711,20260908234849,20260910180000,20260915220000,20260916205049,20260917120000,20260920120000,20260920150000,20260920180000,20260921180000,20260923150000,20260925120000,20260929120000}' as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "LEDGER-F"
+      ]
+    },
+    {
+      "id": "noop-precondition",
+      "point": "S5",
+      "effect": "the owner runs select 1 and changes nothing",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "L6",
+            "outcome": "completed"
+          },
+          "refusal": null,
+          "b1EngineInvoked": true,
+          "post": [
+            "s7-passed"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select pg_catalog.array_agg(a::pg_catalog.text order by a::pg_catalog.text collate \"C\") as acl\n    from pg_catalog.pg_proc p, pg_catalog.unnest(p.proacl) a where p.oid='kernel_private.stamp_binding_provenance()'::pg_catalog.regprocedure",
+        "expected": [
+          {
+            "acl": [
+              "anon=X/postgres",
+              "authenticated=X/postgres",
+              "postgres=X/postgres"
+            ]
+          }
+        ]
+      },
+      "cases": [
+        "CON-43"
+      ]
+    },
+    {
+      "id": "gate-inventory-skip",
+      "point": "S6-gate-inventory-skip",
+      "effect": "the gate omits its inventory, co-resident and name-uniqueness part once",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts",
+        "tests/b1-runner-ledger.test.ts",
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper",
+            "platform-definer-fixture"
+          ],
+          "end": {
+            "step": "L6",
+            "outcome": "completed"
+          },
+          "refusal": null,
+          "b1EngineInvoked": true,
+          "post": [
+            "s7-passed"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "skipped-check",
+        "expected": {
+          "check": "gate-inventory"
+        }
+      },
+      "cases": [
+        "27.12.9 two layers",
+        "EPH-8",
+        "EPH-24"
+      ]
+    },
+    {
+      "id": "s4-skip",
+      "point": "S4-skip",
+      "effect": "S4 validation of the run files is omitted once",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "L6",
+            "outcome": "completed"
+          },
+          "refusal": null,
+          "b1EngineInvoked": true,
+          "post": [
+            "s7-passed"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "skipped-check",
+        "expected": {
+          "check": "S4"
+        }
+      },
+      "cases": [
+        "EPH-18",
+        "EPH-24"
+      ]
+    },
+    {
+      "id": "l3-skip",
+      "point": "L3-skip",
+      "effect": "the daemon attestation is omitted for the next connection only",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "L6",
+            "outcome": "completed"
+          },
+          "refusal": null,
+          "b1EngineInvoked": true,
+          "post": [
+            "s7-passed"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "skipped-check",
+        "expected": {
+          "check": "L3"
+        }
+      },
+      "cases": [
+        "EPH-21",
+        "EPH-24"
+      ]
+    },
+    {
+      "id": "l2-foreign-container",
+      "point": "L2-target",
+      "effect": "the factory's container and port are replaced by a foreign cluster container without the nonce",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "L3",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LIFECYCLE_REFUSED: L3: container image, command, label, state or mounts differ$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "fixture-removed"
+          ]
+        },
+        {
+          "with": [
+            "l3-skip"
+          ],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "L5",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^L5: cluster nonce differs$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "fixture-removed"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "target-substituted",
+        "expected": {
+          "fixture": "foreign-container"
+        }
+      },
+      "cases": [
+        "EPH-3"
+      ]
+    },
+    {
+      "id": "l2-preexisting-tunnel",
+      "point": "L2-target",
+      "effect": "the factory's container and port are replaced by a forwarding container to a cluster created before the run container",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "L3",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LIFECYCLE_REFUSED: L3: container image, command, label, state or mounts differ$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "fixture-removed"
+          ]
+        },
+        {
+          "with": [
+            "l3-skip"
+          ],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "L5",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^L5: cluster nonce differs; cluster predates container or initdb follows postmaster start$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "fixture-removed"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "target-substituted",
+        "expected": {
+          "fixture": "preexisting-tunnel"
+        }
+      },
+      "cases": [
+        "EPH-4"
+      ]
+    },
+    {
+      "id": "files-declaration-after-s4",
+      "point": "S3-files",
+      "effect": "the run-bound declaration's bytes are changed after S4 and its digest is not re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: declaration bytes changed after S3$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S4",
+          "target": "declaration",
+          "transform": "edit-environment",
+          "rerecorded": false
+        }
+      },
+      "cases": [
+        "EPH-6 before S6"
+      ]
+    },
+    {
+      "id": "files-declaration-after-s6",
+      "point": "S3-files",
+      "effect": "the run-bound declaration's bytes are changed after S6 and its digest is not re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S7",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: declaration bytes changed after S3$"
+          },
+          "b1EngineInvoked": true,
+          "post": []
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S6",
+          "target": "declaration",
+          "transform": "edit-environment",
+          "rerecorded": false
+        }
+      },
+      "cases": [
+        "EPH-6 after S6",
+        "37 ephemeral form"
+      ]
+    },
+    {
+      "id": "files-declaration-deleted",
+      "point": "S3-files",
+      "effect": "the run-bound declaration is deleted after S3",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: declaration is missing$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "declaration",
+          "transform": "delete",
+          "rerecorded": false
+        }
+      },
+      "cases": [
+        "EPH-7 deleted"
+      ]
+    },
+    {
+      "id": "files-declaration-invalid-json",
+      "point": "S3-files",
+      "effect": "the run-bound declaration is rewritten with invalid JSON after S3 and its digest re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: declaration invalid: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "declaration",
+          "transform": "invalid-json",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-7 invalid JSON"
+      ]
+    },
+    {
+      "id": "files-declaration-bom",
+      "point": "S3-files",
+      "effect": "the run-bound declaration is rewritten with a byte-order mark after S3 and its digest re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: declaration invalid: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "declaration",
+          "transform": "bom",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-7 a byte-order mark"
+      ]
+    },
+    {
+      "id": "files-declaration-drop-mode",
+      "point": "S3-files",
+      "effect": "the run-bound declaration is rewritten with no mode after S3 and its digest re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: declaration invalid: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "declaration",
+          "transform": "drop-mode",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-7 no mode"
+      ]
+    },
+    {
+      "id": "files-declaration-hosted-with-run",
+      "point": "S3-files",
+      "effect": "the run-bound declaration is rewritten with HOSTED_COMMITTED with run after S3 and its digest re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: declaration invalid: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "declaration",
+          "transform": "hosted-with-run",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-7 HOSTED_COMMITTED with run"
+      ]
+    },
+    {
+      "id": "files-declaration-ephemeral-without-run",
+      "point": "S3-files",
+      "effect": "the run-bound declaration is rewritten with EPHEMERAL_RUN_BOUND without run after S3 and its digest re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: declaration invalid: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "declaration",
+          "transform": "ephemeral-without-run",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-7 EPHEMERAL_RUN_BOUND without run"
+      ]
+    },
+    {
+      "id": "files-declaration-run-unknown-field",
+      "point": "S3-files",
+      "effect": "the run-bound declaration is rewritten with an unknown field in run after S3 and its digest re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: declaration invalid: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "declaration",
+          "transform": "run-unknown-field",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-7 an unknown field in run"
+      ]
+    },
+    {
+      "id": "files-baseline-mode-hosted",
+      "point": "S3-files",
+      "effect": "the run-bound baseline is rewritten with mode HOSTED_COMMITTED after S3 and its digest re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: baseline invalid: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "baseline",
+          "transform": "baseline-mode-hosted",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-19 mode HOSTED_COMMITTED"
+      ]
+    },
+    {
+      "id": "files-baseline-drop-mode",
+      "point": "S3-files",
+      "effect": "the run-bound baseline is rewritten with no mode after S3 and its digest re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: baseline invalid: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "baseline",
+          "transform": "baseline-drop-mode",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-19 no mode"
+      ]
+    },
+    {
+      "id": "files-baseline-run-runid",
+      "point": "S3-files",
+      "effect": "the run-bound baseline's run.runId is changed after S3 and its digest re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: run binding differs from this run and application: baseline$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "baseline",
+          "transform": "run-runId",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-20 runId"
+      ]
+    },
+    {
+      "id": "files-baseline-run-clusternonce",
+      "point": "S3-files",
+      "effect": "the run-bound baseline's run.clusterNonce is changed after S3 and its digest re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: run binding differs from this run and application: baseline$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "baseline",
+          "transform": "run-clusterNonce",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-20 clusterNonce"
+      ]
+    },
+    {
+      "id": "files-baseline-run-containerid",
+      "point": "S3-files",
+      "effect": "the run-bound baseline's run.containerId is changed after S3 and its digest re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: run binding differs from this run and application: baseline$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "baseline",
+          "transform": "run-containerId",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-20 containerId"
+      ]
+    },
+    {
+      "id": "files-baseline-run-containercreated",
+      "point": "S3-files",
+      "effect": "the run-bound baseline's run.containerCreated is changed after S3 and its digest re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: run binding differs from this run and application: baseline$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "baseline",
+          "transform": "run-containerCreated",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-20 containerCreated"
+      ]
+    },
+    {
+      "id": "files-baseline-run-application",
+      "point": "S3-files",
+      "effect": "the run-bound baseline's run.application is changed after S3 and its digest re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: run binding differs from this run and application: baseline$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "baseline",
+          "transform": "run-application",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-20 application"
+      ]
+    },
+    {
+      "id": "files-foreign-run",
+      "point": "S3-files",
+      "effect": "both run files are replaced by another run's binding and system identifier, digests re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: run binding differs from this run and application: baseline, declaration$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "s4-skip"
+          ],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: target identity: live system identifier"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "both",
+          "transform": "foreign-run",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-2",
+        "EPH-15"
+      ]
+    },
+    {
+      "id": "files-foreign-baseline",
+      "point": "S3-files",
+      "effect": "the baseline is replaced by another run's baseline (run and system identifier), digest re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: run binding differs from this run and application: baseline$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "s4-skip"
+          ],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: artifacts: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "baseline",
+          "transform": "foreign-baseline",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-18"
+      ]
+    },
+    {
+      "id": "files-sysid",
+      "point": "S3-files",
+      "effect": "both run files carry another system identifier, digests re-recorded",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: system identifier or database differs from the live values read at L5$"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "s4-skip"
+          ],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^LEDGER_GATE_REFUSED: target identity: live system identifier"
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "both",
+          "transform": "sysid",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "EPH-5"
+      ]
+    },
+    {
+      "id": "files-entry-digest",
+      "point": "S3-files",
+      "effect": "the declared helper entry's sourceDigest is edited to another value, digest re-recorded",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: declaration invalid: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "declaration",
+          "transform": "entry-digest",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "17 entry"
+      ]
+    },
+    {
+      "id": "files-set-sha",
+      "point": "S3-files",
+      "effect": "the declaration's setSha256 is edited, digest re-recorded",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S4",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^ARTIFACT_REFUSED: declaration invalid: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "run-files",
+        "expected": {
+          "when": "after-S3",
+          "target": "declaration",
+          "transform": "set-sha",
+          "rerecorded": true
+        }
+      },
+      "cases": [
+        "17 setSha256"
+      ]
+    },
+    {
+      "id": "settings-none",
+      "point": "S6-apply",
+      "effect": "the engine connection carries none of the three settings",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 1: three declaration settings are required",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<absent>",
+          "sysid": "<absent>",
+          "database": "<absent>"
+        }
+      },
+      "cases": [
+        "19 none",
+        "24"
+      ]
+    },
+    {
+      "id": "settings-only-digest",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a partial setting combination: only-digest",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 1: three declaration settings are required",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<declaration>",
+          "sysid": "<absent>",
+          "database": "<absent>"
+        }
+      },
+      "cases": [
+        "19 only-digest",
+        "25 only-digest"
+      ]
+    },
+    {
+      "id": "settings-only-sysid",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a partial setting combination: only-sysid",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 1: three declaration settings are required",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<absent>",
+          "sysid": "<declaration>",
+          "database": "<absent>"
+        }
+      },
+      "cases": [
+        "19 only-sysid",
+        "25 only-sysid"
+      ]
+    },
+    {
+      "id": "settings-only-database",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a partial setting combination: only-database",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 1: three declaration settings are required",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<absent>",
+          "sysid": "<absent>",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "19 only-database",
+        "25 only-database"
+      ]
+    },
+    {
+      "id": "settings-without-digest",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a partial setting combination: without-digest",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 1: three declaration settings are required",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<absent>",
+          "sysid": "<declaration>",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "19 without-digest",
+        "25 without-digest"
+      ]
+    },
+    {
+      "id": "settings-without-sysid",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a partial setting combination: without-sysid",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 1: three declaration settings are required",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<declaration>",
+          "sysid": "<absent>",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "19 without-sysid",
+        "25 without-sysid"
+      ]
+    },
+    {
+      "id": "settings-without-database",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a partial setting combination: without-database",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 1: three declaration settings are required",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<declaration>",
+          "sysid": "<declaration>",
+          "database": "<absent>"
+        }
+      },
+      "cases": [
+        "19 without-database",
+        "25 without-database"
+      ]
+    },
+    {
+      "id": "settings-empty-digest",
+      "point": "S6-apply",
+      "effect": "the engine connection sets digest to the empty string",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 1: three declaration settings are required",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "",
+          "sysid": "<declaration>",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "25 empty digest"
+      ]
+    },
+    {
+      "id": "settings-empty-sysid",
+      "point": "S6-apply",
+      "effect": "the engine connection sets sysid to the empty string",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 1: three declaration settings are required",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<declaration>",
+          "sysid": "",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "25 empty sysid"
+      ]
+    },
+    {
+      "id": "settings-empty-database",
+      "point": "S6-apply",
+      "effect": "the engine connection sets database to the empty string",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 1: three declaration settings are required",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<declaration>",
+          "sysid": "<declaration>",
+          "database": ""
+        }
+      },
+      "cases": [
+        "25 empty database"
+      ]
+    },
+    {
+      "id": "settings-sysid-abc",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a malformed system identifier: abc",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 2: malformed declaration settings",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<declaration>",
+          "sysid": "abc",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "27 abc"
+      ]
+    },
+    {
+      "id": "settings-sysid-leading-zero",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a malformed system identifier: leading-zero",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 2: malformed declaration settings",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<declaration>",
+          "sysid": "0123",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "27 leading-zero"
+      ]
+    },
+    {
+      "id": "settings-sysid-leading-space",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a malformed system identifier: leading-space",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 2: malformed declaration settings",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<declaration>",
+          "sysid": " 1",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "27 leading-space"
+      ]
+    },
+    {
+      "id": "settings-sysid-trailing-space",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a malformed system identifier: trailing-space",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 2: malformed declaration settings",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<declaration>",
+          "sysid": "1 ",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "27 trailing-space"
+      ]
+    },
+    {
+      "id": "settings-sysid-twenty-digits",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a malformed system identifier: twenty-digits",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 2: malformed declaration settings",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<declaration>",
+          "sysid": "12345678901234567890",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "27 twenty-digits"
+      ]
+    },
+    {
+      "id": "settings-sysid-decimal",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a malformed system identifier: decimal",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 2: malformed declaration settings",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<declaration>",
+          "sysid": "7678069749886157684.0",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "27 decimal"
+      ]
+    },
+    {
+      "id": "settings-digest-uppercase",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a malformed set digest: uppercase",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 2: malformed declaration settings",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+          "sysid": "<declaration>",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "28 uppercase"
+      ]
+    },
+    {
+      "id": "settings-digest-sixty-three",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a malformed set digest: sixty-three",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 2: malformed declaration settings",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85",
+          "sysid": "<declaration>",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "28 sixty-three"
+      ]
+    },
+    {
+      "id": "settings-digest-sixty-five",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a malformed set digest: sixty-five",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 2: malformed declaration settings",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8550",
+          "sysid": "<declaration>",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "28 sixty-five"
+      ]
+    },
+    {
+      "id": "settings-digest-non-hex",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a malformed set digest: non-hex",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 2: malformed declaration settings",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "g3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "sysid": "<declaration>",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "28 non-hex"
+      ]
+    },
+    {
+      "id": "settings-database-sixty-four-bytes",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a malformed database name: sixty-four-bytes",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 2: malformed declaration settings",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<declaration>",
+          "sysid": "<declaration>",
+          "database": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+        }
+      },
+      "cases": [
+        "29 sixty-four-bytes"
+      ]
+    },
+    {
+      "id": "settings-database-control-character",
+      "point": "S6-apply",
+      "effect": "the engine connection carries a malformed database name: control-character",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 2: malformed declaration settings",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<declaration>",
+          "sysid": "<declaration>",
+          "database": "kj_b1\u0001"
+        }
+      },
+      "cases": [
+        "29 control-character"
+      ]
+    },
+    {
+      "id": "settings-database-other",
+      "point": "S6-apply",
+      "effect": "the engine connection names another database",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 3: target database differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<declaration>",
+          "sysid": "<declaration>",
+          "database": "kj_other"
+        }
+      },
+      "cases": [
+        "30"
+      ]
+    },
+    {
+      "id": "settings-sysid-other",
+      "point": "S6-apply",
+      "effect": "the engine connection names the production system identifier",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none",
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 4: target system identifier differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "<declaration>",
+          "sysid": "7678069749886157684",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "16",
+        "EPH-2 forced",
+        "EPH-5 forced",
+        "EPH-15 forced"
+      ]
+    },
+    {
+      "id": "settings-digest-empty-set",
+      "point": "S6-apply",
+      "effect": "the engine connection carries the empty-serialisation digest on a target holding the helper",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 5: co-resident set digest differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "sysid": "<declaration>",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "38"
+      ]
+    },
+    {
+      "id": "settings-digest-golden",
+      "point": "S6-apply",
+      "effect": "the engine connection carries the helper target's set digest on a target without the helper",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 5: co-resident set digest differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "80d365b875ba65ae543e351a47c09f66c6df756db772f6fa494a36639291d721",
+          "sysid": "<declaration>",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "19 helper declaration on empty target"
+      ]
+    },
+    {
+      "id": "settings-digest-fn-only",
+      "point": "S6-apply",
+      "effect": "the engine connection carries the digest of the helper's fn line alone",
+      "callers": [
+        "tests/b1-runner-settings.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P3 step 5: co-resident set digest differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        },
+        {
+          "with": [
+            "drift-ensure-rls-dropped",
+            "gate-inventory-skip"
+          ],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (c) E3: sealed topology of the pinned function is incomplete or extended",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "engine-settings",
+        "expected": {
+          "digest": "09777b840568b9f3b5d6c18819f66a66d458328341fce3c0843778017b661242",
+          "sysid": "<declaration>",
+          "database": "<declaration>"
+        }
+      },
+      "cases": [
+        "26"
+      ]
+    },
+    {
+      "id": "b1-variant-runtime-blanket",
+      "point": "S6-apply",
+      "effect": "the exported B1 file gains the frozen per-role blanket function revoke after its enumerated cleanup",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (a) E1: co-resident function differs from sealed pin; P2 (b) E2: event-trigger binding differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect",
+            "helper-proacl-null"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "export-variant",
+        "expected": {
+          "statement": "revoke all on all functions in schema public, kernel_private from kj_worker, kj_door;"
+        }
+      },
+      "cases": [
+        "ACL-B"
+      ]
+    },
+    {
+      "id": "b1-variant-public-blanket",
+      "point": "S6-apply",
+      "effect": "the exported B1 file gains the frozen PUBLIC blanket function revoke after its enumerated cleanup",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": "23514",
+            "message": "B1 P2 (a) E1: co-resident function differs from sealed pin; P2 (b) E2: event-trigger binding differs",
+            "pattern": null
+          },
+          "b1EngineInvoked": true,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect",
+            "helper-proacl-null"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "export-variant",
+        "expected": {
+          "statement": "revoke execute on all functions in schema public, kernel_private from public;"
+        }
+      },
+      "cases": [
+        "6 old blanket revoke"
+      ]
+    },
+    {
+      "id": "b1-outside-engine",
+      "point": "S6-apply",
+      "effect": "the B1 blob is applied in an owner transaction instead of through the engine, so no ledger row is written",
+      "callers": [
+        "tests/b1-runner-ledger.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S7",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^POST_LEDGER_REFUSED: ledger set: .*missing 20261002090000$"
+          },
+          "b1EngineInvoked": false,
+          "post": []
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select (select prosecdef from pg_catalog.pg_proc where oid='kernel_private.stamp_binding_provenance()'::pg_catalog.regprocedure)\n    and not exists(select 1 from supabase_migrations.schema_migrations where version='20261002090000') as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "LEDGER-B"
+      ]
+    },
+    {
+      "id": "post-commit-drop-ensure-rls",
+      "point": "S6-apply",
+      "effect": "after the engine commits B1, the owner drops event trigger ensure_rls",
+      "callers": [
+        "tests/b1-runner-coresident.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "pinned-helper"
+          ],
+          "end": {
+            "step": "S7",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^POST_LEDGER_REFUSED: inventory: "
+          },
+          "b1EngineInvoked": true,
+          "post": []
+        }
+      ],
+      "precondition": {
+        "kind": "sql",
+        "sql": "select not exists(select 1 from pg_catalog.pg_event_trigger where evtname='ensure_rls') as effective",
+        "expected": [
+          {
+            "effective": true
+          }
+        ]
+      },
+      "cases": [
+        "37 live surface changed after COMMIT"
+      ]
+    },
+    {
+      "id": "export-tamper",
+      "point": "S6-apply",
+      "effect": "one exported base migration file is changed after the export, before the engine runs",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S6",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^RELEASE_REFUSED: exported bytes differ: "
+          },
+          "b1EngineInvoked": false,
+          "post": [
+            "catalogue-unchanged",
+            "no-b1-effect"
+          ]
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "export-variant",
+        "expected": {
+          "tampered": "20260905153656_identity.sql"
+        }
+      },
+      "cases": [
+        "EPH-14 exported file",
+        "40 exported file"
+      ]
+    },
+    {
+      "id": "migration-blob-record",
+      "point": "S6-apply",
+      "effect": "after the engine commits, the runner's recorded migrationBlob is replaced by another blob id",
+      "callers": [
+        "tests/b1-runner-lifecycle.test.ts"
+      ],
+      "expected": [
+        {
+          "with": [],
+          "profiles": [
+            "none"
+          ],
+          "end": {
+            "step": "S7",
+            "outcome": "refused"
+          },
+          "refusal": {
+            "sqlstate": null,
+            "message": null,
+            "pattern": "^S7_REFUSED: migrationBlob differs from the B1 blob at R$"
+          },
+          "b1EngineInvoked": true,
+          "post": []
+        }
+      ],
+      "precondition": {
+        "kind": "runner",
+        "fact": "record-altered",
+        "expected": {
+          "field": "migrationBlob"
+        }
+      },
+      "cases": [
+        "EPH-14 migrationBlob at S7"
+      ]
     }
   ],
   "regressionSuites": []

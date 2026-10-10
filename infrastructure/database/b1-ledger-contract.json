@@ -1,6 +1,0 @@
-{
-  "kind": "kerneljson:b1-ledger-contract/v1",
-  "migrationSha256": "20d989e497fd3cf02a75ef7824e217705a47eb6e45b03fa21c275a44b5827d49",
-  "statementsSha256": "18b319fbdaf2e861b07944aca9139d07a3355bc9bbd457c269eae8de7254f7d8",
-  "engineVersion": "2.120.0"
-}

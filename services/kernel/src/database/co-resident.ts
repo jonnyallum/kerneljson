@@ -43,6 +43,14 @@ export function pinProblems(entry: CoResidentEntry): string[] {
   const p=pins.entries[0]!;
   return Object.keys(p).filter(k=>!same(actual[k as keyof typeof actual],p[k as keyof typeof p])).map(k=>`co-resident pin differs: ${k}`);
 }
+/** Every reason a live co-resident surface is not admitted, as named problems; empty means admitted. */
+export function coResidentProblems(entries: readonly CoResidentEntry[]): string[] {
+  const key=(e:CoResidentEntry)=>`${e.schema}.${e.name}(${e.args.join(",")})`;
+  const problems:string[]=[];
+  if(entries.length>1) problems.push(`more than one co-resident member: ${entries.map(key).join(", ")}`);
+  for(const e of entries) problems.push(...pinProblems(e).map(p=>`${key(e)} ${p}`));
+  return problems;
+}
 export function setDigest(entries: readonly CoResidentEntry[]): string {
   if(entries.length>1 || entries.some(e=>pinProblems(e).length)) throw Error("P2: non-admitted serialisation member");
   return hash(entries.length ? GOLDEN : "");
@@ -80,8 +88,12 @@ export const CO_RESIDENT_SQL = `select n.nspname as schema,p.proname as name,
       and (p.prosecdef or p.prorettype='pg_catalog.event_trigger'::regtype or exists(select 1 from pg_event_trigger e where e.evtfoid=p.oid))
       and not(n.nspname='kernel_private' and p.proname='stamp_binding_provenance' and p.pronargs=0)))
   order by n.nspname collate "C",p.proname collate "C",p.oid`;
+/** The live surface as observed, not yet admitted; callers must apply coResidentProblems before serialising. */
+export async function readCoResidentObserved(db:Pick<pg.Client|pg.Pool|pg.PoolClient,"query">):Promise<CoResidentEntry[]> {
+  return (await db.query(CO_RESIDENT_SQL)).rows.map(r=>ObservedCoEntry.parse(r));
+}
 export async function readCoResident(db:Pick<pg.Client|pg.Pool|pg.PoolClient,"query">):Promise<CoResidentEntry[]> {
-  const rows=(await db.query(CO_RESIDENT_SQL)).rows.map(r=>ObservedCoEntry.parse(r));
+  const rows=await readCoResidentObserved(db);
   setDigest(rows); // E1–E3 and global name uniqueness before any serialisation or snapshot acceptance.
   return rows;
 }

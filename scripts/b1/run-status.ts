@@ -3,7 +3,7 @@ import { SEALED_BASE_VERSIONS } from "../../services/kernel/src/database/ledger-
 export type Step="L1"|"L2"|"L3"|"L4"|"L5"|"L6"|"S1"|"S2"|"S3"|"S4"|"S5"|"S6"|"S7";
 export interface MigrationBlob {id:string;sha256:string}
 export interface PlannedApplication {sequence:number;database:string;version:"20261002090000";migrationBlob:MigrationBlob}
-export interface RunEvent {step:Step;outcome:"passed"|"refused";application?:number;details:unknown}
+export interface RunEvent {step:Step;outcome:"passed"|"refused"|"skipped";application?:number|undefined;details:unknown}
 export interface AppliedApplication {
   sequence:number;database:string;migrationBlob:MigrationBlob;engineExitStatus:number|null;
   ledgerAfter:string[];postLedgerCompared:boolean;postLedgerPassed:boolean;

@@ -405,7 +405,7 @@ begin
 end $b1_settings$;
 -- Sealed pins: {"kind":"kerneljson:co-resident-platform-pins/v1","entries":[{"schema":"public","name":"rls_auto_enable","args":[],"returns":"pg_catalog.event_trigger","retset":false,"kind":"f","owner":"postgres","securityDefiner":true,"language":"plpgsql","config":["search_path=pg_catalog"],"acl":null,"volatility":"v","strict":false,"leakproof":false,"parallel":"u","binary":null,"sqlBody":null,"sourceDigest":"2782e98b348aca7d6f6f73c420fd78d2e094957dd7a52b0483d4c34f29d2a7a1","sourceBytes":953,"bindings":[{"name":"ensure_rls","owner":"postgres","event":"ddl_command_end","function":"public.rls_auto_enable()","enabled":"O","tags":["CREATE TABLE","CREATE TABLE AS","SELECT INTO"]}]}]}
 do $b1_equality$
-declare f record; e record; helper oid; expected text; observed text;
+declare f record; e record; helper oid; expected text; observed text; violations text[] := '{}';
 begin
   -- P1 compares exact identities, independently of P2 and the declaration.
   select pg_catalog.string_agg(n.nspname || '.' || p.proname || '(' ||
@@ -417,8 +417,12 @@ begin
     where n.nspname in ('public','kernel_private') and p.prosecdef
     and not (n.nspname='public' and p.proname='rls_auto_enable' and p.pronargs=0);
   if observed is distinct from 'kernel_private.stamp_binding_provenance()' then
-    raise exception 'B1 P1: KernelJSON definer identity set differs' using errcode='23514';
+    violations := violations || 'P1: KernelJSON definer identity set differs'::text;
   end if;
+  -- P1 and P2 are decided from the catalogue and the embedded pins alone, before P3. Every violated clause is named,
+  -- in the order P1, P2 (a) to (d), in one 23514, so a fixture that breaks several clauses at once (for example
+  -- ensure_rls re-bound to another public function, or an unpinned definer event-trigger function) is reported by
+  -- each of them rather than only by whichever clause happens to be evaluated first.
   -- P2(a), E1: every skipped event-trigger function is checked, even an invoker.
   for f in select p.*, n.nspname, l.lanname, pg_catalog.pg_get_userbyid(p.proowner) as owner,
       pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.replace(p.prosrc,E'\r\n',E'\n'),'UTF8')),'hex') as digest
@@ -436,11 +440,12 @@ begin
       or f.probin is not null or f.prosqlbody is not null
       or f.digest <> '2782e98b348aca7d6f6f73c420fd78d2e094957dd7a52b0483d4c34f29d2a7a1'
       or pg_catalog.octet_length(pg_catalog.replace(f.prosrc,E'\r\n',E'\n')) <> 953 then
-      raise exception 'B1 P2(a) E1: co-resident function differs from sealed pin' using errcode='23514';
+      violations := violations || 'P2 (a) E1: co-resident function differs from sealed pin'::text;
+    else
+      helper := f.oid;
     end if;
-    helper := f.oid;
   end loop;
-  -- P2(b,c), E2/E3: equality includes missing bindings and bindings into either governed application schema.
+  -- P2(b), E2: every event trigger bound into either governed application schema is the sealed binding of the pin.
   for e in select t.* from pg_catalog.pg_event_trigger t join pg_catalog.pg_proc p on p.oid=t.evtfoid
       join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public','kernel_private')
   loop
@@ -448,18 +453,30 @@ begin
       or pg_catalog.pg_get_userbyid(e.evtowner) <> 'postgres' or e.evtevent <> 'ddl_command_end'
       or e.evtenabled <> 'O' or (select pg_catalog.array_agg(tag order by tag collate "C")
         from pg_catalog.unnest(e.evttags) tag) is distinct from array['CREATE TABLE','CREATE TABLE AS','SELECT INTO'] then
-      raise exception 'B1 P2(b) E2: event-trigger binding differs' using errcode='23514';
+      violations := violations || 'P2 (b) E2: event-trigger binding differs'::text;
     end if;
   end loop;
-  if helper is not null and not exists (select 1 from pg_catalog.pg_event_trigger where evtfoid=helper and evtname='ensure_rls') then
-    raise exception 'B1 P2(c) E3: ensure_rls binding missing' using errcode='23514';
+  -- P2(c), E3: a present pinned function carries exactly its complete sealed topology, every column, no other row.
+  if helper is not null and ((select pg_catalog.count(*) from pg_catalog.pg_event_trigger where evtfoid=helper) <> 1
+    or not exists (select 1 from pg_catalog.pg_event_trigger e where e.evtfoid=helper and e.evtname='ensure_rls'
+      and pg_catalog.pg_get_userbyid(e.evtowner)='postgres' and e.evtevent='ddl_command_end' and e.evtenabled='O'
+      and (select pg_catalog.array_agg(tag order by tag collate "C") from pg_catalog.unnest(e.evttags) tag)
+        is not distinct from array['CREATE TABLE','CREATE TABLE AS','SELECT INTO'])) then
+    violations := violations || 'P2 (c) E3: sealed topology of the pinned function is incomplete or extended'::text;
   end if;
-  -- P2(d): name uniqueness is global, not limited to definers.
+  -- P2(d): name uniqueness is global, not limited to definers. The pinned name may be carried only by the pinned
+  -- identity, and by that only while it is in CR_ACTUAL (a definer or an event-trigger function); (a) judges its
+  -- attributes, so a drifted body at the pinned identity is an (a) finding, not a (d) one.
   if exists (select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace
-    where p.proname='rls_auto_enable' and p.oid is distinct from helper
+    where p.proname='rls_auto_enable'
       and not (n.nspname in ('pg_catalog','information_schema','pg_toast')
-        or n.nspname ~ '^pg_temp_[0-9]+$' or n.nspname ~ '^pg_toast_temp_[0-9]+$')) then
-    raise exception 'B1 P2(d): co-resident name uniqueness differs' using errcode='23514';
+        or n.nspname ~ '^pg_temp_[0-9]+$' or n.nspname ~ '^pg_toast_temp_[0-9]+$')
+      and not (n.nspname='public' and p.pronargs=0
+        and (p.prosecdef or p.prorettype='pg_catalog.event_trigger'::pg_catalog.regtype))) then
+    violations := violations || 'P2 (d): co-resident name uniqueness differs'::text;
+  end if;
+  if pg_catalog.cardinality(violations) > 0 then
+    raise exception 'B1 %', pg_catalog.array_to_string(violations, '; ') using errcode='23514';
   end if;
   -- P3 presence and format were just rechecked after all authority mutations.
   if pg_catalog.current_setting('kj.b1.target_database',true) <> pg_catalog.current_database() then
