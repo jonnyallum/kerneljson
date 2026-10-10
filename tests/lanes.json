@@ -66,6 +66,7 @@
     "tests/b1-runner-settings.test.ts": "runner-cases",
     "tests/b1-static.test.ts": "base-regression",
     "tests/b1-trace.test.ts": "base-regression",
+    "tests/b1-workflow.test.ts": "base-regression",
     "tests/canary-config.test.ts": "base-regression",
     "tests/canary-fire.test.ts": "base-regression",
     "tests/canary-gateway-admission.test.ts": "base-regression",

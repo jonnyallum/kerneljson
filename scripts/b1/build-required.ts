@@ -27,7 +27,7 @@ export const B1_FILES=["tests/runtime-roles-negative.integration.test.ts","tests
   "tests/security-definers.test.ts","tests/b1-static.test.ts","tests/b1-evidence.test.ts","tests/b1-coverage.test.ts","tests/b1-trace.test.ts",
   "tests/b1-refusal-accounting.test.ts","tests/b1-base-guard.test.ts","tests/b1-relation-inventory.integration.test.ts",
   "tests/b1-runner-coresident.test.ts","tests/b1-runner-settings.test.ts","tests/b1-runner-ledger.test.ts","tests/b1-runner-lifecycle.test.ts",
-  "tests/b1-runner-refusals.test.ts","tests/b1-gates.test.ts","tests/b1-con48.test.ts"] as const;
+  "tests/b1-runner-refusals.test.ts","tests/b1-gates.test.ts","tests/b1-con48.test.ts","tests/b1-workflow.test.ts"] as const;
 const NEGATIVE="tests/runtime-roles-negative.integration.test.ts",LOG="tests/runtime-roles-log-fixture.integration.test.ts",CORESIDENT="tests/runtime-roles-coresident-probes.integration.test.ts";
 /** The declared refusals of every probe test, by expanded report name. */
 export function declaredRefusals():Map<string,{file:string;refusals:Refusal[]}>{

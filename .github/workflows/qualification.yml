@@ -215,6 +215,12 @@ jobs:
           for d in "$D"/evidence-runner-cases-*; do cp "$d"/*.json "$E/runner-cases/" || true; done
           for d in "$D"/evidence-mutations-*; do cp "$d"/*.txt "$E/mutations/" || true; done
           node --import tsx scripts/b1/ci-gate.ts "$GITHUB_SHA" "$E"
+      - name: Every required job succeeded (a skipped, cancelled or failed job never qualifies)
+        if: always()
+        env: {NEEDS: '${{ toJSON(needs) }}'}
+        run: |
+          node -e 'const n=JSON.parse(process.env.NEEDS),bad=Object.entries(n).filter(([,v])=>v.result!=="success");
+            if(Object.keys(n).length!==7||bad.length){console.error(bad.map(([k,v])=>k+": "+v.result).join("\n")||"needs incomplete");process.exit(1)}'
       - uses: actions/upload-artifact@v4
         if: always()
         with: {name: gate-${{ github.sha }}, path: '${{ runner.temp }}/evidence/gate.json', retention-days: 30}

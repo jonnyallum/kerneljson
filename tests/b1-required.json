@@ -1887,6 +1887,61 @@
       "refusals": []
     },
     {
+      "file": "tests/b1-workflow.test.ts",
+      "name": "the qualification workflow is fail-closed fails with a job that continues on error",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-workflow.test.ts",
+      "name": "the qualification workflow is fail-closed fails with a job the gate does not need",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-workflow.test.ts",
+      "name": "the qualification workflow is fail-closed fails with a needed job dropped from the gate",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-workflow.test.ts",
+      "name": "the qualification workflow is fail-closed fails with a needs-result step that accepts skipped",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-workflow.test.ts",
+      "name": "the qualification workflow is fail-closed fails with a secret",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-workflow.test.ts",
+      "name": "the qualification workflow is fail-closed fails with a skip condition on a job",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-workflow.test.ts",
+      "name": "the qualification workflow is fail-closed fails with no needs-result step",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-workflow.test.ts",
+      "name": "the qualification workflow is fail-closed fails with the gate skipped when a job fails",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-workflow.test.ts",
+      "name": "the qualification workflow is fail-closed fails with the whole suite outside the runner",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-workflow.test.ts",
+      "name": "the qualification workflow is fail-closed fails with write permission",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-workflow.test.ts",
+      "name": "the qualification workflow is fail-closed the committed workflow satisfies every rule",
+      "refusals": []
+    },
+    {
       "file": "tests/runtime-roles-catalogue.integration.test.ts",
       "name": "27.11 runtime capability facts need effective schema USAGE PUBLIC object grants and a PUBLIC policy in a governed schema without USAGE are not facts for kj_door",
       "refusals": []
