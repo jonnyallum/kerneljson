@@ -21,7 +21,8 @@ type Refusal={role:RuntimeRole;sqlstate:"42501";fingerprint:string;multiplicity:
 const refusal=(role:RuntimeRole,sql:string):Refusal=>({role,sqlstate:"42501",fingerprint:sha(sql),multiplicity:1});
 /** Files whose every test is B1-specific: probes, catalogue, connection, definers, the runner cases and the static rules. */
 export const B1_FILES=["tests/runtime-roles-negative.integration.test.ts","tests/runtime-roles-catalogue.integration.test.ts",
-  "tests/runtime-roles-connection.integration.test.ts","tests/runtime-roles-definers.integration.test.ts","tests/runtime-roles-topology.test.ts",
+  "tests/runtime-roles-connection.integration.test.ts","tests/runtime-roles-definers.integration.test.ts","tests/runtime-roles-definers-base.integration.test.ts",
+  "tests/runtime-roles-topology.test.ts",
   "tests/runtime-roles-coresident-probes.integration.test.ts","tests/runtime-roles-log-fixture.integration.test.ts",
   "tests/security-definers.test.ts","tests/b1-static.test.ts","tests/b1-evidence.test.ts","tests/b1-coverage.test.ts","tests/b1-trace.test.ts",
   "tests/b1-refusal-accounting.test.ts","tests/b1-base-guard.test.ts","tests/b1-relation-inventory.integration.test.ts",

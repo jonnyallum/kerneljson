@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
 import pg from "pg";
-import { DATABASE, compose, holdRuntime, migrate, until } from "./support/local.js";
+import { testDatabase, testDatabaseArtifacts, type TestDatabase } from "./support/database.js";
 import { fetchRuntimeRoles } from "../services/kernel/src/health/collect.js";
 import { snapshotPlatformBaseline } from "../services/kernel/src/database/platform-baseline-snapshot.js";
+import type { Declaration } from "../services/kernel/src/database/co-resident.js";
 import {
   INVENTORY_SQL_SHA256, baselineBindingProblems, definerInventoryProblems, loadStageManifest, readStampFacts, stageFunctions, type PlatformBaseline,
 } from "../services/kernel/src/database/security-definers.js";
@@ -13,17 +14,19 @@ import {
  * KJ-P8 B1 - the SECURITY DEFINER inventory and the section 27.9 exception against a real catalogue
  * (ADR-0023 revision 2.5, sections 27.9 and 27.10, sealed at 424f85c283a543ba00a650ecc2ecc3a4346623df).
  *
- * A fresh database is migrated from canonical main WITHOUT B1 (derivation A of the source digest is read here), given
- * representative platform definers in a platform-looking schema, snapshotted read-only by the sealed procedure, and
- * only then migrated with B1. Every assertion is then made to fail on purpose and restored. Observed catalogue values
- * are written to artifacts/local/b1-definers.json. This database is a qualification fixture: it is NOT the target
- * environment, and its baseline is never the target platform baseline.
+ * ADR-0023 27.12.15 lane D, suite regression-definers, setup profile platform-definer-fixture: the runner created the
+ * plan database kj_b1_def, applied the base chain, ran the profile's four platform-style definers in schema auth at S2,
+ * snapshotted it read-only at S3 (the run-bound baseline and declaration this file reads by digest), applied B1 through
+ * the pinned engine and passed S7, all in this run. Every assertion is then made to fail on purpose and restored.
+ * Derivation A of the source digest (before B1) is lane A, tests/runtime-roles-definers-base.integration.test.ts; the
+ * frozen _acl, _tamper and _ledger blocks are the registered runner hooks stamp-foreign-grants, stamp-body-tamper and
+ * the six ledger hooks (tests/b1-runner-lifecycle.test.ts and tests/b1-runner-ledger.test.ts). Observed catalogue values
+ * are written to artifacts/local/b1-definers.json in the suite's working directory.
  */
-const B1 = "20261002090000_runtime_least_privilege_roles.sql";
-const tag = randomUUID().replaceAll("-", "").slice(0, 12);
-const name = `kj_b1_def_${tag}`;
-const admin = new pg.Pool({ connectionString: DATABASE, max: 1 });
-const url = (db = name) => DATABASE.replace(/\/kerneljson$/, `/${db}`);
+const name = "kj_b1_def";
+const tag = "def";
+let database: TestDatabase;
+const url = () => database.url;
 const manifest = loadStageManifest();
 const PIN = stageFunctions(manifest, "B1")[0]!.sourceDigest!;
 const lf = (t: string) => t.replaceAll("\r\n", "\n");
@@ -33,17 +36,19 @@ const DIGEST_SQL = `select encode(sha256(convert_to(replace(prosrc, E'\\r\\n', E
   from pg_proc where oid = '${STAMP}'::regprocedure`;
 let pool: pg.Pool;
 let baseline: PlatformBaseline;
+let declaration: Declaration;
+let run: Extract<Declaration, { mode: "EPHEMERAL_RUN_BOUND" }>["run"];
 let owner = "";
-let releaseRuntime = () => {};
 const evidence: Record<string, unknown> = {
   contract: "kerneljson:b1-definer-qualification/v1",
   design: manifest.design.sha,
   testedCommit: process.env["GITHUB_SHA"] ?? process.env["KERNELJSON_RELEASE_ID"] ?? "local",
-  environment: "qualification fixture (docker compose postgres); not the target environment",
+  environment: "qualification fixture (runner-created cluster of the pinned image); not the target environment",
 };
 const fixtures: { fixture: string; expected: string; observedProblems: string[]; failedOnPurpose: boolean; restored: boolean }[] = [];
 
-// The platform definers a Supabase-shaped target holds before B1, one per source-digest rule of 27.10.4.
+// The platform definers a Supabase-shaped target holds before B1, one per source-digest rule of 27.10.4. The runner's
+// profile created them from infrastructure/database/b1-fixture-platform-definers.sql; these texts restore them.
 const PLATFORM = [
   `create function auth.kj_platform_uid() returns uuid language sql stable security definer as $f$ select '00000000-0000-4000-8000-000000000000'::uuid $f$`,
   `create function auth.kj_platform_guard() returns void language plpgsql security definer set search_path = '' as $f$ begin perform 1; end $f$`,
@@ -52,66 +57,26 @@ const PLATFORM = [
 ];
 
 beforeAll(async () => {
-  releaseRuntime = holdRuntime();
-  compose("up", "-d", "db");
-  await until(() => admin.query("select 1"), (r) => r.rowCount === 1);
-  await admin.query(`create database ${name}`);
-  pool = new pg.Pool({ connectionString: url(), max: 4 });
+  database = await testDatabase("kj_b1_def");
+  pool = database.pool;
   pool.on("error", () => {});
-  await migrate(pool, { exclude: [B1] });
+  ({ baseline, declaration } = testDatabaseArtifacts("kj_b1_def"));
+  if (declaration.mode !== "EPHEMERAL_RUN_BOUND") throw new Error("a run-bound declaration is required");
+  run = declaration.run;
   owner = (await pool.query<{ o: string }>(`select pg_get_userbyid(nspowner) as o from pg_namespace where nspname = 'kernel_private'`)).rows[0]!.o;
-  // Derivation A: pg_proc.prosrc of a database migrated from main without B1, hashed in SQL and again in Node.
-  const a = (await pool.query<{ digest: string; prosrc: string }>(DIGEST_SQL)).rows[0]!;
-  const pre = (await pool.query(`select prosecdef, proconfig, proacl::text[] as acl from pg_proc where oid = '${STAMP}'::regprocedure`)).rows[0];
-  evidence["preB1"] = { derivationA: { sql: a.digest, node: hex(lf(a.prosrc)) }, stamp: pre };
-  // The Supabase migration ledger, as the target holds it before B1 (ADR-0023 27.11.6 item 3 requires it).
-  await createLedger(pool, manifest.baseMigrations.map((m) => m.file));
-  await pool.query(`create schema auth`);
-  for (const sql of PLATFORM) await pool.query(sql);
-  // A platform grants its definers to its own roles, not to PUBLIC. A PUBLIC-executable platform function would be a
-  // runtime-role grant outside the frozen manifest; that case is proved red below and is a cutover precondition.
-  await pool.query(`revoke execute on all functions in schema auth from public`);
-  const client = new pg.Client({ connectionString: url() });
-  await client.connect();
-  try {
-    baseline = await snapshotPlatformBaseline(client, "qualification-fixture", manifest);
-  } finally { await client.end(); }
-  await migrate(pool, { only: [B1] });
 });
 afterAll(async () => {
   mkdirSync("artifacts/local", { recursive: true });
   writeFileSync("artifacts/local/b1-definers.json", JSON.stringify({ ...evidence, fixtures }, null, 2) + "\n");
-  await pool?.end();
-  for (const db of [name, `${name}_acl`, `${name}_tamper`, `${name}_ledger`]) {
-    await until(() => admin.query("select count(*)::int as n from pg_stat_activity where datname = $1", [db]), (r) => r.rows[0].n === 0, 15000);
-    await admin.query(`drop database if exists ${db}`);
-  }
-  await admin.end();
-  releaseRuntime();
+  await database?.close();
 });
 
-const problems = () => definerInventoryProblems(pool, manifest, baseline);
-async function createLedger(db: pg.Pool, files: readonly string[]): Promise<void> {
-  await db.query(`create schema supabase_migrations`);
-  await db.query(`create table supabase_migrations.schema_migrations (version text primary key, name text)`);
-  for (const f of files) await db.query(`insert into supabase_migrations.schema_migrations values ($1, $2)`, [f.slice(0, 14), f.slice(15, -4)]);
-}
+const problems = () => definerInventoryProblems(pool, manifest, baseline, declaration);
 
 describe("27.9.3 source digest: two independent derivations", () => {
-  it("derivation A (catalogue of main without B1) equals derivation B (migration text) and the reviewed pin", () => {
-    const text = lf(readFileSync("supabase/migrations/20260916205049_release_provenance.sql", "utf8"));
-    const open = text.indexOf("create function kernel_private.stamp_binding_provenance()");
-    const start = text.indexOf("$$", open) + 2;
-    const derivationB = hex(text.slice(start, text.indexOf("$$", start)));
-    const a = (evidence["preB1"] as { derivationA: { sql: string; node: string } }).derivationA;
-    evidence["sourceDigest"] = { pin: PIN, derivationA: a, derivationB };
-    expect(a.sql).toBe(a.node);
-    expect(a.sql).toBe(derivationB);
-    expect(PIN).toBe(derivationB);
-  });
   it("after B1 the catalogue source still equals the pin", async () => {
     const after = (await pool.query<{ digest: string }>(DIGEST_SQL)).rows[0]!.digest;
-    (evidence["sourceDigest"] as Record<string, unknown>)["afterB1"] = after;
+    evidence["sourceDigest"] = { pin: PIN, afterB1: after };
     expect(after).toBe(PIN);
   });
 });
@@ -186,24 +151,24 @@ describe("27.10.1 ACTUAL equals EXPECTED(B1) = PLATFORM_BASELINE UNION { stamp_b
     expect(await problems()).toEqual([]);
   });
   it.skipIf(process.env["KJ_RUNTIME_ROLES"] === "discover")("database.runtimeRolesLeastPrivilege is green, read as kj_worker", async () => {
-    expect(await fetchRuntimeRoles(pool, { baseline })).toEqual({ available: true, problems: [] });
+    expect(await fetchRuntimeRoles(pool, { baseline, declaration, run })).toEqual({ available: true, problems: [] });
   });
   it("without a frozen baseline the health check stays red with TARGET_PLATFORM_BASELINE_PENDING", async () => {
-    const observed = await fetchRuntimeRoles(pool, { baseline: null });
+    const observed = await fetchRuntimeRoles(pool, { baseline: null, declaration, run });
     expect(observed.available && observed.problems).toContain("TARGET_PLATFORM_BASELINE_PENDING: no frozen platform SECURITY DEFINER baseline for this environment");
   });
   // Like the green check above, this needs a genuine kj_worker session, so it runs in the enforce run only.
   it.skipIf(process.env["KJ_RUNTIME_ROLES"] === "discover")("27.11: a platform function executable by PUBLIC in a schema the roles cannot USAGE is not a runtime fact", async () => {
     await pool.query(`grant execute on function auth.kj_platform_uid() to public`);
     try {
-      expect(await fetchRuntimeRoles(pool, { baseline })).toEqual({ available: true, problems: [] });
+      expect(await fetchRuntimeRoles(pool, { baseline, declaration, run })).toEqual({ available: true, problems: [] });
     } finally { await pool.query(`revoke execute on function auth.kj_platform_uid() from public`); }
   });
   it("27.11: once that schema has USAGE, the schema grant and the function grant are both unexpected facts and the check goes red", async () => {
     await pool.query(`grant execute on function auth.kj_platform_uid() to public`);
     await pool.query(`grant usage on schema auth to public`);
     try {
-      const observed = await fetchRuntimeRoles(pool, { baseline });
+      const observed = await fetchRuntimeRoles(pool, { baseline, declaration, run });
       expect(observed.available && observed.problems).toEqual(expect.arrayContaining([
         "kj_worker holds unlisted schema:auth:USAGE", "kj_door holds unlisted schema:auth:USAGE",
         "kj_worker holds unlisted function:auth.kj_platform_uid():EXECUTE", "kj_door holds unlisted function:auth.kj_platform_uid():EXECUTE"]));
@@ -228,13 +193,14 @@ describe("27.10.1 ACTUAL equals EXPECTED(B1) = PLATFORM_BASELINE UNION { stamp_b
     expect(await baselineBindingProblems(pool, otherSystem)).toEqual([expect.stringMatching(/^platform baseline belongs to system 1, not this database's [0-9]+$/)]);
     const otherDatabase = { ...baseline, provenance: { ...baseline.provenance, database: "some_other_db" } };
     expect(await baselineBindingProblems(pool, otherDatabase)).toEqual([`platform baseline belongs to database some_other_db, not ${name}`]);
-    expect(await definerInventoryProblems(pool, manifest, otherSystem)).toEqual([expect.stringContaining("platform baseline belongs to system 1")]);
+    expect(await definerInventoryProblems(pool, manifest, otherSystem, declaration)).toEqual([
+      expect.stringMatching(/^platform baseline belongs to system 1, not this database's [0-9]+$/), "baseline and declaration provenance differ"]);
   });
   it("the health check reports an unlisted privilege and an unlisted definer function together", async () => {
     await pool.query(`grant truncate on public.task_events to kj_door`);
     await pool.query(`create function public.kj_b1_probe_definer2() returns int language sql security definer as 'select 1'`);
     try {
-      const observed = await fetchRuntimeRoles(pool, { baseline });
+      const observed = await fetchRuntimeRoles(pool, { baseline, declaration, run });
       expect(observed.available && observed.problems).toEqual(expect.arrayContaining([
         "kj_door holds unlisted relation:public.task_events:TRUNCATE", "unlisted SECURITY DEFINER function public.kj_b1_probe_definer2()"]));
     } finally {
@@ -340,76 +306,5 @@ describe("27.10.2 the excluded-schema predicate, observed", () => {
     evidence["reservedPrefix"] = { statement: "create schema pg_kj_probe", sqlstate: code };
     if (code === "OK") await pool.query(`drop schema pg_kj_probe`);
     expect(code).toBe("42939");
-  });
-});
-
-describe("the B1 migration's pre-COMMIT self-check", () => {
-  it("removes any foreign EXECUTE grant so the ACL is exactly the owner's", async () => {
-    await admin.query(`create database ${name}_acl`);
-    const db = new pg.Pool({ connectionString: url(`${name}_acl`), max: 2 });
-    db.on("error", () => {});
-    try {
-      await migrate(db, { exclude: [B1] });
-      await db.query(`grant execute on function ${STAMP} to anon, authenticated`);
-      await migrate(db, { only: [B1] });
-      const acl = (await db.query<{ acl: string[] }>(`select proacl::text[] as acl from pg_proc where oid = '${STAMP}'::regprocedure`)).rows[0]!.acl;
-      const o = (await db.query<{ o: string }>(`select pg_get_userbyid(proowner) as o from pg_proc where oid = '${STAMP}'::regprocedure`)).rows[0]!.o;
-      expect(acl).toEqual([`${o}=X/${o}`]);
-    } finally { await db.end(); }
-  });
-  it("refuses to commit B1 when the stamp body differs from the pin (23514)", async () => {
-    await admin.query(`create database ${name}_tamper`);
-    const db = new pg.Pool({ connectionString: url(`${name}_tamper`), max: 2 });
-    db.on("error", () => {});
-    try {
-      await migrate(db, { exclude: [B1] });
-      await db.query(`update pg_proc set prosrc = prosrc || ' ' where oid = '${STAMP}'::regprocedure`);
-      const failure = await migrate(db, { only: [B1] }).then(() => null, (e: { code?: string; message?: string }) => e);
-      evidence["migrationRefusesTamperedBody"] = { sqlstate: failure?.code, message: failure?.message?.slice(0, 200) };
-      expect(failure?.code).toBe("23514");
-      expect(failure?.message).toMatch(/source digest of kernel_private\.stamp_binding_provenance\(\)/);
-      const roles = (await db.query<{ n: number }>(`select count(*)::int as n from pg_proc where oid = '${STAMP}'::regprocedure and prosecdef`)).rows[0]!.n;
-      expect(roles).toBe(0); // the whole B1 transaction rolled back
-    } finally { await db.end(); }
-  });
-});
-
-describe("27.11.6 item 3: the snapshot needs the ledger at the expected head and the stamp function", () => {
-  it("refuses with no ledger, with the wrong head, and without the stamp function; succeeds once all hold", async () => {
-    await admin.query(`create database ${name}_ledger`);
-    const db = new pg.Pool({ connectionString: url(`${name}_ledger`), max: 2 });
-    db.on("error", () => {});
-    const snap = async () => {
-      const client = new pg.Client({ connectionString: url(`${name}_ledger`) });
-      await client.connect();
-      try { return await snapshotPlatformBaseline(client, "ledger-fixture", manifest); } finally { await client.end(); }
-    };
-    try {
-      await migrate(db, { exclude: [B1] });
-      await expect(snap()).rejects.toThrow("PLATFORM_BASELINE_REFUSED: the migration ledger supabase_migrations.schema_migrations does not exist");
-      const files = manifest.baseMigrations.map((m) => m.file);
-      await createLedger(db, files.slice(0, -1));
-      await expect(snap()).rejects.toThrow(/PLATFORM_BASELINE_REFUSED: the migration ledger head is [0-9]{14}, not [0-9]{14}, the final base migration before B1/);
-      await db.query(`insert into supabase_migrations.schema_migrations values ($1, $2)`, [files.at(-1)!.slice(0, 14), "last"]);
-      // A gapped ledger: correct head, but rows for migrations that were applied manually are missing.
-      const gap = files.slice(10, 13).map((f) => f.slice(0, 14));
-      await db.query(`delete from supabase_migrations.schema_migrations where version = any($1)`, [gap]);
-      await expect(snap()).rejects.toThrow(`PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; missing ${gap.join(", ")}`);
-      for (const v of gap) await db.query(`insert into supabase_migrations.schema_migrations values ($1, 'restored')`, [v]);
-      // An unexpected extra row that is not B1.
-      await db.query(`insert into supabase_migrations.schema_migrations values ('20250101000000', 'unexpected')`);
-      await expect(snap()).rejects.toThrow("PLATFORM_BASELINE_REFUSED: the migration ledger does not record exactly the 22 base migrations before B1; unexpected 20250101000000");
-      await db.query(`delete from supabase_migrations.schema_migrations where version = '20250101000000'`);
-      // B1 already recorded in the ledger.
-      await db.query(`insert into supabase_migrations.schema_migrations values ('20261002090000', 'b1')`);
-      await expect(snap()).rejects.toThrow("PLATFORM_BASELINE_REFUSED: B1 is already applied to this database");
-      await db.query(`delete from supabase_migrations.schema_migrations where version = '20261002090000'`);
-      await db.query(`alter function ${STAMP} rename to stamp_binding_provenance_moved`);
-      await expect(snap()).rejects.toThrow("PLATFORM_BASELINE_REFUSED: kernel_private.stamp_binding_provenance() does not exist");
-      await db.query(`alter function kernel_private.stamp_binding_provenance_moved() rename to stamp_binding_provenance`);
-      const ok = await snap();
-      expect(ok.provenance.migrationLedger).toEqual({ table: "supabase_migrations.schema_migrations", present: true, head: files.at(-1)!.slice(0, 14), b1Recorded: false,
-        versions: files.map((f) => f.slice(0, 14)).sort() });
-    } finally { await db.end(); }
   });
 });

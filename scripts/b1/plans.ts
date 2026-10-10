@@ -22,6 +22,8 @@ interface SuiteSpec {id:string;files:readonly string[];databases:readonly string
 const SPECS:readonly SuiteSpec[]=[
   {id:"regression-probes",files:["tests/runtime-roles-log-fixture.integration.test.ts","tests/runtime-roles-negative.integration.test.ts"],
     databases:["kj_b1_log","kj_b1_neg"],profile:"none",refusalPolicy:"probes",compose:null,timeoutSeconds:1800,roles:["kj_worker","kj_door"]},
+  {id:"regression-definers",files:["tests/runtime-roles-definers.integration.test.ts"],
+    databases:["kj_b1_def"],profile:"platform-definer-fixture",refusalPolicy:"none",compose:null,timeoutSeconds:1200,roles:["kj_worker","kj_door"]},
   {id:"regression-helper-probes",files:["tests/runtime-roles-coresident-probes.integration.test.ts"],
     databases:["kj_b1_helper"],profile:"pinned-helper",refusalPolicy:"probes",compose:null,timeoutSeconds:900,roles:["kj_worker","kj_door"]},
 ];

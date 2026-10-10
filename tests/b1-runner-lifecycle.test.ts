@@ -5,6 +5,7 @@ import { CASE_TIMEOUT, expectFixturePassed, expectQualified, runCase } from "./s
 import { strictJson } from "../services/kernel/src/database/strict-json.js";
 import type { Profile } from "../scripts/b1/hooks.js";
 import type { RunRecord } from "../scripts/b1/evidence.js";
+import { SEALED_BASE_VERSIONS } from "../services/kernel/src/database/ledger-contract.js";
 
 /**
  * ADR-0023 27.12.13: positive controls (EPH-1, and cases 1, 23, 41, ACL-A and LEDGER-A in this mode, unhooked) and
@@ -21,7 +22,9 @@ function positive(profile:Profile,setSha256:string){
     const outcome=await runCase(`EPH-1 positive control ${profile}`,profile,[]);
     const record=expectQualified(outcome),dir=outcome.summary!.directory;
     const declaration=strictJson(readFileSync(join(dir,"1-declaration.json"),"utf8")) as {mode:string;run:unknown;setSha256:string;provenance:{systemIdentifier:string}};
-    const baseline=strictJson(readFileSync(join(dir,"1-baseline.json"),"utf8")) as {mode:string;run:unknown};
+    const baseline=strictJson(readFileSync(join(dir,"1-baseline.json"),"utf8")) as {mode:string;run:unknown;provenance:{migrationLedger:unknown}};
+    const versions=[...SEALED_BASE_VERSIONS];
+    expect(baseline.provenance.migrationLedger).toEqual({table:"supabase_migrations.schema_migrations",present:true,head:versions.at(-1),b1Recorded:false,versions});
     expect(declaration.mode).toBe("EPHEMERAL_RUN_BOUND");expect(baseline.mode).toBe("EPHEMERAL_RUN_BOUND");
     expect(baseline.run).toEqual(declaration.run);
     expect(declaration.setSha256).toBe(setSha256);
