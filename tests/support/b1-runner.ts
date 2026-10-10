@@ -34,10 +34,11 @@ export function runEntry(args:readonly string[],options:{cwd?:string;env?:Record
   });
 }
 /** One registered runner case: release R is HEAD of the clean checkout; the record is re-validated here. */
-export async function runCase(label:string,profile:Profile,hooks:readonly string[],options:{suite?:string;cwd?:string;env?:Record<string,string>}={}):Promise<RunnerOutcome>{
-  const R=head();
+/** `release` and `entry` let a case run a throwaway clone's own commit and its own committed runner. */
+export async function runCase(label:string,profile:Profile,hooks:readonly string[],options:{suite?:string;cwd?:string;env?:Record<string,string>;release?:string;entry?:string}={}):Promise<RunnerOutcome>{
+  const R=options.release ?? head();
   const args=["--release",R,"--profile",profile,...hooks.flatMap(h=>["--hook",h]),...(options.suite?["--regression-suite",options.suite]:[])];
-  const result=await runEntry(args,{...(options.cwd?{cwd:options.cwd}:{}),...(options.env?{env:options.env}:{})});
+  const result=await runEntry(args,{...(options.cwd?{cwd:options.cwd}:{}),...(options.env?{env:options.env}:{}),...(options.entry?{entry:options.entry}:{})});
   const line=result.stdout.trim().split(/\r?\n/).at(-1) ?? "";
   let summary:Summary|null,record:RunRecord|null=null,consumerError:string|null=null;
   try{summary=JSON.parse(line) as Summary;}catch{summary=null;}

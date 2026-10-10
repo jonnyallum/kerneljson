@@ -208,6 +208,14 @@ export async function runStageT(input:StageTInput):Promise<StageTResult>{
       const collected=input.collection.filter(e=>files.includes(e.file));
       for(const c of collected) if(!located.has(`${c.file}:${c.location.line}:${c.location.column}`)) problems.push(`collected location without a report entry: ${c.file}:${c.location.line}`);
       if(!parsed.entries.length) problems.push("report has no tests");
+      // Intentional-skip accounting (27.12.15): a skipped entry must be a tests/baseline.json intentionalSkips entry at R,
+      // and a listed skip of a gated file must pass in regression-gated, never skip there.
+      const baseline=strictJson(input.release.blob("tests/baseline.json").bytes.toString("utf8")) as {intentionalSkips:{file:string;name:string}[]};
+      const listed=new Set(baseline.intentionalSkips.map(s=>`${s.file.startsWith("tests/")?s.file:`tests/${s.file}`}\0${s.name}`));
+      for(const e of parsed.entries.filter(e=>e.status==="skipped")){
+        if(!listed.has(`${e.file}\0${e.name}`)) problems.push(`skipped test not an intentional skip: ${e.file} ${e.name}`);
+        else if(suite.id.startsWith("regression-gated")) problems.push(`intentional skip did not pass in regression-gated: ${e.file} ${e.name}`);
+      }
     }catch(error){problems.push(error instanceof Error?error.message:String(error));}
   }
   return {outcome:problems.length?"failed":"passed",problems,exitCode,reportSha256,traceHashes,logExtractSha256,

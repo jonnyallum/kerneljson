@@ -67,7 +67,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        file: [coresident, settings, ledger, lifecycle, refusals]
+        file: [coresident, settings, ledger, lifecycle, refusals, staget]
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}

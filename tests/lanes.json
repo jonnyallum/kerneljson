@@ -64,6 +64,7 @@
     "tests/b1-runner-lifecycle.test.ts": "runner-cases",
     "tests/b1-runner-refusals.test.ts": "runner-cases",
     "tests/b1-runner-settings.test.ts": "runner-cases",
+    "tests/b1-runner-staget.test.ts": "runner-cases",
     "tests/b1-static.test.ts": "base-regression",
     "tests/b1-trace.test.ts": "base-regression",
     "tests/b1-workflow.test.ts": "base-regression",

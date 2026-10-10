@@ -1492,6 +1492,41 @@
       "refusals": []
     },
     {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-5 a suite that does not run its listed tests completely and successfully a listed file missing from the report: the file set differs and its collected locations have no entries",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-5 a suite that does not run its listed tests completely and successfully a listed file skipped: the skips are not intentional, and the declared probes never ran",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-5 a suite that does not run its listed tests completely and successfully one failed test: regressionOutcome failed, status unchanged",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-5 a suite that does not run its listed tests completely and successfully zero tests and exit 0: the report holds no tests and not the suite's file",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-6 and CON-10 changes made during stage T CON-10 a foreign container attached to the run network: the post-T network check fails",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-6 and CON-10 changes made during stage T CON-10 the cluster removed during stage T: L6 fails and the status is NOT_QUALIFIED",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-6 and CON-10 changes made during stage T CON-6 databases created, copied with TEMPLATE and a planned one dropped: the post-T database list fails",
+      "refusals": []
+    },
+    {
       "file": "tests/b1-static.test.ts",
       "name": "27.12.13.6 committed artefacts are HOSTED_COMMITTED only (EPH-12, EPH-16, EPH-19) fails with a committed run record",
       "refusals": []
