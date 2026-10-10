@@ -111,7 +111,7 @@ export class EphemeralCluster {
       if(substituted){this.containerId=substituted.containerId;this.port=substituted.port;}
       else this.attest();
       return {substituted};
-    }catch(error){this.record({step:"L2",outcome:"refused",details:String(error)});throw error;}
+    }catch(error){this.record({step:"L2",outcome:"refused",details:error instanceof Error?error.message:String(error)});throw error;}
   }
   /** Registered hook L3-skip: the attestation is omitted for the next connection only; L5 still runs. */
   skipAttestationOnce():void{this.skipNextAttestation=true;}
@@ -139,7 +139,8 @@ export class EphemeralCluster {
       this.record({step:"L3",outcome:"passed",details:{containerId:this.containerId,created:this.created,port:this.port,networkId:this.networkId}});
     }catch(error){
       const message=String(error instanceof Error?error.message:error).replace(/^LIFECYCLE_REFUSED: /,"");
-      this.record({step:"L3",outcome:"refused",details:message});throw Error(`LIFECYCLE_REFUSED: L3: ${message}`);
+      const refusal=`LIFECYCLE_REFUSED: L3: ${message}`;
+      this.record({step:"L3",outcome:"refused",details:refusal});throw Error(refusal);
     }
   }
   async connect(database:string):Promise<pg.Client>{
