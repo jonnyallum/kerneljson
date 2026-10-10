@@ -164,8 +164,8 @@ export async function runStageT(input:StageTInput):Promise<StageTResult>{
     const text=logs.stderr;
     try{
       logRefusalsTyped=extractLogRefusals(text,runId,begin.pid);
-      const window=text.slice(text.indexOf(`kj-t-begin ${runId}`),text.indexOf(`kj-t-end ${runId}`));
-      writeFileSync(join(work,"log-extract.txt"),window);logExtractSha256=hash(window);
+      // The whole standard-error log is kept, so a consumer can repeat the extraction between the same markers.
+      writeFileSync(join(work,"database-log.txt"),text);logExtractSha256=hash(text);
     }catch(error){problems.push(error instanceof Error?error.message:String(error));}
   }
   // 6. Traces: read by the runner from the directory it created, hashed, and accounted.
@@ -175,7 +175,13 @@ export async function runStageT(input:StageTInput):Promise<StageTResult>{
     // The harness records Vitest's current test name ("describe > test"); identity is the expanded report name, whose
     // parts are joined by one space (27.12.15 "Identity is the expanded report entry").
     traceRefusals=traces.refusals.map(r=>({...r,test:r.test.split(" > ").join(" ")}));traceHashes=traces.hashes;
-    if(suite.harness==="enforce" && traces.events.some(e=>e.kind==="refused" && e.classification==="production")) problems.push("a production statement was refused");
+    if(traces.events.some(e=>e.kind==="refused" && e.classification==="production")) problems.push("a production statement was refused");
+    // G4 (enforce) and G5 (discover): the committed analyser at R over exactly these files; any production refusal or
+    // production operation outside the frozen manifest fails the suite.
+    const inventory=join(work,"dynamic-inventory.json");
+    const analysed=spawnSync(process.execPath,[resolve(input.root,"scripts/b1/analyse-trace.mjs"),traceDir,inventory,"--fail-on-refusal"],
+      {cwd:input.root,encoding:"utf8",timeout:300000,windowsHide:true});
+    if(analysed.status!==0) problems.push(`trace inventory gate (${suite.harness==="enforce"?"G4":"G5"}) failed: ${(analysed.stderr || analysed.stdout).slice(0,800)}`);
   }catch(error){problems.push(error instanceof Error?error.message:String(error));}
   // 7. Expected refusal multiset: empty, or the declared refusals of the probe tests the suite runs.
   let expected:Refusal[]=[];

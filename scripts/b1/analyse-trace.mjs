@@ -12,14 +12,21 @@ import { opsOf } from "./static-inventory.mjs";
 
 const ROOT = resolve(dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "../..");
 const positional = process.argv.slice(2).filter((a) => !a.startsWith("--"));
-const traceDir = join(ROOT, positional[0] ?? "artifacts/local/b1-trace");
-const out = positional[1] ?? "artifacts/local/b1-dynamic-inventory.json";
+// Paths may be absolute (the stage T runner passes the trace directory it created) or relative to the repository.
+const traceDir = resolve(ROOT, positional[0] ?? "artifacts/local/b1-trace");
+const out = resolve(ROOT, positional[1] ?? "artifacts/local/b1-dynamic-inventory.json");
 const manifest = JSON.parse(readFileSync(join(ROOT, "infrastructure/database/runtime-role-manifest.json"), "utf8"));
 
 const events = [];
 if (existsSync(traceDir))
   for (const f of readdirSync(traceDir).filter((f) => f.endsWith(".jsonl")).sort())
-    for (const line of readFileSync(join(traceDir, f), "utf8").split("\n").filter(Boolean)) events.push(JSON.parse(line));
+    for (const line of readFileSync(join(traceDir, f), "utf8").split("\n").filter(Boolean)) {
+      const e = JSON.parse(line);
+      // ADR-0023 27.12.15 (G4, G5): the inventory and the zero-refusal gate are over production statements. A deliberate
+      // probe (classification "probe", a genuine login of the probed role inside a test) is accounted instead by the
+      // suite's declared refusal multiset. Trace headers carry no role and are not events.
+      if (e.kind && e.classification !== "probe") events.push(e);
+    }
 
 const granted = (role, object, verb) => {
   const r = manifest.roles[role];
@@ -65,8 +72,8 @@ for (const role of Object.keys(manifest.roles)) {
       .sort((a, b) => a.message.localeCompare(b.message)),
   };
 }
-mkdirSync(join(ROOT, dirname(out)), { recursive: true });
-writeFileSync(join(ROOT, out), JSON.stringify(result, null, 2) + "\n");
+mkdirSync(dirname(out), { recursive: true });
+writeFileSync(out, JSON.stringify(result, null, 2) + "\n");
 for (const [role, r] of Object.entries(result.roles))
   console.log(`${role}: ${r.statements} distinct statements (login ${r.byConnection.login}, set-role ${r.byConnection.setRole}); observed ops ${r.observed.length}; not in manifest ${r.observedNotInManifest.length}; never observed ${r.inManifestNeverObserved.length}; refusals ${r.denied.length}`);
 console.log("wrote", out);

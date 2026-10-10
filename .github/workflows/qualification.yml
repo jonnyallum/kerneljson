@@ -1,144 +1,220 @@
 name: Kernel qualification
+# KJ-P8 B1 (ADR-0023 27.12.15, revision 2.7.9). No job applies the B1 migration except the governed ephemeral entry point,
+# on clusters it creates itself. Lane A helpers refuse B1 and run the base chain only. No environment, deployment
+# credential, vault access, remote Docker endpoint or production project is supplied to any job. The gate recomputes
+# every result from the evidence files and refuses the commit if any registered suite is missing, stale or failing.
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
+env:
+  CI: 'true'
+  KERNELJSON_RELEASE_ID: ${{ github.sha }}
+  DOCKER_CONTEXT: default
 jobs:
-  validate:
+  static:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    env:
-      CI: 'true'
-      KERNELJSON_RELEASE_ID: ${{ github.sha }}
-      DOCKER_CONTEXT: default
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
+        with: {persist-credentials: false}
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10.4.0
+        with: {version: 10.4.0}
       - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - name: Install frozen dependencies
-        run: pnpm install --frozen-lockfile
+        with: {node-version-file: .node-version, cache: pnpm}
+      - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
-      - name: Disposable local regression suite
-        run: |
-          test -z "$DOCKER_HOST"
-          test "$(docker context show)" = default
-          mkdir -p artifacts/local artifacts/local/b1-trace
-          git rev-parse HEAD > artifacts/local/tested-commit.txt
-          # KJ-P8 B1: the suite runs production code as kj_worker / kj_door (tests/support/runtime-roles.ts).
-          node scripts/b1/build-manifest.mjs --check
-          pnpm test --reporter=default --reporter=json --outputFile=artifacts/local/tests.json
-          pnpm test:baseline
-          # Statement trace of the run above against the frozen manifest; a refusal of a runtime statement fails.
-          node scripts/b1/analyse-trace.mjs artifacts/local/b1-trace artifacts/local/b1-dynamic-inventory.json --fail-on-refusal
       - run: pnpm build
-      - name: Faculty authority mutation checks
-        run: node scripts/mutation-check-faculties.mjs
-      # KJ-P7A: every primary-identity authority rule must be proven by a test that FAILS when the rule
-      # is broken. Per-mutation vitest logs and JSON reports are kept with the test evidence below.
-      - name: Identity authority mutation checks
-        timeout-minutes: 35
-        env:
-          MUTATION_LOG_DIR: artifacts/local/identity-mutations
-        run: node scripts/mutation-check-identity.mjs
-      - name: Production worker image startup
+      - name: G1 manifest drift, hook registry and required rows
+        env: {TMPDIR: '${{ runner.temp }}'}
         run: |
-          docker build -f infrastructure/docker/worker.Dockerfile -t kerneljson-worker:qualification .
-          bash scripts/check-worker-image.sh kerneljson-worker:qualification
-      - name: Retain test evidence
+          mkdir -p "$RUNNER_TEMP/evidence/static"
+          node scripts/b1/build-manifest.mjs --check
+          node --import tsx scripts/b1/build-hook-registry.ts --check
+          node --import tsx scripts/b1/build-required.ts --check
+          node --import tsx scripts/b1/ci-collection.ts "$RUNNER_TEMP/evidence/static/collection.json"
+          touch "$RUNNER_TEMP/evidence/static/g1-passed"
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: qualification-${{ github.sha }}
-          path: artifacts/local/
-          retention-days: 14
-      - name: Dispose test stack
-        if: always()
-        run: docker --context default compose -f infrastructure/docker/validation.compose.yaml down --volumes
-  # KJ-P8 B1 (ADR-0023 revision 2.5, section 27.6): the discover run, the static and dynamic inventories and the
-  # environment-gated files under the runtime roles. The enforce run of the whole suite stays in `validate`.
-  b1-qualification:
+        with: {name: evidence-static, path: '${{ runner.temp }}/evidence/static', retention-days: 14}
+  base-regression:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    env:
-      CI: 'true'
-      KERNELJSON_RELEASE_ID: ${{ github.sha }}
-      DOCKER_CONTEXT: default
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
+        with: {persist-credentials: false}
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10.4.0
+        with: {version: 10.4.0}
       - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - name: Install frozen dependencies
-        run: pnpm install --frozen-lockfile
-      - name: B1 discover run, inventories and environment-gated files
+        with: {node-version-file: .node-version, cache: pnpm}
+      - run: pnpm install --frozen-lockfile
+      - name: Lane A on the validation stack (harness base; B1 never applied)
+        env: {KJ_RUNTIME_ROLES: base, TMPDIR: '${{ runner.temp }}'}
         run: |
-          test -z "$DOCKER_HOST"
-          test "$(docker context show)" = default
-          git rev-parse HEAD > artifacts-tested-commit.txt
-          bash scripts/b1/qualify-ci.sh
-          mv artifacts-tested-commit.txt artifacts/local/b1/tested-commit.txt
-      - name: Retain B1 qualification evidence
+          test -z "${DOCKER_HOST:-}"
+          mkdir -p "$RUNNER_TEMP/evidence/base-regression"
+          files=$(node -e "const l=require('./tests/lanes.json');console.log(Object.entries(l.files).filter(([,s])=>s==='base-regression').map(([f])=>f).join(' '))")
+          node node_modules/vitest/vitest.mjs run $files --reporter=default --reporter=json \
+            --outputFile.json="$RUNNER_TEMP/evidence/base-regression/base-regression.json" --includeTaskLocation
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: b1-qualification-${{ github.sha }}
-          path: artifacts/local/b1/
-          retention-days: 14
-      - name: Dispose test stack
-        if: always()
-        run: docker --context default compose -f infrastructure/docker/validation.compose.yaml down --volumes
-  # KJ-P7B-1: every identity cognition binding rule (ADR-0022, D1 erratum) must be proven by a test that FAILS, or by the
-  # migration's own pre-COMMIT qualification refusing, when the rule is broken. Apply failures never count as a kill.
-  # A separate job so its runtime cannot starve the main qualification job's 60-minute budget.
-  identity-cognition-mutations:
+        with: {name: evidence-base-regression, path: '${{ runner.temp }}/evidence/base-regression', retention-days: 14}
+      - if: always()
+        run: docker compose -f infrastructure/docker/validation.compose.yaml down --volumes
+  runner-cases:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    env:
-      CI: 'true'
-      KERNELJSON_RELEASE_ID: ${{ github.sha }}
-      DOCKER_CONTEXT: default
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        file: [coresident, settings, ledger, lifecycle, refusals]
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
+        with: {persist-credentials: false}
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10.4.0
+        with: {version: 10.4.0}
       - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - name: Install frozen dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Identity cognition mutation checks
-        timeout-minutes: 110
-        env:
-          MUTATION_LOG_DIR: artifacts/local/identity-cognition-mutations
+        with: {node-version-file: .node-version, cache: pnpm}
+      - run: pnpm install --frozen-lockfile
+      - name: Lanes B and C through the ephemeral entry point (Linux engine)
+        env: {KJ_RUNTIME_ROLES: base, TMPDIR: '${{ runner.temp }}'}
         run: |
-          docker --context default compose -f infrastructure/docker/validation.compose.yaml up -d db
-          node scripts/mutation-check-identity-cognition.mjs
-      - name: Retain mutation evidence
+          test -z "${DOCKER_HOST:-}"
+          mkdir -p "$RUNNER_TEMP/evidence/runner-cases"
+          node node_modules/vitest/vitest.mjs run tests/b1-runner-${{ matrix.file }}.test.ts --maxConcurrency=3 --reporter=default \
+            --reporter=json --outputFile.json="$RUNNER_TEMP/evidence/runner-cases/${{ matrix.file }}.json" --includeTaskLocation
+      - if: always()
+        run: cp -r artifacts/local/b1-runner-cases "$RUNNER_TEMP/evidence/runner-cases/cases-${{ matrix.file }}" || true
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: identity-cognition-mutations-${{ github.sha }}
-          path: artifacts/local/identity-cognition-mutations/
-          retention-days: 14
-      - name: Dispose test stack
+        with: {name: 'evidence-runner-cases-${{ matrix.file }}', path: '${{ runner.temp }}/evidence/runner-cases', retention-days: 14}
+  stage-t:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {suite: regression-enforce, profile: none}
+          - {suite: regression-enforce-discover, profile: none}
+          - {suite: regression-stack, profile: none}
+          - {suite: regression-stack-discover, profile: none}
+          - {suite: regression-probes, profile: none}
+          - {suite: regression-probes-discover, profile: none}
+          - {suite: regression-definers, profile: platform-definer-fixture}
+          - {suite: regression-definers-discover, profile: platform-definer-fixture}
+          - {suite: regression-gated, profile: none}
+          - {suite: regression-gated-discover, profile: none}
+          - {suite: regression-helper-probes, profile: pinned-helper}
+          - {suite: regression-helper-probes-discover, profile: pinned-helper}
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: pnpm/action-setup@v4
+        with: {version: 10.4.0}
+      - uses: actions/setup-node@v4
+        with: {node-version-file: .node-version, cache: pnpm}
+      - run: pnpm install --frozen-lockfile
+      - name: Stage T through the ephemeral entry point
+        env: {TMPDIR: '${{ runner.temp }}'}
+        run: |
+          test -z "${DOCKER_HOST:-}"
+          node --import tsx scripts/b1/ci-stage-t.ts "$GITHUB_SHA" ${{ matrix.profile }} ${{ matrix.suite }} \
+            "$RUNNER_TEMP/evidence/stage-t/${{ matrix.suite }}"
+      - uses: actions/upload-artifact@v4
         if: always()
-        run: docker --context default compose -f infrastructure/docker/validation.compose.yaml down --volumes
-# No environment, deployment credentials, vault access, remote Docker endpoint,
-# Supabase CLI, or production project is supplied to this job.
+        with: {name: 'evidence-stage-t-${{ matrix.suite }}', path: '${{ runner.temp }}/evidence/stage-t', retention-days: 14}
+  eph26:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: pnpm/action-setup@v4
+        with: {version: 10.4.0}
+      - uses: actions/setup-node@v4
+        with: {node-version-file: .node-version, cache: pnpm}
+      - run: pnpm install --frozen-lockfile
+      - name: EPH-26 (b) - the pinned image absent and registry pulls blocked, from outside the runner
+        env: {TMPDIR: '${{ runner.temp }}'}
+        run: |
+          docker image rm -f postgres@sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929 postgres:17.6 || true
+          echo "127.0.0.1 registry-1.docker.io auth.docker.io index.docker.io production.cloudflare.docker.com" | sudo tee -a /etc/hosts
+          node --import tsx scripts/b1/ci-stage-t.ts "$GITHUB_SHA" none - "$RUNNER_TEMP/evidence/eph26" || true
+          node --import tsx scripts/b1/ci-eph26.ts "$GITHUB_SHA" "$RUNNER_TEMP/evidence/eph26"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: evidence-eph26, path: '${{ runner.temp }}/evidence/eph26', retention-days: 14}
+  mutations:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        id: [faculties, identity, identity-cognition]
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: pnpm/action-setup@v4
+        with: {version: 10.4.0}
+      - uses: actions/setup-node@v4
+        with: {node-version-file: .node-version, cache: pnpm}
+      - run: pnpm install --frozen-lockfile
+      - name: G7 mutation suite in lane A (base chain, never B1)
+        env: {KJ_RUNTIME_ROLES: base, MUTATION_LOG_DIR: '${{ runner.temp }}/mutation-logs', TMPDIR: '${{ runner.temp }}'}
+        run: |
+          mkdir -p "$RUNNER_TEMP/evidence/mutations"
+          docker compose -f infrastructure/docker/validation.compose.yaml up -d --wait db
+          node scripts/mutation-check-${{ matrix.id }}.mjs 2>&1 | tee "$RUNNER_TEMP/evidence/mutations/${{ matrix.id }}.txt"
+          test "${PIPESTATUS[0]}" -eq 0
+          git diff --exit-code
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: 'evidence-mutations-${{ matrix.id }}', path: '${{ runner.temp }}/evidence/mutations', retention-days: 14}
+      - if: always()
+        run: docker compose -f infrastructure/docker/validation.compose.yaml down --volumes
+  worker-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: G9 production worker image startup
+        run: |
+          mkdir -p "$RUNNER_TEMP/evidence/worker-image"
+          docker build -f infrastructure/docker/worker.Dockerfile -t kerneljson-worker:qualification .
+          bash scripts/check-worker-image.sh kerneljson-worker:qualification
+          touch "$RUNNER_TEMP/evidence/worker-image/g9-passed"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: evidence-worker-image, path: '${{ runner.temp }}/evidence/worker-image', retention-days: 14}
+  gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: [static, base-regression, runner-cases, stage-t, eph26, mutations, worker-image]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: pnpm/action-setup@v4
+        with: {version: 10.4.0}
+      - uses: actions/setup-node@v4
+        with: {node-version-file: .node-version, cache: pnpm}
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with: {pattern: 'evidence-*', path: '${{ runner.temp }}/downloaded'}
+      - name: Recompute every result for this commit
+        run: |
+          E="$RUNNER_TEMP/evidence"; D="$RUNNER_TEMP/downloaded"
+          mkdir -p "$E/stage-t" "$E/runner-cases" "$E/mutations"
+          cp -r "$D/evidence-static" "$E/static" || true
+          cp -r "$D/evidence-base-regression" "$E/base-regression" || true
+          cp -r "$D/evidence-worker-image" "$E/worker-image" || true
+          cp -r "$D/evidence-eph26" "$E/eph26" || true
+          for d in "$D"/evidence-stage-t-*; do cp -r "$d"/* "$E/stage-t/" || true; done
+          for d in "$D"/evidence-runner-cases-*; do cp "$d"/*.json "$E/runner-cases/" || true; done
+          for d in "$D"/evidence-mutations-*; do cp "$d"/*.txt "$E/mutations/" || true; done
+          node --import tsx scripts/b1/ci-gate.ts "$GITHUB_SHA" "$E"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: gate-${{ github.sha }}, path: '${{ runner.temp }}/evidence/gate.json', retention-days: 30}
