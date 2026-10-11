@@ -327,6 +327,156 @@
       "refusals": []
     },
     {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed INTERIM function rows: a granted function presented as outside the manifest, and a duplicate, are refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed INTERIM function rows: a row removed from the discover twin only differs across the twins",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed KNOWN GAP, UNRESOLVED BLOCKER (not detection): the same function row removed from BOTH twins and re-recorded is NOT refused by the interim rule",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed a definers fixture duplicated over another is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed a duplicate row identity is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed a forged pass flag (a state change recorded, pass kept true): the flag is recomputed, never trusted",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed a malformed file (a duplicate JSON key) is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed a malformed file (an extra top-level key) is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed a malformed file (another contract) is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed a malformed file (not JSON) is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed a row altered with the row count unchanged: digest differs; re-recorded, an unexpected and a missing row",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed accepts complete, passed, recorded evidence: regression-definers",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed accepts complete, passed, recorded evidence: regression-definers-discover",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed accepts complete, passed, recorded evidence: regression-probes",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed accepts complete, passed, recorded evidence: regression-probes-discover",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed an extra unexpected row is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed an incorrect recorded digest is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed an observed outcome altered with the pass flag kept: the row is not passed and the flag differs from recomputation",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed an unrecorded file under artifacts/local is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed cross-run substitution: another run's file is refused by digest; a record without digests is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed discover-twin corruption is refused like the primary's",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed evidence of another release: b1-definers.json testedCommit is not R (CI gate binding)",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed missing evidence in regression-probes-discover: deleted with its entry kept, or deleted with its entry",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed missing evidence in regression-probes: deleted with its entry kept, or deleted with its entry",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed reviewer bypass 1: a negative-probe row deleted is refused by digest, and by row when re-recorded",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed reviewer bypass 2: definer probes cut from 62 rows to 1 are refused, 61 rows missing",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed reviewer bypass 3: a discover-twin definers fixture marked failed is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed rows 25 to 27 are recomputed from their observed values",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed the expected rows are derived from the committed sources: 229 static negative rows, 62 definer probes, 28 fixtures",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed the three state rows the verifier names are still literals of the frozen negative test",
+      "refusals": []
+    },
+    {
       "file": "tests/b1-refusal-accounting.test.ts",
       "name": "R279 refusal accounting parser allows other backends between ERROR, CONTEXT and STATEMENT",
       "refusals": []
@@ -1519,6 +1669,16 @@
     {
       "file": "tests/b1-runner-staget.test.ts",
       "name": "CON-15 and CON-16 an absorbed production refusal CON-16 inside the compose worker: the container's trace records it and the log check fails",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-30 G8 evidence collected by the runner with SHA-256s a genuine run records both evidence files; the gate verifies them and refuses a copy edited after the run",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-30 G8 evidence collected by the runner with SHA-256s evidence missing a row the test lists: the runner refuses it itself, regressionOutcome failed, status unchanged",
       "refusals": []
     },
     {

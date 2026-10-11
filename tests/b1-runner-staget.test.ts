@@ -9,6 +9,7 @@ import { Release } from "../scripts/b1/release.js";
 import { RequiredSchema } from "../scripts/b1/coverage.js";
 import { REGRESSION_SUITES } from "../scripts/b1/plans.js";
 import { stageTSuiteResult, writeSuiteEvidence } from "../scripts/b1/gate-suite.js";
+import { DEFINER_PROBES_FILE, NEGATIVE_FILE, expectedG8Rows, g8SuiteProblems } from "../scripts/b1/g8.js";
 
 /**
  * ADR-0023 27.12.15 stage T refusals, end to end through the ephemeral entry point (lane C). CON-5: a suite that fails,
@@ -190,5 +191,43 @@ describe("CON-6 and CON-10 changes made during stage T", () => {
     expect(o.summary?.status).toBe("NOT_QUALIFIED");
     expect(o.record!.regressionOutcome).not.toBe("passed");
     expect(o.record!.events.filter((e) => e.step === "L6").map((e) => e.outcome)).not.toContain("passed");
+  }, CASE_TIMEOUT);
+});
+
+/**
+ * CON-30, the G8 half, end to end (ADR-0023 27.12.15 gate table "B1 evidence files": written in the suite's working
+ * directory, collected by the runner with SHA-256s; every row present and passed). A genuine regression-probes run at
+ * HEAD records both evidence files with their digests in the record; the gate's verification accepts them, and refuses
+ * a copy edited after the run. A throwaway clone whose negative test writes one row fewer (the committed test is never
+ * changed) is refused by the runner itself: regressionOutcome failed, status unchanged.
+ */
+const NEGATIVE_TEST = "tests/runtime-roles-negative.integration.test.ts";
+describe("CON-30 G8 evidence collected by the runner with SHA-256s", () => {
+  it("a genuine run records both evidence files; the gate verifies them and refuses a copy edited after the run", async () => {
+    const o = await runCase("CON-30 G8 evidence recorded", "none", [], { suite: "regression-probes" });
+    expect(o.record!.status).toBe("REPOSITORY_QUALIFIED");
+    expect(o.record!.regressionOutcome).toBe("passed");
+    const recorded = (o.record!.stageT as { evidence: { path: string; sha256: string }[] }).evidence;
+    expect(recorded.map((e) => e.path)).toEqual([DEFINER_PROBES_FILE, NEGATIVE_FILE]);
+    const release = new Release(ROOT, head());
+    const required = RequiredSchema.parse(strictJson(release.blob("tests/b1-required.json").bytes.toString("utf8")));
+    const suite = REGRESSION_SUITES.find((x) => x.id === "regression-probes")!;
+    const out = mkdtempSync(join(tmpdir(), "kj-b1-g8-evidence-"));
+    writeSuiteEvidence(out, o.exitCode, o.summary!);
+    const verified = stageTSuiteResult(out, suite, head(), release, required, ROOT);
+    expect(verified.problems).toEqual([]);
+    expect(g8SuiteProblems(suite.id, verified.evidence!, expectedG8Rows(release), head()).problems).toEqual([]);
+    const file = join(out, "stage-t", NEGATIVE_FILE), v = JSON.parse(readFileSync(file, "utf8")) as { results: unknown[] };
+    v.results.splice(5, 1);
+    writeFileSync(file, JSON.stringify(v, null, 2) + "\n");
+    const after = stageTSuiteResult(out, suite, head(), release, required, ROOT).problems.map((p) => p.join(": "));
+    expect(after).toContain(`G8: regression-probes ${NEGATIVE_FILE}: differs from the recorded digest`);
+  }, CASE_TIMEOUT);
+  it("evidence missing a row the test lists: the runner refuses it itself, regressionOutcome failed, status unchanged", async () => {
+    const c = clone({ [NEGATIVE_TEST]: (t) => t.replace(
+      'JSON.stringify({ contract: "kerneljson:b1-negative-probes/v1", results }, null, 2)',
+      'JSON.stringify({ contract: "kerneljson:b1-negative-probes/v1", results: results.slice(1) }, null, 2)') });
+    const o = await runClone("CON-30 G8 evidence row missing", c, "none", "regression-probes");
+    expectRegressionFailed(o, /G8 evidence artifacts\/local\/b1-negative-probes\.json: missing row /);
   }, CASE_TIMEOUT);
 });

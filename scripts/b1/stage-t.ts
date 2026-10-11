@@ -12,6 +12,7 @@ import type { Release } from "./release.js";
 import { extractLogRefusals, LOG_PREFIX, projectRefusals, refusalDifferences, type Refusal } from "./refusal-accounting.js";
 import { readTraces } from "./trace.js";
 import { parseReport, RequiredSchema, type Report } from "./coverage.js";
+import { collectLocalEvidence, expectedG8Rows, g8Files, g8SuiteProblems, type EvidenceEntry } from "./g8.js";
 import type { CollectedEntry } from "./collection.js";
 
 /**
@@ -27,6 +28,8 @@ export interface StageTInput {
 export interface StageTResult {
   outcome:"passed"|"failed";problems:string[];exitCode:number|null;
   reportSha256:string|null;traceHashes:Record<string,string>;logExtractSha256:string|null;
+  /** G8: every file under artifacts/local of the working directory, hashed by the runner; covered by the record digest. */
+  evidence:EvidenceEntry[];
   logSettings:{before:unknown;after:unknown};markerPid:string|null;
   expected:Refusal[];trace:Refusal[];log:unknown[];databases:string[];network:string[];
   workingDirectory:string;durationMs:number;composeDown:boolean|null;
@@ -130,6 +133,15 @@ export async function runStageT(input:StageTInput):Promise<StageTResult>{
     composeDown=down.status===0;
     if(!composeDown) problems.push(`regression compose project not stopped: ${(down.stderr ?? "").slice(0,300)}`);
   }
+  // G8 (27.12.15 gate table): the suite's local evidence files, collected by the runner with SHA-256s after the suite
+  // exited. For the probe and definer suites the runner also refuses incomplete evidence itself (every row their test
+  // lists, each passed); the CI gate recomputes all of it from the files and never trusts this verdict.
+  const local=collectLocalEvidence(work,suite.id);
+  problems.push(...local.problems.map(p=>`G8 evidence ${p}`));
+  if(g8Files(suite.id).length){
+    try{problems.push(...g8SuiteProblems(suite.id,local.files,expectedG8Rows(input.release),null).problems.map(p=>`G8 evidence ${p}`));}
+    catch(error){problems.push(`G8 evidence: ${error instanceof Error?error.message:String(error)}`);}
+  }
   // 4. Post-T reads through the factory (L3 and L5), then the end marker.
   const reader=await cluster.connect("postgres");let dbNames:string[]=[],dbRows:{datname:string;oid:string}[]=[];
   try{dbRows=(await reader.query<{datname:string;oid:string}>("select datname,oid::text as oid from pg_catalog.pg_database order by datname collate \"C\"")).rows;}
@@ -219,7 +231,7 @@ export async function runStageT(input:StageTInput):Promise<StageTResult>{
       }
     }catch(error){problems.push(error instanceof Error?error.message:String(error));}
   }
-  return {outcome:problems.length?"failed":"passed",problems,exitCode,reportSha256,traceHashes,logExtractSha256,
+  return {outcome:problems.length?"failed":"passed",problems,exitCode,reportSha256,traceHashes,logExtractSha256,evidence:local.entries,
     logSettings:{before:begin.settings,after:end.settings},markerPid:begin.pid,expected,trace:traceRefusals,log:projectRefusals(logRefusalsTyped),
     databases:dbNames,network:attached,workingDirectory:work,durationMs:Date.now()-started,composeDown};
 }
