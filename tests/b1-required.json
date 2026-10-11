@@ -328,17 +328,12 @@
     },
     {
       "file": "tests/b1-gates.test.ts",
-      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed INTERIM function rows: a granted function presented as outside the manifest, and a duplicate, are refused",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed F2 (inverted E1 KNOWN GAP): the same function row removed from BOTH twins and re-recorded is refused in both",
       "refusals": []
     },
     {
       "file": "tests/b1-gates.test.ts",
-      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed INTERIM function rows: a row removed from the discover twin only differs across the twins",
-      "refusals": []
-    },
-    {
-      "file": "tests/b1-gates.test.ts",
-      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed KNOWN GAP, UNRESOLVED BLOCKER (not detection): the same function row removed from BOTH twins and re-recorded is NOT refused by the interim rule",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed F3: ALL function rows removed from both twins and re-recorded are refused, every row missing",
       "refusals": []
     },
     {
@@ -438,12 +433,62 @@
     },
     {
       "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed fabricated function row: a function absent from the inventory, presented as refused, is refused as unexpected",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed function rows: a granted function presented as outside the manifest, and a duplicate function row, are refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed function rows: a row removed from the discover twin only is refused there as missing",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed function rows: an executable function (observed true) is not passed, and a flag claiming pass is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed inventory missing a function: the evidence row for it is refused as unexpected",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed inventory missing a manifest function: no expected rows can be derived (refused)",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed inventory with an extra function: the evidence lacks its rows, refused as missing for every role not granted it",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
       "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed missing evidence in regression-probes-discover: deleted with its entry kept, or deleted with its entry",
       "refusals": []
     },
     {
       "file": "tests/b1-gates.test.ts",
       "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed missing evidence in regression-probes: deleted with its entry kept, or deleted with its entry",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed predicate drift: an inventory generated under another predicate, unsorted or with a duplicate is refused statically",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed predicate drift: evidence enumerated under a wider predicate (an event-trigger function) is refused as unexpected",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed predicate drift: one shared predicate; the frozen negative test selects with it and asserts catalogue equality",
       "refusals": []
     },
     {
@@ -549,6 +594,11 @@
     {
       "file": "tests/b1-refusal-accounting.test.ts",
       "name": "R279 refusal accounting parser sums identical statements across tests without losing trace attribution",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-relation-inventory.integration.test.ts",
+      "name": "the committed function inventory is regenerated byte for byte from the base chain's catalogue",
       "refusals": []
     },
     {
@@ -1669,6 +1719,11 @@
     {
       "file": "tests/b1-runner-staget.test.ts",
       "name": "CON-15 and CON-16 an absorbed production refusal CON-16 inside the compose worker: the container's trace records it and the log check fails",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-30 G8 evidence collected by the runner with SHA-256s E2 stage T catalogue equality: a committed function inventory listing a function the catalogue lacks fails the negative test, and G8 refuses",
       "refusals": []
     },
     {

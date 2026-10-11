@@ -5,6 +5,7 @@ import { loadManifest, RUNTIME_ROLES, type RuntimeRole } from "../../services/ke
 import { COPROBES, FORBIDDEN, PROBES, SEPARATION, grantWithoutOption } from "../../tests/support/b1-probes.js";
 import { LOG_FIXTURE } from "../../tests/support/b1-log-fixture.js";
 import { RELATION_INVENTORY_PATH, type RelationInventory } from "./relation-inventory.js";
+import { FUNCTION_INVENTORY_PATH, parseFunctionInventory } from "./function-inventory.js";
 import { RequiredSchema } from "./coverage.js";
 import { collectTests, type CollectedEntry } from "./collection.js";
 
@@ -32,6 +33,9 @@ const NEGATIVE="tests/runtime-roles-negative.integration.test.ts",LOG="tests/run
 /** The declared refusals of every probe test, by expanded report name. */
 export function declaredRefusals():Map<string,{file:string;refusals:Refusal[]}>{
   const manifest=loadManifest(),inventory=strictJson(readFileSync(RELATION_INVENTORY_PATH,"utf8")) as RelationInventory;
+  // E2 (draft A10.7): the G1 job checks the committed function inventory statically (schema, shared predicate, "C" order,
+  // no duplicate); its catalogue regeneration is lane A's. Function rows declare no refusal (has_function_privilege).
+  parseFunctionInventory(strictJson(readFileSync(FUNCTION_INVENTORY_PATH,"utf8")));
   const out=new Map<string,{file:string;refusals:Refusal[]}>();
   const put=(file:string,name:string,refusals:Refusal[])=>{if(out.has(name)) throw Error(`duplicate expanded name: ${name}`);out.set(name,{file,refusals});};
   const holds=(role:RuntimeRole,relation:string)=>Object.hasOwn(manifest.roles[role].relations,relation);

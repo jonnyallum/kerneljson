@@ -7,9 +7,12 @@ import { mutationVerdictProblems } from "../scripts/b1/gates.js";
 import { REGRESSION_SUITES } from "../scripts/b1/plans.js";
 import { strictJson } from "../services/kernel/src/database/strict-json.js";
 import {
-  DEFINERS_FILE, DEFINER_PROBES_FILE, FUNCTION_PROBE, NEGATIVE_FILE, STATE_ROWS, collectLocalEvidence, expectedG8Rows, functionRowTwinProblems,
+  DEFINERS_FILE, DEFINER_PROBES_FILE, FUNCTION_PROBE, NEGATIVE_FILE, STATE_ROWS, collectLocalEvidence, expectedG8Rows,
   g8SuiteProblems, verifyRecordedEvidence, type EvidenceEntry,
 } from "../scripts/b1/g8.js";
+import {
+  FUNCTION_INVENTORY_PATH, FUNCTION_INVENTORY_PREDICATE, FUNCTION_INVENTORY_SQL, committedFunctionInventory, functionInventoryProblems,
+} from "../scripts/b1/function-inventory.js";
 
 /**
  * Failing fixtures for two CI gate rules (ADR-0023 27.12.15): CON-20, the discover/enforce inventory gate (G4, G5) of
@@ -91,19 +94,15 @@ describe("CON-20 the inventory gate over a trace (G4 enforce, G5 discover)", () 
 const source = { json: (path: string) => strictJson(readFileSync(path, "utf8")) };
 const EXPECTED = expectedG8Rows(source);
 const R0 = "e".repeat(40);
-const FUNCTION_ROWS: [string, string][] = [
-  ["kj_worker", "kernel_private.activate_release(pg_catalog.uuid, pg_catalog.text, pg_catalog.int8, pg_catalog.jsonb)"],
-  ["kj_worker", "kernel_private.set_identity_freeze(pg_catalog.uuid, pg_catalog.bool, pg_catalog.text)"],
-  ["kj_door", "kernel_private.activate_release(pg_catalog.uuid, pg_catalog.text, pg_catalog.int8, pg_catalog.jsonb)"],
-  ["kj_door", "kernel_private.set_identity_freeze(pg_catalog.uuid, pg_catalog.bool, pg_catalog.text)"],
-];
+/** The "function outside manifest" rows at this checkout: the committed function inventory minus each role's manifest. */
+const FUNCTION_ROWS: [string, string][] = [...EXPECTED.negative].filter(([, e]) => e.kind === "function")
+  .map(([id]) => { const [role, , sql] = JSON.parse(id) as string[]; return [role!, /^has_function_privilege\((.+)\)$/.exec(sql!)![1]!]; });
 type Row = Record<string, unknown>;
 function goodEvidence(): Record<string, { contract: string; results?: Row[]; fixtures?: Row[]; [k: string]: unknown }> {
   const negative: Row[] = [...EXPECTED.negative].map(([id, e]) => {
     const [role, probe, sql] = JSON.parse(id) as string[];
     return { role, probe, sql, expected: e.expected, observed: e.kind === "grant" ? "OK" : e.expected, pass: true };
   });
-  for (const [role, fn] of FUNCTION_ROWS) negative.push({ role, probe: FUNCTION_PROBE, sql: `has_function_privilege(${fn})`, expected: "false", observed: "false", pass: true });
   const probes: Row[] = [...EXPECTED.definerProbes.values()].map((e) => {
     const probe = e.sql === null ? STATE_ROWS.find(([n]) => n === e.row)![1] : JSON.parse([...EXPECTED.definerProbes].find(([, v]) => v === e)![0])[2];
     if (e.sql !== null) return { role: e.role, row: e.row, probe, sql: e.sql, expected: e.expected, observed: e.expected, stateUnchanged: true, pass: true };
@@ -135,7 +134,7 @@ const write = (dir: string, file: string, change: (v: { results?: Row[]; fixture
 function gate(suite: string, dir: string, entries: unknown, R = R0) {
   const v = verifyRecordedEvidence(dir, entries, suite);
   const rows = g8SuiteProblems(suite, v.files, EXPECTED, R);
-  return { problems: [...v.problems, ...rows.problems], functionRows: rows.functionRows };
+  return { problems: [...v.problems, ...rows.problems] };
 }
 const reRecorded = (suite: string, dir: string) => collectLocalEvidence(dir, suite).entries;
 const cases: string[] = [];
@@ -144,7 +143,10 @@ function make(suite: string, edit?: Parameters<typeof suiteDir>[1]) { const s = 
 
 describe("CON-30 G8 evidence: recorded digests, every row their test lists present exactly once and passed", () => {
   it("the expected rows are derived from the committed sources: 229 static negative rows, 62 definer probes, 28 fixtures", () => {
-    expect(EXPECTED.negative.size).toBe(229);
+    expect([...EXPECTED.negative.values()].filter((e) => e.kind !== "function")).toHaveLength(229);
+    // E2: plus the function rows of the committed inventory (kj_worker 2, kj_door 6 at this checkout); 237 in all.
+    expect(FUNCTION_ROWS).toHaveLength(8);
+    expect(EXPECTED.negative.size).toBe(237);
     expect(EXPECTED.definerProbes.size).toBe(62);
     expect(EXPECTED.fixtures).toHaveLength(28);
     expect(new Set(EXPECTED.fixtures).size).toBe(28);
@@ -275,7 +277,12 @@ describe("CON-30 G8 evidence: recorded digests, every row their test lists prese
     // the runner, which has no R from the environment it trusts, does not apply this binding
     expect(g8SuiteProblems("regression-definers", verifyRecordedEvidence(dir, entries, "regression-definers").files, EXPECTED, null).problems).toEqual([]);
   });
-  it("INTERIM function rows: a granted function presented as outside the manifest, and a duplicate, are refused", () => {
+  // E2 (draft A10.7, not sealed): the function rows are expected from the committed function inventory at R minus each
+  // role's manifest functions. The E1 interim rule and its KNOWN GAP are replaced; F2 and F3 must now be refused.
+  const dropFunctionRows = (count: number) => (f: ReturnType<typeof goodEvidence>) => {
+    for (let i = 0; i < count; i++) { const rows = f[NEGATIVE_FILE]!.results!; const at = rows.findIndex((r) => r.probe === FUNCTION_PROBE); if (at >= 0) rows.splice(at, 1); }
+  };
+  it("function rows: a granted function presented as outside the manifest, and a duplicate function row, are refused", () => {
     const granted = [...EXPECTED.granted.kj_worker][0]!;
     const { dir } = make("regression-probes", (f) => {
       f[NEGATIVE_FILE]!.results!.push({ role: "kj_worker", probe: FUNCTION_PROBE, sql: `has_function_privilege(${granted})`, expected: "false", observed: "false", pass: true });
@@ -285,22 +292,96 @@ describe("CON-30 G8 evidence: recorded digests, every row their test lists prese
     expect(problems.some((p) => p.startsWith(`${NEGATIVE_FILE}: unexpected row `) && p.includes(granted))).toBe(true);
     expect(problems.some((p) => p.startsWith(`${NEGATIVE_FILE}: duplicate row `) && p.includes(FUNCTION_PROBE))).toBe(true);
   });
-  it("INTERIM function rows: a row removed from the discover twin only differs across the twins", () => {
-    const p = make("regression-probes"), d = make("regression-probes-discover", (f) => {
-      const rows = f[NEGATIVE_FILE]!.results!; rows.splice(rows.findIndex((r) => r.probe === FUNCTION_PROBE), 1);
-    });
-    expect(functionRowTwinProblems(gate("regression-probes", p.dir, p.entries).functionRows, gate("regression-probes-discover", d.dir, d.entries).functionRows))
-      .toEqual(["INTERIM function-outside-manifest rows differ between regression-probes and regression-probes-discover"]);
+  it("function rows: a row removed from the discover twin only is refused there as missing", () => {
+    const p = make("regression-probes"), d = make("regression-probes-discover", dropFunctionRows(1));
+    expect(gate("regression-probes", p.dir, p.entries).problems).toEqual([]);
+    const problems = gate("regression-probes-discover", d.dir, d.entries).problems;
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(new RegExp(`^${NEGATIVE_FILE.replaceAll(".", "\\.")}: missing row .*function outside manifest`));
   });
-  it("KNOWN GAP, UNRESOLVED BLOCKER (not detection): the same function row removed from BOTH twins and re-recorded is NOT refused by the interim rule", () => {
-    // This test documents a limitation and must not be read as G8 detecting the deletion. The function rows come from
-    // the live catalogue and no committed source lists them, so the interim rule cannot know a row is missing. Final G8
-    // needs a release-bound function inventory (R2.7.10 proposal). When that exists, this test must be inverted.
-    const drop = (f: ReturnType<typeof goodEvidence>) => { const rows = f[NEGATIVE_FILE]!.results!; rows.splice(rows.findIndex((r) => r.probe === FUNCTION_PROBE), 1); };
-    const p = make("regression-probes", drop), d = make("regression-probes-discover", drop);
-    const gp = gate("regression-probes", p.dir, p.entries), gd = gate("regression-probes-discover", d.dir, d.entries);
-    expect([...gp.problems, ...gd.problems, ...functionRowTwinProblems(gp.functionRows, gd.functionRows)]).toEqual([]);
-    expect(gp.functionRows).toHaveLength(FUNCTION_ROWS.length - 1);
+  it("F2 (inverted E1 KNOWN GAP): the same function row removed from BOTH twins and re-recorded is refused in both", () => {
+    const p = make("regression-probes", dropFunctionRows(1)), d = make("regression-probes-discover", dropFunctionRows(1));
+    for (const [suite, s] of [["regression-probes", p], ["regression-probes-discover", d]] as const) {
+      const problems = gate(suite, s.dir, s.entries).problems;
+      expect(problems).toEqual([`${NEGATIVE_FILE}: missing row ${JSON.stringify([FUNCTION_ROWS[0]![0], FUNCTION_PROBE, `has_function_privilege(${FUNCTION_ROWS[0]![1]})`])}`]);
+    }
+  });
+  it("F3: ALL function rows removed from both twins and re-recorded are refused, every row missing", () => {
+    expect(FUNCTION_ROWS).toHaveLength(8);
+    const p = make("regression-probes", dropFunctionRows(FUNCTION_ROWS.length)), d = make("regression-probes-discover", dropFunctionRows(FUNCTION_ROWS.length));
+    for (const [suite, s] of [["regression-probes", p], ["regression-probes-discover", d]] as const) {
+      const problems = gate(suite, s.dir, s.entries).problems;
+      expect(problems).toHaveLength(FUNCTION_ROWS.length);
+      expect(problems.every((p) => p.startsWith(`${NEGATIVE_FILE}: missing row `) && p.includes(FUNCTION_PROBE))).toBe(true);
+    }
+  });
+  it("fabricated function row: a function absent from the inventory, presented as refused, is refused as unexpected", () => {
+    const { dir } = make("regression-probes", (f) => {
+      f[NEGATIVE_FILE]!.results!.push({ role: "kj_door", probe: FUNCTION_PROBE, sql: "has_function_privilege(kernel_private.kj_b1_fabricated(pg_catalog.text))", expected: "false", observed: "false", pass: true });
+    });
+    expect(gate("regression-probes", dir, reRecorded("regression-probes", dir)).problems)
+      .toEqual([`${NEGATIVE_FILE}: unexpected row ${JSON.stringify(["kj_door", FUNCTION_PROBE, "has_function_privilege(kernel_private.kj_b1_fabricated(pg_catalog.text))"])}`]);
+  });
+  it("function rows: an executable function (observed true) is not passed, and a flag claiming pass is refused", () => {
+    const { dir } = make("regression-probes", (f) => {
+      const r = f[NEGATIVE_FILE]!.results!.find((x) => x.probe === FUNCTION_PROBE)!; r.observed = "true";
+    });
+    const problems = gate("regression-probes", dir, reRecorded("regression-probes", dir)).problems;
+    expect(problems.some((p) => p.startsWith(`${NEGATIVE_FILE}: row not passed `))).toBe(true);
+    expect(problems.some((p) => p.startsWith(`${NEGATIVE_FILE}: pass flag differs from recomputation `))).toBe(true);
+  });
+  /** A JsonSource reading this checkout, with the function inventory replaced. */
+  const withInventory = (change: (v: { kind: string; predicate: string; functions: string[] }) => void) => ({
+    json: (path: string) => {
+      const v = strictJson(readFileSync(path, "utf8")) as { kind: string; predicate: string; functions: string[] };
+      if (path === FUNCTION_INVENTORY_PATH) change(v);
+      return v;
+    },
+  });
+  it("inventory with an extra function: the evidence lacks its rows, refused as missing for every role not granted it", () => {
+    const extra = "kernel_private.kj_b1_extra(pg_catalog.int4)";
+    const exp = expectedG8Rows(withInventory((v) => { v.functions = [...v.functions, extra].sort(); }));
+    const { dir, entries } = make("regression-probes");
+    const problems = g8SuiteProblems("regression-probes", verifyRecordedEvidence(dir, entries, "regression-probes").files, exp, R0).problems;
+    expect(problems.sort()).toEqual(["kj_door", "kj_worker"].map((role) => `${NEGATIVE_FILE}: missing row ${JSON.stringify([role, FUNCTION_PROBE, `has_function_privilege(${extra})`])}`).sort());
+  });
+  it("inventory missing a function: the evidence row for it is refused as unexpected", () => {
+    const [role, fn] = FUNCTION_ROWS.find(([r]) => r === "kj_door")!;
+    const exp = expectedG8Rows(withInventory((v) => { v.functions = v.functions.filter((f) => f !== fn); }));
+    const { dir, entries } = make("regression-probes");
+    const problems = g8SuiteProblems("regression-probes", verifyRecordedEvidence(dir, entries, "regression-probes").files, exp, R0).problems;
+    expect(problems.some((p) => p === `${NEGATIVE_FILE}: unexpected row ${JSON.stringify([role, FUNCTION_PROBE, `has_function_privilege(${fn})`])}`)).toBe(true);
+  });
+  it("inventory missing a manifest function: no expected rows can be derived (refused)", () => {
+    const granted = [...EXPECTED.granted.kj_worker][0]!;
+    expect(() => expectedG8Rows(withInventory((v) => { v.functions = v.functions.filter((f) => f !== granted); }))).toThrow(/is not in the function inventory/);
+  });
+  it("predicate drift: an inventory generated under another predicate, unsorted or with a duplicate is refused statically", () => {
+    expect(functionInventoryProblems(strictJson(readFileSync(FUNCTION_INVENTORY_PATH, "utf8")))).toEqual([]);
+    expect(() => expectedG8Rows(withInventory((v) => { v.predicate = v.predicate.replace(" and p.prorettype <> 'pg_catalog.event_trigger'::pg_catalog.regtype", ""); })))
+      .toThrow(/predicate differs from the shared predicate/);
+    const inv = committedFunctionInventory();
+    expect(functionInventoryProblems({ ...inv, functions: [...inv.functions].reverse() })[0]).toMatch(/not in "C" order/);
+    expect(functionInventoryProblems({ ...inv, functions: [inv.functions[0], ...inv.functions] })[0]).toMatch(/duplicate/);
+    expect(functionInventoryProblems({ ...inv, extra: true })[0]).toMatch(/malformed/);
+  });
+  it("predicate drift: evidence enumerated under a wider predicate (an event-trigger function) is refused as unexpected", () => {
+    const { dir } = make("regression-probes", (f) => {
+      for (const role of ["kj_worker", "kj_door"]) f[NEGATIVE_FILE]!.results!.push({ role, probe: FUNCTION_PROBE, sql: "has_function_privilege(public.rls_auto_enable())", expected: "false", observed: "true", pass: false });
+    });
+    const problems = gate("regression-probes", dir, reRecorded("regression-probes", dir)).problems;
+    expect(problems.filter((p) => p.startsWith(`${NEGATIVE_FILE}: unexpected row `) && p.includes("rls_auto_enable"))).toHaveLength(2);
+  });
+  it("predicate drift: one shared predicate; the frozen negative test selects with it and asserts catalogue equality", () => {
+    const text = readFileSync("tests/runtime-roles-negative.integration.test.ts", "utf8");
+    expect(text).toContain('where ${FUNCTION_INVENTORY_PREDICATE("p", "n")}`, [role]);');
+    expect(text).toContain("expect(rows.map((r) => r.name).sort()).toEqual(committedFunctionInventory().functions);");
+    expect(text).not.toMatch(/prorettype <> 'trigger'::regtype/);
+    expect(FUNCTION_INVENTORY_SQL).toContain(FUNCTION_INVENTORY_PREDICATE("p", "n"));
+    expect(FUNCTION_INVENTORY_SQL).toContain('collate "C"');
+    expect(FUNCTION_INVENTORY_PREDICATE("p", "n")).toContain("'pg_catalog.event_trigger'::pg_catalog.regtype");
+    for (const file of ["scripts/b1/build-function-inventory.ts", "tests/b1-relation-inventory.integration.test.ts"])
+      expect(readFileSync(file, "utf8")).toMatch(/readFunctionInventory/);
   });
   it("the three state rows the verifier names are still literals of the frozen negative test", () => {
     const text = readFileSync("tests/runtime-roles-negative.integration.test.ts", "utf8");

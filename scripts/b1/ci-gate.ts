@@ -8,7 +8,7 @@ import { REGRESSION_SUITES } from "./plans.js";
 import type { CollectedEntry } from "./collection.js";
 import { stageTSuiteResult } from "./gate-suite.js";
 import { SEALED_MUTATIONS, mutationVerdictProblems, mutationVerdicts } from "./gates.js";
-import { expectedG8Rows, functionRowTwinProblems, g8Files, g8SuiteProblems } from "./g8.js";
+import { expectedG8Rows, g8Files, g8SuiteProblems, type ExpectedG8 } from "./g8.js";
 
 /**
  * ADR-0023 27.12.15 "CI gate over every registered suite": the commit is refused unless, for every primary and
@@ -80,20 +80,20 @@ for(const id of Object.keys(SEALED_MUTATIONS)){
 }
 // G8 (gate table "B1 evidence files", "B1 evidence rows", CON-30): for the probe and definer suites and their discover
 // twins, the files this run's record lists with SHA-256s (verified in stageTSuiteResult), every row their test lists
-// present exactly once and passed, recomputed here. INTERIM: the catalogue-derived "function outside manifest" rows are
-// only checked unique, passed, not granted and identical across the twins (scripts/b1/g8.ts); not final G8.
-const g8Expected=expectedG8Rows(release),functionRows=new Map<string,string[]|null>(),g8Results:Record<string,unknown>={};
-for(const suite of REGRESSION_SUITES){
+// present exactly once and passed, recomputed here. The "function outside manifest" rows are expected from the committed
+// function inventory at R minus each role's manifest functions (scripts/b1/function-inventory.ts; E2, draft A10.7).
+let g8Expected:ExpectedG8|undefined;const g8Results:Record<string,unknown>={};
+try{g8Expected=expectedG8Rows(release);}catch(error){fail("G8",`expected rows at R: ${error instanceof Error?error.message:String(error)}`);}
+for(const suite of g8Expected?REGRESSION_SUITES:[]){
   const required=g8Files(suite.id);
   if(!required.length) continue;
   const files=suiteEvidence.get(suite.id) ?? new Map<string,Buffer>();
   const missing=required.filter(f=>!files.has(f));
   for(const f of missing) fail("G8",`${suite.id} ${f}: not verified against this run's record`);
-  const r=g8SuiteProblems(suite.id,files,g8Expected,R!);
+  const r=g8SuiteProblems(suite.id,files,g8Expected!,R!);
   for(const p of r.problems) if(!missing.some(f=>p===`${f}: missing`)) fail("G8",`${suite.id} ${p}`);
-  functionRows.set(suite.id,r.functionRows);g8Results[suite.id]=r.rows;
+  g8Results[suite.id]=r.rows;
 }
-for(const p of functionRowTwinProblems(functionRows.get("regression-probes") ?? null,functionRows.get("regression-probes-discover") ?? null)) fail("G8",p);
 results["G8"]=g8Results;
 // G1 and G9 are jobs of their own; their markers are written only on success.
 for(const [gate,marker] of [["G1","static/g1-passed"],["G9","worker-image/g9-passed"],["EPH-26","eph26/eph26-passed"]] as const)

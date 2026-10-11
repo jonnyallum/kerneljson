@@ -230,4 +230,16 @@ describe("CON-30 G8 evidence collected by the runner with SHA-256s", () => {
     const o = await runClone("CON-30 G8 evidence row missing", c, "none", "regression-probes");
     expectRegressionFailed(o, /G8 evidence artifacts\/local\/b1-negative-probes\.json: missing row /);
   }, CASE_TIMEOUT);
+  it("E2 stage T catalogue equality: a committed function inventory listing a function the catalogue lacks fails the negative test, and G8 refuses", async () => {
+    // Draft A10.7 (not sealed): the negative test fails unless the live function set under the shared predicate equals
+    // the committed inventory, so enumeration cannot shrink or grow silently; the runner's G8 expects the extra rows.
+    const extra = "kernel_private.kj_b1_e2_extra(pg_catalog.int4)";
+    const c = clone({ "infrastructure/database/b1-function-inventory.json": (t) => {
+      const v = JSON.parse(t) as { functions: string[] }; v.functions = [...v.functions, extra].sort();
+      return JSON.stringify(v, null, 2) + "\n";
+    } });
+    const o = await runClone("E2 function inventory extra", c, "none", "regression-probes");
+    expectRegressionFailed(o, /suite exited 1/);
+    expect(stageT(o).problems.join("\n")).toContain(`G8 evidence artifacts/local/b1-negative-probes.json: missing row ${JSON.stringify(["kj_door", "function outside manifest", `has_function_privilege(${extra})`])}`);
+  }, CASE_TIMEOUT);
 });

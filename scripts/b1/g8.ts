@@ -7,6 +7,7 @@ import { MANIFEST_PATH, RUNTIME_ROLES, type RuntimeRole, type RuntimeRoleManifes
 import { STAGE_MANIFEST_PATH } from "../../services/kernel/src/database/security-definers.js";
 import { FORBIDDEN, PROBES, SEPARATION, grantWithoutOption } from "../../tests/support/b1-probes.js";
 import { RELATION_INVENTORY_PATH, type RelationInventory } from "./relation-inventory.js";
+import { FUNCTION_INVENTORY_PATH, functionsOutsideManifest, parseFunctionInventory } from "./function-inventory.js";
 import { RequiredSchema } from "./coverage.js";
 
 /**
@@ -20,10 +21,10 @@ import { RequiredSchema } from "./coverage.js";
  * tests/b1-required.json from: the probe tables of tests/support/b1-probes.ts, the runtime-role manifest, the committed
  * relation inventory, and tests/b1-required.json itself for the definers fixtures. No count is written by hand.
  *
- * INTERIM (KJ-P8 B1 E1, not sealed): the "function outside manifest" rows of b1-negative-probes.json are derived by the
- * test from the live catalogue, and no committed source lists every function. They are checked as unique, passed, not
- * granted to the role, and identical as a set in the primary suite and its discover twin. That is NOT "every row their
- * test lists": the same row removed from both twins is not detected. It is an unresolved blocker for final G8.
+ * Function rows (KJ-P8 B1 E2 experiment, draft A10.7; not sealed): the "function outside manifest" rows of
+ * b1-negative-probes.json are expected exactly as the committed function inventory at R
+ * (infrastructure/database/b1-function-inventory.json, scripts/b1/function-inventory.ts) minus each role's manifest
+ * functions, under the same exact-row rule as every other row. No interim or cross-twin rule substitutes for it.
  */
 export const G8_FILES:Readonly<Record<string,readonly string[]>>=Object.freeze({
   "regression-probes":Object.freeze(["artifacts/local/b1-negative-probes.json","artifacts/local/b1-definer-probes.json"]),
@@ -86,7 +87,7 @@ export function verifyRecordedEvidence(stageTDir:string,recorded:unknown,suiteId
   return {problems,files};
 }
 
-type NegKind="pinned"|"grant"|"relation"|"provenance";
+type NegKind="pinned"|"grant"|"relation"|"provenance"|"function";
 export interface ExpectedG8 {
   negative:Map<string,{kind:NegKind;role:RuntimeRole;expected:string;provenanceRow?:string}>;
   definerProbes:Map<string,{role:RuntimeRole;row:number;sql:string|null;expected:string|null}>;
@@ -101,6 +102,7 @@ export interface JsonSource {json(path:string):unknown}
 export function expectedG8Rows(release:JsonSource):ExpectedG8{
   const manifest=release.json(MANIFEST_PATH) as RuntimeRoleManifest;
   const inventory=release.json(RELATION_INVENTORY_PATH) as RelationInventory;
+  const functions=parseFunctionInventory(release.json(FUNCTION_INVENTORY_PATH));
   const required=RequiredSchema.parse(release.json("tests/b1-required.json"));
   const stage=release.json(STAGE_MANIFEST_PATH) as {design?:{sha?:string}};
   const negative:ExpectedG8["negative"]=new Map(),definerProbes:ExpectedG8["definerProbes"]=new Map();
@@ -111,6 +113,10 @@ export function expectedG8Rows(release:JsonSource):ExpectedG8{
     for(const sql of grantWithoutOption(role)) put(negative,key(role,"grant/revoke has no effect",sql),{kind:"grant",role,expected:"OK|42501 and no change"});
     for(const r of inventory.relations.filter(r=>["r","v"].includes(r.kind) && !holds(role,r.name)))
       put(negative,key(role,"relation outside manifest",`select 1 from ${r.name} limit 1`),{kind:"relation",role,expected:"42501"});
+    for(const name of Object.keys(manifest.roles[role].functions))
+      if(!functions.functions.includes(name)) throw Error(`G8 expected rows: manifest function ${name} of ${role} is not in the function inventory`);
+    for(const name of functionsOutsideManifest(functions,manifest,role))
+      put(negative,key(role,FUNCTION_PROBE,`has_function_privilege(${name})`),{kind:"function",role,expected:"false"});
     for(const [row,probe,statement,expected] of PROBES){
       const sql=statement.replaceAll("$ROLE",role);
       put(negative,key(role,`27.9.5 row ${row}: ${probe}`,sql),{kind:"provenance",role,expected,provenanceRow:key(role,row,probe)});
@@ -147,13 +153,13 @@ function verdict(out:string[],file:string,id:string,recomputed:boolean,flag:bool
   if(!recomputed) out.push(`${file}: row not passed ${id}`);
   if(flag!==recomputed) out.push(`${file}: pass flag differs from recomputation ${id}`);
 }
-export interface G8SuiteResult {problems:string[];functionRows:string[]|null;rows:Record<string,number>}
+export interface G8SuiteResult {problems:string[];rows:Record<string,number>}
 /**
  * Every row of the suite's G8 files: identities exactly the expected set, each once, each passed by recomputation.
  * `R` is given only by the CI gate (b1-definers.json testedCommit binding); the runner passes null.
  */
 export function g8SuiteProblems(suiteId:string,files:ReadonlyMap<string,Buffer>,exp:ExpectedG8,R:string|null):G8SuiteResult{
-  const problems:string[]=[],rows:Record<string,number>={};let functionRows:string[]|null=null;
+  const problems:string[]=[],rows:Record<string,number>={};
   const base=suiteId.replace(/-discover$/,"");
   const exact=(file:string,ids:string[],expected:Iterable<string>)=>{
     const seen=new Set<string>();
@@ -185,17 +191,8 @@ export function g8SuiteProblems(suiteId:string,files:ReadonlyMap<string,Buffer>,
       exact(DEFINER_PROBES_FILE,ids,exp.definerProbes.keys());rows[DEFINER_PROBES_FILE]=ids.length;
     }
     if(neg.value){
-      const ids:string[]=[],fns:string[]=[];
+      const ids:string[]=[];
       for(const r of neg.value.results){
-        if(r.probe===FUNCTION_PROBE){
-          // INTERIM: catalogue-derived rows (see the module comment).
-          const id=key(r.role,r.probe,r.sql),m=/^has_function_privilege\((.+)\)$/.exec(r.sql);
-          if(fns.includes(id)) problems.push(`${NEGATIVE_FILE}: duplicate row ${id}`);
-          fns.push(id);
-          if(!m || exp.granted[r.role].has(m[1]!)) problems.push(`${NEGATIVE_FILE}: unexpected row ${id}`);
-          verdict(problems,NEGATIVE_FILE,id,r.expected==="false" && r.observed==="false",r.pass);
-          continue;
-        }
         const id=key(r.role,r.probe,r.sql);ids.push(id);
         const e=exp.negative.get(id);if(!e) continue;
         if(r.expected!==e.expected) problems.push(`${NEGATIVE_FILE}: row content differs from the probe table ${id}`);
@@ -203,8 +200,7 @@ export function g8SuiteProblems(suiteId:string,files:ReadonlyMap<string,Buffer>,
         if(e.kind==="provenance") ok=ok && stateUnchanged.get(e.provenanceRow!)===true;
         verdict(problems,NEGATIVE_FILE,id,ok,r.pass);
       }
-      exact(NEGATIVE_FILE,ids,exp.negative.keys());
-      functionRows=[...fns].sort();rows[NEGATIVE_FILE]=ids.length+fns.length;
+      exact(NEGATIVE_FILE,ids,exp.negative.keys());rows[NEGATIVE_FILE]=ids.length;
     }
   } else if(base==="regression-definers"){
     const b=files.get(DEFINERS_FILE),d=b?parse(DefinersFile,b):{problem:"missing"};
@@ -222,10 +218,5 @@ export function g8SuiteProblems(suiteId:string,files:ReadonlyMap<string,Buffer>,
       exact(DEFINERS_FILE,ids,exp.fixtures.map(f=>JSON.stringify(f)));rows[DEFINERS_FILE]=ids.length;
     }
   }
-  return {problems,functionRows,rows};
-}
-/** INTERIM cross-twin rule for the catalogue-derived function rows: one identical set in the primary and the twin. */
-export function functionRowTwinProblems(primary:string[]|null,twin:string[]|null):string[]{
-  if(primary===null || twin===null) return [];
-  return same(primary,twin)?[]:["INTERIM function-outside-manifest rows differ between regression-probes and regression-probes-discover"];
+  return {problems,rows};
 }

@@ -5,6 +5,7 @@ import pg from "pg";
 import { testDatabase, type TestDatabase } from "./support/database.js";
 import { FUNCTION_IDENTITY_SQL, RUNTIME_ROLES, actualFacts, loadManifest, type RuntimeRole } from "../services/kernel/src/database/runtime-roles.js";
 import { FORBIDDEN, PRINCIPAL, PROBES, SEPARATION, STAMP, TENANT, grantWithoutOption } from "./support/b1-probes.js";
+import { FUNCTION_INVENTORY_PREDICATE, committedFunctionInventory } from "../scripts/b1/function-inventory.js";
 
 /**
  * KJ-P8 B1 gate 7 - negative privilege qualification. Every forbidden power is ATTEMPTED on a genuine login session
@@ -96,7 +97,8 @@ describe.each(RUNTIME_ROLES)("B1 forbidden powers: %s", (role: RuntimeRole) => {
     const { rows } = await owner.query<{ name: string; ok: boolean }>(
       `select ${FUNCTION_IDENTITY_SQL("p", "n")} as name, has_function_privilege($1, p.oid, 'EXECUTE') as ok
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-        where n.nspname in ('public','kernel_private') and p.prorettype <> 'trigger'::regtype`, [role]);
+        where ${FUNCTION_INVENTORY_PREDICATE("p", "n")}`, [role]);
+    expect(rows.map((r) => r.name).sort()).toEqual(committedFunctionInventory().functions);
     for (const f of rows.filter((r) => !granted.has(r.name))) {
       results.push({ role, probe: "function outside manifest", sql: `has_function_privilege(${f.name})`, expected: "false", observed: String(f.ok), pass: !f.ok });
       expect(f.ok, f.name).toBe(false);

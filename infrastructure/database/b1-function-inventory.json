@@ -1,0 +1,12 @@
+{
+  "kind": "kerneljson:b1-function-inventory/v1",
+  "predicate": "n.nspname in ('public','kernel_private') and p.prorettype <> 'pg_catalog.trigger'::pg_catalog.regtype and p.prorettype <> 'pg_catalog.event_trigger'::pg_catalog.regtype",
+  "functions": [
+    "kernel_private.activate_release(pg_catalog.uuid, pg_catalog.text, pg_catalog.int8, pg_catalog.jsonb)",
+    "kernel_private.identity_cognition_source_v1(pg_catalog.uuid, pg_catalog.uuid, pg_catalog.int4)",
+    "kernel_private.identity_core_canonical_v1(pg_catalog.jsonb)",
+    "kernel_private.identity_core_digest_v1(pg_catalog.jsonb)",
+    "kernel_private.identity_json_string_v1(pg_catalog.text)",
+    "kernel_private.set_identity_freeze(pg_catalog.uuid, pg_catalog.bool, pg_catalog.text)"
+  ]
+}
