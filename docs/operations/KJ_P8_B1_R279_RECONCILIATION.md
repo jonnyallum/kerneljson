@@ -141,7 +141,7 @@ My own process errors during the sprint, none of them shipped:
 
 Runs are now sequential, one collection-port user at a time.
 
-## 6. CONTRADICTION R279-DISCOVER-SKIP (blocks qualification)
+## 6. CONTRADICTION R279-DISCOVER-SKIP (resolved by owner-approved option A at `e97726c`, pending independent review)
 
 **Observed.** CI run `38054524572` at `cdce594`, job `stage-t (regression-definers-discover)`: the record is
 `REPOSITORY_QUALIFIED` with `regressionOutcome` `failed`, and its only problems are two entries of the form "skipped
@@ -175,10 +175,27 @@ No other lane D file skips by harness mode, so this is the only twin affected.
 The gate is left as it is and refuses this twin. Qualification is therefore not claimed at any SHA until the owner
 rules and, if the design changes, it is independently reviewed.
 
+**Resolution: option A (owner-approved, 10/10/2026), commit `e97726ce4d9f6ca0352d847abd31f9168d373c80`.** None of the
+three resolutions above was taken. The sealed design, `tests/baseline.json` (224 protected tests, 62 intentional
+skips), the skip rule and every gate are unchanged. The commit changes one file, `tests/runtime-roles-definers.integration.test.ts`
+(13 insertions, 5 deletions):
+- the suite opens a second pool whose connection URL is the suite's own database URL with the user replaced by
+  `kj_worker`, so the session is a genuine `kj_worker` login in every harness mode (the harness never shadows,
+  emulates or retries a pool whose user is a runtime role);
+- the two tests above lose their `skipIf` and read the health check through that pool; their assertions are
+  unchanged.
+
+The change does not weaken either test: each now runs in both harness modes where it previously ran in one. Run
+`38075242249` executed both tests, passed, in `regression-definers` and `regression-definers-discover`, with every
+`kj_worker` statement of both tests traced `via: "login"` (section 6b). This is a change to a frozen test file. It
+needs independent review before any qualification claim rests on it. This record is the implementer's reconciliation
+and is not that review.
+
 ## 6a. Results (OBSERVED)
 
-Status words as in section 1. A result at one SHA is evidence for that SHA only. Qualification is claimed at none
-(section 6).
+Status words as in section 1. A result at one SHA is evidence for that SHA only. The governed `gate` job concluded
+`success` at `e97726c` only (run `38075242249`, section 6b). No independent or hostile approval is claimed, and the
+frozen-test change in `e97726c` awaits independent review (section 6).
 
 **CI (Linux engine, `ubuntu-24.04`, governed workflow, `push` events only):**
 
@@ -186,7 +203,9 @@ Status words as in section 1. A result at one SHA is evidence for that SHA only.
 |---|---|---|---|
 | `38053042825` | `b1eab1d` | FAIL | workflow file rejected; no job ran (section 5) |
 | `38054524572` | `cdce594` | FAIL | `regression-definers-discover` (section 6); `runner-cases (refusals)` (case 36, CON-9); gate (those two plus the duplicate name in lane A, with coverage cascading) |
-| `38056781302` | `e31e216` | FAIL | `regression-definers-discover` (section 6); `runner-cases (refusals)` (CON-4, CON-9, both Linux timing; change committed in `042d327`, Linux run pending); gate: 235 problems = definers-discover + the refused runner-cases report + its coverage cascade |
+| `38056781302` | `e31e216` | FAIL | `regression-definers-discover` (section 6); `runner-cases (refusals)` (CON-4, CON-9, both Linux timing; change committed in `042d327`, passed on Linux in `38066367638` and `38075242249`); gate: 235 problems = definers-discover + the refused runner-cases report + its coverage cascade |
+| `38066367638` | `6147cbc` | FAIL | `regression-definers-discover` only (the two skips of section 6); gate: that suite alone. `runner-cases (refusals)` passed on Linux, CON-4 and CON-9 included. The gate's G2/G3 recomputation: 2,670 tests, 0 failed, 19 skipped, recovery 31, no baseline, unexpected-skip or vanished-skip deviation |
+| `38075242249` | `e97726c` | PASS | none: all 26 jobs `success`; gate "CI gate passed for e97726ce4d9f6ca0352d847abd31f9168d373c80" (section 6b) |
 
 At `e31e216` every other job passed on Linux:
 - **Static:** typecheck, lint, build, and the G1 generators and collection checks.
@@ -221,6 +240,101 @@ report's `success` is false while the other problems stand.
 The discover twins ran on Linux only. The local sequence at `cdce594` was stopped deliberately after five suites,
 once the CONTRADICTION made a full local pass at that SHA moot.
 
+## 6b. Evidence for run `38075242249` at `e97726c` (OBSERVED, implementer reconciliation)
+
+**Binding.** Evidence for the tested implementation reference `e97726ce4d9f6ca0352d847abd31f9168d373c80` only. A
+later commit that changes only documentation, this record included, carries no qualification claim of its own. Its
+own workflow run is evidence for its own SHA, and nothing here transfers to it.
+
+**How this was verified.** The owner downloaded all 26 artifacts of the run (`push`, `ubuntu-24.04`, Linux engine
+`linux-x64`; started 10/10/2026 18:18 UTC, gate concluded 18:39 UTC). The implementer then checked them:
+- every stage T run record and the EPH-26 record names `R` = `e97726c`, runner blob `0d31f615` (the tree of
+  `scripts/b1` at `e97726c`), registry blob `565f3e2a` and B1 migration blob `a10f5d12` (both the blobs at `e97726c`);
+- each record's SHA-256 equals the `recordSha256` the job printed and the gate recorded (for example
+  `regression-definers` `a3162a7e`, `regression-definers-discover` `29858f78`);
+- the committed gate at `e97726c` (`scripts/b1/ci-gate.ts`), rerun offline over the artifacts in the same evidence
+  layout and checkout path, printed the same "CI gate passed" line and wrote a `gate.json` equal to the run's.
+
+`base-regression`, `runner-cases`, the mutation verdicts, `g1-passed` and `g9-passed` carry no SHA of their own.
+They are bound to `e97726c` by the run, whose checkout logged that SHA.
+
+**Gate (`gate.json`).** `problems: []`. G2/G3, verbatim: "Baseline retained: 224/224 passing; recovery 31>=27;
+intentional env-gated skips 62; total 2670".
+
+| Suite | Tests | Passed | Skipped | Failed | Refusals expected / trace / log | Record SHA-256 (prefix) |
+|---|---|---|---|---|---|---|
+| regression-enforce | 415 | 415 | 0 | 0 | 0 / 0 / 0 | `32af1fdf` |
+| regression-enforce-discover | 415 | 415 | 0 | 0 | 0 / 0 / 0 | `c9efc9d9` |
+| regression-stack | 80 | 80 | 0 | 0 | 0 / 0 / 0 | `848ce8d7` |
+| regression-stack-discover | 80 | 80 | 0 | 0 | 0 / 0 / 0 | `eb7659fe` |
+| regression-probes | 186 | 186 | 0 | 0 | 234 / 234 / 234 | `87fb007d` |
+| regression-probes-discover | 186 | 186 | 0 | 0 | 234 / 234 / 234 | `d2899457` |
+| regression-definers | 46 | 46 | 0 | 0 | 0 / 0 / 0 | `a3162a7e` |
+| regression-definers-discover | 46 | 46 | 0 | 0 | 0 / 0 / 0 | `29858f78` |
+| regression-gated | 43 | 43 | 0 | 0 | 0 / 0 / 0 | `24abc369` |
+| regression-gated-discover | 43 | 43 | 0 | 0 | 0 / 0 / 0 | `ec130fe9` |
+| regression-helper-probes | 12 | 12 | 0 | 0 | 10 / 10 / 10 | `1e86a495` |
+| regression-helper-probes-discover | 12 | 12 | 0 | 0 | 10 / 10 / 10 | `a6ae66af` |
+| base-regression (lane A) | 1,658 | 1,639 | 19 | 0 | n/a | n/a |
+| runner-cases (lanes B, C; six files) | 230 | 230 | 0 | 0 | n/a | n/a |
+
+Every stage T record is `REPOSITORY_QUALIFIED` with `regressionOutcome` `passed`. The merged primary report holds
+2,670 entries: 415 + 80 + 186 + 46 + 43 + 12 + 1,658 + 230. Of those, 2,651 passed, 19 were skipped and none failed.
+The collection (CON-47) holds 2,670 entries from 131 files, with entries SHA-256 `38226859…` and zero accepted
+connections.
+
+Refusals across all twelve suites: 488 expected, 488 in the trace multiset, 488 in the log projection, 0 production
+refusals and 0 differences. CON-48 on the probes log: P1 to P7 each fail, as required.
+
+- **Protected baseline:** all 224 entries of `tests/baseline.json` `tests` passed.
+- **Intentional skips:** all 62 entries are accounted for:
+  - 19 were skipped in lane A: the four `notRunInCi` files, `schedule-restate-live` 9, `schedule-restate-runtime` 6,
+    `gate3-executor` 2 and `schedule-restate-rearm-live` 2;
+  - 43 ran and passed in `regression-gated`: `outbox-postgres` 11, `schedule-postgres` 9, `schedule-fencing` 8,
+    `canary-tooling` 6, `gateway-bootstrap` 6 and `alerting-postgres` 3.
+  - No other test was skipped in any report.
+- **Recovery:** `recovery.test.ts` passed 31 (at least 27 required), in `regression-stack`.
+- **G7:** the sealed counts are faculties 5, identity 57 and identity-cognition 62, 124 in total. All three verdicts
+  match those counts and every mutation was killed. For identity-cognition: killed by test 59, killed pre-COMMIT 3,
+  survived 0, inconclusive 0.
+- **G8:**
+  - `b1-negative-probes.json`: 237 rows, all passed;
+  - `b1-definer-probes.json`: 62 rows, all passed;
+  - `b1-definers.json`: 28 fixtures, each failed on purpose and restored, in both definers suites.
+- **EPH-26 (b):** the deliberate negative is `NOT_QUALIFIED`, "LIFECYCLE_REFUSED: docker run -d failed: Unable to find
+  image …", with the pinned image absent and registry pulls blocked; the `eph26-passed` marker is present.
+- **CON-4 and CON-9** passed on Linux in `runner-cases (refusals)`. So did CON-8, CON-46 and EPH-27.
+
+**The two definers tests (section 6).**
+- Both are `passed` in both suite reports: "database.runtimeRolesLeastPrivilege is green, read as kj_worker" and
+  "27.11: a platform function executable by PUBLIC in a schema the roles cannot USAGE is not a runtime fact".
+- Their traced statements are 28 each per suite, all role `kj_worker` with `via: "login"`.
+- In `regression-definers-discover`, the suite's other `kj_worker` statements are `via: "set-role"` (507), as the
+  discover harness emulates; only these two tests' 56 statements are logins.
+- `regression-definers` has 563 statements, all `kj_worker` logins.
+
+**Retained gates at `e97726c`** (ADR-0023 at `af2f732`, "Retained B1 regression gates", and "CI gate over every
+registered suite"):
+
+| Gate | Sealed requirement (abridged) | Enforced at `e97726c` by | Evidence in run `38075242249` | Status |
+|---|---|---|---|---|
+| G1 manifest drift | `build-manifest.mjs --check`, repository job | `static` job; gate requires `static/g1-passed` | job log: manifest and migration, hook registry and required rows match; collection 2,670 / 131, placeholder connections 0; marker present | PASS (CI) |
+| G2 protected baseline and skips | `check-baseline.mjs` over the merged report of every primary suite | `ci-gate.ts` runs the frozen `check-baseline.mjs` on the merged report; the coverage check | "Baseline retained: 224/224 passing; … intentional env-gated skips 62; total 2670" | PASS (CI) |
+| G3 recovery minimum | `recovery.test.ts` passed at least 27 | the same script | recovery 31 | PASS (CI) |
+| G4 zero refusal, enforce | every runtime-role session traced, genuine login pools included; zero `refused`, zero outside the manifest; database-log check | `gate-suite.ts`: `analyse-trace.mjs --fail-on-refusal` per enforce suite, the trace multiset against the log projection, zero production refusals | six enforce suites: 0 problems; refusals as in the table | PASS (CI) |
+| G5 discover inventory | every discover twin exits 0 with zero failed; inventory gated, zero `denied`, zero outside the manifest | the same, per discover twin | six twins: 0 problems | PASS (CI) |
+| G6 gated files | "suite `regression-gated` in stage T; every test of the six files passed; G4 applies" | the per-suite record check for `regression-gated` (and its twin), the coverage check and G4. The code has no label "G6": a G6 failure would be reported under the suite id, `coverage` or `G4` | `regression-gated` 43/43 over the six files, record `24abc369`; twin 43/43; G4 0 problems | PASS (CI) |
+| G7 mutation suites | each runs; its verdict lists exactly the script's mutation ids at `R`, every one killed | `ci-gate.ts` with `SEALED_MUTATIONS` (5, 57, 62) | verdicts 5, 57, 62; all killed | PASS (CI) |
+| G8 B1 evidence files | the three files, every row present and passed | `ci-gate.ts`, from the `regression-probes` and `regression-definers` artifacts | 237, 62, 28 rows, all passed | PASS (CI) |
+| G9 worker image startup | unchanged from frozen B1 | `worker-image` job (`check-worker-image.sh`); gate requires `worker-image/g9-passed` | job `success`; marker present. The artifact holds only the marker | PASS (CI) |
+
+**For the independent reviewer.** These are not defects found by the gate:
+- In the enforce suites, some production statements are traced `via: "set-role"`, not `login`: 645 of 18,151 in
+  `regression-enforce`, mostly `services/kernel/src/identity/complete.ts`, and 3 in `regression-stack`. These are the
+  harness's enforce owner-client adaptation (`tests/b1-trace.test.ts`). The sealed G4 requires that every session is
+  traced, which holds; whether it also requires a genuine login for these paths is for the reviewer.
+- G8 reads `b1-definers.json` from `regression-definers` only. The discover twin's file, also 28/28, is not gated.
+
 ## 7. Findings for design review (not changes to the sealed design)
 
 The ADR is not resealed, and this record does not say it is.
@@ -249,7 +363,21 @@ The ADR is not resealed, and this record does not say it is.
     `20261002090000`" therefore holds because there is no ledger. The check that carries weight is that the cluster
     holds no `kj_*` role and no runtime-role policy.
 
-## 8. Blocked and not authorised
+Findings 1 to 10 remain open: none is resolved by run `38075242249`, and none is resolved by this record.
+
+## 8. Blocked, outstanding and not authorised
+
+Still required before any claim beyond "the gate concluded `success` at `e97726c`":
+- **Independent hostile review** of the implementation at `e97726c`, and specifically of the frozen-test change in
+  `e97726c` (section 6). This record and its author's earlier checks are implementer self-review and approve nothing.
+- **Design findings** 1 to 10 (section 7) and the R279-HELPER-RETHROW correction, pending independent design review.
+  The design is not resealed.
+- **Windows engine (`windows-x64`, local).** No run record exists at `e97726c`. The local Windows results in section
+  6a are for earlier SHAs and qualify nothing at `e97726c`. The sealed CI gate (27.12.15) is computed from the
+  governed CI records. The implementer found no sealed clause that makes a Windows-engine record at `R` a gate input.
+  Whether Windows-engine records at the final SHA are required for sign-off is for the owner and the reviewer to
+  decide. If they are, each must be produced at the exact SHA by the governed entry point with the pinned
+  `windows-x64` engine, and recorded with its record SHA-256 as in section 6a.
 
 - **Hosted-disposable application** (HOSTED_COMMITTED on a hosted target): BLOCKED, as no authorised hosted
   disposable target exists. The hosted entry point's refusals are exercised; it has never connected to a hosted

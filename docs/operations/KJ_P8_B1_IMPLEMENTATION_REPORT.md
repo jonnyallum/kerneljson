@@ -1,15 +1,30 @@
 # KJ-P8 B1 implementation report: least-privilege runtime database roles
 
-> **Current status (10/10/2026):** the R2.7.9 implementation is NOT complete and NOT qualified. The governed `gate` job
-> has not concluded `success` at any SHA; the `regression-definers-discover` intentional-skip contradiction is open; and
-> the CON-4/CON-9 changes in `042d327` have not yet run on Linux. The requirements matrix, the defects found by failing
-> checks on purpose, the findings for design review and the CI results are in the
-> [reconciliation record](KJ_P8_B1_R279_RECONCILIATION.md) (an implementer self-review, not an independent or hostile
-> review), which supersedes the work-in-progress notes
-> below. Qualification is claimed only for the SHA and CI run named there, never from an intermediate commit. The
-> [narrow owner ruling](KJ_P8_B1_R279_OWNER_RULING.md) on the helper rethrow stands: the helper pin is preserved, the
-> ADR correction awaits independent design review, and the design is not resealed. No production, ledger, baseline,
-> deployment, merge, PR or P8A-0 action has been taken.
+> **Current status (10/10/2026):** the governed `gate` job concluded `success` at
+> `e97726ce4d9f6ca0352d847abd31f9168d373c80` (run `38075242249`, Linux engine, `push`). All 26 jobs succeeded. The
+> gate's G2/G3 result reads "Baseline retained: 224/224 passing; recovery 31>=27; intentional env-gated skips 62;
+> total 2670". That evidence is for `e97726c` only. A later documentation-only commit, including the one that adds this
+> paragraph, carries no qualification claim of its own.
+>
+> - The `regression-definers-discover` intentional-skip contradiction is resolved by owner-approved option A in
+>   `e97726c`. That change is to the frozen test `tests/runtime-roles-definers.integration.test.ts`: its two tests now
+>   use a genuine `kj_worker` login in every harness mode. No test is skipped, `tests/baseline.json` is unchanged, and
+>   no gate changed.
+> - The CON-4/CON-9 changes in `042d327` passed on Linux in runs `38066367638` and `38075242249`.
+>
+> Not yet claimed, and still required:
+> - independent hostile review of the implementation at `e97726c`, including that frozen-test change;
+> - independent design review of findings 1 to 10 and the helper-rethrow correction (the design is not resealed);
+> - Windows-engine records at `e97726c`, if the owner and the reviewer require them;
+> - hosted-disposable application, which stays BLOCKED.
+>
+> The requirements matrix, the defects found by failing checks on purpose, the findings for design review, the CI
+> results and the verified evidence of run `38075242249` (section 6b) are in the
+> [reconciliation record](KJ_P8_B1_R279_RECONCILIATION.md). That record is an implementer reconciliation, not an
+> independent or hostile review or approval, and it supersedes the work-in-progress notes below. The
+> [narrow owner ruling](KJ_P8_B1_R279_OWNER_RULING.md) on the helper rethrow stands: the helper pin is preserved and
+> the ADR correction awaits independent design review. No production, ledger, baseline, deployment, merge, PR or P8A-0
+> action has been taken.
 
 ### Earlier R279 progress notes (Codex, before takeover; retained as history)
 
