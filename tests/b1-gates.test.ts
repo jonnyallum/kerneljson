@@ -576,7 +576,7 @@ describe("A10.7 2-R3 the compose engine reference equals b1-engine-pins.json (D1
   const V = "infrastructure/docker/validation.compose.yaml";
   it("the committed compose files carry exactly the pinned digest", () => {
     expect(composeImageProblems(committed, PINS)).toEqual([]);
-    expect(committed.get(V)).toContain(`    image: ${PINS.image}\n`);
+    expect(committed.get(V)!.split(/\r?\n/)).toContain(`    image: ${PINS.image}`);
   });
   it.each([
     ["D1 reverted to the tag postgres:17.6", (f: Map<string, string>) => swap(f, V, PINS.image, "postgres:17.6")],
