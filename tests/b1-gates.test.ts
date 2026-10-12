@@ -12,7 +12,9 @@ import {
 } from "../scripts/b1/g8.js";
 import {
   FUNCTION_INVENTORY_PATH, FUNCTION_INVENTORY_PREDICATE, FUNCTION_INVENTORY_SQL, committedFunctionInventory, functionInventoryProblems,
+  parseFunctionInventory,
 } from "../scripts/b1/function-inventory.js";
+import { generateFunctionInventory, type DockerResult, type InventoryDeps, type InventoryPool } from "../scripts/b1/build-function-inventory.js";
 
 /**
  * Failing fixtures for two CI gate rules (ADR-0023 27.12.15): CON-20, the discover/enforce inventory gate (G4, G5) of
@@ -386,5 +388,113 @@ describe("CON-30 G8 evidence: recorded digests, every row their test lists prese
   it("the three state rows the verifier names are still literals of the frozen negative test", () => {
     const text = readFileSync("tests/runtime-roles-negative.integration.test.ts", "utf8");
     for (const [row, probe] of STATE_ROWS) expect(text).toContain(`row: ${row}, probe: "${probe}"`);
+  });
+});
+
+/**
+ * E2-R1 (E2 independent review): the inventory generator's cleanup. Controlled doubles only: no docker command and no
+ * database connection is made. Each case records every docker invocation and every pool close, and asserts the
+ * container is removed and verified gone by the exact id the double's `docker run` printed.
+ */
+describe("E2-R1 function inventory generator cleanup (controlled doubles)", () => {
+  const ID="c0ffee".padEnd(64,"0");
+  const PINS=strictJson(readFileSync("infrastructure/database/b1-engine-pins.json","utf8")) as {serverVersion:string};
+  const COMMITTED=readFileSync(FUNCTION_INVENTORY_PATH,"utf8");
+  const ok=(stdout="")=>({status:0,signal:null,stdout,stderr:""}) satisfies DockerResult;
+  interface Options {rm?:DockerResult;ps?:DockerResult;migration?:Error;poolEnd?:Error}
+  function harness(o:Options={}){
+    const calls:string[][]=[],ends:number[]=[],out:string[]=[],err:string[]=[];let pools=0;
+    const docker=(args:readonly string[]):DockerResult=>{
+      calls.push([...args]);
+      switch(args[0]){
+        case "run":return ok(`${ID}\n`);
+        case "port":return ok("127.0.0.1:61234\n");
+        case "rm":return o.rm ?? ok(`${ID}\n`);
+        case "ps":return o.ps ?? ok("");
+        default:throw Error(`unexpected docker ${args.join(" ")}`);
+      }
+    };
+    const client={
+      query:async(sql:string)=>{
+        if(o.migration && /create|alter|grant|revoke/i.test(sql) && !/read only/.test(sql)) throw o.migration;
+        if(sql===FUNCTION_INVENTORY_SQL) return {rows:parseFunctionInventory(strictJson(COMMITTED)).functions.map(name=>({name}))};
+        return {rows:[]};
+      },
+      release:()=>undefined,
+    };
+    const pool=():InventoryPool=>{
+      const n=pools++;
+      return {
+        query:async(sql:string)=>({rows:/version\(\)/.test(sql)?[{v:PINS.serverVersion}]:[]}),
+        connect:async()=>client,
+        end:async()=>{ends.push(n);if(o.poolEnd) throw o.poolEnd;},
+        on:()=>undefined,
+      } as unknown as InventoryPool;
+    };
+    const deps:InventoryDeps={docker,pool,readFile:(p)=>p===FUNCTION_INVENTORY_PATH?COMMITTED:readFileSync(p,"utf8"),
+      writeFile:()=>{throw Error("--check never writes");},stdout:(t)=>{out.push(t);},stderr:(t)=>{err.push(t);},sleep:async()=>undefined,name:()=>"kj-b1-fninv-test"};
+    return {deps,calls,ends,out,err};
+  }
+  const removalCalls=(calls:string[][])=>calls.filter(c=>c[0]==="rm"||c[0]==="ps");
+  const EXACT=[["rm","-f",ID],["ps","-a","-q","--no-trunc","--filter",`id=${ID}`]];
+  const run=async(h:ReturnType<typeof harness>)=>{try{return {code:await generateFunctionInventory(true,h.deps),error:null};}catch(error){return {code:null,error:error as Error};}};
+
+  it("successful cleanup: --check matches, the pool is closed, the container is removed and verified gone by its exact id; exit 0", async () => {
+    const h=harness(),r=await run(h);
+    expect(r).toEqual({code:0,error:null});
+    expect(h.out.join("")).toMatch(/matches/);
+    expect(removalCalls(h.calls)).toEqual(EXACT);
+    expect(h.ends).toEqual([0]);
+    // Only this invocation's container is ever acted on: no label, name or other sweep.
+    expect(h.calls.filter(c=>c[0]!=="run").every(c=>c.includes(ID)||c.includes(`id=${ID}`))).toBe(true);
+  });
+  it.each([
+    ["nonzero exit",{status:1,signal:null,stdout:"",stderr:"Error response from daemon: boom"}],
+    ["signal",{status:null,signal:"SIGKILL",stdout:"",stderr:""}],
+    ["spawn error",{status:null,signal:null,error:Error("spawn docker ENOENT"),stdout:"",stderr:""}],
+  ] as [string,DockerResult][])("removal command failure (%s) after a matching check is a failure, never exit 0", async (_,rm) => {
+    const h=harness({rm}),r=await run(h);
+    expect(r.code).toBeNull();
+    expect(r.error!.message).toContain(`docker rm -f ${ID} failed`);
+    expect(h.out.join("")).toMatch(/matches/);
+    expect(h.ends).toEqual([0]);
+  });
+  it("removal verification failure: the container is still listed by its exact id after docker rm; not exit 0", async () => {
+    const h=harness({ps:ok(`${ID}\n`)}),r=await run(h);
+    expect(r.code).toBeNull();
+    expect(r.error!.message).toBe(`container ${ID} is still present after docker rm -f`);
+    expect(removalCalls(h.calls)).toEqual(EXACT);
+  });
+  it("verification command failure is a failure too", async () => {
+    const h=harness({ps:{status:1,signal:null,stdout:"",stderr:"daemon down"}}),r=await run(h);
+    expect(r.code).toBeNull();
+    expect(r.error!.message).toContain(`container removal of ${ID} could not be verified`);
+  });
+  it("generation and cleanup both fail: both reported, the original first and not masked", async () => {
+    const original=Error("migration exploded");
+    const h=harness({migration:original,rm:{status:1,signal:null,stdout:"",stderr:"rm refused"}}),r=await run(h);
+    expect(r.code).toBeNull();
+    expect(r.error).toBeInstanceOf(AggregateError);
+    const errors=(r.error as AggregateError).errors as Error[];
+    expect(errors).toHaveLength(2);
+    expect(errors[0]!.message).toMatch(/: migration exploded$/);
+    expect(errors[0]!.cause).toBe(original);
+    expect(errors[1]!.message).toContain(`docker rm -f ${ID} failed`);
+    expect(r.error!.message).toMatch(/^[^;]*migration exploded; cleanup also failed: docker rm -f /);
+    expect(h.ends).toEqual([0]);
+    expect(removalCalls(h.calls)).toEqual([EXACT[0]]);
+  });
+  it("generation fails and cleanup succeeds: the original error alone, pool closed, container removed and verified", async () => {
+    const h=harness({migration:Error("migration exploded")}),r=await run(h);
+    expect(r.error).not.toBeInstanceOf(AggregateError);
+    expect(r.error!.message).toMatch(/: migration exploded$/);
+    expect(h.ends).toEqual([0]);
+    expect(removalCalls(h.calls)).toEqual(EXACT);
+  });
+  it("pool close failure on the success path is a failure; the container is still removed and verified", async () => {
+    const h=harness({poolEnd:Error("end failed")}),r=await run(h);
+    expect(r.code).toBeNull();
+    expect(r.error!.message).toBe("end failed");
+    expect(removalCalls(h.calls)).toEqual(EXACT);
   });
 });

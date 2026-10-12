@@ -522,6 +522,51 @@
       "refusals": []
     },
     {
+      "file": "tests/b1-gates.test.ts",
+      "name": "E2-R1 function inventory generator cleanup (controlled doubles) generation and cleanup both fail: both reported, the original first and not masked",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "E2-R1 function inventory generator cleanup (controlled doubles) generation fails and cleanup succeeds: the original error alone, pool closed, container removed and verified",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "E2-R1 function inventory generator cleanup (controlled doubles) pool close failure on the success path is a failure; the container is still removed and verified",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "E2-R1 function inventory generator cleanup (controlled doubles) removal command failure (nonzero exit) after a matching check is a failure, never exit 0",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "E2-R1 function inventory generator cleanup (controlled doubles) removal command failure (signal) after a matching check is a failure, never exit 0",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "E2-R1 function inventory generator cleanup (controlled doubles) removal command failure (spawn error) after a matching check is a failure, never exit 0",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "E2-R1 function inventory generator cleanup (controlled doubles) removal verification failure: the container is still listed by its exact id after docker rm; not exit 0",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "E2-R1 function inventory generator cleanup (controlled doubles) successful cleanup: --check matches, the pool is closed, the container is removed and verified gone by its exact id; exit 0",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "E2-R1 function inventory generator cleanup (controlled doubles) verification command failure is a failure too",
+      "refusals": []
+    },
+    {
       "file": "tests/b1-refusal-accounting.test.ts",
       "name": "R279 refusal accounting parser allows other backends between ERROR, CONTEXT and STATEMENT",
       "refusals": []
