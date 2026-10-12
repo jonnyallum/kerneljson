@@ -249,8 +249,10 @@ export function installHandOutVerification(verifier: () => EngineVerifier, file:
     void done.then((c) => cb(undefined, c, c.release), (error: Error) => cb(error));
   };
   client.connect = function (this: pg.Client, cb?: (err: Error | null) => void) {
-    const done = (clientConnect.call(this) as Promise<void>).then(() => verifier().verifyConnection(this, target(this), file()))
-      .then(() => undefined, async (error: unknown) => { await this.end().catch(() => {}); throw error; });
+    // Only a refused verification ends the client; pg's own connect errors (for example a second connect() on a live
+    // client) pass through untouched, as without the wrapper.
+    const done = (clientConnect.call(this) as Promise<void>).then(() => verifier().verifyConnection(this, target(this), file())
+      .then(() => undefined, async (error: unknown) => { await this.end().catch(() => {}); throw error; }));
     if (!cb) return done;
     void done.then(() => cb(null), (error: Error) => cb(error));
   };

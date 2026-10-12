@@ -488,6 +488,11 @@
     },
     {
       "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) a rejected second connect() on a verified, live direct client leaves it open, as pg does without the wrapper",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
       "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) idle reuse after docker cannot be asked (verifier exception) is refused before the caller sends anything, and the client is destroyed, never reused",
       "refusals": []
     },

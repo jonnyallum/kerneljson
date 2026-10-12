@@ -951,7 +951,8 @@ describe("A10.7 R2 2-R4d every connection hand-out is verified for that hand-out
   class ClientDouble {
     host = "127.0.0.1"; port = 55432; row: Record<string, unknown> = goodRow; statements: string[] = []; ended = false; failQuery = false; failConnect = false;
     release: (error?: unknown) => void = () => {};
-    async connect() { if (this.failConnect) throw Error("ECONNREFUSED"); }
+    connected = false;
+    async connect() { if (this.failConnect) throw Error("ECONNREFUSED"); if (this.connected) throw Error("Client has already been connected"); this.connected = true; }
     async query(sql: string) { this.statements.push(sql); if (this.failQuery) throw Error("terminating connection"); return { rows: [this.row] }; }
     async end() { this.ended = true; }
   }
@@ -1038,6 +1039,15 @@ describe("A10.7 R2 2-R4d every connection hand-out is verified for that hand-out
       const down = Object.assign(new ClientDouble(), { failConnect: true });
       await expect(down.connect()).rejects.toThrow(/^ECONNREFUSED$/);
       expect(down.statements).toEqual([]);
+    } finally { uninstall(); }
+  });
+  it("a rejected second connect() on a verified, live direct client leaves it open, as pg does without the wrapper", async () => {
+    const { uninstall } = setup();
+    try {
+      const live = new ClientDouble();
+      await live.connect();
+      await expect(live.connect()).rejects.toThrow(/^Client has already been connected$/);
+      expect([live.ended, verifications(live)]).toEqual([false, 1]);
     } finally { uninstall(); }
   });
   it("uninstalling restores the original connect functions", () => {
