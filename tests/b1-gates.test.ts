@@ -1002,7 +1002,8 @@ describe("A10.7 R2 2-R4d every connection hand-out is verified for that hand-out
       await expect(pool.connect()).rejects.toThrow(refusal);
       expect(a.statements.every((q) => q === IDENTITY_SQL)).toBe(true);
       expect([pool.destroyed, pool.idle]).toEqual([[a], []]);
-      Object.assign(s, dockerState({ calls: s.calls, fail: undefined }));
+      Object.assign(s, dockerState({ calls: s.calls }));
+      delete s.fail;
       a.row = goodRow; a.failQuery = false;
       const next = await pool.connect();
       expect(next).not.toBe(a);
