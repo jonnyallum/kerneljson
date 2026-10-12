@@ -488,7 +488,27 @@
     },
     {
       "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) a new pool client is verified exactly once, when it is handed out, not also on connect; a pool with onConnect also verifies it on connect",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) a pool subclass that inherits connect (pg.Pool over pg-pool's Pool) and the base pool built directly are both verified on every hand-out",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
       "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) a rejected second connect() on a verified, live direct client leaves it open, as pg does without the wrapper",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) an 'error' on a direct connection while its verification runs refuses it, is never unhandled, is released once and leaves no listener",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) an 'error' on a pool connection while its verification runs refuses it, is never unhandled, is released once and leaves no listener",
       "refusals": []
     },
     {
@@ -523,12 +543,22 @@
     },
     {
       "file": "tests/b1-gates.test.ts",
-      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) pool.query's callback form: a verified hand-out yields (undefined, client, release); a refused one yields only the refusal",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) pg's Promise and callback contracts are kept: connect() resolves the client, its callback gets (null, client), a failed checkout calls back (error, undefined, release)",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) pool.query's callback form: a verified hand-out yields (undefined, client, release); a refused one yields (refusal, undefined, release) as pg-pool does",
       "refusals": []
     },
     {
       "file": "tests/b1-gates.test.ts",
       "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) the first checkout, an idle reuse of the same client and four concurrent checkouts each recheck the binding and the identity over the client handed out",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) the real pg.Pool inherits connect and newClient from pg-pool's Pool, the default install wraps that base, and a shadowing connect is refused",
       "refusals": []
     },
     {

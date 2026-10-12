@@ -60,8 +60,9 @@ it('VALUES ... ORDER BY x COLLATE "C" equals the Buffer.compare UTF-8 order (U+F
 /**
  * KJ-P8 B1 A10.7 v7 R2 (2-R4d), real: every connection this lane A process hands out is rechecked for that hand-out
  * (current binding, then the server identity over that connection), whoever built the pool: the factory's pool, a pool
- * a consumer builds from database.url, one built from DATABASE, and a direct client. Fresh checkouts, idle reuse (same
- * backend), pool.query and concurrent checkouts each leave their own completed attempt record. When the verified view
+ * a consumer builds from database.url, one built from DATABASE, a pg-pool Pool built directly (pg.Pool's base class, A10.7
+ * v7 R2 hostile review) and a direct client. Fresh checkouts, idle reuse (same backend), pool.query and concurrent
+ * checkouts each leave exactly one completed attempt record per hand-out. When the verified view
  * changes (a controlled double for the docker view only; the pools, the server and the reuse are real), the next
  * hand-out on every route is refused before the caller's statement runs, and the refused client is destroyed.
  */
@@ -70,11 +71,13 @@ it("R2: every lane A connection hand-out is verified, including idle reuse and p
   const dir = mkdtempSync(join(tmpdir(), "kj-r2-handout-")), keys = Object.values(ENV), saved = keys.map((k) => process.env[k]);
   Object.assign(process.env, { [ENV.nonce]: randomBytes(16).toString("hex"), [ENV.label]: "R2", [ENV.dir]: dir });
   const completed = () => readdirSync(dir).filter((n) => n.endsWith(".completed.json")).length;
-  const verified = async <T>(use: () => Promise<T>): Promise<[boolean, T]> => { const before = completed(), value = await use(); return [completed() > before, value]; };
+  const verified = async <T>(use: () => Promise<T>): Promise<[boolean, T]> => { const before = completed(), value = await use(); return [completed() === before + 1, value]; };
   const pid = async (c: pg.ClientBase) => (await c.query<{ p: number }>("select pg_backend_pid() as p")).rows[0]!.p;
   const outcome = async (run: () => Promise<unknown>) => run().then(() => "handed out", (e: Error) => `refused: ${/ENGINE_IMAGE_REFUSED: [a-z-]+/.exec(e.message)?.[0] ?? e.message}`);
   const view = (over: Partial<Verified>) => { verifier.verifyContainer = () => ({ ...real.call(verifier), ...over }); };
-  const pools: Record<string, pg.Pool> = { factory: database.pool, url: new pg.Pool({ connectionString: database.url, max: 1 }), constant: new pg.Pool({ connectionString: DATABASE, max: 1 }) };
+  const PgPool = Object.getPrototypeOf(pg.Pool) as typeof pg.Pool;
+  const pools: Record<string, pg.Pool> = { factory: database.pool, url: new pg.Pool({ connectionString: database.url, max: 1 }), constant: new pg.Pool({ connectionString: DATABASE, max: 1 }),
+    pgpool: new PgPool({ Client: pg.Client, connectionString: database.url, max: 1 }) };
   const seen: Record<string, unknown> = {};
   try {
     for (const [route, pool] of Object.entries(pools)) {
@@ -90,7 +93,7 @@ it("R2: every lane A connection hand-out is verified, including idle reuse and p
     }
     const before = completed();
     await Promise.all([1, 2, 3, 4].map(() => database.pool.query("select 1")));
-    seen.concurrent = completed() - before >= 4;
+    seen.concurrent = completed() - before === 4;
     view({ identity: { ...v.identity, systemIdentifier: "1" } });
     seen.identityChanged = await outcome(() => pools.url!.query("select 1"));
     verifier.verifyContainer = () => { throw new Error("docker unavailable"); };
@@ -105,12 +108,13 @@ it("R2: every lane A connection hand-out is verified, including idle reuse and p
   } finally {
     verifier.verifyContainer = real;
     await pools.constant!.query("drop table if exists kj_r2_constant");
-    await pools.url!.end(); await pools.constant!.end();
+    await pools.url!.query("drop table if exists kj_r2_url, kj_r2_pgpool");
+    await pools.url!.end(); await pools.constant!.end(); await pools.pgpool!.end();
     keys.forEach((k, i) => { if (saved[i] === undefined) delete process.env[k]; else process.env[k] = saved[i]; });
     rmSync(dir, { recursive: true, force: true });
   }
   const route = { first: true, idle: true, reused: true, query: true, moved: "refused: ENGINE_IMAGE_REFUSED: url", statementRan: false, destroyed: true };
-  expect(seen).toEqual({ factory: route, url: route, constant: route, concurrent: true,
+  expect(seen).toEqual({ factory: route, url: route, constant: route, pgpool: route, concurrent: true,
     identityChanged: "refused: ENGINE_IMAGE_REFUSED: identity-connection", verifierException: "refused: ENGINE_IMAGE_REFUSED: error",
     direct: { verified: true, moved: "refused: ENGINE_IMAGE_REFUSED: url", usable: false } });
 });

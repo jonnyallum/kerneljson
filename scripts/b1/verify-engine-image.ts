@@ -224,39 +224,90 @@ export function engineVerifier(root = process.cwd()): EngineVerifier {
 }
 
 type PoolCallback = (err: Error | undefined, client?: pg.PoolClient, release?: pg.PoolClient["release"]) => void;
+type ErrorListener = (error: Error) => void;
+interface Connection extends Queryable { on(event: "error", listener: ErrorListener): unknown; removeListener(event: "error", listener: ErrorListener): unknown }
+interface PoolState { options?: { onConnect?: unknown; verify?: unknown }; _clients?: unknown }
 interface HandOutClasses { Pool: { prototype: object }; Client: { prototype: object } }
+const NOOP = () => {};
+
 /**
- * 2-R4d: every connection the process hands out is verified for that hand-out (A10.7 v7 review R2). Installed on the
- * pg prototypes, so it covers every pool and client whoever built it (the base factory, a consumer's pool on
- * database.url or DATABASE, the pool given to migrate): every Pool checkout, a fresh client or a reused idle one
- * (pool.query checks out through connect), and every direct Client.connect. The caller receives the client only after
- * the verification of that hand-out succeeded; a refused pool client is destroyed (release with an error), never
- * returned to the idle list, and a refused direct client is ended. Nothing beyond 2-R4d's image metadata is cached.
- * Returns the uninstall function.
+ * pg.Pool is pg's BoundPool, a subclass of pg-pool's Pool, and checkouts live on that base class: a hook on pg.Pool alone
+ * misses a pg-pool Pool built directly (A10.7 v7 R2 hostile review). Refuses unless pg.Pool inherits both connect and
+ * newClient from its base unchanged, so nothing in between can shadow the hook.
+ */
+export function pgPoolBase(): { prototype: object } {
+  const base = Object.getPrototypeOf(pg.Pool) as { prototype: object } | null;
+  const own = (o: object | undefined, k: string) => o !== undefined && Object.prototype.hasOwnProperty.call(o, k);
+  if (!base?.prototype || own(pg.Pool.prototype, "connect") || own(pg.Pool.prototype, "newClient")
+    || !own(base.prototype, "connect") || !own(base.prototype, "newClient"))
+    refuse("hand-out", "pg.Pool does not inherit connect and newClient from pg-pool's Pool");
+  return base!;
+}
+
+/**
+ * 2-R4d: every connection the process hands out is verified for that hand-out (A10.7 v7 review R2). Installed on
+ * pg-pool's Pool prototype (which pg.Pool inherits) and pg's Client prototype, so it covers every pool and client whoever
+ * built it (the base factory, a consumer's pool on database.url or DATABASE, the pool given to migrate, a pg-pool Pool
+ * built directly): every Pool checkout, a fresh client or a reused idle one (pool.query checks out through connect), and
+ * every direct Client.connect. The caller receives the client only after the verification of that hand-out succeeded;
+ * a refused pool client is destroyed (release with an error), never returned to the idle list, and a refused direct
+ * client is ended. Nothing beyond 2-R4d's image metadata is cached.
+ *
+ * Exactly one verification per hand-out: a pool's new client is verified when the pool hands it out, not also when it
+ * connects (newClient marks it). A pool with an onConnect or verify option hands the client to that code first, so its
+ * new clients are also verified on connect. While a verification runs, an 'error' on the connection is captured and
+ * refuses it (pg-pool has removed its idle listener at checkout; a direct client is still inside connect()), and the
+ * listener stays until the refused connection is released or ended. Promise and callback forms keep pg's contracts:
+ * Client.connect() resolves the client and its callback gets (null, client); a failed pool checkout calls back
+ * (error, undefined, NOOP). In-process code can still replace these prototypes (F-4 trust boundary). Returns the
+ * uninstall function.
  */
 export function installHandOutVerification(verifier: () => EngineVerifier, file: () => string,
-  { Pool, Client }: HandOutClasses = { Pool: pg.Pool, Client: pg.Client }): () => void {
-  const pool = Pool.prototype as { connect: (cb?: PoolCallback) => Promise<pg.PoolClient> | void };
-  const client = Client.prototype as { connect: (cb?: (err: Error | null) => void) => Promise<void> | void };
-  const poolConnect = pool.connect, clientConnect = client.connect;
+  { Pool, Client }: HandOutClasses = { Pool: pgPoolBase(), Client: pg.Client }): () => void {
+  const pool = Pool.prototype as { connect: (cb?: PoolCallback) => Promise<pg.PoolClient> | void; newClient: (...args: unknown[]) => unknown };
+  const client = Client.prototype as { connect: (cb?: (err: Error | null, client?: unknown) => void) => Promise<unknown> | void };
+  const poolConnect = pool.connect, newClient = pool.newClient, clientConnect = client.connect;
+  if (typeof poolConnect !== "function" || typeof newClient !== "function" || typeof clientConnect !== "function")
+    refuse("hand-out", "the pool or client prototype lacks connect or newClient");
   const target = (c: object) => { const t = c as { host: string; port: number | string }; return { host: t.host, port: Number(t.port) }; };
+  /** The pool whose newClient is running (synchronously, so its client's connect is the one marked). */
+  let connecting: PoolState | undefined;
+  const verify = async (c: Connection, cleanup: (error: Error) => Promise<unknown> | unknown): Promise<void> => {
+    let failure: Error | undefined;
+    const onError: ErrorListener = (error) => { failure ??= error; };
+    c.on("error", onError);
+    try {
+      await verifier().verifyConnection(c, target(c), file());
+      if (failure) refuse("identity-connection", `the connection failed during verification: ${message(failure)}`, failure);
+    } catch (error) {
+      await cleanup(error instanceof Error ? error : new Error(message(error)));
+      throw error;
+    } finally { c.removeListener("error", onError); }
+  };
+  pool.newClient = function (this: PoolState, ...args: unknown[]) {
+    const outer = connecting;
+    connecting = this.options?.onConnect || this.options?.verify ? undefined : this;
+    try { return newClient.apply(this, args); } finally { connecting = outer; }
+  };
   pool.connect = function (this: pg.Pool, cb?: PoolCallback) {
     const done = (poolConnect.call(this) as Promise<pg.PoolClient>).then(async (c) => {
-      try { await verifier().verifyConnection(c, target(c), file()); } catch (error) { c.release(error instanceof Error ? error : true); throw error; }
+      await verify(c as unknown as Connection, (error) => c.release(error));
       return c;
     });
     if (!cb) return done;
-    void done.then((c) => cb(undefined, c, c.release), (error: Error) => cb(error));
+    void done.then((c) => cb(undefined, c, c.release), (error: Error) => cb(error, undefined, NOOP));
   };
-  client.connect = function (this: pg.Client, cb?: (err: Error | null) => void) {
+  client.connect = function (this: pg.Client, cb?: (err: Error | null, client?: unknown) => void) {
+    const clients = connecting?._clients;
+    if (Array.isArray(clients) && clients.includes(this)) return clientConnect.call(this, cb);
     // Only a refused verification ends the client; pg's own connect errors (for example a second connect() on a live
     // client) pass through untouched, as without the wrapper.
-    const done = (clientConnect.call(this) as Promise<void>).then(() => verifier().verifyConnection(this, target(this), file())
-      .then(() => undefined, async (error: unknown) => { await this.end().catch(() => {}); throw error; }));
+    const done = (clientConnect.call(this) as Promise<unknown>)
+      .then(() => verify(this as unknown as Connection, () => this.end().catch(() => {}))).then(() => this);
     if (!cb) return done;
-    void done.then(() => cb(null), (error: Error) => cb(error));
+    void done.then(() => cb(null, this), (error: Error) => cb(error));
   };
-  return () => { pool.connect = poolConnect; client.connect = clientConnect; };
+  return () => { pool.connect = poolConnect; pool.newClient = newClient; client.connect = clientConnect; };
 }
 
 async function main(argv: readonly string[]): Promise<number> {

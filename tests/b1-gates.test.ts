@@ -1,9 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import pg from "pg";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { mutationVerdictProblems } from "../scripts/b1/gates.js";
 import { REGRESSION_SUITES } from "../scripts/b1/plans.js";
@@ -17,7 +19,7 @@ import {
   parseFunctionInventory,
 } from "../scripts/b1/function-inventory.js";
 import { generateFunctionInventory, type DockerResult, type InventoryDeps, type InventoryPool } from "../scripts/b1/build-function-inventory.js";
-import { EngineRefusal, EngineVerifier, IDENTITY_SQL, composeImageProblems, installHandOutVerification, readComposeFiles, unprovenUrlProblems, type DockerRun, type Pins, type Queryable } from "../scripts/b1/verify-engine-image.js";
+import { EngineRefusal, EngineVerifier, IDENTITY_SQL, composeImageProblems, installHandOutVerification, pgPoolBase, readComposeFiles, unprovenUrlProblems, type DockerRun, type Pins, type Queryable } from "../scripts/b1/verify-engine-image.js";
 import {
   G7_DB_FILES, INFRA_EXIT, RECORD_KIND, VERIFIER_PREFIX, createRestorer, databaseFileProblems, fatalMessage, listTests, readRecords, recordProblems,
   recordShapeProblems, reportProblems, runClassified, writeAttemptRecord,
@@ -948,23 +950,37 @@ it("a mutation detector", () => { expect(process.env.KJFX_MUTANT === "a" ? 2 : 1
 
 describe("A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles)", () => {
   /** A client double: the statements sent over it, an identity row, and the pool's release once checked out. */
-  class ClientDouble {
+  /** errorDuringQuery: the socket fails while the identity query is in flight ('error' is emitted, the query still answers). */
+  class ClientDouble extends EventEmitter {
     host = "127.0.0.1"; port = 55432; row: Record<string, unknown> = goodRow; statements: string[] = []; ended = false; failQuery = false; failConnect = false;
+    errorDuringQuery = false; releases = 0;
     release: (error?: unknown) => void = () => {};
     connected = false;
     async connect() { if (this.failConnect) throw Error("ECONNREFUSED"); if (this.connected) throw Error("Client has already been connected"); this.connected = true; }
-    async query(sql: string) { this.statements.push(sql); if (this.failQuery) throw Error("terminating connection"); return { rows: [this.row] }; }
+    async query(sql: string) {
+      this.statements.push(sql);
+      if (this.failQuery) throw Error("terminating connection");
+      if (this.errorDuringQuery) await new Promise<void>((ok) => setImmediate(() => { this.emit("error", Error("read ECONNRESET")); ok(); }));
+      return { rows: [this.row] };
+    }
     async end() { this.ended = true; }
   }
-  /** A pool double with pg-pool's hand-out semantics: the most recent idle client is reused; release(error) destroys it. */
+  /**
+   * A pool double with pg-pool's hand-out semantics: the most recent idle client is reused; a new one is pushed onto
+   * _clients and connected inside newClient; release(error) destroys it.
+   */
   class PoolDouble {
-    made: ClientDouble[] = []; idle: ClientDouble[] = []; destroyed: ClientDouble[] = [];
-    connect(): Promise<ClientDouble> {
-      const c = this.idle.pop() ?? (this.made[this.made.length] = new ClientDouble());
-      c.release = (error?: unknown) => { (error ? this.destroyed : this.idle).push(c); };
-      return Promise.resolve(c);
+    options: { onConnect?: unknown } = {};
+    _clients: ClientDouble[] = []; idle: ClientDouble[] = []; destroyed: ClientDouble[] = [];
+    async connect(): Promise<ClientDouble> {
+      const c = this.idle.pop() ?? await this.newClient();
+      c.release = (error?: unknown) => { c.releases++; (error ? this.destroyed : this.idle).push(c); };
+      return c;
     }
+    newClient(): Promise<ClientDouble> { const c = new ClientDouble(); this._clients.push(c); return c.connect().then(() => c); }
   }
+  /** pg.Pool is a subclass of pg-pool's Pool that inherits connect and newClient: the hook belongs on the base. */
+  class BoundPoolDouble extends PoolDouble {}
   const verifications = (c: ClientDouble) => c.statements.filter((q) => q === IDENTITY_SQL).length;
   const setup = () => {
     const s = dockerState(), verifier = verifierWith(s);
@@ -1011,7 +1027,7 @@ describe("A10.7 R2 2-R4d every connection hand-out is verified for that hand-out
       expect(verifications(next)).toBe(1);
     } finally { uninstall(); }
   });
-  it("pool.query's callback form: a verified hand-out yields (undefined, client, release); a refused one yields only the refusal", async () => {
+  it("pool.query's callback form: a verified hand-out yields (undefined, client, release); a refused one yields (refusal, undefined, release) as pg-pool does", async () => {
     const { s, uninstall, pool } = setup();
     try {
       const ok = await new Promise<unknown[]>((r) => { pool.connect((...args) => r(args)); });
@@ -1021,7 +1037,7 @@ describe("A10.7 R2 2-R4d every connection hand-out is verified for that hand-out
       (ok[1] as ClientDouble).release();
       s.ports = { "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "55433" }] };
       const refused = await new Promise<unknown[]>((r) => { pool.connect((...args) => r(args)); });
-      expect(refused).toHaveLength(1);
+      expect(refused).toHaveLength(3);
       expect(String(refused[0])).toMatch(/ENGINE_IMAGE_REFUSED: url/);
       expect(refused[0]).toBeInstanceOf(EngineRefusal);
     } finally { uninstall(); }
@@ -1048,6 +1064,81 @@ describe("A10.7 R2 2-R4d every connection hand-out is verified for that hand-out
       await live.connect();
       await expect(live.connect()).rejects.toThrow(/^Client has already been connected$/);
       expect([live.ended, verifications(live)]).toEqual([false, 1]);
+    } finally { uninstall(); }
+  });
+  it("a new pool client is verified exactly once, when it is handed out, not also on connect; a pool with onConnect also verifies it on connect", async () => {
+    const { uninstall, pool, binding } = setup();
+    try {
+      const a = await pool.connect();
+      expect([verifications(a), binding()]).toEqual([1, 1]);
+      a.release();
+      const hooked = Object.assign(new PoolDouble(), { options: { onConnect: () => {} } });
+      expect(verifications(await hooked.connect())).toBe(2);
+    } finally { uninstall(); }
+  });
+  it("a pool subclass that inherits connect (pg.Pool over pg-pool's Pool) and the base pool built directly are both verified on every hand-out", async () => {
+    const s = dockerState(), verifier = verifierWith(s);
+    const uninstall = installHandOutVerification(() => verifier, () => "tests/x.test.ts", { Pool: PoolDouble, Client: ClientDouble });
+    try {
+      for (const pool of [new BoundPoolDouble(), new PoolDouble()]) {
+        const a = await pool.connect();
+        a.release();
+        s.ports = { "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "55433" }] };
+        await expect(pool.connect()).rejects.toThrow(/ENGINE_IMAGE_REFUSED: url/);
+        expect([pool.destroyed, pool.idle]).toEqual([[a], []]);
+        s.ports = dockerState().ports;
+      }
+    } finally { uninstall(); }
+  });
+  it("the real pg.Pool inherits connect and newClient from pg-pool's Pool, the default install wraps that base, and a shadowing connect is refused", () => {
+    // Outside base mode the runtime-roles harness gives pg.Pool its own connect; lane A base never does. Set it aside here.
+    const P = pg.Pool.prototype as { connect?: unknown }, shadowing = Object.getOwnPropertyDescriptor(P, "connect");
+    delete P.connect;
+    try {
+      const base = pgPoolBase(), before = (base.prototype as { connect: unknown }).connect;
+      expect(base).toBe(Object.getPrototypeOf(pg.Pool));
+      const uninstall = installHandOutVerification(() => verifierWith(dockerState()), () => "tests/x.test.ts");
+      try {
+        expect((base.prototype as { connect: unknown }).connect).not.toBe(before);
+        expect(Object.prototype.hasOwnProperty.call(P, "connect")).toBe(false);
+      } finally { uninstall(); }
+      expect((base.prototype as { connect: unknown }).connect).toBe(before);
+      P.connect = before;
+      expect(() => pgPoolBase()).toThrow(/ENGINE_IMAGE_REFUSED: hand-out/);
+    } finally {
+      delete P.connect;
+      if (shadowing) Object.defineProperty(P, "connect", shadowing);
+    }
+  });
+  it.each([["pool", true], ["direct", false]] as const)("an 'error' on a %s connection while its verification runs refuses it, is never unhandled, is released once and leaves no listener", async (_kind, pooled) => {
+    const { uninstall, pool } = setup();
+    try {
+      let c: ClientDouble;
+      if (pooled) {
+        c = await pool.connect();
+        c.release();
+        c.errorDuringQuery = true;
+        await expect(pool.connect()).rejects.toThrow(/ENGINE_IMAGE_REFUSED: identity-connection: the connection failed during verification: read ECONNRESET/);
+        expect([c.releases, pool.destroyed, pool.idle]).toEqual([2, [c], []]);
+      } else {
+        c = Object.assign(new ClientDouble(), { errorDuringQuery: true });
+        await expect(c.connect()).rejects.toThrow(/the connection failed during verification: read ECONNRESET/);
+        expect(c.ended).toBe(true);
+      }
+      expect(c.listenerCount("error")).toBe(0);
+    } finally { uninstall(); }
+  });
+  it("pg's Promise and callback contracts are kept: connect() resolves the client, its callback gets (null, client), a failed checkout calls back (error, undefined, release)", async () => {
+    const { s, uninstall, pool } = setup();
+    try {
+      const c = new ClientDouble();
+      expect(await c.connect()).toBe(c);
+      const d = new ClientDouble();
+      expect(await new Promise<unknown[]>((r) => { expect((d as unknown as { connect(cb: (...args: unknown[]) => void): unknown }).connect((...args) => r(args))).toBeUndefined(); })).toEqual([null, d]);
+      s.ports = { "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "55433" }] };
+      const refused = await new Promise<unknown[]>((r) => { pool.connect((...args) => r(args)); });
+      expect([refused.length, refused[1], typeof refused[2]]).toEqual([3, undefined, "function"]);
+      expect(() => (refused[2] as () => void)()).not.toThrow();
     } finally { uninstall(); }
   });
   it("uninstalling restores the original connect functions", () => {
