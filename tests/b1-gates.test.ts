@@ -401,7 +401,7 @@ describe("E2-R1 function inventory generator cleanup (controlled doubles)", () =
   const PINS=strictJson(readFileSync("infrastructure/database/b1-engine-pins.json","utf8")) as {serverVersion:string};
   const COMMITTED=readFileSync(FUNCTION_INVENTORY_PATH,"utf8");
   const ok=(stdout="")=>({status:0,signal:null,stdout,stderr:""}) satisfies DockerResult;
-  interface Options {rm?:DockerResult;ps?:DockerResult;migration?:Error;poolEnd?:Error}
+  interface Options {rm?:DockerResult;ps?:DockerResult;migration?:Error;poolEnd?:Error;readyFail?:number;failedPoolEnd?:Error}
   function harness(o:Options={}){
     const calls:string[][]=[],ends:number[]=[],out:string[]=[],err:string[]=[];let pools=0;
     const docker=(args:readonly string[]):DockerResult=>{
@@ -425,9 +425,17 @@ describe("E2-R1 function inventory generator cleanup (controlled doubles)", () =
     const pool=():InventoryPool=>{
       const n=pools++;
       return {
-        query:async(sql:string)=>({rows:/version\(\)/.test(sql)?[{v:PINS.serverVersion}]:[]}),
+        query:async(sql:string)=>{
+          // E2-R2: the first readyFail pools refuse their first readiness query.
+          if(n<(o.readyFail ?? 0)) throw Error(`not ready ${n}`);
+          return {rows:/version\(\)/.test(sql)?[{v:PINS.serverVersion}]:[]};
+        },
         connect:async()=>client,
-        end:async()=>{ends.push(n);if(o.poolEnd) throw o.poolEnd;},
+        end:async()=>{
+          ends.push(n);
+          if(n<(o.readyFail ?? 0)){if(o.failedPoolEnd) throw o.failedPoolEnd;return;}
+          if(o.poolEnd) throw o.poolEnd;
+        },
         on:()=>undefined,
       } as unknown as InventoryPool;
     };
@@ -496,5 +504,35 @@ describe("E2-R1 function inventory generator cleanup (controlled doubles)", () =
     expect(r.code).toBeNull();
     expect(r.error!.message).toBe("end failed");
     expect(removalCalls(h.calls)).toEqual(EXACT);
+  });
+  it("E2-R2 a failed readiness attempt whose pool closes is retried normally: exit 0, container removed and verified", async () => {
+    const h=harness({readyFail:1}),r=await run(h);
+    expect(r).toEqual({code:0,error:null});
+    expect(h.out.join("")).toMatch(/matches/);
+    expect(h.ends).toEqual([0,1]);
+    expect(removalCalls(h.calls)).toEqual(EXACT);
+  });
+  it("E2-R2 a failed readiness attempt whose pool cannot close fails the run: readiness then pool-close, no later success, container removed and verified", async () => {
+    const h=harness({readyFail:1,failedPoolEnd:Error("close refused")}),r=await run(h);
+    expect(r.code).toBeNull();
+    expect(r.error).toBeInstanceOf(AggregateError);
+    const errors=(r.error as AggregateError).errors as Error[];
+    expect(errors.map(e=>e.message)).toEqual(["not ready 0","pool close failed: close refused"]);
+    expect(r.error!.message).toBe("not ready 0; pool close failed: close refused");
+    // No second attempt was made, so no later success could return 0.
+    expect(h.ends).toEqual([0]);
+    expect(h.out).toEqual([]);
+    expect(removalCalls(h.calls)).toEqual(EXACT);
+  });
+  it("E2-R2 readiness pool-close failure and cleanup failure: all three errors retained in order", async () => {
+    const h=harness({readyFail:1,failedPoolEnd:Error("close refused"),rm:{status:1,signal:null,stdout:"",stderr:"rm refused"}}),r=await run(h);
+    expect(r.code).toBeNull();
+    const errors=(r.error as AggregateError).errors as Error[];
+    expect(errors).toHaveLength(3);
+    expect(errors[0]!.message).toBe("not ready 0");
+    expect(errors[1]!.message).toBe("pool close failed: close refused");
+    expect(errors[2]!.message).toContain(`docker rm -f ${ID} failed`);
+    expect(r.error!.message).toMatch(/^not ready 0; pool close failed: close refused; cleanup also failed: docker rm -f /);
+    expect(removalCalls(h.calls)).toEqual([EXACT[0]]);
   });
 });

@@ -26,7 +26,8 @@ import { FUNCTION_INVENTORY_PATH, readFunctionInventory, renderFunctionInventory
  * Cleanup (E2-R1): the pool is closed and the container removed on every path, by the exact id `docker run` printed.
  * Removal counts as done only when `docker rm -f <id>` exits 0 with no spawn error or signal AND
  * `docker ps -a -q --no-trunc --filter id=<id>` then lists nothing. A cleanup failure makes the run fail; when the run
- * had already failed, both errors are reported, the original first (AggregateError).
+ * had already failed, both errors are reported, the original first (AggregateError). E2-R2: a failed readiness attempt
+ * whose pool cannot be closed fails the run (readiness error, then the close error, then any cleanup error).
  */
 const B1="20261002090000_runtime_least_privilege_roles.sql";
 /** One docker invocation's result, as spawnSync reports it. */
@@ -56,6 +57,10 @@ export const realInventoryDeps:InventoryDeps={
 const failed=(r:DockerResult)=>r.error!==undefined || r.signal!==null || r.status!==0;
 const describe=(r:DockerResult)=>r.error ? `spawn error ${r.error.message}` : r.signal!==null ? `signal ${r.signal}` : `exit ${String(r.status)}: ${r.stderr.slice(0,400)}`;
 const asError=(e:unknown)=>e instanceof Error ? e : Error(String(e));
+/** A failed readiness attempt whose pool then failed to close: [readiness error, pool-close error], in that order. */
+class ReadinessCloseError extends AggregateError {
+  constructor(errors:[Error,Error]){super(errors,`${errors[0].message}; ${errors[1].message}`);}
+}
 /** Removes exactly this container and verifies it is gone; returns the failure, or null. */
 export function removeContainer(deps:Pick<InventoryDeps,"docker">,id:string):Error|null{
   const rm=deps.docker(["rm","-f",id]);
@@ -89,7 +94,13 @@ export async function generateFunctionInventory(check:boolean,deps:InventoryDeps
       // A fresh pinned image runs a temporary initdb server first; wait for the final server (two consecutive successes).
       const p=deps.pool(url);p.on("error",()=>{});
       try{await p.query("select 1");await deps.sleep(1500);await p.query("select 1");pool=p;break;}
-      catch{await p.end().catch(()=>undefined);await deps.sleep(1000);}
+      catch(error){
+        // E2-R2: a failed attempt's pool must close; if it cannot, the run fails (readiness error first, then the close).
+        const readiness=asError(error);
+        try{await p.end();}
+        catch(closeError){throw new ReadinessCloseError([readiness,Error(`pool close failed: ${asError(closeError).message}`,{cause:closeError})]);}
+        await deps.sleep(1000);
+      }
     }
     if(!pool) throw Error("pinned engine did not become ready");
     const version=(await pool.query<{v:string}>("select version() as v")).rows[0]!.v;
@@ -117,8 +128,11 @@ export async function generateFunctionInventory(check:boolean,deps:InventoryDeps
   const cleanup:Error[]=[];
   if(pool){try{await pool.end();}catch(error){cleanup.push(Error(`pool close failed: ${asError(error).message}`,{cause:error}));}}
   const removal=removeContainer(deps,id);if(removal) cleanup.push(removal);
-  if(original && cleanup.length)
-    throw new AggregateError([original,...cleanup],`${original.message}; cleanup also failed: ${cleanup.map(e=>e.message).join("; ")}`);
+  if(original && cleanup.length){
+    // A readiness-close failure contributes its two errors in order, so every error is listed flat: readiness, close, cleanup.
+    const lead=original instanceof ReadinessCloseError ? original.errors as Error[] : [original];
+    throw new AggregateError([...lead,...cleanup],`${original.message}; cleanup also failed: ${cleanup.map(e=>e.message).join("; ")}`);
+  }
   if(original) throw original;
   if(cleanup.length) throw cleanup.length===1 ? cleanup[0]! : new AggregateError(cleanup,cleanup.map(e=>e.message).join("; "));
   return exitCode;

@@ -523,6 +523,21 @@
     },
     {
       "file": "tests/b1-gates.test.ts",
+      "name": "E2-R1 function inventory generator cleanup (controlled doubles) E2-R2 a failed readiness attempt whose pool cannot close fails the run: readiness then pool-close, no later success, container removed and verified",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "E2-R1 function inventory generator cleanup (controlled doubles) E2-R2 a failed readiness attempt whose pool closes is retried normally: exit 0, container removed and verified",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "E2-R1 function inventory generator cleanup (controlled doubles) E2-R2 readiness pool-close failure and cleanup failure: all three errors retained in order",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
       "name": "E2-R1 function inventory generator cleanup (controlled doubles) generation and cleanup both fail: both reported, the original first and not masked",
       "refusals": []
     },
