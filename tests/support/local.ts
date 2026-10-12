@@ -2,7 +2,10 @@ import { execFileSync, spawn } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import pg from "pg";
+import { expect } from "vitest";
 import { assertBaseEnvironment, assertBaseTarget, baseMigrationFiles } from "../../scripts/b1/base-guard.mjs";
+import { repoRelative } from "../../scripts/b1/mutation-infra.mjs";
+import { engineVerifier } from "../../scripts/b1/verify-engine-image.js";
 export const DATABASE = "postgresql://postgres@127.0.0.1:55432/kerneljson";
 export const INGRESS = "http://127.0.0.1:18080";
 export const ADMIN = "http://127.0.0.1:19070";
@@ -100,9 +103,26 @@ export async function until<T>(
   }
   throw new Error(`Local readiness timeout: ${String(last)}`);
 }
+/** The current test file, repository-relative, from vitest's worker state (named in the G7 attempt records). */
+export function currentTestFile(): string {
+  const path = expect.getState().testPath;
+  return path ? repoRelative(process.cwd(), path) : "(outside a test file)";
+}
+/**
+ * KJ-P8 B1 A10.7 2-R4c: the pool migrate() is given must reach the verified lane A container. Files that open their
+ * own pool on DATABASE (not through the base factory) are verified here, before the first migration statement.
+ */
+async function verifyPoolTarget(pool: pg.Pool): Promise<void> {
+  const options = (pool as unknown as { options: { connectionString?: string; host?: string; port?: number } }).options;
+  const url = options.connectionString ? new URL(options.connectionString) : undefined;
+  const target = { host: url?.hostname ?? options.host ?? "", port: Number(url?.port || options.port || 0) };
+  const client = await pool.connect();
+  try { await engineVerifier().verifyConnection(client, target, currentTestFile()); } finally { client.release(); }
+}
 /** Lane A only: working-copy base migrations, including authorized mutants, never B1. */
 export async function migrate(pool: pg.Pool, options: { exclude?: readonly string[]; only?: readonly string[] } = {}): Promise<void> {
   assertBaseEnvironment();
+  await verifyPoolTarget(pool);
   const files=baseMigrationFiles((await readdir("supabase/migrations")).filter(f=>f.endsWith(".sql")),options);
   await assertBaseTarget(pool);
   await pool.query(`do $$ begin

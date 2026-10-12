@@ -253,6 +253,226 @@
     },
     {
       "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 1-R10a UTF-8 byte order, not UTF-16 code-unit order (N8); N4d the duplicate guard as it is N4d a committed inventory with a duplicate identity is rejected by the parse committedFunctionInventory() uses",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 1-R10a UTF-8 byte order, not UTF-16 code-unit order (N8); N4d the duplicate guard as it is UTF-16 .sort() puts U+1F600 first; Buffer.compare puts U+FF5E first; the static contract accepts only the byte order",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R3 the compose engine reference equals b1-engine-pins.json (D1-D5) D1 reverted to the tag postgres:17.6 is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R3 the compose engine reference equals b1-engine-pins.json (D1-D5) D2 a digest one hex digit away from the pin is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R3 the compose engine reference equals b1-engine-pins.json (D1-D5) D3 pins changed and the compose file not: refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R3 the compose engine reference equals b1-engine-pins.json (D1-D5) D4 a second compose file with another postgres reference is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R3 the compose engine reference equals b1-engine-pins.json (D1-D5) D5 the tag@digest form is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R3 the compose engine reference equals b1-engine-pins.json (D1-D5) the committed compose files carry exactly the pinned digest",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4 running-image verification with controlled doubles (D6-D8, D10-D14) 2-R4d caching: image metadata is cached by container ID; ps -q and inspect run before every hand-out",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4 running-image verification with controlled doubles (D6-D8, D10-D14) D10 a G7 job whose container has the wrong digest fails before its baseline: no vitest runs, exit 3, no tally",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4 running-image verification with controlled doubles (D6-D8, D10-D14) D11 a container replaced mid-job by an image lacking the digest: re-verified for the new ID, the old result is not reused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4 running-image verification with controlled doubles (D6-D8, D10-D14) D12 a connection to another port than the verified binding is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4 running-image verification with controlled doubles (D6-D8, D10-D14) D13 KJ_TEST_PG_URL or DATABASE_URL to an unverified server is refused; lane A refuses KJ_TEST_PG_URL outright",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4 running-image verification with controlled doubles (D6-D8, D10-D14) D14 the version() connection and the test connection reach different postmasters: refused after one re-verification",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4 running-image verification with controlled doubles (D6-D8, D10-D14) D6 the running image lacks the pinned digest (a retagged image): refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4 running-image verification with controlled doubles (D6-D8, D10-D14) D7 version() differs from serverVersion: refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4 running-image verification with controlled doubles (D6-D8, D10-D14) D8 docker inspect fails: refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4 running-image verification with controlled doubles (D6-D8, D10-D14) D8 the container is absent: refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4 running-image verification with controlled doubles (D6-D8, D10-D14) D8 the container is not running: refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4 running-image verification with controlled doubles (D6-D8, D10-D14) attempt records: one started and one completed record per attempt, or a failed record with its check",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4 running-image verification with controlled doubles (D6-D8, D10-D14) control: the pinned digest, version, 127.0.0.1 binding and one server identity verify",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4 running-image verification with controlled doubles (D6-D8, D10-D14) the port is published on 0.0.0.0: refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4e the shared G7 infrastructure-result module (D16, D17, D19-D21; acceptance and report units) D16 a record without this invocation's nonce or label is FATAL",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4e the shared G7 infrastructure-result module (D16, D17, D19-D21; acceptance and report units) D17 the verifier cannot write its record: the write throws, and an empty directory is FATAL",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4e the shared G7 infrastructure-result module (D16, D17, D19-D21; acceptance and report units) D19 a complete record from a previous invocation (old nonce, older than the directory) is FATAL",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4e the shared G7 infrastructure-result module (D16, D17, D19-D21; acceptance and report units) D20 an invocation with database-backed files and no record is FATAL",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4e the shared G7 infrastructure-result module (D16, D17, D19-D21; acceptance and report units) D21 malformed records: invalid JSON, a schema violation, an inconsistent container ID or identity",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4e the shared G7 infrastructure-result module (D16, D17, D19-D21; acceptance and report units) G7 database file lists equal the committed sources (static G1 check); a stale list is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4e the shared G7 infrastructure-result module (D16, D17, D19-D21; acceptance and report units) an unmatched start is FATAL; a record naming a file outside the invocation is FATAL; a failed record is FATAL",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4e the shared G7 infrastructure-result module (D16, D17, D19-D21; acceptance and report units) control: complete, matching records for every database-backed file are accepted",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4e the shared G7 infrastructure-result module (D16, D17, D19-D21; acceptance and report units) inconsistent counts, and a verifier prefix or process.exit message anywhere, are FATAL",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4e the shared G7 infrastructure-result module (D16, D17, D19-D21; acceptance and report units) report completeness control: a complete report is accepted",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4e the shared G7 infrastructure-result module (D16, D17, D19-D21; acceptance and report units) report incompleteness with success: false (a file without its tests) is FATAL",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 2-R4e the shared G7 infrastructure-result module (D16, D17, D19-D21; acceptance and report units) report incompleteness with success: true (a killed worker: no tests, no files) is FATAL",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 D23/D24 real vitest 5.0.0 child processes through the shared driver module D23 D15(a) verification fails in beforeAll: FATAL, restored byte-identical, no tally",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 D23/D24 real vitest 5.0.0 child processes through the shared driver module D23 D15(b) verification fails inside a test body (connection hand-out): not KILLED: FATAL, restored byte-identical, no tally",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 D23/D24 real vitest 5.0.0 child processes through the shared driver module D23 D17 the verifier cannot write its record: FATAL, restored byte-identical, no tally",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 D23/D24 real vitest 5.0.0 child processes through the shared driver module D23 D18 the worker is SIGKILLed mid-verification: FATAL, restored byte-identical, no tally",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 D23/D24 real vitest 5.0.0 child processes through the shared driver module D23 D19 a stale record from a previous invocation: FATAL, restored byte-identical, no tally",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 D23/D24 real vitest 5.0.0 child processes through the shared driver module D23 D20 the verifier is not invoked: FATAL, restored byte-identical, no tally",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 D23/D24 real vitest 5.0.0 child processes through the shared driver module D23 D22 process.exit(86) during verification: FATAL, restored byte-identical, no tally",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 D23/D24 real vitest 5.0.0 child processes through the shared driver module D24 mixed result (i) b's worker SIGKILLed mid-verification while a's records complete and c fails normally: FATAL, not KILLED",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 D23/D24 real vitest 5.0.0 child processes through the shared driver module D24 mixed result (ii) b unable to write its record while a's records complete and c fails normally: FATAL, not KILLED",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 D23/D24 real vitest 5.0.0 child processes through the shared driver module controls: complete records yield the normal verdict (a clean run survives, a failing detector is a kill)",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
       "name": "CON-20 the inventory gate over a trace (G4 enforce, G5 discover) does not count a declared probe, which the refusal multiset accounts for",
       "refusals": []
     },
@@ -658,12 +878,22 @@
     },
     {
       "file": "tests/b1-relation-inventory.integration.test.ts",
+      "name": "VALUES ... ORDER BY x COLLATE \"C\" equals the Buffer.compare UTF-8 order (U+FF5E, U+1F600 and an ASCII control pair)",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-relation-inventory.integration.test.ts",
       "name": "the committed function inventory is regenerated byte for byte from the base chain's catalogue",
       "refusals": []
     },
     {
       "file": "tests/b1-relation-inventory.integration.test.ts",
       "name": "the committed relation inventory equals the base chain's relations in public and kernel_private",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-relation-inventory.integration.test.ts",
+      "name": "the lane A database is the pinned engine image, and this file's connection is bound to the verified container",
       "refusals": []
     },
     {
@@ -1784,6 +2014,21 @@
     {
       "file": "tests/b1-runner-staget.test.ts",
       "name": "CON-30 G8 evidence collected by the runner with SHA-256s E2 stage T catalogue equality: a committed function inventory listing a function the catalogue lacks fails the negative test, and G8 refuses",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-30 G8 evidence collected by the runner with SHA-256s N4a discover twin: a committed function inventory listing a function the catalogue lacks fails regression-probes-discover, and G8 refuses",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-30 G8 evidence collected by the runner with SHA-256s N4b a committed inventory missing a catalogued non-manifest function fails the equality; G8 reports missing rows",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-30 G8 evidence collected by the runner with SHA-256s N4c one committed identity changed (an argument type altered) fails the equality; G8 reports missing rows",
       "refusals": []
     },
     {

@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { pathToFileURL } from "node:url";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { mutationVerdictProblems } from "../scripts/b1/gates.js";
 import { REGRESSION_SUITES } from "../scripts/b1/plans.js";
 import { strictJson } from "../services/kernel/src/database/strict-json.js";
@@ -15,6 +17,12 @@ import {
   parseFunctionInventory,
 } from "../scripts/b1/function-inventory.js";
 import { generateFunctionInventory, type DockerResult, type InventoryDeps, type InventoryPool } from "../scripts/b1/build-function-inventory.js";
+import { EngineVerifier, composeImageProblems, readComposeFiles, unprovenUrlProblems, type DockerRun, type Pins, type Queryable } from "../scripts/b1/verify-engine-image.js";
+import {
+  G7_DB_FILES, INFRA_EXIT, RECORD_KIND, VERIFIER_PREFIX, createRestorer, databaseFileProblems, fatalMessage, listTests, readRecords, recordProblems,
+  recordShapeProblems, reportProblems, runClassified, writeAttemptRecord,
+} from "../scripts/b1/mutation-infra.mjs";
+import { gatedDatabaseUrl } from "./support/database.js";
 
 /**
  * Failing fixtures for two CI gate rules (ADR-0023 27.12.15): CON-20, the discover/enforce inventory gate (G4, G5) of
@@ -377,7 +385,7 @@ describe("CON-30 G8 evidence: recorded digests, every row their test lists prese
   it("predicate drift: one shared predicate; the frozen negative test selects with it and asserts catalogue equality", () => {
     const text = readFileSync("tests/runtime-roles-negative.integration.test.ts", "utf8");
     expect(text).toContain('where ${FUNCTION_INVENTORY_PREDICATE("p", "n")}`, [role]);');
-    expect(text).toContain("expect(rows.map((r) => r.name).sort()).toEqual(committedFunctionInventory().functions);");
+    expect(text).toContain('expect(rows.map((r) => r.name).sort((a, b) => Buffer.compare(Buffer.from(a, "utf8"), Buffer.from(b, "utf8")))).toEqual(committedFunctionInventory().functions);');
     expect(text).not.toMatch(/prorettype <> 'trigger'::regtype/);
     expect(FUNCTION_INVENTORY_SQL).toContain(FUNCTION_INVENTORY_PREDICATE("p", "n"));
     expect(FUNCTION_INVENTORY_SQL).toContain('collate "C"');
@@ -534,5 +542,328 @@ describe("E2-R1 function inventory generator cleanup (controlled doubles)", () =
     expect(errors[2]!.message).toContain(`docker rm -f ${ID} failed`);
     expect(r.error!.message).toMatch(/^not ready 0; pool close failed: close refused; cleanup also failed: docker rm -f /);
     expect(removalCalls(h.calls)).toEqual([EXACT[0]]);
+  });
+});
+
+/**
+ * KJ-P8 B1 A10.7 v7 (local candidate, not sealed). DB-free controls for the engine pin (2-R3), the running-image
+ * verifier (2-R4, 2-R4a-d) with controlled docker and connection doubles, the shared G7 infrastructure-result module
+ * (2-R4e), the UTF-8 ordering (1-R10a) and the duplicate guard as it is (N4d). D23/D24 run the real vitest 5.0.0 as a
+ * child process on a fixture generated in a temporary directory outside tests/, with an explicit --config.
+ */
+const PINS = JSON.parse(readFileSync("infrastructure/database/b1-engine-pins.json", "utf8")) as Pins;
+const CID = "c".repeat(64), CID2 = "d".repeat(64), IMG = `sha256:${"e".repeat(64)}`, SID = "7412345678901234567";
+interface DoubleState { ids: string[]; image: string; digests: string[]; ports: unknown; running: boolean; version: string; sid: string; fail?: string; calls: string[] }
+const dockerState = (over: Partial<DoubleState> = {}): DoubleState => ({ ids: [CID], image: IMG, digests: [PINS.image], ports: { "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "55432" }] },
+  running: true, version: PINS.serverVersion, sid: SID, calls: [], ...over });
+const dockerDouble = (s: DoubleState): DockerRun => (args) => {
+  const a = args.join(" ");
+  s.calls.push(a);
+  if (s.fail && a.includes(s.fail)) throw Error(`docker double: ${s.fail} failed`);
+  if (args[0] === "compose") return s.ids.join("\n") + "\n";
+  if (args[0] === "inspect") return JSON.stringify([{ Id: s.ids[0], Image: s.image, State: { Running: s.running }, NetworkSettings: { Ports: s.ports } }]);
+  if (args[0] === "image") return JSON.stringify(s.digests);
+  if (args[0] === "exec") return JSON.stringify({ version: s.version, port: 5432, sid: s.sid }) + "\n";
+  throw Error(`docker double: unexpected ${a}`);
+};
+const conn = (row: Record<string, unknown>): Queryable => ({ query: async () => ({ rows: [row] }) });
+const goodRow = { version: PINS.serverVersion, port: 5432, sid: SID };
+const verifierWith = (s: DoubleState, env: NodeJS.ProcessEnv = {}) => new EngineVerifier({ docker: dockerDouble(s), pins: PINS, composeFile: "c.yaml", env });
+
+describe("A10.7 2-R3 the compose engine reference equals b1-engine-pins.json (D1-D5)", () => {
+  const committed = readComposeFiles();
+  const swap = (files: Map<string, string>, file: string, from: string, to: string) => new Map([...files].map(([k, v]) => [k, k === file ? v.replace(from, to) : v]));
+  const V = "infrastructure/docker/validation.compose.yaml";
+  it("the committed compose files carry exactly the pinned digest", () => {
+    expect(composeImageProblems(committed, PINS)).toEqual([]);
+    expect(committed.get(V)).toContain(`    image: ${PINS.image}\n`);
+  });
+  it.each([
+    ["D1 reverted to the tag postgres:17.6", (f: Map<string, string>) => swap(f, V, PINS.image, "postgres:17.6")],
+    ["D2 a digest one hex digit away from the pin", (f: Map<string, string>) => swap(f, V, PINS.image, PINS.image.slice(0, -1) + (PINS.image.endsWith("0") ? "1" : "0"))],
+    ["D4 a second compose file with another postgres reference", (f: Map<string, string>) => new Map([...f, ["infrastructure/docker/extra.compose.yaml", "services:\n  pg:\n    image: postgres:16\n"]])],
+    ["D5 the tag@digest form", (f: Map<string, string>) => swap(f, V, PINS.image, PINS.image.replace("postgres@", "postgres:17.6@"))],
+  ])("%s is refused", (_name, edit) => {
+    expect(composeImageProblems(edit(committed), PINS).length).toBeGreaterThan(0);
+  });
+  it("D3 pins changed and the compose file not: refused", () => {
+    expect(composeImageProblems(committed, { ...PINS, image: `postgres@sha256:${"1".repeat(64)}` }).length).toBeGreaterThan(0);
+  });
+});
+
+describe("A10.7 2-R4 running-image verification with controlled doubles (D6-D8, D10-D14)", () => {
+  it("control: the pinned digest, version, 127.0.0.1 binding and one server identity verify", async () => {
+    const s = dockerState(), v = verifierWith(s).verifyContainer();
+    expect(v).toMatchObject({ containerId: CID, imageId: IMG, digest: PINS.image, binding: "127.0.0.1:55432", identity: { version: PINS.serverVersion, serverPort: 5432, systemIdentifier: SID } });
+    expect(s.calls[0]).toBe("compose -f c.yaml ps -q db");
+    await expect(verifierWith(dockerState()).verifyConnection(conn(goodRow), { host: "127.0.0.1", port: 55432 }, "tests/x.test.ts")).resolves.toMatchObject({ containerId: CID });
+  });
+  it.each([
+    ["D6 the running image lacks the pinned digest (a retagged image)", { digests: ["postgres@sha256:" + "0".repeat(64)] }, /digest:/],
+    ["D7 version() differs from serverVersion", { version: "PostgreSQL 17.5" }, /version:/],
+    ["D8 docker inspect fails", { fail: "inspect --type container" }, /inspect:/],
+    ["D8 the container is absent", { ids: [] }, /container:/],
+    ["D8 the container is not running", { running: false }, /inspect:/],
+    ["the port is published on 0.0.0.0", { ports: { "5432/tcp": [{ HostIp: "0.0.0.0", HostPort: "55432" }] } }, /binding:/],
+  ] as [string, Partial<DoubleState>, RegExp][])("%s: refused", (_name, over, check) => {
+    expect(() => verifierWith(dockerState(over)).verifyContainer()).toThrow(new RegExp(`^${VERIFIER_PREFIX}: ${check.source}`));
+  });
+  it("2-R4d caching: image metadata is cached by container ID; ps -q and inspect run before every hand-out", async () => {
+    const s = dockerState(), v = verifierWith(s);
+    for (let i = 0; i < 3; i++) await v.verifyConnection(conn(goodRow), { host: "127.0.0.1", port: 55432 }, "tests/x.test.ts");
+    expect(s.calls.filter((c) => c.startsWith("image inspect"))).toHaveLength(1);
+    expect(s.calls.filter((c) => c.startsWith("compose"))).toHaveLength(3);
+    expect(s.calls.filter((c) => c.startsWith("inspect --type container"))).toHaveLength(3);
+  });
+  it("D11 a container replaced mid-job by an image lacking the digest: re-verified for the new ID, the old result is not reused", async () => {
+    const s = dockerState(), v = verifierWith(s);
+    await v.verifyConnection(conn(goodRow), { host: "127.0.0.1", port: 55432 }, "tests/x.test.ts");
+    s.ids = [CID2]; s.image = `sha256:${"f".repeat(64)}`; s.digests = ["postgres@sha256:" + "0".repeat(64)];
+    await expect(v.verifyConnection(conn(goodRow), { host: "127.0.0.1", port: 55432 }, "tests/x.test.ts")).rejects.toThrow(/digest:/);
+    expect(s.calls.filter((c) => c.startsWith("image inspect"))).toHaveLength(2);
+  });
+  it("D10 a G7 job whose container has the wrong digest fails before its baseline: no vitest runs, exit 3, no tally", () => {
+    const out: string[] = [], spy = vi.spyOn(console, "log").mockImplementation((m: string) => { out.push(m); });
+    let restored = 0, tallied = 0;
+    try {
+      expect(() => { runClassified({ label: "baseline", files: ["tests/x.test.ts"], tests: new Map(), restore: () => { restored++; }, vitest: "/nonexistent/vitest.mjs",
+        check: () => { verifierWith(dockerState({ digests: [] })).verifyContainer(); throw Error("unreachable"); }, exit: (c) => { throw new FatalExit(c); } }); tallied++; })
+        .toThrow(FatalExit);
+    } finally { spy.mockRestore(); }
+    expect(out.join("\n")).toMatch(/^INFRASTRUCTURE FAILURE: baseline pre-invocation verification: ENGINE_IMAGE_REFUSED: digest:/);
+    expect([restored, tallied]).toEqual([1, 0]);
+  });
+  it("D12 a connection to another port than the verified binding is refused", async () => {
+    await expect(verifierWith(dockerState()).verifyConnection(conn(goodRow), { host: "127.0.0.1", port: 55433 }, "tests/x.test.ts")).rejects.toThrow(/url: connection address 127.0.0.1:55433/);
+  });
+  it("D13 KJ_TEST_PG_URL or DATABASE_URL to an unverified server is refused; lane A refuses KJ_TEST_PG_URL outright", () => {
+    const v = { host: "127.0.0.1", port: 55432, binding: "127.0.0.1:55432" };
+    expect(unprovenUrlProblems({ KJ_TEST_PG_URL: "postgresql://postgres@127.0.0.1:5432/x" }, v)).toEqual(["KJ_TEST_PG_URL does not address the verified binding 127.0.0.1:55432"]);
+    expect(unprovenUrlProblems({ DATABASE_URL: "postgresql://postgres@10.0.0.5:55432/x" }, v)).toEqual(["DATABASE_URL does not address the verified binding 127.0.0.1:55432"]);
+    expect(unprovenUrlProblems({ DATABASE_URL: "postgresql://postgres@127.0.0.1:55432/x" }, v)).toEqual([]);
+    const saved = { roles: process.env.KJ_RUNTIME_ROLES, url: process.env.KJ_TEST_PG_URL };
+    try {
+      process.env.KJ_RUNTIME_ROLES = "base"; process.env.KJ_TEST_PG_URL = "postgresql://postgres@127.0.0.1:5432/x";
+      expect(() => gatedDatabaseUrl()).toThrow(/ENGINE_IMAGE_REFUSED: url/);
+    } finally {
+      for (const [k, val] of [["KJ_RUNTIME_ROLES", saved.roles], ["KJ_TEST_PG_URL", saved.url]] as const) if (val === undefined) delete process.env[k]; else process.env[k] = val;
+    }
+  });
+  it("D14 the version() connection and the test connection reach different postmasters: refused after one re-verification", async () => {
+    const s = dockerState();
+    await expect(verifierWith(s).verifyConnection(conn({ ...goodRow, sid: "1111111111111111111" }), { host: "127.0.0.1", port: 55432 }, "tests/x.test.ts"))
+      .rejects.toThrow(/identity-connection: the connection reaches another server/);
+    expect(s.calls.filter((c) => c.startsWith("exec"))).toHaveLength(2);
+  });
+  it("attempt records: one started and one completed record per attempt, or a failed record with its check", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kj-g7-unit-")), env = { KJ_G7_NONCE: "a".repeat(32), KJ_G7_LABEL: "M1", KJ_G7_RESULTS: dir };
+    try {
+      await verifierWith(dockerState(), env).verifyConnection(conn(goodRow), { host: "127.0.0.1", port: 55432 }, "tests/x.test.ts");
+      await expect(verifierWith(dockerState({ version: "x" }), env).verifyConnection(conn(goodRow), { host: "127.0.0.1", port: 55432 }, "tests/x.test.ts")).rejects.toThrow(/version/);
+      const { records, problems } = readRecords(dir);
+      expect(problems).toEqual([]);
+      expect(records.map((r) => r.phase).sort()).toEqual(["completed", "failed", "started", "started"]);
+      expect(records.find((r) => r.phase === "failed")).toMatchObject({ check: "version", file: "tests/x.test.ts", label: "M1" });
+      expect(records.find((r) => r.phase === "completed")).toMatchObject({ containerId: CID, digest: PINS.image, binding: "127.0.0.1:55432", systemIdentifier: SID, serverPort: 5432 });
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+class FatalExit extends Error { constructor(readonly code: number) { super(`exit ${code}`); } }
+describe("A10.7 2-R4e the shared G7 infrastructure-result module (D16, D17, D19-D21; acceptance and report units)", () => {
+  const PRE = { containerId: CID, digest: PINS.image, binding: "127.0.0.1:55432", systemIdentifier: SID };
+  const FILES = ["tests/a.test.ts", "tests/b.test.ts"];
+  const inv = { label: "M7", nonce: "b".repeat(32), createdAt: new Date(Date.now() - 60_000) };
+  let n = 0;
+  const id = () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`;
+  const started = (file: string, attemptId = id(), over: Record<string, unknown> = {}) => ({ kind: RECORD_KIND, phase: "started" as const, nonce: inv.nonce, label: inv.label, attemptId, file, startedAt: new Date().toISOString(), ...over });
+  const completed = (s: ReturnType<typeof started>, over: Record<string, unknown> = {}) => ({ ...s, phase: "completed" as const, startedAt: undefined, containerId: CID, imageId: IMG, digest: PINS.image, repoDigestMatch: true,
+    binding: "127.0.0.1:55432", version: PINS.serverVersion, serverPort: 5432, systemIdentifier: SID, completedAt: new Date().toISOString(), ...over });
+  const clean = <T extends Record<string, unknown>>(r: T) => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined)) as T;
+  const full = (): Record<string, unknown>[] => FILES.flatMap((f) => { const s = started(f); return [s, clean(completed(s))]; });
+  const check = (records: Record<string, unknown>[]) => recordProblems(records as never, inv, { files: FILES, dbFiles: FILES, pre: PRE });
+  it("control: complete, matching records for every database-backed file are accepted", () => {
+    expect(check(full())).toEqual([]);
+    for (const r of full()) expect(recordShapeProblems(r)).toEqual([]);
+  });
+  it("D16 a record without this invocation's nonce or label is FATAL", () => {
+    const r = full(); r[1] = { ...r[1]!, nonce: "c".repeat(32) };
+    expect(check(r).join("\n")).toMatch(/stale or crossed record/);
+    const l = full(); l[0] = { ...l[0]!, label: "M8" };
+    expect(check(l).join("\n")).toMatch(/stale or crossed record/);
+  });
+  it("D17 the verifier cannot write its record: the write throws, and an empty directory is FATAL", () => {
+    const gone = join(tmpdir(), `kj-g7-missing-${process.pid}-${Date.now()}`);
+    expect(() => writeAttemptRecord(gone, started("tests/a.test.ts") as never)).toThrow();
+    expect(check([]).join("\n")).toMatch(/missing coverage: no completed verification for tests\/a\.test\.ts/);
+  });
+  it("D19 a complete record from a previous invocation (old nonce, older than the directory) is FATAL", () => {
+    const r = full(); const s = started("tests/a.test.ts", id(), { nonce: "9".repeat(32), startedAt: new Date(Date.now() - 3_600_000).toISOString() });
+    expect(check([...r, s, clean(completed(s, { completedAt: new Date(Date.now() - 3_600_000).toISOString() }))]).join("\n")).toMatch(/stale/);
+  });
+  it("D20 an invocation with database-backed files and no record is FATAL", () => {
+    expect(check(full().filter((r) => r.file !== "tests/b.test.ts"))).toEqual(["missing coverage: no completed verification for tests/b.test.ts"]);
+  });
+  it("D21 malformed records: invalid JSON, a schema violation, an inconsistent container ID or identity", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kj-g7-unit-"));
+    try {
+      writeFileSync(join(dir, "00000000-0000-4000-8000-000000000001.started.json"), "{not json");
+      writeFileSync(join(dir, "00000000-0000-4000-8000-000000000002.started.json"), JSON.stringify({ ...started("tests/a.test.ts", "00000000-0000-4000-8000-000000000002"), extra: 1 }));
+      expect(readRecords(dir).problems).toEqual([expect.stringMatching(/malformed record .*000001/), expect.stringMatching(/malformed record .*000002.*fields differ/)]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+    const r = full(); r[3] = { ...r[3]!, containerId: CID2 };
+    expect(check(r).join("\n")).toMatch(/containerId differs from the driver's pre-invocation check/);
+    const s = full(); s[1] = { ...s[1]!, systemIdentifier: "1" };
+    expect(check(s).join("\n")).toMatch(/systemIdentifier differs/);
+  });
+  it("an unmatched start is FATAL; a record naming a file outside the invocation is FATAL; a failed record is FATAL", () => {
+    expect(check([...full(), started("tests/a.test.ts")]).join("\n")).toMatch(/unmatched start .* in tests\/a\.test\.ts/);
+    const foreign = started("tests/zz.test.ts");
+    expect(check([...full(), foreign, clean(completed(foreign))]).join("\n")).toMatch(/names a file outside the invocation: tests\/zz\.test\.ts/);
+    const f = started("tests/b.test.ts");
+    expect(check([...full(), f, { ...f, phase: "failed", startedAt: undefined, check: "digest", error: "x", failedAt: new Date().toISOString() } as never]).join("\n")).toMatch(/verification failed in tests\/b\.test\.ts: digest/);
+  });
+  const ROOT_ = "/r";
+  const TESTS_ = new Map([["tests/a.test.ts", ["a1", "g > a2"]], ["tests/b.test.ts", ["b1"]]]);
+  const report = (over: Record<string, unknown> = {}, results?: unknown[]) => ({ numTotalTestSuites: 3, numPassedTestSuites: 3, numFailedTestSuites: 0, numPendingTestSuites: 0, numTotalTests: 3, numPassedTests: 3, numFailedTests: 0,
+    numPendingTests: 0, numTodoTests: 0, success: true, testResults: results ?? [
+      { name: "/r/tests/a.test.ts", status: "passed", message: "", assertionResults: [{ ancestorTitles: [], title: "a1", status: "passed", failureMessages: [] }, { ancestorTitles: ["g"], title: "a2", status: "passed", failureMessages: [] }] },
+      { name: "/r/tests/b.test.ts", status: "passed", message: "", assertionResults: [{ ancestorTitles: [], title: "b1", status: "passed", failureMessages: [] }] }], ...over });
+  const rp = (r: unknown) => reportProblems(r, { root: ROOT_, files: FILES, tests: TESTS_ });
+  it("report completeness control: a complete report is accepted", () => { expect(rp(report())).toEqual([]); });
+  it("report incompleteness with success: true (a killed worker: no tests, no files) is FATAL", () => {
+    expect(rp(report({ numTotalTestSuites: 0, numPassedTestSuites: 0, numTotalTests: 0, numPassedTests: 0 }, [])).join("\n")).toMatch(/report files \[\] differ/);
+  });
+  it("report incompleteness with success: false (a file without its tests) is FATAL", () => {
+    const r = report({ success: false, numFailedTestSuites: 1, numPassedTestSuites: 2, numTotalTests: 1, numPassedTests: 1 }, [
+      { name: "/r/tests/a.test.ts", status: "failed", message: "boom", assertionResults: [] },
+      { name: "/r/tests/b.test.ts", status: "passed", message: "", assertionResults: [{ ancestorTitles: [], title: "b1", status: "passed", failureMessages: [] }] }]);
+    expect(rp(r).join("\n")).toMatch(/report tests\/a\.test\.ts lacks test "a1"/);
+  });
+  it("inconsistent counts, and a verifier prefix or process.exit message anywhere, are FATAL", () => {
+    expect(rp(report({ numPassedTests: 2 })).join("\n")).toMatch(/test counts are inconsistent/);
+    const r = report({ success: false, numFailedTests: 1, numPassedTests: 2, numFailedTestSuites: 1, numPassedTestSuites: 2 });
+    (r.testResults[1] as { status: string; assertionResults: { status: string; failureMessages: string[] }[] }).status = "failed";
+    (r.testResults[1] as { assertionResults: { status: string; failureMessages: string[] }[] }).assertionResults[0] = { ...(r.testResults[1] as { assertionResults: object[] }).assertionResults[0], status: "failed", failureMessages: ["Error: ENGINE_IMAGE_REFUSED: identity-connection: x"] } as never;
+    expect(rp(r).join("\n")).toMatch(/verifier error: ENGINE_IMAGE_REFUSED/);
+    expect(fatalMessage('process.exit unexpectedly called with "86"')).toMatch(/process\.exit/);
+    expect(fatalMessage("AssertionError: expected 1 to be 2")).toBeNull();
+  });
+  it("G7 database file lists equal the committed sources (static G1 check); a stale list is refused", () => {
+    expect(databaseFileProblems(process.cwd())).toEqual([]);
+    expect(G7_DB_FILES.testDatabase).toHaveLength(22);
+    expect(databaseFileProblems(process.cwd(), { ...G7_DB_FILES, testDatabase: G7_DB_FILES.testDatabase.slice(1) })[0]).toMatch(/testDatabase differs/);
+  });
+});
+
+describe("A10.7 1-R10a UTF-8 byte order, not UTF-16 code-unit order (N8); N4d the duplicate guard as it is", () => {
+  const utf8 = (a: string, b: string) => Buffer.compare(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"));
+  const pair = ["public.kj_\u{1F600}(pg_catalog.text)", "public.kj_\uFF5E(pg_catalog.text)"];
+  it("UTF-16 .sort() puts U+1F600 first; Buffer.compare puts U+FF5E first; the static contract accepts only the byte order", () => {
+    const utf16 = [...pair].sort(), bytes = [...pair].sort(utf8);
+    expect(utf16[0]).toContain("\u{1F600}");
+    expect(bytes[0]).toContain("\uFF5E");
+    const inv = committedFunctionInventory();
+    expect(functionInventoryProblems({ ...inv, functions: [...inv.functions, ...bytes].sort(utf8) })).toEqual([]);
+    expect(functionInventoryProblems({ ...inv, functions: [...inv.functions, ...utf16].sort((a, b) => (pair.includes(a) && pair.includes(b) ? (a < b ? -1 : 1) : utf8(a, b))) })[0]).toMatch(/not in "C" order/);
+  });
+  it("N4d a committed inventory with a duplicate identity is rejected by the parse committedFunctionInventory() uses", () => {
+    const inv = committedFunctionInventory();
+    expect(() => parseFunctionInventory({ ...inv, functions: [...inv.functions, inv.functions.at(-1)!] })).toThrow(/function inventory duplicate/);
+  });
+});
+
+/** D23/D24 fixture: three files whose beforeAll (and one test body) call a verifier double that writes or omits records. */
+function g7Fixture() {
+  const dir = mkdtempSync(join(tmpdir(), "kj-g7-fixture-"));
+  symlinkSync(join(process.cwd(), "node_modules"), join(dir, "node_modules"), "junction");
+  const infra = pathToFileURL(join(process.cwd(), "scripts/b1/mutation-infra.mjs")).href;
+  writeFileSync(join(dir, "vitest.fixture.config.mjs"), 'export default { test: { include: ["fx/**/*.test.mjs"], setupFiles: ["fx/setup.mjs"], fileParallelism: false, testTimeout: 30000 } };\n');
+  mkdirSync(join(dir, "fx"));
+  writeFileSync(join(dir, "fx/setup.mjs"), "// fixture setup: nothing\n");
+  writeFileSync(join(dir, "fx/verify.mjs"), `import { expect } from "vitest";
+import { attemptContext, newAttemptId, RECORD_KIND, writeAttemptRecord } from ${JSON.stringify(infra)};
+const modes = JSON.parse(process.env.KJFX ?? "{}");
+export function verify(where) {
+  const file = "fx/" + expect.getState().testPath.split(/[\\\\/]/).pop(), mode = modes[file.slice(3, 4) + ":" + where] ?? "ok";
+  if (mode === "skip") return;
+  const ctx = attemptContext(), base = { kind: RECORD_KIND, nonce: ctx.nonce, label: ctx.label, attemptId: newAttemptId(), file };
+  writeAttemptRecord(mode === "nowrite" ? ctx.dir + "/gone" : ctx.dir, { ...base, phase: "started", startedAt: new Date().toISOString() });
+  if (mode === "kill") process.kill(process.pid, "SIGKILL");
+  if (mode === "exit") process.exit(86);
+  if (mode === "refuse") {
+    writeAttemptRecord(ctx.dir, { ...base, phase: "failed", check: "digest", error: "double", failedAt: new Date().toISOString() });
+    throw new Error("ENGINE_IMAGE_REFUSED: digest: double");
+  }
+  const done = { ...base, phase: "completed", containerId: ${JSON.stringify(CID)}, imageId: ${JSON.stringify(IMG)}, digest: ${JSON.stringify(PINS.image)},
+    repoDigestMatch: true, binding: "127.0.0.1:55432", version: "v", serverPort: 5432, systemIdentifier: ${JSON.stringify(SID)}, completedAt: new Date().toISOString() };
+  if (mode === "stale") { writeAttemptRecord(ctx.dir, { ...done, nonce: "0".repeat(32) }); return; }
+  writeAttemptRecord(ctx.dir, done);
+}
+`);
+  for (const f of ["a", "b", "c"])
+    writeFileSync(join(dir, `fx/${f}.test.mjs`), `import { beforeAll, expect, it } from "vitest";
+import { verify } from "./verify.mjs";
+beforeAll(() => verify("hook"));
+it("${f} first", () => { verify("body"); expect(1).toBe(1); });
+it("${f} mutation detector", () => { expect(process.env.KJFX_MUTANT === "${f}" ? 2 : 1).toBe(1); });
+`);
+  writeFileSync(join(dir, "fx/source.txt"), "pristine source\n");
+  return dir;
+}
+describe("A10.7 D23/D24 real vitest 5.0.0 child processes through the shared driver module", () => {
+  const dir = g7Fixture(), FILES = ["fx/a.test.mjs", "fx/b.test.mjs", "fx/c.test.mjs"], CONFIG = ["--config", join(dir, "vitest.fixture.config.mjs")];
+  const vitest = join(process.cwd(), "node_modules/vitest/vitest.mjs");
+  const clearVitest = Object.fromEntries(Object.keys(process.env).filter((k) => k.startsWith("VITEST") || k.startsWith("KJ_G7_")).map((k) => [k, undefined]));
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+  const LISTED = listTests(FILES, { cwd: dir, filter: CONFIG, env: clearVitest, vitest });
+  const PRE = { containerId: CID, digest: PINS.image, binding: "127.0.0.1:55432", systemIdentifier: SID };
+  const sha = (p: string) => createHash("sha256").update(readFileSync(p)).digest("hex");
+  /** One mutation invocation: mutate the fixture source, run, classify; returns the outcome and the restore evidence. */
+  function invoke(label: string, modes: Record<string, string>, mutant?: string) {
+    const src = join(dir, "fx/source.txt"), before = sha(src), backup = join(dir, ".backup.json");
+    const restorer = createRestorer(backup), out: string[] = [], tally = { killed: 0, survived: 0 };
+    restorer.save(src, readFileSync(src, "utf8")); writeFileSync(src, "MUTATED\n");
+    const spy = vi.spyOn(console, "log").mockImplementation((m: string) => { out.push(m); });
+    let code: number | undefined, result: ReturnType<typeof runClassified> | undefined;
+    try {
+      result = runClassified({ label, files: FILES, filter: CONFIG, tests: LISTED, root: dir, restore: restorer.restore, vitest, check: () => PRE, dbFiles: FILES, timeout: 120_000,
+        extraEnv: { ...clearVitest, KJFX: JSON.stringify(modes), KJFX_MUTANT: mutant }, exit: (c) => { throw new FatalExit(c); } });
+      if (result.failed > 0) tally.killed++; else tally.survived++;
+    } catch (e) { if (!(e instanceof FatalExit)) throw e; code = e.code; } finally { spy.mockRestore(); restorer.restore(); }
+    return { code, out: out.join("\n"), result, tally, restored: sha(src) === before && readFileSync(src, "utf8") === "pristine source\n" };
+  }
+  const expectFatal = (o: ReturnType<typeof invoke>, reason: RegExp) => {
+    expect(o.code).toBe(INFRA_EXIT);
+    expect(o.out).toMatch(/^INFRASTRUCTURE FAILURE: /);
+    expect(o.out).toMatch(reason);
+    expect(o.restored).toBe(true);
+    expect(o.tally).toEqual({ killed: 0, survived: 0 });
+  };
+  it("controls: complete records yield the normal verdict (a clean run survives, a failing detector is a kill)", () => {
+    const clean = invoke("control", {});
+    expect([clean.code, clean.result?.failed, clean.result?.code, clean.restored, clean.tally]).toEqual([undefined, 0, 0, true, { killed: 0, survived: 1 }]);
+    const killed = invoke("control-mutant", {}, "c");
+    expect([killed.code, killed.result?.failed, killed.restored, killed.tally]).toEqual([undefined, 1, true, { killed: 1, survived: 0 }]);
+    expect(killed.result!.code).not.toBe(0);
+  });
+  it.each([
+    ["D15(a) verification fails in beforeAll", { "b:hook": "refuse" }, /verification failed in fx\/b\.test\.mjs: digest: double/],
+    ["D15(b) verification fails inside a test body (connection hand-out): not KILLED", { "b:body": "refuse" }, /verification failed in fx\/b\.test\.mjs: digest: double \| report fx\/b\.test\.mjs test "b first": verifier error/],
+    ["D17 the verifier cannot write its record", { "b:hook": "nowrite" }, /^INFRASTRUCTURE FAILURE: M-d23 missing coverage: no completed verification for fx\/b\.test\.mjs$/],
+    ["D18 the worker is SIGKILLed mid-verification", { "b:hook": "kill" }, /unmatched start \S+ in fx\/b\.test\.mjs .*missing coverage/],
+    ["D19 a stale record from a previous invocation", { "b:hook": "stale" }, /stale or crossed record/],
+    ["D20 the verifier is not invoked", { "b:hook": "skip", "b:body": "skip" }, /missing coverage: no completed verification for fx\/b\.test\.mjs/],
+    ["D22 process.exit(86) during verification", { "b:hook": "exit" }, /unmatched start \S+ in fx\/b\.test\.mjs .*process\.exit unexpectedly called/],
+  ] as [string, Record<string, string>, RegExp][])("D23 %s: FATAL, restored byte-identical, no tally", (_name, modes, reason) => {
+    expectFatal(invoke("M-d23", modes, "c"), reason);
+  });
+  it.each([
+    ["(i) b's worker SIGKILLed mid-verification", { "b:hook": "kill" }, /unmatched start \S+ in fx\/b\.test\.mjs/],
+    ["(ii) b unable to write its record", { "b:hook": "nowrite" }, /missing coverage: no completed verification for fx\/b\.test\.mjs/],
+  ] as [string, Record<string, string>, RegExp][])("D24 mixed result %s while a's records complete and c fails normally: FATAL, not KILLED", (_name, modes, reason) => {
+    const o = invoke("M-d24", modes, "c");
+    expectFatal(o, reason);
+    expect(o.out).not.toMatch(/KILLED/);
   });
 });

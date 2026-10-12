@@ -12,8 +12,10 @@
 import { assertBaseEnvironment } from './b1/base-guard.mjs';
 process.env.KJ_RUNTIME_ROLES='base';
 assertBaseEnvironment();
-import { readFileSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createRestorer, listTests, runClassified } from "./b1/mutation-infra.mjs";
 
 const SERVICE = "services/memory/src/canonical/service.ts";
 const POLICY = "services/memory/src/canonical/policy.ts";
@@ -50,31 +52,21 @@ const MUTATIONS = [
 ];
 
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
-const originals = new Map();
-const restore = () => {
-  for (const [file, text] of originals) writeFileSync(file, text);
-  originals.clear();
-};
-process.on("SIGINT", () => {
-  restore();
-  process.exit(130);
-});
-
-function runTests() {
-  const r = spawnSync("npx", ["vitest", "run", ...TESTS], {
-    shell: true,
-    encoding: "utf8",
-    env: { ...process.env, DOCKER_CONTEXT: "default", CI: "true" },
-    timeout: 280_000,
-  });
-  const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-  const failed = /Tests\s+(\d+) failed/.exec(out);
-  return { code: r.status, failed: failed ? Number(failed[1]) : 0, out };
+// KJ-P8 B1 A10.7 2-R4e: crash-safe restore (backup, finally, SIGINT/SIGTERM/SIGHUP) and the JSON reporter with
+// infrastructure classification first, from scripts/b1/mutation-infra.mjs; the text summary is no longer parsed.
+const { save, restore } = createRestorer(".mutation-check-memory.backup.json");
+const LOGS = process.env["MUTATION_LOG_DIR"] ?? join(tmpdir(), "mutation-check-memory");
+let LISTED;
+function runTests(label) {
+  const r = runClassified({ label, files: TESTS, tests: LISTED, restore, logDir: LOGS, timeout: 280_000 });
+  return { code: r.code, failed: r.failed, out: readFileSync(join(LOGS, `${label}.log`), "utf8") };
 }
 
 let survivors = 0;
 try {
-  const base = runTests();
+  mkdirSync(LOGS, { recursive: true });
+  LISTED = listTests(TESTS);
+  const base = runTests("baseline");
   if (base.code !== 0) {
     console.error("BASELINE FAILED: the unmutated tests do not pass, so a mutation result would mean nothing.");
     console.error(base.out.split("\n").slice(-25).join("\n"));
@@ -90,9 +82,9 @@ try {
       survivors++;
       continue;
     }
-    originals.set(file, text);
+    save(file, text);
     writeFileSync(file, text.replace(find, () => replace));
-    const result = runTests();
+    const result = runTests(id);
     restore();
     const killed = result.code !== 0 && result.failed > 0;
     if (!killed) survivors++;

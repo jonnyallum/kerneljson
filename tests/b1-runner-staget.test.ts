@@ -242,4 +242,41 @@ describe("CON-30 G8 evidence collected by the runner with SHA-256s", () => {
     expectRegressionFailed(o, /suite exited 1/);
     expect(stageT(o).problems.join("\n")).toContain(`G8 evidence artifacts/local/b1-negative-probes.json: missing row ${JSON.stringify(["kj_door", "function outside manifest", `has_function_privilege(${extra})`])}`);
   }, CASE_TIMEOUT);
+  /**
+   * KJ-P8 B1 A10.7 v7 (local candidate, not sealed) N4a-N4c with the sealed B1: the committed inventory alone is
+   * edited (UTF-8 byte order kept, so the static contract and committedFunctionInventory() still parse it). The
+   * equality throws before any function row is appended, so G8 reports MISSING rows (1.5b); N4a also runs in the
+   * discover twin. Unexpected-row rejection is the controlled-evidence unit case N10a in tests/b1-gates.test.ts.
+   */
+  const inventoryEdit = (edit: (functions: string[]) => string[]) => (t: string) => {
+    const v = JSON.parse(t) as { functions: string[] };
+    v.functions = edit(v.functions).sort((a, b) => Buffer.compare(Buffer.from(a, "utf8"), Buffer.from(b, "utf8")));
+    return JSON.stringify(v, null, 2) + "\n";
+  };
+  const MANIFEST_PREFIX = "kernel_private.identity_";
+  const missingRow = (fn: string) => `G8 evidence artifacts/local/b1-negative-probes.json: missing row ${JSON.stringify(["kj_door", "function outside manifest", `has_function_privilege(${fn})`])}`;
+  it("N4a discover twin: a committed function inventory listing a function the catalogue lacks fails regression-probes-discover, and G8 refuses", async () => {
+    const extra = "kernel_private.kj_b1_e2_extra(pg_catalog.int4)";
+    const c = clone({ "infrastructure/database/b1-function-inventory.json": inventoryEdit((f) => [...f, extra]) });
+    const o = await runClone("A10.7 N4a discover", c, "none", "regression-probes-discover");
+    expectRegressionFailed(o, /suite exited 1/);
+    expect(stageT(o).problems.join("\n")).toContain(missingRow(extra));
+  }, CASE_TIMEOUT);
+  it("N4b a committed inventory missing a catalogued non-manifest function fails the equality; G8 reports missing rows", async () => {
+    const inv = (JSON.parse(readFileSync(join(ROOT, "infrastructure/database/b1-function-inventory.json"), "utf8")) as { functions: string[] }).functions;
+    const removed = inv.find((f) => !f.startsWith(MANIFEST_PREFIX))!, kept = inv.find((f) => f !== removed && !f.startsWith(MANIFEST_PREFIX))!;
+    const c = clone({ "infrastructure/database/b1-function-inventory.json": inventoryEdit((f) => f.filter((x) => x !== removed)) });
+    const o = await runClone("A10.7 N4b missing", c, "none", "regression-probes");
+    expectRegressionFailed(o, /suite exited 1/);
+    expect(stageT(o).problems.join("\n")).toContain(missingRow(kept));
+  }, CASE_TIMEOUT);
+  it("N4c one committed identity changed (an argument type altered) fails the equality; G8 reports missing rows", async () => {
+    const inv = (JSON.parse(readFileSync(join(ROOT, "infrastructure/database/b1-function-inventory.json"), "utf8")) as { functions: string[] }).functions;
+    const target = inv.find((f) => !f.startsWith(MANIFEST_PREFIX) && f.includes("pg_catalog.text"))!;
+    const changed = target.replace("pg_catalog.text", "pg_catalog.bytea");
+    const c = clone({ "infrastructure/database/b1-function-inventory.json": inventoryEdit((f) => f.map((x) => (x === target ? changed : x))) });
+    const o = await runClone("A10.7 N4c changed", c, "none", "regression-probes");
+    expectRegressionFailed(o, /suite exited 1/);
+    expect(stageT(o).problems.join("\n")).toContain(missingRow(changed));
+  }, CASE_TIMEOUT);
 });

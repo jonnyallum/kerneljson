@@ -27,10 +27,10 @@
 import { assertBaseEnvironment } from './b1/base-guard.mjs';
 process.env.KJ_RUNTIME_ROLES='base';
 assertBaseEnvironment();
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createRestorer, listTests, runClassified } from "./b1/mutation-infra.mjs";
 
 const MIGRATION = "supabase/migrations/20260925120000_primary_identity.sql";
 const WORKFLOW = "services/kernel/src/identity-workflow.ts";
@@ -221,23 +221,8 @@ const only = process.argv.includes("--only") ? new Set(process.argv[process.argv
 // then captured M2 and M11 still applied in the migration. The pristine text is now written to disk
 // BEFORE each mutation and recovered on the next start, whatever killed the previous run.
 const BACKUP = ".mutation-check-identity.backup.json";
-if (existsSync(BACKUP)) {
-  const saved = JSON.parse(readFileSync(BACKUP, "utf8"));
-  writeFileSync(saved.file, saved.text);
-  rmSync(BACKUP);
-  console.error(`RECOVERED ${saved.file} from ${BACKUP}: a previous run was killed while a mutation was applied.`);
-}
-const originals = new Map();
-const restore = () => {
-  for (const [file, text] of originals) writeFileSync(file, text);
-  originals.clear();
-  rmSync(BACKUP, { force: true });
-};
-for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"])
-  process.on(signal, () => {
-    restore();
-    process.exit(130);
-  });
+// KJ-P8 B1 A10.7 2-R4e(6): the crash-safe backup, finally and signal restore now live in scripts/b1/mutation-infra.mjs.
+const { save, restore } = createRestorer(BACKUP);
 
 // Preflight: every mutation's target text must be present exactly once in the UNMUTATED source before
 // the (long) baseline runs. A missing target means either the source drifted or a mutation leaked into
@@ -268,36 +253,21 @@ if (unapplicable.length > 0) {
 // false KILLED (M13, 2026-09-27: exit 1 with 0 failing tests - the run errored, no assertion failed).
 // A mutation is KILLED only when at least one test actually FAILED; a non-zero exit with no failed
 // test is INCONCLUSIVE and counts against the run like a survivor. Full output is kept per run.
+// KJ-P8 B1 A10.7 2-R4e: every invocation is classified first (attempt records plus report completeness, by
+// scripts/b1/mutation-infra.mjs runClassified); an infrastructure failure restores, prints INFRASTRUCTURE FAILURE and
+// exits 3 before any verdict or tally. Only then the verdict below applies, unchanged.
 const LOGS = process.env["MUTATION_LOG_DIR"] ?? join(tmpdir(), "mutation-check-identity");
+let TESTS;
 function runTests(files, label) {
-  const report = join(LOGS, `${label}.json`);
-  rmSync(report, { force: true });
-  const r = spawnSync("npx", ["vitest", "run", ...files, "--reporter=default", "--reporter=json", `--outputFile.json=${report}`], {
-    shell: true,
-    encoding: "utf8",
-    env: { ...process.env, DOCKER_CONTEXT: "default", CI: "true" },
-    // The FULL_TESTS baseline alone measured 480-685s live across two runs on this same machine
-    // (2026-09-25, 2026-09-27 - this machine's load varies); per-mutation runs use much smaller
-    // scoped file sets and return in well under a minute, so this ceiling only matters for the
-    // baseline and for a mutation whose failure mode is a hang/retry storm rather than a clean fast
-    // rejection.
-    timeout: 900_000,
-  });
-  const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-  writeFileSync(join(LOGS, `${label}.log`), out);
-  let failed = 0,
-    total = 0;
-  if (existsSync(report)) {
-    const json = JSON.parse(readFileSync(report, "utf8"));
-    failed = json.numFailedTests ?? 0;
-    total = json.numTotalTests ?? 0;
-  }
-  return { code: r.status, failed, total, out };
+  const tests = new Map(files.map((f) => [f, TESTS.get(f) ?? []]));
+  const r = runClassified({ label, files, tests, restore, logDir: LOGS, timeout: 900_000 });
+  return { code: r.code, failed: r.failed, total: r.total, out: readFileSync(join(LOGS, `${label}.log`), "utf8") };
 }
 
 let survivors = 0;
 try {
   mkdirSync(LOGS, { recursive: true });
+  TESTS = listTests([...new Set([...FULL_TESTS, ...MUTATIONS.flatMap((m) => m[5])])]);
   const base = runTests(FULL_TESTS, "baseline");
   if (base.code !== 0 || base.failed !== 0 || base.total === 0) {
     console.error("BASELINE FAILED: the unmutated tests do not pass, so a mutation result would mean nothing.");
@@ -317,8 +287,7 @@ try {
       survivors++;
       continue;
     }
-    originals.set(file, text);
-    writeFileSync(BACKUP, JSON.stringify({ file, text }));
+    save(file, text);
     writeFileSync(file, text.replace(find, () => replace));
     const result = runTests(tests, id);
     restore();

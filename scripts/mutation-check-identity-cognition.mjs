@@ -15,8 +15,8 @@
 import { assertBaseEnvironment, assertBaseTarget, baseMigrationFiles } from './b1/base-guard.mjs';
 process.env.KJ_RUNTIME_ROLES='base';
 assertBaseEnvironment();
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { createRestorer, infrastructureFailure, listTests, preInvocationCheck, runClassified } from "./b1/mutation-infra.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -118,19 +118,8 @@ const MUTATIONS = [
 
 const only = process.argv.includes("--only") ? new Set(process.argv[process.argv.indexOf("--only") + 1]?.split(",")) : null;
 const BACKUP = ".mutation-check-identity-cognition.backup.json";
-if (existsSync(BACKUP)) {
-  const saved = JSON.parse(readFileSync(BACKUP, "utf8"));
-  writeFileSync(saved.file, saved.text);
-  rmSync(BACKUP);
-  console.error(`RECOVERED ${saved.file} from ${BACKUP}: a previous run was killed while a mutation was applied.`);
-}
-const originals = new Map();
-const restore = () => {
-  for (const [file, text] of originals) writeFileSync(file, text);
-  originals.clear();
-  rmSync(BACKUP, { force: true });
-};
-for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => { restore(); process.exit(130); });
+// KJ-P8 B1 A10.7 2-R4e(6): crash-safe backup, finally and signal restore from scripts/b1/mutation-infra.mjs.
+const { save, restore } = createRestorer(BACKUP);
 
 const eolOf = (text) => (text.includes("\r\n") ? "\r\n" : "\n");
 const inEol = (s, eol) => s.replaceAll("\r\n", "\n").replaceAll("\n", eol);
@@ -184,28 +173,32 @@ async function applyChain(supabaseAcl) {
   }
 }
 
+// KJ-P8 B1 A10.7 2-R4e: every vitest invocation is classified first (scripts/b1/mutation-infra.mjs runClassified);
+// an infrastructure failure restores, prints INFRASTRUCTURE FAILURE and exits 3 before any verdict or tally.
 const LOGS = process.env["MUTATION_LOG_DIR"] ?? join(tmpdir(), "mutation-check-identity-cognition");
+let TESTS;
 function runTests(files, label) {
-  const report = join(LOGS, `${label}.json`);
-  rmSync(report, { force: true });
-  const r = spawnSync("npx", ["vitest", "run", ...files, "--reporter=default", "--reporter=json", `--outputFile.json=${report}`], {
-    shell: true, encoding: "utf8", env: { ...process.env, DOCKER_CONTEXT: "default", CI: "true" }, timeout: 900_000,
-  });
-  writeFileSync(join(LOGS, `${label}.log`), `${r.stdout ?? ""}${r.stderr ?? ""}`);
-  let failed = 0, total = 0;
-  if (existsSync(report)) {
-    const json = JSON.parse(readFileSync(report, "utf8"));
-    failed = json.numFailedTests ?? 0;
-    total = json.numTotalTests ?? 0;
-  }
-  return { code: r.status, failed, total };
+  const tests = new Map(files.map((f) => [f, TESTS.get(f) ?? []]));
+  const r = runClassified({ label, files, tests, restore, logDir: LOGS, timeout: 900_000 });
+  return { code: r.code, failed: r.failed, total: r.total };
+}
+/** 2-R4a/2-R4b for the driver's own scratch-database applies: the same verifier, before and after, same container. */
+async function verifiedApply(label, supabaseAcl) {
+  let before, after, result;
+  try { before = preInvocationCheck(); } catch (e) { return infrastructureFailure(label, `pre-apply verification: ${e.message}`, restore); }
+  result = await applyChain(supabaseAcl);
+  try { after = preInvocationCheck(); } catch (e) { return infrastructureFailure(label, `post-apply verification: ${e.message}`, restore); }
+  if (before.containerId !== after.containerId || before.systemIdentifier !== after.systemIdentifier || before.binding !== after.binding)
+    return infrastructureFailure(label, "the database container was replaced during the apply", restore);
+  return result;
 }
 
 let bad = 0;
 const tally = { killed: 0, precommit: 0, survived: 0, inconclusive: 0 };
 try {
   mkdirSync(LOGS, { recursive: true });
-  if (await applyChain(false) || await applyChain(true)) { console.error("BASELINE FAILED: the unmutated migration chain does not apply."); process.exit(2); }
+  TESTS = listTests([...new Set([...ALL, ...MUTATIONS.flatMap((m) => m[4])])]);
+  if (await verifiedApply("baseline-apply", false) || await verifiedApply("baseline-apply-acl", true)) { console.error("BASELINE FAILED: the unmutated migration chain does not apply."); process.exit(2); }
   const base = runTests(ALL, "baseline");
   if (base.code !== 0 || base.failed !== 0 || base.total === 0) { console.error("BASELINE FAILED: the unmutated tests do not pass."); process.exit(2); }
   console.log(`baseline: ${base.total} P7B tests pass unmutated; migration chain applies (plain and Supabase default ACL)`);
@@ -215,14 +208,13 @@ try {
     const eol = eolOf(text);
     let mutated = text;
     for (const [find, replace] of pairs) mutated = mutated.replace(inEol(find, eol), () => inEol(replace, eol));
-    originals.set(file, text);
-    writeFileSync(BACKUP, JSON.stringify({ file, text }));
+    save(file, text);
     writeFileSync(file, mutated);
     let verdict, detail;
     try {
       if (file === MIG) {
-        const plain = await applyChain(false);
-        const acl = await applyChain(true);
+        const plain = await verifiedApply(`${id}-apply`, false);
+        const acl = await verifiedApply(`${id}-apply-acl`, true);
         if (kind === "precommit" || kind === "precommit-acl") {
           const refusal = kind === "precommit" ? plain : acl;
           verdict = refusal?.includes("KJ-P7B-1 PRE-COMMIT") ? "KILLED-PRECOMMIT" : "SURVIVED";

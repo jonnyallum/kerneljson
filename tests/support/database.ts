@@ -44,7 +44,12 @@ function planned(name:string){
  * them (the pinned collection sets it to a placeholder that is never connected to).
  */
 export function gatedDatabaseUrl():string|undefined{
-  return stageT?planned("kj_gated").ownerUrl:process.env["KJ_TEST_PG_URL"];
+  if(stageT) return planned("kj_gated").ownerUrl;
+  const value=process.env["KJ_TEST_PG_URL"];
+  // KJ-P8 B1 A10.7 2-R4c: in lane A (harness base) an out-of-band URL is never used unproven; the gated files are not
+  // lane A files, so lane A refuses the variable outright instead of connecting to an unverified server.
+  if(value!==undefined && process.env.KJ_RUNTIME_ROLES==="base") throw Error("DATABASE_REFUSED: ENGINE_IMAGE_REFUSED: url: KJ_TEST_PG_URL is not a verified lane A binding");
+  return value;
 }
 /** The caller names its committed plan database literally. No consumer creates or drops a database. */
 export async function testDatabase(name:string):Promise<TestDatabase>{

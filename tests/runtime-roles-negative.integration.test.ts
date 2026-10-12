@@ -98,7 +98,7 @@ describe.each(RUNTIME_ROLES)("B1 forbidden powers: %s", (role: RuntimeRole) => {
       `select ${FUNCTION_IDENTITY_SQL("p", "n")} as name, has_function_privilege($1, p.oid, 'EXECUTE') as ok
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
         where ${FUNCTION_INVENTORY_PREDICATE("p", "n")}`, [role]);
-    expect(rows.map((r) => r.name).sort()).toEqual(committedFunctionInventory().functions);
+    expect(rows.map((r) => r.name).sort((a, b) => Buffer.compare(Buffer.from(a, "utf8"), Buffer.from(b, "utf8")))).toEqual(committedFunctionInventory().functions);
     for (const f of rows.filter((r) => !granted.has(r.name))) {
       results.push({ role, probe: "function outside manifest", sql: `has_function_privilege(${f.name})`, expected: "false", observed: String(f.ok), pass: !f.ok });
       expect(f.ok, f.name).toBe(false);
