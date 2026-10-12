@@ -241,7 +241,7 @@ export function runVitest(args, { cwd = process.cwd(), env = {}, timeout = 900_0
 export function listTests(files, { cwd = process.cwd(), filter = [], env = {}, vitest } = {}) {
   const out = join(mkdtempSync(join(tmpdir(), "kj-g7-list-")), "list.json");
   try {
-    const r = runVitest(["list", ...files, ...filter, `--json=${out}`], { cwd, env: { ...env, [ENV.nonce]: undefined, [ENV.label]: undefined, [ENV.dir]: undefined }, timeout: 300_000, vitest });
+    const r = runVitest(["list", "--no-static-parse", ...files, ...filter, `--json=${out}`], { cwd, env: { ...env, [ENV.nonce]: undefined, [ENV.label]: undefined, [ENV.dir]: undefined }, timeout: 300_000, vitest });
     if (r.error || r.code !== 0 || !existsSync(out)) throw Error(`INFRASTRUCTURE FAILURE: vitest list failed (${r.error ?? `exit ${r.code}`}): ${r.out.slice(-400)}`);
     const rows = JSON.parse(readFileSync(out, "utf8"));
     const map = new Map(files.map((f) => [f, []]));
