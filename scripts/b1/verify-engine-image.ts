@@ -33,9 +33,10 @@ export type DockerRun = (args: readonly string[]) => string;
 export interface Queryable { query(sql: string): Promise<{ rows: Record<string, unknown>[] }> }
 
 export class EngineRefusal extends Error {
-  constructor(readonly check: string, detail: string) { super(`${VERIFIER_PREFIX}: ${check}: ${detail}`); }
+  constructor(readonly check: string, readonly detail: string, options?: ErrorOptions) { super(`${VERIFIER_PREFIX}: ${check}: ${detail}`, options); }
 }
-const refuse = (check: string, detail: string): never => { throw new EngineRefusal(check, detail); };
+const refuse = (check: string, detail: string, cause?: unknown): never => { throw new EngineRefusal(check, detail, cause === undefined ? undefined : { cause }); };
+const message = (error: unknown): string => String((error as Error)?.message ?? error);
 
 export function readPins(root = process.cwd()): Pins {
   const pins = JSON.parse(readFileSync(join(root, PINS_PATH), "utf8")) as Partial<Pins>;
@@ -173,23 +174,31 @@ export class EngineVerifier {
       }
     });
   }
-  /** One verification attempt with its started and completed/failed records (2-R4e(1)). */
+  /**
+   * One verification attempt with its started and completed/failed records (2-R4e(1)). Every record write that fails
+   * is itself a refusal carrying the verifier prefix, with the write error as its cause: a raw filesystem error would
+   * reach a G7 report as an ordinary failed test and be counted as a kill (A10.7 v7 review R1).
+   */
   async attempt(file: string, run: () => Promise<Verified>): Promise<Verified> {
     const ctx = attemptContext(this.deps.env ?? process.env), now = this.deps.now ?? (() => new Date());
     const base = ctx ? { kind: RECORD_KIND, nonce: ctx.nonce, label: ctx.label, attemptId: newAttemptId(), file } : undefined;
-    if (ctx && base) writeAttemptRecord(ctx.dir, { ...base, phase: "started", startedAt: now().toISOString() });
+    const record = (phase: "started" | "completed" | "failed", fields: Record<string, unknown>): void => {
+      if (!ctx || !base) return;
+      try { writeAttemptRecord(ctx.dir, { ...base, phase, ...fields }); }
+      catch (error) { refuse("record", `${phase} attempt record not written: ${message(error)}`, error); }
+    };
+    record("started", { startedAt: now().toISOString() });
     let v: Verified;
     try { v = await run(); }
     catch (error) {
-      if (ctx && base) {
-        try { writeAttemptRecord(ctx.dir, { ...base, phase: "failed", check: error instanceof EngineRefusal ? error.check : "error", error: String((error as Error).message ?? error).slice(0, 2000), failedAt: now().toISOString() }); }
-        catch { /* the started record stays unmatched, which the driver treats as FATAL */ }
-      }
-      throw error instanceof EngineRefusal ? error : new EngineRefusal("error", String((error as Error).message ?? error));
+      const refusal = error instanceof EngineRefusal ? error : new EngineRefusal("error", message(error), { cause: error });
+      // A failed record that cannot be written leaves the started record unmatched, which the driver treats as FATAL.
+      try { record("failed", { check: refusal.check, error: message(error).slice(0, 2000), failedAt: now().toISOString() }); }
+      catch (written) { throw new EngineRefusal(refusal.check, `${refusal.detail}; ${(written as EngineRefusal).detail}`, { cause: refusal }); }
+      throw refusal;
     }
-    if (ctx && base) writeAttemptRecord(ctx.dir, { ...base, phase: "completed", containerId: v.containerId, imageId: v.imageId, digest: v.digest,
-      repoDigestMatch: true, binding: v.binding, version: v.identity.version, serverPort: v.identity.serverPort,
-      systemIdentifier: v.identity.systemIdentifier, completedAt: now().toISOString() });
+    record("completed", { containerId: v.containerId, imageId: v.imageId, digest: v.digest, repoDigestMatch: true, binding: v.binding,
+      version: v.identity.version, serverPort: v.identity.serverPort, systemIdentifier: v.identity.systemIdentifier, completedAt: now().toISOString() });
     return v;
   }
 }

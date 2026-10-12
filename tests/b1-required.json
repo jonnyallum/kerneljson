@@ -473,6 +473,16 @@
     },
     {
       "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R1 a started attempt-record write that fails is a verifier refusal, not a mutation kill in process: the refusal names the record write and keeps the underlying error as its cause",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R1 a started attempt-record write that fails is a verifier refusal, not a mutation kill real vitest: after a completed verification, a failed started write in a test body is INFRASTRUCTURE FAILURE (exit 3), restored byte-identical, no verdict, not KILLED",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
       "name": "CON-20 the inventory gate over a trace (G4 enforce, G5 discover) does not count a declared probe, which the refusal multiset accounts for",
       "refusals": []
     },

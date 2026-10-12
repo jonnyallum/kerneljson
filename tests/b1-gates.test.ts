@@ -17,7 +17,7 @@ import {
   parseFunctionInventory,
 } from "../scripts/b1/function-inventory.js";
 import { generateFunctionInventory, type DockerResult, type InventoryDeps, type InventoryPool } from "../scripts/b1/build-function-inventory.js";
-import { EngineVerifier, composeImageProblems, readComposeFiles, unprovenUrlProblems, type DockerRun, type Pins, type Queryable } from "../scripts/b1/verify-engine-image.js";
+import { EngineRefusal, EngineVerifier, composeImageProblems, readComposeFiles, unprovenUrlProblems, type DockerRun, type Pins, type Queryable } from "../scripts/b1/verify-engine-image.js";
 import {
   G7_DB_FILES, INFRA_EXIT, RECORD_KIND, VERIFIER_PREFIX, createRestorer, databaseFileProblems, fatalMessage, listTests, readRecords, recordProblems,
   recordShapeProblems, reportProblems, runClassified, writeAttemptRecord,
@@ -865,5 +865,83 @@ describe("A10.7 D23/D24 real vitest 5.0.0 child processes through the shared dri
     const o = invoke("M-d24", modes, "c");
     expectFatal(o, reason);
     expect(o.out).not.toMatch(/KILLED/);
+  });
+});
+
+/**
+ * A10.7 v7 review R1: the real EngineVerifier.attempt, in a real vitest 5.0.0 child process. The file has already
+ * completed one verification (so per-file coverage holds and no start is left unmatched); then the next started-record
+ * write fails with EACCES inside a test body. That must be an infrastructure failure, never a failed test that the
+ * mutation verdict counts as KILLED.
+ */
+describe("A10.7 R1 a started attempt-record write that fails is a verifier refusal, not a mutation kill", () => {
+  it("in process: the refusal names the record write and keeps the underlying error as its cause", async () => {
+    const env = { KJ_G7_NONCE: "a".repeat(32), KJ_G7_LABEL: "M1", KJ_G7_RESULTS: join(tmpdir(), `kj-g7-r1-missing-${process.pid}-${Date.now()}`) };
+    const error = await verifierWith(dockerState(), env).verifyConnection(conn(goodRow), { host: "127.0.0.1", port: 55432 }, "tests/x.test.ts").then(() => undefined, (e: unknown) => e);
+    expect(error).toBeInstanceOf(EngineRefusal);
+    expect((error as EngineRefusal).check).toBe("record");
+    expect((error as Error).message).toMatch(new RegExp(`^${VERIFIER_PREFIX}: record: started attempt record not written: ENOENT`));
+    expect(((error as Error).cause as NodeJS.ErrnoException).code).toBe("ENOENT");
+  });
+
+  const dir = mkdtempSync(join(tmpdir(), "kj-g7-r1-fixture-")), FILES = ["fx/a.test.mjs"], CONFIG = ["--config", join(dir, "vitest.fixture.config.mjs")];
+  symlinkSync(join(process.cwd(), "node_modules"), join(dir, "node_modules"), "junction");
+  writeFileSync(join(dir, "vitest.fixture.config.mjs"), 'export default { test: { include: ["fx/**/*.test.mjs"], fileParallelism: false, testTimeout: 30000 } };\n');
+  mkdirSync(join(dir, "fx"));
+  const verifierUrl = pathToFileURL(join(process.cwd(), "scripts/b1/verify-engine-image.ts")).href;
+  const verified = { containerId: CID, imageId: IMG, digest: PINS.image, repoDigestMatch: true, host: "127.0.0.1", port: 55432, binding: "127.0.0.1:55432",
+    identity: { version: PINS.serverVersion, serverPort: 5432, systemIdentifier: SID } };
+  writeFileSync(join(dir, "fx/a.test.mjs"), `import { beforeAll, expect, it, vi } from "vitest";
+const fault = vi.hoisted(() => ({ active: false }));
+vi.mock("node:fs", async (importOriginal) => {
+  const fs = await importOriginal();
+  return { ...fs, openSync: (...args) => {
+    if (fault.active && /\\.started\\.json\\.[0-9a-f]+\\.tmp$/.test(String(args[0]))) { const e = new Error("EACCES: injected started-record write failure"); e.code = "EACCES"; throw e; }
+    return fs.openSync(...args);
+  } };
+});
+import { EngineVerifier } from ${JSON.stringify(verifierUrl)};
+const verified = ${JSON.stringify(verified)};
+const verifier = new EngineVerifier({ docker: () => { throw new Error("no docker in this fixture"); }, pins: ${JSON.stringify(PINS)}, composeFile: "unused" });
+beforeAll(async () => { await verifier.attempt("fx/a.test.mjs", async () => verified); });
+it("a later verification of the same file", async () => {
+  fault.active = process.env.KJFX_FAULT === "1";
+  await verifier.attempt("fx/a.test.mjs", async () => verified);
+});
+it("a mutation detector", () => { expect(process.env.KJFX_MUTANT === "a" ? 2 : 1).toBe(1); });
+`);
+  writeFileSync(join(dir, "fx/source.txt"), "pristine source\n");
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+  const vitest = join(process.cwd(), "node_modules/vitest/vitest.mjs");
+  const clearVitest = Object.fromEntries(Object.keys(process.env).filter((k) => k.startsWith("VITEST") || k.startsWith("KJ_G7_")).map((k) => [k, undefined]));
+  const LISTED = listTests(FILES, { cwd: dir, filter: CONFIG, env: clearVitest, vitest });
+  const PRE = { containerId: CID, digest: PINS.image, binding: "127.0.0.1:55432", systemIdentifier: SID };
+  const sha = (p: string) => createHash("sha256").update(readFileSync(p)).digest("hex");
+  /** One mutation invocation through runClassified; exit is the driver's process.exit, so a FATAL ends the driver. */
+  function invoke(label: string, env: Record<string, string>) {
+    const src = join(dir, "fx/source.txt"), before = sha(src), restorer = createRestorer(join(dir, ".backup.json")), out: string[] = [], tally = { killed: 0, survived: 0 };
+    restorer.save(src, readFileSync(src, "utf8")); writeFileSync(src, "MUTATED\n");
+    const spy = vi.spyOn(console, "log").mockImplementation((m: string) => { out.push(m); });
+    let code: number | undefined, result: ReturnType<typeof runClassified> | undefined;
+    try {
+      result = runClassified({ label, files: FILES, filter: CONFIG, tests: LISTED, root: dir, restore: restorer.restore, vitest, check: () => PRE, dbFiles: FILES, timeout: 120_000,
+        extraEnv: { ...clearVitest, ...env }, exit: (c) => { throw new FatalExit(c); } });
+      if (result.failed > 0) tally.killed++; else tally.survived++;
+    } catch (e) { if (!(e instanceof FatalExit)) throw e; code = e.code; } finally { spy.mockRestore(); restorer.restore(); }
+    return { code, out: out.join("\n"), result, tally, restored: sha(src) === before && readFileSync(src, "utf8") === "pristine source\n" };
+  }
+  it("real vitest: after a completed verification, a failed started write in a test body is INFRASTRUCTURE FAILURE (exit 3), restored byte-identical, no verdict, not KILLED", () => {
+    const clean = invoke("r1-control", {});
+    expect([clean.code, clean.result?.failed, clean.result?.records, clean.restored, clean.tally]).toEqual([undefined, 0, 4, true, { killed: 0, survived: 1 }]);
+    const killed = invoke("r1-control-mutant", { KJFX_MUTANT: "a" });
+    expect([killed.code, killed.result?.failed, killed.restored, killed.tally]).toEqual([undefined, 1, true, { killed: 1, survived: 0 }]);
+    const o = invoke("M-r1", { KJFX_FAULT: "1" });
+    expect(o.code).toBe(INFRA_EXIT);
+    expect(o.result).toBeUndefined();
+    expect(o.out).toMatch(/^INFRASTRUCTURE FAILURE: M-r1 /);
+    expect(o.out).toMatch(/verifier error: ENGINE_IMAGE_REFUSED: record: started attempt record not written: EACCES: injected started-record write failure/);
+    expect(o.out).not.toMatch(/KILLED/);
+    expect(o.restored).toBe(true);
+    expect(o.tally).toEqual({ killed: 0, survived: 0 });
   });
 });
