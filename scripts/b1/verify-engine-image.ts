@@ -6,7 +6,8 @@
  * 5432/tcp binding (host 127.0.0.1) is the only address a lane A connection may use. The server identity
  * (version(), inet_server_port(), pg_control_system() system identifier) is read inside that ID with `docker exec`
  * and must equal what every handed-out connection reports. Only the image metadata is cached, keyed by container ID
- * (2-R4d); binding and identity are rechecked before every hand-out, and a new container ID is verified afresh (2-R4b).
+ * (2-R4d); binding and identity are rechecked before every hand-out (installHandOutVerification), and a new container
+ * ID is verified afresh (2-R4b).
  *
  * Attempt records (2-R4e): when a G7 driver set the attempt context, every verification attempt writes a started record
  * and then a completed or failed record (scripts/b1/mutation-infra.mjs). Classification only; no authenticity (F-4).
@@ -222,21 +223,38 @@ export function engineVerifier(root = process.cwd()): EngineVerifier {
   return shared ??= new EngineVerifier({ docker: realDocker(), pins: readPins(root), composeFile: resolve(root, COMPOSE_FILE) });
 }
 
-/** A pg.Client whose every physical connection is verified before the pool hands it out (2-R4d). */
-export function verifiedClientClass(verifier: EngineVerifier, file: () => string): typeof pg.Client {
-  class VerifiedClient extends pg.Client {
-    override connect(): Promise<pg.Client>;
-    override connect(callback: ((err: Error) => void) | ((err: null, c: pg.Client) => void)): void;
-    override connect(callback?: ((err: Error) => void) | ((err: null, c: pg.Client) => void)): Promise<pg.Client> | void {
-      const self = this as unknown as { host: string; port: number };
-      const done: Promise<pg.Client> = super.connect().then(() => verifier.verifyConnection(this, { host: self.host, port: Number(self.port) }, file()))
-        .then(() => this as pg.Client, async (error: unknown) => { await this.end().catch(() => {}); throw error; });
-      if (!callback) return done;
-      const cb = callback as (err: Error | null, c?: pg.Client) => void;
-      done.then((c) => cb(null, c), (error: Error) => cb(error));
-    }
-  }
-  return VerifiedClient;
+type PoolCallback = (err: Error | undefined, client?: pg.PoolClient, release?: pg.PoolClient["release"]) => void;
+interface HandOutClasses { Pool: { prototype: object }; Client: { prototype: object } }
+/**
+ * 2-R4d: every connection the process hands out is verified for that hand-out (A10.7 v7 review R2). Installed on the
+ * pg prototypes, so it covers every pool and client whoever built it (the base factory, a consumer's pool on
+ * database.url or DATABASE, the pool given to migrate): every Pool checkout, a fresh client or a reused idle one
+ * (pool.query checks out through connect), and every direct Client.connect. The caller receives the client only after
+ * the verification of that hand-out succeeded; a refused pool client is destroyed (release with an error), never
+ * returned to the idle list, and a refused direct client is ended. Nothing beyond 2-R4d's image metadata is cached.
+ * Returns the uninstall function.
+ */
+export function installHandOutVerification(verifier: () => EngineVerifier, file: () => string,
+  { Pool, Client }: HandOutClasses = { Pool: pg.Pool, Client: pg.Client }): () => void {
+  const pool = Pool.prototype as { connect: (cb?: PoolCallback) => Promise<pg.PoolClient> | void };
+  const client = Client.prototype as { connect: (cb?: (err: Error | null) => void) => Promise<void> | void };
+  const poolConnect = pool.connect, clientConnect = client.connect;
+  const target = (c: object) => { const t = c as { host: string; port: number | string }; return { host: t.host, port: Number(t.port) }; };
+  pool.connect = function (this: pg.Pool, cb?: PoolCallback) {
+    const done = (poolConnect.call(this) as Promise<pg.PoolClient>).then(async (c) => {
+      try { await verifier().verifyConnection(c, target(c), file()); } catch (error) { c.release(error instanceof Error ? error : true); throw error; }
+      return c;
+    });
+    if (!cb) return done;
+    void done.then((c) => cb(undefined, c, c.release), (error: Error) => cb(error));
+  };
+  client.connect = function (this: pg.Client, cb?: (err: Error | null) => void) {
+    const done = (clientConnect.call(this) as Promise<void>).then(() => verifier().verifyConnection(this, target(this), file()))
+      .then(() => undefined, async (error: unknown) => { await this.end().catch(() => {}); throw error; });
+    if (!cb) return done;
+    void done.then(() => cb(null), (error: Error) => cb(error));
+  };
+  return () => { pool.connect = poolConnect; client.connect = clientConnect; };
 }
 
 async function main(argv: readonly string[]): Promise<number> {

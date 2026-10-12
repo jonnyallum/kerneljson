@@ -17,7 +17,7 @@ import {
   parseFunctionInventory,
 } from "../scripts/b1/function-inventory.js";
 import { generateFunctionInventory, type DockerResult, type InventoryDeps, type InventoryPool } from "../scripts/b1/build-function-inventory.js";
-import { EngineRefusal, EngineVerifier, composeImageProblems, readComposeFiles, unprovenUrlProblems, type DockerRun, type Pins, type Queryable } from "../scripts/b1/verify-engine-image.js";
+import { EngineRefusal, EngineVerifier, IDENTITY_SQL, composeImageProblems, installHandOutVerification, readComposeFiles, unprovenUrlProblems, type DockerRun, type Pins, type Queryable } from "../scripts/b1/verify-engine-image.js";
 import {
   G7_DB_FILES, INFRA_EXIT, RECORD_KIND, VERIFIER_PREFIX, createRestorer, databaseFileProblems, fatalMessage, listTests, readRecords, recordProblems,
   recordShapeProblems, reportProblems, runClassified, writeAttemptRecord,
@@ -943,5 +943,107 @@ it("a mutation detector", () => { expect(process.env.KJFX_MUTANT === "a" ? 2 : 1
     expect(o.out).not.toMatch(/KILLED/);
     expect(o.restored).toBe(true);
     expect(o.tally).toEqual({ killed: 0, survived: 0 });
+  });
+});
+
+describe("A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles)", () => {
+  /** A client double: the statements sent over it, an identity row, and the pool's release once checked out. */
+  class ClientDouble {
+    host = "127.0.0.1"; port = 55432; row: Record<string, unknown> = goodRow; statements: string[] = []; ended = false; failQuery = false; failConnect = false;
+    release: (error?: unknown) => void = () => {};
+    async connect() { if (this.failConnect) throw Error("ECONNREFUSED"); }
+    async query(sql: string) { this.statements.push(sql); if (this.failQuery) throw Error("terminating connection"); return { rows: [this.row] }; }
+    async end() { this.ended = true; }
+  }
+  /** A pool double with pg-pool's hand-out semantics: the most recent idle client is reused; release(error) destroys it. */
+  class PoolDouble {
+    made: ClientDouble[] = []; idle: ClientDouble[] = []; destroyed: ClientDouble[] = [];
+    connect(): Promise<ClientDouble> {
+      const c = this.idle.pop() ?? (this.made[this.made.length] = new ClientDouble());
+      c.release = (error?: unknown) => { (error ? this.destroyed : this.idle).push(c); };
+      return Promise.resolve(c);
+    }
+  }
+  const verifications = (c: ClientDouble) => c.statements.filter((q) => q === IDENTITY_SQL).length;
+  const setup = () => {
+    const s = dockerState(), verifier = verifierWith(s);
+    const uninstall = installHandOutVerification(() => verifier, () => "tests/x.test.ts", { Pool: PoolDouble, Client: ClientDouble });
+    const pool = new PoolDouble() as PoolDouble & { connect(cb?: (e?: Error, c?: ClientDouble, r?: unknown) => void): Promise<ClientDouble> };
+    return { s, verifier, uninstall, pool, binding: () => s.calls.filter((c) => c === "compose -f c.yaml ps -q db").length };
+  };
+  it("the first checkout, an idle reuse of the same client and four concurrent checkouts each recheck the binding and the identity over the client handed out", async () => {
+    const { uninstall, pool, binding } = setup();
+    try {
+      const a = await pool.connect();
+      expect([verifications(a), binding()]).toEqual([1, 1]);
+      a.release();
+      const b = await pool.connect();
+      expect(b).toBe(a);
+      expect([verifications(a), binding()]).toEqual([2, 2]);
+      b.release();
+      const all = await Promise.all([1, 2, 3, 4].map(() => pool.connect()));
+      expect(all.reduce((n, c) => n + verifications(c), 0)).toBe(6);
+      expect(binding()).toBe(6);
+    } finally { uninstall(); }
+  });
+  it.each([
+    ["the published binding moved", (s: DoubleState) => { s.ports = { "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "55433" }] }; }, /ENGINE_IMAGE_REFUSED: url/],
+    ["the container was replaced by one with another server identity", (s: DoubleState) => { s.ids = [CID2]; s.sid = "1"; }, /ENGINE_IMAGE_REFUSED: identity-connection/],
+    ["the server behind the idle client changed identity", (_s: DoubleState, c: ClientDouble) => { c.row = { ...goodRow, sid: "1" }; }, /ENGINE_IMAGE_REFUSED: identity-connection/],
+    ["the server behind the idle client reports another version()", (_s: DoubleState, c: ClientDouble) => { c.row = { ...goodRow, version: "PostgreSQL 16.0" }; }, /ENGINE_IMAGE_REFUSED: identity-connection/],
+    ["docker cannot be asked (verifier exception)", (s: DoubleState) => { s.fail = "ps -q db"; }, /ENGINE_IMAGE_REFUSED: container/],
+    ["the identity query fails on the idle client", (_s: DoubleState, c: ClientDouble) => { c.failQuery = true; }, /ENGINE_IMAGE_REFUSED: identity-connection/],
+  ])("idle reuse after %s is refused before the caller sends anything, and the client is destroyed, never reused", async (_name, change, refusal) => {
+    const { s, uninstall, pool } = setup();
+    try {
+      const a = await pool.connect();
+      a.release();
+      change(s, a);
+      await expect(pool.connect()).rejects.toThrow(refusal);
+      expect(a.statements.every((q) => q === IDENTITY_SQL)).toBe(true);
+      expect([pool.destroyed, pool.idle]).toEqual([[a], []]);
+      Object.assign(s, dockerState({ calls: s.calls, fail: undefined }));
+      a.row = goodRow; a.failQuery = false;
+      const next = await pool.connect();
+      expect(next).not.toBe(a);
+      expect(verifications(next)).toBe(1);
+    } finally { uninstall(); }
+  });
+  it("pool.query's callback form: a verified hand-out yields (undefined, client, release); a refused one yields only the refusal", async () => {
+    const { s, uninstall, pool } = setup();
+    try {
+      const ok = await new Promise<unknown[]>((r) => { pool.connect((...args) => r(args)); });
+      expect(ok[0]).toBeUndefined();
+      expect(verifications(ok[1] as ClientDouble)).toBe(1);
+      expect(ok[2]).toBe((ok[1] as ClientDouble).release);
+      (ok[1] as ClientDouble).release();
+      s.ports = { "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "55433" }] };
+      const refused = await new Promise<unknown[]>((r) => { pool.connect((...args) => r(args)); });
+      expect(refused).toHaveLength(1);
+      expect(String(refused[0])).toMatch(/ENGINE_IMAGE_REFUSED: url/);
+      expect(refused[0]).toBeInstanceOf(EngineRefusal);
+    } finally { uninstall(); }
+  });
+  it("a direct client is verified on connect; a refused one is ended and the refusal reaches the caller; a failed physical connect passes through", async () => {
+    const { s, uninstall } = setup();
+    try {
+      const good = new ClientDouble();
+      await good.connect();
+      expect(verifications(good)).toBe(1);
+      s.ports = { "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "55433" }] };
+      const moved = new ClientDouble();
+      await expect(moved.connect()).rejects.toThrow(/ENGINE_IMAGE_REFUSED: url/);
+      expect(moved.ended).toBe(true);
+      const down = Object.assign(new ClientDouble(), { failConnect: true });
+      await expect(down.connect()).rejects.toThrow(/^ECONNREFUSED$/);
+      expect(down.statements).toEqual([]);
+    } finally { uninstall(); }
+  });
+  it("uninstalling restores the original connect functions", () => {
+    const { pool: before, uninstall } = setup(), installed = PoolDouble.prototype.connect;
+    uninstall();
+    expect(PoolDouble.prototype.connect).not.toBe(installed);
+    expect(before.connect).toBe(PoolDouble.prototype.connect);
+    expect(ClientDouble.prototype.connect.toString()).toContain("ECONNREFUSED");
   });
 });

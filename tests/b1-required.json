@@ -483,6 +483,56 @@
     },
     {
       "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) a direct client is verified on connect; a refused one is ended and the refusal reaches the caller; a failed physical connect passes through",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) idle reuse after docker cannot be asked (verifier exception) is refused before the caller sends anything, and the client is destroyed, never reused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) idle reuse after the container was replaced by one with another server identity is refused before the caller sends anything, and the client is destroyed, never reused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) idle reuse after the identity query fails on the idle client is refused before the caller sends anything, and the client is destroyed, never reused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) idle reuse after the published binding moved is refused before the caller sends anything, and the client is destroyed, never reused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) idle reuse after the server behind the idle client changed identity is refused before the caller sends anything, and the client is destroyed, never reused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) idle reuse after the server behind the idle client reports another version() is refused before the caller sends anything, and the client is destroyed, never reused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) pool.query's callback form: a verified hand-out yields (undefined, client, release); a refused one yields only the refusal",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) the first checkout, an idle reuse of the same client and four concurrent checkouts each recheck the binding and the identity over the client handed out",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
+      "name": "A10.7 R2 2-R4d every connection hand-out is verified for that hand-out (pool and client doubles) uninstalling restores the original connect functions",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-gates.test.ts",
       "name": "CON-20 the inventory gate over a trace (G4 enforce, G5 discover) does not count a declared probe, which the refusal multiset accounts for",
       "refusals": []
     },
@@ -884,6 +934,11 @@
     {
       "file": "tests/b1-refusal-accounting.test.ts",
       "name": "R279 refusal accounting parser sums identical statements across tests without losing trace attribution",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-relation-inventory.integration.test.ts",
+      "name": "R2: every lane A connection hand-out is verified, including idle reuse and pools built from database.url or DATABASE",
       "refusals": []
     },
     {

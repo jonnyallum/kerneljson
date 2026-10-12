@@ -1,10 +1,15 @@
-import { readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import pg from "pg";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { testDatabase, type TestDatabase } from "./support/database.js";
 import { readRelations, RELATION_INVENTORY_PATH } from "../scripts/b1/relation-inventory.js";
 import { FUNCTION_INVENTORY_PATH, readFunctionInventory, renderFunctionInventory } from "../scripts/b1/function-inventory.js";
 import { strictJson } from "../services/kernel/src/database/strict-json.js";
-import { engineVerifier, readPins } from "../scripts/b1/verify-engine-image.js";
+import { engineVerifier, readPins, type Verified } from "../scripts/b1/verify-engine-image.js";
+import { ENV } from "../scripts/b1/mutation-infra.mjs";
 import { DATABASE } from "./support/local.js";
 
 /**
@@ -51,4 +56,61 @@ it('VALUES ... ORDER BY x COLLATE "C" equals the Buffer.compare UTF-8 order (U+F
   expect(rows).toEqual(bytes);
   expect(bytes.indexOf("kj_\uFF5E")).toBeLessThan(bytes.indexOf("kj_\u{1F600}"));
   expect([...literals].sort().indexOf("kj_\u{1F600}")).toBeLessThan([...literals].sort().indexOf("kj_\uFF5E"));
+});
+/**
+ * KJ-P8 B1 A10.7 v7 R2 (2-R4d), real: every connection this lane A process hands out is rechecked for that hand-out
+ * (current binding, then the server identity over that connection), whoever built the pool: the factory's pool, a pool
+ * a consumer builds from database.url, one built from DATABASE, and a direct client. Fresh checkouts, idle reuse (same
+ * backend), pool.query and concurrent checkouts each leave their own completed attempt record. When the verified view
+ * changes (a controlled double for the docker view only; the pools, the server and the reuse are real), the next
+ * hand-out on every route is refused before the caller's statement runs, and the refused client is destroyed.
+ */
+it("R2: every lane A connection hand-out is verified, including idle reuse and pools built from database.url or DATABASE", async () => {
+  const verifier = engineVerifier(), v = verifier.verifyContainer(), real = verifier.verifyContainer;
+  const dir = mkdtempSync(join(tmpdir(), "kj-r2-handout-")), keys = Object.values(ENV), saved = keys.map((k) => process.env[k]);
+  Object.assign(process.env, { [ENV.nonce]: randomBytes(16).toString("hex"), [ENV.label]: "R2", [ENV.dir]: dir });
+  const completed = () => readdirSync(dir).filter((n) => n.endsWith(".completed.json")).length;
+  const verified = async <T>(use: () => Promise<T>): Promise<[boolean, T]> => { const before = completed(), value = await use(); return [completed() > before, value]; };
+  const pid = async (c: pg.ClientBase) => (await c.query<{ p: number }>("select pg_backend_pid() as p")).rows[0]!.p;
+  const outcome = async (run: () => Promise<unknown>) => run().then(() => "handed out", (e: Error) => `refused: ${/ENGINE_IMAGE_REFUSED: [a-z-]+/.exec(e.message)?.[0] ?? e.message}`);
+  const view = (over: Partial<Verified>) => { verifier.verifyContainer = () => ({ ...real.call(verifier), ...over }); };
+  const pools: Record<string, pg.Pool> = { factory: database.pool, url: new pg.Pool({ connectionString: database.url, max: 1 }), constant: new pg.Pool({ connectionString: DATABASE, max: 1 }) };
+  const seen: Record<string, unknown> = {};
+  try {
+    for (const [route, pool] of Object.entries(pools)) {
+      const [first, a] = await verified(async () => { const c = await pool.connect(); try { return await pid(c); } finally { c.release(); } });
+      const [idle, b] = await verified(async () => { const c = await pool.connect(); try { return await pid(c); } finally { c.release(); } });
+      const [query] = await verified(() => pool.query("select 1"));
+      view({ port: v.port + 1, binding: `${v.host}:${v.port + 1}` });
+      const moved = await outcome(() => pool.query(`create table kj_r2_${route} ()`));
+      verifier.verifyContainer = real;
+      const after = await pool.connect();
+      try { seen[route] = { first, idle, reused: a === b, query, moved, statementRan: (await after.query("select to_regclass($1) as t", [`public.kj_r2_${route}`])).rows[0]!.t !== null, destroyed: (await pid(after)) !== b }; }
+      finally { after.release(); }
+    }
+    const before = completed();
+    await Promise.all([1, 2, 3, 4].map(() => database.pool.query("select 1")));
+    seen.concurrent = completed() - before >= 4;
+    view({ identity: { ...v.identity, systemIdentifier: "1" } });
+    seen.identityChanged = await outcome(() => pools.url!.query("select 1"));
+    verifier.verifyContainer = () => { throw new Error("docker unavailable"); };
+    seen.verifierException = await outcome(() => pools.constant!.query("select 1"));
+    verifier.verifyContainer = real;
+    const direct = new pg.Client({ connectionString: database.url });
+    const [directVerified] = await verified(() => direct.connect());
+    await direct.end();
+    view({ port: v.port + 1, binding: `${v.host}:${v.port + 1}` });
+    const moved = new pg.Client({ connectionString: database.url });
+    seen.direct = { verified: directVerified, moved: await outcome(() => moved.connect()), usable: await moved.query("select 1").then(() => true, () => false) };
+  } finally {
+    verifier.verifyContainer = real;
+    await pools.constant!.query("drop table if exists kj_r2_constant");
+    await pools.url!.end(); await pools.constant!.end();
+    keys.forEach((k, i) => { if (saved[i] === undefined) delete process.env[k]; else process.env[k] = saved[i]; });
+    rmSync(dir, { recursive: true, force: true });
+  }
+  const route = { first: true, idle: true, reused: true, query: true, moved: "refused: ENGINE_IMAGE_REFUSED: url", statementRan: false, destroyed: true };
+  expect(seen).toEqual({ factory: route, url: route, constant: route, concurrent: true,
+    identityChanged: "refused: ENGINE_IMAGE_REFUSED: identity-connection", verifierException: "refused: ENGINE_IMAGE_REFUSED: error",
+    direct: { verified: true, moved: "refused: ENGINE_IMAGE_REFUSED: url", usable: false } });
 });
