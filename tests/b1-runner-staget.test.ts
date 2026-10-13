@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -9,7 +10,8 @@ import { Release } from "../scripts/b1/release.js";
 import { RequiredSchema } from "../scripts/b1/coverage.js";
 import { REGRESSION_SUITES } from "../scripts/b1/plans.js";
 import { stageTSuiteResult, writeSuiteEvidence } from "../scripts/b1/gate-suite.js";
-import { DEFINER_PROBES_FILE, NEGATIVE_FILE, expectedG8Rows, g8SuiteProblems } from "../scripts/b1/g8.js";
+import { DEFINER_PROBES_FILE, NEGATIVE_FILE, expectedG8Rows, g8SuiteProblems, type JsonSource } from "../scripts/b1/g8.js";
+import { RUNTIME_ROLES } from "../services/kernel/src/database/runtime-roles.js";
 
 /**
  * ADR-0023 27.12.15 stage T refusals, end to end through the ephemeral entry point (lane C). CON-5: a suite that fails,
@@ -202,6 +204,70 @@ describe("CON-6 and CON-10 changes made during stage T", () => {
  * changed) is refused by the runner itself: regressionOutcome failed, status unchanged.
  */
 const NEGATIVE_TEST = "tests/runtime-roles-negative.integration.test.ts";
+
+/**
+ * KJ-P8 B1 A10.7 v7 R3 (local candidate, not sealed): the exact failure signature of an N4 stage T equality refusal, so
+ * an N4 case passes only when the frozen negative test's inventory equality failed and nothing else did:
+ * - the run is sound: a record for R and this suite, every L and S step passed (L6 included), REPOSITORY_QUALIFIED;
+ * - the suite exited 1, and the stage T problems are exactly the suite exit, the unsuccessful report and a missing G8
+ *   row for every expected function row of both roles at R; no other problem, and no other row missing;
+ * - the report, bound to the record by its SHA-256, has exactly the two failed function tests (one per role), each
+ *   failing at the equality (line 101 of the frozen test), and every other test passed;
+ * - the suite output's diff lists exactly the edited identities: "- " for one only the committed inventory lists,
+ *   "+ " for one only the catalogue has. The output is read from the run's working directory; unlike the report it
+ *   is not digest-bound in the record.
+ * Returns every difference; empty means the signature holds. An absent record or stage T result is a difference.
+ */
+export interface InventoryEdit { inventoryOnly: string[]; catalogueOnly: string[] }
+const EQUALITY_TEST = "every function outside the manifest is not executable";
+interface Report { testResults: { name: string; assertionResults: { fullName: string; status: string; failureMessages: string[] }[] }[] }
+export function equalityRefusalProblems(o: RunnerOutcome, release: JsonSource, R: string, suite: string, edit: InventoryEdit): string[] {
+  const p: string[] = [], r = o.record;
+  if (!o.summary || !r) return ["no runner record"];
+  if (r.header.R !== R || r.header.regressionSuite !== suite) p.push(`record is for ${r.header.R} ${String(r.header.regressionSuite)}`);
+  if (o.summary.status !== "REPOSITORY_QUALIFIED" || r.status !== "REPOSITORY_QUALIFIED") p.push(`status ${o.summary.status}, record ${r.status}`);
+  const steps = r.events.map((e) => `${e.step} ${e.outcome}`), notPassed = steps.filter((s) => !s.endsWith(" passed"));
+  if (notPassed.length || !steps.includes("L6 passed")) p.push(`runner steps not all passed: ${notPassed.join(", ") || "no L6"}`);
+  if (r.regressionOutcome !== "failed") p.push(`regressionOutcome ${r.regressionOutcome}`);
+  const t = r.stageT as { outcome?: unknown; problems?: unknown; exitCode?: unknown; reportSha256?: unknown; workingDirectory?: unknown };
+  if (!Array.isArray(t.problems) || typeof t.workingDirectory !== "string") return [...p, "no stage T result"];
+  if (t.outcome !== "failed" || t.exitCode !== 1) p.push(`stage T ${String(t.outcome)}, exit ${String(t.exitCode)}`);
+  const functionRows = [...expectedG8Rows(release).negative].filter(([, v]) => v.kind === "function").map(([k]) => `G8 evidence ${NEGATIVE_FILE}: missing row ${k}`);
+  for (const role of RUNTIME_ROLES) if (!functionRows.some((m) => m.includes(JSON.stringify(role)))) p.push(`no expected function row for ${role}`);
+  const want = ["suite exited 1", "REPORT_REFUSED: unsuccessful report", ...functionRows], got = (t.problems as unknown[]).map(String);
+  for (const x of got.filter((x) => !want.includes(x))) p.push(`unexpected stage T problem: ${x.slice(0, 300)}`);
+  for (const x of want.filter((x) => !got.includes(x))) p.push(`expected stage T problem absent: ${x.slice(0, 300)}`);
+  if (new Set(got).size !== got.length) p.push("a stage T problem is repeated");
+  const reportPath = join(t.workingDirectory, "report.json");
+  if (!existsSync(reportPath)) return [...p, "suite report absent"];
+  const raw = readFileSync(reportPath);
+  if (createHash("sha256").update(raw).digest("hex") !== t.reportSha256) p.push("suite report differs from the recorded digest");
+  const failed: string[] = [];
+  for (const f of (JSON.parse(raw.toString("utf8")) as Report).testResults) {
+    const file = f.name.replaceAll("\\", "/").split("/").slice(-2).join("/");
+    for (const a of f.assertionResults) {
+      if (a.status === "passed") continue;
+      const m = a.failureMessages;
+      if (a.status === "failed" && file === NEGATIVE_TEST && m.length === 1 && m[0]!.startsWith("AssertionError: expected [")
+        && m[0]!.includes("to deeply equal") && m[0]!.includes("runtime-roles-negative.integration.test.ts:101:")) failed.push(a.fullName);
+      else p.push(`test not passed other than at the equality: ${file} ${a.fullName} (${a.status})`);
+    }
+  }
+  const wantFailed = RUNTIME_ROLES.map((role) => `B1 forbidden powers: ${role} ${EQUALITY_TEST}`);
+  if (failed.length !== wantFailed.length || wantFailed.some((n) => !failed.includes(n))) p.push(`equality failures: ${failed.join("; ") || "none"}`);
+  const outputPath = join(t.workingDirectory, "suite-output.log");
+  const lines = existsSync(outputPath) ? readFileSync(outputPath, "utf8").split(/\r?\n/) : [];
+  for (const role of RUNTIME_ROLES)
+    if (!lines.some((l) => l.includes("FAIL") && l.includes(`> B1 forbidden powers: ${role} > ${EQUALITY_TEST}`))) p.push(`suite output has no failure line for ${role}`);
+  const shown = [...new Set(lines.map((l) => /^\s*([-+])\s+(".*"),?\s*$/.exec(l)).filter((x) => x !== null).map((x) => `${x[1]} ${x[2]}`))].sort();
+  const named = [...edit.inventoryOnly.map((i) => `- ${JSON.stringify(i)}`), ...edit.catalogueOnly.map((i) => `+ ${JSON.stringify(i)}`)].sort();
+  if (!named.length) p.push("no edited identity named");
+  if (JSON.stringify(shown) !== JSON.stringify(named)) p.push(`suite output diff shows ${shown.join(" ") || "nothing"}, not ${named.join(" ")}`);
+  return p;
+}
+const expectEqualityRefusal = (o: RunnerOutcome, c: { dir: string; R: string }, suite: string, edit: InventoryEdit) =>
+  expect(equalityRefusalProblems(o, new Release(c.dir, c.R), c.R, suite, edit)).toEqual([]);
+
 describe("CON-30 G8 evidence collected by the runner with SHA-256s", () => {
   it("a genuine run records both evidence files; the gate verifies them and refuses a copy edited after the run", async () => {
     const o = await runCase("CON-30 G8 evidence recorded", "none", [], { suite: "regression-probes" });
@@ -241,12 +307,14 @@ describe("CON-30 G8 evidence collected by the runner with SHA-256s", () => {
     const o = await runClone("E2 function inventory extra", c, "none", "regression-probes");
     expectRegressionFailed(o, /suite exited 1/);
     expect(stageT(o).problems.join("\n")).toContain(`G8 evidence artifacts/local/b1-negative-probes.json: missing row ${JSON.stringify(["kj_door", "function outside manifest", `has_function_privilege(${extra})`])}`);
+    expectEqualityRefusal(o, c, "regression-probes", { inventoryOnly: [extra], catalogueOnly: [] });
   }, CASE_TIMEOUT);
   /**
    * KJ-P8 B1 A10.7 v7 (local candidate, not sealed) N4a-N4c with the sealed B1: the committed inventory alone is
    * edited (UTF-8 byte order kept, so the static contract and committedFunctionInventory() still parse it). The
-   * equality throws before any function row is appended, so G8 reports MISSING rows (1.5b); N4a also runs in the
-   * discover twin. Unexpected-row rejection is the controlled-evidence unit case N10a in tests/b1-gates.test.ts.
+   * equality throws before any function row is appended, so G8 reports MISSING rows (1.5b). Each of N4a-N4c runs in
+   * both twins (R3), and each instance must show the exact failure signature (equalityRefusalProblems) and nothing
+   * else. Unexpected-row rejection is the controlled-evidence unit case N10a in tests/b1-gates.test.ts.
    */
   const inventoryEdit = (edit: (functions: string[]) => string[]) => (t: string) => {
     const v = JSON.parse(t) as { functions: string[] };
@@ -255,28 +323,55 @@ describe("CON-30 G8 evidence collected by the runner with SHA-256s", () => {
   };
   const MANIFEST_PREFIX = "kernel_private.identity_";
   const missingRow = (fn: string) => `G8 evidence artifacts/local/b1-negative-probes.json: missing row ${JSON.stringify(["kj_door", "function outside manifest", `has_function_privilege(${fn})`])}`;
+  const committed = () => (JSON.parse(readFileSync(join(ROOT, "infrastructure/database/b1-function-inventory.json"), "utf8")) as { functions: string[] }).functions;
+  /** N4b: one catalogued non-manifest identity removed from the committed inventory; another such identity is kept. */
+  const n4b = () => {
+    const inv = committed(), removed = inv.find((f) => !f.startsWith(MANIFEST_PREFIX))!;
+    return { removed, kept: inv.find((f) => f !== removed && !f.startsWith(MANIFEST_PREFIX))! };
+  };
+  /** N4c: one committed non-manifest identity with a text argument re-typed to bytea. */
+  const n4c = () => {
+    const target = committed().find((f) => !f.startsWith(MANIFEST_PREFIX) && f.includes("pg_catalog.text"))!;
+    return { target, changed: target.replace("pg_catalog.text", "pg_catalog.bytea") };
+  };
   it("N4a discover twin: a committed function inventory listing a function the catalogue lacks fails regression-probes-discover, and G8 refuses", async () => {
     const extra = "kernel_private.kj_b1_e2_extra(pg_catalog.int4)";
     const c = clone({ "infrastructure/database/b1-function-inventory.json": inventoryEdit((f) => [...f, extra]) });
     const o = await runClone("A10.7 N4a discover", c, "none", "regression-probes-discover");
     expectRegressionFailed(o, /suite exited 1/);
     expect(stageT(o).problems.join("\n")).toContain(missingRow(extra));
+    expectEqualityRefusal(o, c, "regression-probes-discover", { inventoryOnly: [extra], catalogueOnly: [] });
   }, CASE_TIMEOUT);
   it("N4b a committed inventory missing a catalogued non-manifest function fails the equality; G8 reports missing rows", async () => {
-    const inv = (JSON.parse(readFileSync(join(ROOT, "infrastructure/database/b1-function-inventory.json"), "utf8")) as { functions: string[] }).functions;
-    const removed = inv.find((f) => !f.startsWith(MANIFEST_PREFIX))!, kept = inv.find((f) => f !== removed && !f.startsWith(MANIFEST_PREFIX))!;
+    const { removed, kept } = n4b();
     const c = clone({ "infrastructure/database/b1-function-inventory.json": inventoryEdit((f) => f.filter((x) => x !== removed)) });
     const o = await runClone("A10.7 N4b missing", c, "none", "regression-probes");
     expectRegressionFailed(o, /suite exited 1/);
     expect(stageT(o).problems.join("\n")).toContain(missingRow(kept));
+    expectEqualityRefusal(o, c, "regression-probes", { inventoryOnly: [], catalogueOnly: [removed] });
+  }, CASE_TIMEOUT);
+  it("N4b discover twin: a committed inventory missing a catalogued non-manifest function fails regression-probes-discover; G8 reports missing rows", async () => {
+    const { removed, kept } = n4b();
+    const c = clone({ "infrastructure/database/b1-function-inventory.json": inventoryEdit((f) => f.filter((x) => x !== removed)) });
+    const o = await runClone("A10.7 N4b discover", c, "none", "regression-probes-discover");
+    expectRegressionFailed(o, /suite exited 1/);
+    expect(stageT(o).problems.join("\n")).toContain(missingRow(kept));
+    expectEqualityRefusal(o, c, "regression-probes-discover", { inventoryOnly: [], catalogueOnly: [removed] });
   }, CASE_TIMEOUT);
   it("N4c one committed identity changed (an argument type altered) fails the equality; G8 reports missing rows", async () => {
-    const inv = (JSON.parse(readFileSync(join(ROOT, "infrastructure/database/b1-function-inventory.json"), "utf8")) as { functions: string[] }).functions;
-    const target = inv.find((f) => !f.startsWith(MANIFEST_PREFIX) && f.includes("pg_catalog.text"))!;
-    const changed = target.replace("pg_catalog.text", "pg_catalog.bytea");
+    const { target, changed } = n4c();
     const c = clone({ "infrastructure/database/b1-function-inventory.json": inventoryEdit((f) => f.map((x) => (x === target ? changed : x))) });
     const o = await runClone("A10.7 N4c changed", c, "none", "regression-probes");
     expectRegressionFailed(o, /suite exited 1/);
     expect(stageT(o).problems.join("\n")).toContain(missingRow(changed));
+    expectEqualityRefusal(o, c, "regression-probes", { inventoryOnly: [changed], catalogueOnly: [target] });
+  }, CASE_TIMEOUT);
+  it("N4c discover twin: one committed identity changed (an argument type altered) fails regression-probes-discover; G8 reports missing rows", async () => {
+    const { target, changed } = n4c();
+    const c = clone({ "infrastructure/database/b1-function-inventory.json": inventoryEdit((f) => f.map((x) => (x === target ? changed : x))) });
+    const o = await runClone("A10.7 N4c discover", c, "none", "regression-probes-discover");
+    expectRegressionFailed(o, /suite exited 1/);
+    expect(stageT(o).problems.join("\n")).toContain(missingRow(changed));
+    expectEqualityRefusal(o, c, "regression-probes-discover", { inventoryOnly: [changed], catalogueOnly: [target] });
   }, CASE_TIMEOUT);
 });

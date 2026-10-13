@@ -2128,6 +2128,16 @@
     },
     {
       "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-30 G8 evidence collected by the runner with SHA-256s N4b discover twin: a committed inventory missing a catalogued non-manifest function fails regression-probes-discover; G8 reports missing rows",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "CON-30 G8 evidence collected by the runner with SHA-256s N4c discover twin: one committed identity changed (an argument type altered) fails regression-probes-discover; G8 reports missing rows",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
       "name": "CON-30 G8 evidence collected by the runner with SHA-256s N4c one committed identity changed (an argument type altered) fails the equality; G8 reports missing rows",
       "refusals": []
     },
