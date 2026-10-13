@@ -11,6 +11,7 @@ import { RequiredSchema } from "../scripts/b1/coverage.js";
 import { REGRESSION_SUITES } from "../scripts/b1/plans.js";
 import { stageTSuiteResult, writeSuiteEvidence } from "../scripts/b1/gate-suite.js";
 import { DEFINER_PROBES_FILE, NEGATIVE_FILE, expectedG8Rows, g8SuiteProblems, type JsonSource } from "../scripts/b1/g8.js";
+import { FUNCTION_INVENTORY_PATH, parseFunctionInventory } from "../scripts/b1/function-inventory.js";
 import { RUNTIME_ROLES } from "../services/kernel/src/database/runtime-roles.js";
 
 /**
@@ -213,15 +214,23 @@ const NEGATIVE_TEST = "tests/runtime-roles-negative.integration.test.ts";
  *   row for every expected function row of both roles at R; no other problem, and no other row missing;
  * - the report, bound to the record by its SHA-256, has exactly the two failed function tests (one per role), each
  *   failing at the equality (line 101 of the frozen test), and every other test passed;
- * - the suite output's diff lists exactly the edited identities: "- " for one only the committed inventory lists,
- *   "+ " for one only the catalogue has. The output is read from the run's working directory; unlike the report it
- *   is not digest-bound in the record.
+ * - the claimed edit is the release's own inventory change: "inventoryOnly" is what the committed inventory at R lists
+ *   and the base (the commit the fixture was cut from, whose inventory equals the catalogue: the unmodified controls)
+ *   does not, "catalogueOnly" the reverse;
+ * - each equality failure in the digest-bound report compares a catalogue of the base's size with an inventory of R's
+ *   size, which separates an added (N4a), removed (N4b) and changed (N4c) identity by count;
+ * - the suite output's diff lists exactly those release-derived identities: "- " for inventoryOnly, "+ " for
+ *   catalogueOnly. The output is read from the run's working directory; unlike the report it is not digest-bound in
+ *   the record, so it corroborates the identities and never establishes one (R3-H1).
  * Returns every difference; empty means the signature holds. An absent record or stage T result is a difference.
  */
 export interface InventoryEdit { inventoryOnly: string[]; catalogueOnly: string[] }
 const EQUALITY_TEST = "every function outside the manifest is not executable";
+const EQUALITY_COUNTS = /^AssertionError: expected \[ \u2026\((\d+)\) \] to deeply equal \[ \u2026\((\d+)\) \]\n/;
+const inventoryAt = (s: JsonSource) => parseFunctionInventory(s.json(FUNCTION_INVENTORY_PATH)).functions;
+const editLines = (e: InventoryEdit) => [...e.inventoryOnly.map((i) => `- ${JSON.stringify(i)}`), ...e.catalogueOnly.map((i) => `+ ${JSON.stringify(i)}`)].sort();
 interface Report { testResults: { name: string; assertionResults: { fullName: string; status: string; failureMessages: string[] }[] }[] }
-export function equalityRefusalProblems(o: RunnerOutcome, release: JsonSource, R: string, suite: string, edit: InventoryEdit): string[] {
+export function equalityRefusalProblems(o: RunnerOutcome, release: JsonSource, base: JsonSource, R: string, suite: string, edit: InventoryEdit): string[] {
   const p: string[] = [], r = o.record;
   if (!o.summary || !r) return ["no runner record"];
   if (r.header.R !== R || r.header.regressionSuite !== suite) p.push(`record is for ${r.header.R} ${String(r.header.regressionSuite)}`);
@@ -238,6 +247,10 @@ export function equalityRefusalProblems(o: RunnerOutcome, release: JsonSource, R
   for (const x of got.filter((x) => !want.includes(x))) p.push(`unexpected stage T problem: ${x.slice(0, 300)}`);
   for (const x of want.filter((x) => !got.includes(x))) p.push(`expected stage T problem absent: ${x.slice(0, 300)}`);
   if (new Set(got).size !== got.length) p.push("a stage T problem is repeated");
+  const atR = inventoryAt(release), atBase = inventoryAt(base);
+  const derived = editLines({ inventoryOnly: atR.filter((f) => !atBase.includes(f)), catalogueOnly: atBase.filter((f) => !atR.includes(f)) });
+  if (!derived.length) p.push("the release does not change the committed inventory");
+  if (JSON.stringify(editLines(edit)) !== JSON.stringify(derived)) p.push(`claimed edit ${editLines(edit).join(" ") || "nothing"} is not the release's inventory change ${derived.join(" ") || "nothing"}`);
   const reportPath = join(t.workingDirectory, "report.json");
   if (!existsSync(reportPath)) return [...p, "suite report absent"];
   const raw = readFileSync(reportPath);
@@ -249,8 +262,12 @@ export function equalityRefusalProblems(o: RunnerOutcome, release: JsonSource, R
       if (a.status === "passed") continue;
       const m = a.failureMessages;
       if (a.status === "failed" && file === NEGATIVE_TEST && m.length === 1 && m[0]!.startsWith("AssertionError: expected [")
-        && m[0]!.includes("to deeply equal") && m[0]!.includes("runtime-roles-negative.integration.test.ts:101:")) failed.push(a.fullName);
-      else p.push(`test not passed other than at the equality: ${file} ${a.fullName} (${a.status})`);
+        && m[0]!.includes("to deeply equal") && m[0]!.includes("runtime-roles-negative.integration.test.ts:101:")) {
+        failed.push(a.fullName);
+        const n = EQUALITY_COUNTS.exec(m[0]!);
+        if (!n || Number(n[1]) !== atBase.length || Number(n[2]) !== atR.length)
+          p.push(`${a.fullName} compares ${n ? `${n[1]} with ${n[2]}` : "unreadable counts"}, not the base's ${atBase.length} with R's ${atR.length}`);
+      } else p.push(`test not passed other than at the equality: ${file} ${a.fullName} (${a.status})`);
     }
   }
   const wantFailed = RUNTIME_ROLES.map((role) => `B1 forbidden powers: ${role} ${EQUALITY_TEST}`);
@@ -260,13 +277,92 @@ export function equalityRefusalProblems(o: RunnerOutcome, release: JsonSource, R
   for (const role of RUNTIME_ROLES)
     if (!lines.some((l) => l.includes("FAIL") && l.includes(`> B1 forbidden powers: ${role} > ${EQUALITY_TEST}`))) p.push(`suite output has no failure line for ${role}`);
   const shown = [...new Set(lines.map((l) => /^\s*([-+])\s+(".*"),?\s*$/.exec(l)).filter((x) => x !== null).map((x) => `${x[1]} ${x[2]}`))].sort();
-  const named = [...edit.inventoryOnly.map((i) => `- ${JSON.stringify(i)}`), ...edit.catalogueOnly.map((i) => `+ ${JSON.stringify(i)}`)].sort();
-  if (!named.length) p.push("no edited identity named");
-  if (JSON.stringify(shown) !== JSON.stringify(named)) p.push(`suite output diff shows ${shown.join(" ") || "nothing"}, not ${named.join(" ")}`);
+  if (!editLines(edit).length) p.push("no edited identity named");
+  if (JSON.stringify(shown) !== JSON.stringify(derived)) p.push(`suite output diff shows ${shown.join(" ") || "nothing"}, not ${derived.join(" ")}`);
   return p;
 }
-const expectEqualityRefusal = (o: RunnerOutcome, c: { dir: string; R: string }, suite: string, edit: InventoryEdit) =>
-  expect(equalityRefusalProblems(o, new Release(c.dir, c.R), c.R, suite, edit)).toEqual([]);
+/** The base is the commit the clone was cut from: R's only parent, and HEAD of this checkout. */
+const expectEqualityRefusal = (o: RunnerOutcome, c: { dir: string; R: string }, suite: string, edit: InventoryEdit) => {
+  expect(git(c.dir, ["rev-parse", `${c.R}^@`])).toBe(head());
+  expect(equalityRefusalProblems(o, new Release(c.dir, c.R), new Release(ROOT, head()), c.R, suite, edit)).toEqual([]);
+};
+
+/**
+ * R3-H1 (hostile review of dde65ca): suite-output.log is not digest-bound, so rewriting its diff once named any
+ * identity the caller claimed, one never exercised included. A run of each N4 shape is rebuilt here without Docker
+ * from HEAD's authorities with the clone's inventory edit, its report bound by SHA-256 as the runner binds it; the
+ * rebuilt run is accepted, and every substitution of the output (with the claim made to match it) is refused.
+ */
+describe("R3-H1 a substituted suite output cannot establish an edited identity", () => {
+  const byteOrder = (a: string, b: string) => Buffer.compare(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"));
+  const R = "0".repeat(40), PHANTOM = "kernel_private.kj_r3_h1_phantom(pg_catalog.int4)";
+  type Shape = "N4a" | "N4b" | "N4c";
+  /** Read at the first test, not at collection: Release refuses a checkout with tracked changes. */
+  let fixture: { base: Release; atBase: string[]; nonManifest: string[]; retyped: string; shapes: Record<Shape, InventoryEdit> } | undefined;
+  const f = () => fixture ??= (() => {
+    const base = new Release(ROOT, head()), atBase = inventoryAt(base), nonManifest = atBase.filter((x) => !x.startsWith("kernel_private.identity_"));
+    const target = nonManifest.find((x) => x.includes("pg_catalog.text"))!, retyped = target.replace("pg_catalog.text", "pg_catalog.bytea");
+    return { base, atBase, nonManifest, retyped, shapes: {
+      N4a: { inventoryOnly: ["kernel_private.kj_b1_e2_extra(pg_catalog.int4)"], catalogueOnly: [] },
+      N4b: { inventoryOnly: [], catalogueOnly: [nonManifest[0]!] },
+      N4c: { inventoryOnly: [retyped], catalogueOnly: [target] } } };
+  })();
+  /** The release at R: HEAD's authorities with the committed inventory edited. */
+  const releaseFor = (e: InventoryEdit): JsonSource => ({ json: (path) => path !== FUNCTION_INVENTORY_PATH ? f().base.json(path)
+    : { ...(f().base.json(path) as object), functions: [...f().atBase.filter((x) => !e.catalogueOnly.includes(x)), ...e.inventoryOnly].sort(byteOrder) } });
+  /** A run as the runner records it: the report and the output in its working directory, the report's digest in the record. */
+  function run(e: InventoryEdit, output = (lines: string[]) => lines) {
+    const release = releaseFor(e), atR = inventoryAt(release), n = f().atBase.length, dir = mkdtempSync(join(tmpdir(), "kj-r3-h1-"));
+    const at = `${dir}/tests/runtime-roles-negative.integration.test.ts`;
+    const counts = `AssertionError: expected [ \u2026(${n}) ] to deeply equal [ \u2026(${atR.length}) ]`;
+    const report = Buffer.from(JSON.stringify({ testResults: [{ name: at, assertionResults: [
+      ...RUNTIME_ROLES.map((role) => ({ fullName: `B1 forbidden powers: ${role} ${EQUALITY_TEST}`, status: "failed", failureMessages: [`${counts}\n    at ${at}:101:116`] })),
+      { fullName: "B1 role separation probe", status: "passed", failureMessages: [] }] }] }));
+    writeFileSync(join(dir, "report.json"), report);
+    writeFileSync(join(dir, "suite-output.log"), output([
+      ...RUNTIME_ROLES.map((role) => ` FAIL  tests/runtime-roles-negative.integration.test.ts:95 > B1 forbidden powers: ${role} > ${EQUALITY_TEST}`),
+      counts, "- Expected", "+ Received", "",
+      ...e.inventoryOnly.map((x) => `-   ${JSON.stringify(x)},`), ...e.catalogueOnly.map((x) => `+   ${JSON.stringify(x)},`)]).join("\n"));
+    const rows = [...expectedG8Rows(release).negative].filter(([, v]) => v.kind === "function").map(([k]) => `G8 evidence ${NEGATIVE_FILE}: missing row ${k}`);
+    const record = { header: { R, regressionSuite: "regression-probes" }, status: "REPOSITORY_QUALIFIED", regressionOutcome: "failed",
+      events: [{ step: "S7", outcome: "passed" }, { step: "L6", outcome: "passed" }],
+      stageT: { outcome: "failed", exitCode: 1, workingDirectory: dir, reportSha256: createHash("sha256").update(report).digest("hex"),
+        problems: ["suite exited 1", ...rows, "REPORT_REFUSED: unsuccessful report"] } };
+    return { o: { exitCode: 0, stdout: "", stderr: "", summary: { status: "REPOSITORY_QUALIFIED" }, record } as unknown as RunnerOutcome, release };
+  }
+  const check = (e: InventoryEdit, claim: InventoryEdit, output?: (lines: string[]) => string[]) => {
+    const { o, release } = run(e, output);
+    return equalityRefusalProblems(o, release, f().base, R, "regression-probes", claim);
+  };
+  const phantomOutput = (lines: string[]) => lines.map((l) => l.replace(/^([-+])\s+".*",$/, `$1   ${JSON.stringify(PHANTOM)},`));
+
+  it.each(["N4a", "N4b", "N4c"] as const)("%s rebuilt is accepted, and the claim must be the release's own edit", (shape) => {
+    const e = f().shapes[shape];
+    expect(check(e, e)).toEqual([]);
+    expect(check(e, { inventoryOnly: e.catalogueOnly, catalogueOnly: e.inventoryOnly }).join("\n")).toMatch(/claimed edit .* is not the release's inventory change/);
+  });
+  it("the review's attack: the output's diff rewritten to a phantom identity and the claim made to match is refused", () => {
+    const real = JSON.stringify(f().shapes.N4a.inventoryOnly[0]), p = check(f().shapes.N4a, { inventoryOnly: [PHANTOM], catalogueOnly: [] }, phantomOutput);
+    expect(p).toContain(`claimed edit - ${JSON.stringify(PHANTOM)} is not the release's inventory change - ${real}`);
+    expect(p).toContain(`suite output diff shows - ${JSON.stringify(PHANTOM)}, not - ${real}`);
+  });
+  it.each([
+    ["a phantom catalogue identity on N4b", "N4b", () => ({ inventoryOnly: [], catalogueOnly: [PHANTOM] }), () => phantomOutput],
+    ["a real but unedited identity claimed on N4b", "N4b", () => ({ inventoryOnly: [], catalogueOnly: [f().nonManifest[1]!] }),
+      () => (l: string[]) => l.map((x) => x.replace(JSON.stringify(f().nonManifest[0]), JSON.stringify(f().nonManifest[1])))],
+    ["one side of N4c dropped from the output and the claim", "N4c", () => ({ inventoryOnly: [f().retyped], catalogueOnly: [] }),
+      () => (l: string[]) => l.filter((x) => !x.startsWith("+   "))],
+    ["a phantom named beside the real N4a identity", "N4a", () => ({ inventoryOnly: [...f().shapes.N4a.inventoryOnly, PHANTOM], catalogueOnly: [] }),
+      () => (l: string[]) => [...l, `-   ${JSON.stringify(PHANTOM)},`]],
+  ] as const)("%s is refused", (_name, shape, claim, output) => {
+    expect(check(f().shapes[shape], claim(), output()).join("\n")).toMatch(/claimed edit .* is not the release's inventory change/);
+  });
+  it("the report's counts must be the base's and R's: a run of another shape is refused", () => {
+    const n = f().atBase.length, n4c = f().shapes.N4c, { o } = run(f().shapes.N4a);
+    expect(equalityRefusalProblems(o, releaseFor(n4c), f().base, R, "regression-probes", n4c).join("\n")).toContain(
+      `B1 forbidden powers: kj_door ${EQUALITY_TEST} compares ${n} with ${n + 1}, not the base's ${n} with R's ${n}`);
+  });
+});
 
 describe("CON-30 G8 evidence collected by the runner with SHA-256s", () => {
   it("a genuine run records both evidence files; the gate verifies them and refuses a copy edited after the run", async () => {

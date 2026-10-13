@@ -2187,6 +2187,51 @@
       "refusals": []
     },
     {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity N4a rebuilt is accepted, and the claim must be the release's own edit",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity N4b rebuilt is accepted, and the claim must be the release's own edit",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity N4c rebuilt is accepted, and the claim must be the release's own edit",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity a phantom catalogue identity on N4b is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity a phantom named beside the real N4a identity is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity a real but unedited identity claimed on N4b is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity one side of N4c dropped from the output and the claim is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity the report's counts must be the base's and R's: a run of another shape is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity the review's attack: the output's diff rewritten to a phantom identity and the claim made to match is refused",
+      "refusals": []
+    },
+    {
       "file": "tests/b1-static.test.ts",
       "name": "27.12.13.6 committed artefacts are HOSTED_COMMITTED only (EPH-12, EPH-16, EPH-19) fails with a committed run record",
       "refusals": []
