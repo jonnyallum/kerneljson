@@ -227,6 +227,12 @@ const NEGATIVE_TEST = "tests/runtime-roles-negative.integration.test.ts";
 export interface InventoryEdit { inventoryOnly: string[]; catalogueOnly: string[] }
 const EQUALITY_TEST = "every function outside the manifest is not executable";
 const EQUALITY_COUNTS = /^AssertionError: expected \[ \u2026\((\d+)\) \] to deeply equal \[ \u2026\((\d+)\) \]\n/;
+/**
+ * CI-1 (run 38632872265): on Linux vitest colours its piped output whether or not CI is set, so the output's lines
+ * carry SGR sequences (ESC [ params m) and match neither check. Only SGR is removed before the lines are read; any
+ * other control sequence is left in place and fails the checks as before. The output still only corroborates.
+ */
+const SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 const inventoryAt = (s: JsonSource) => parseFunctionInventory(s.json(FUNCTION_INVENTORY_PATH)).functions;
 const editLines = (e: InventoryEdit) => [...e.inventoryOnly.map((i) => `- ${JSON.stringify(i)}`), ...e.catalogueOnly.map((i) => `+ ${JSON.stringify(i)}`)].sort();
 interface Report { testResults: { name: string; assertionResults: { fullName: string; status: string; failureMessages: string[] }[] }[] }
@@ -273,7 +279,7 @@ export function equalityRefusalProblems(o: RunnerOutcome, release: JsonSource, b
   const wantFailed = RUNTIME_ROLES.map((role) => `B1 forbidden powers: ${role} ${EQUALITY_TEST}`);
   if (failed.length !== wantFailed.length || wantFailed.some((n) => !failed.includes(n))) p.push(`equality failures: ${failed.join("; ") || "none"}`);
   const outputPath = join(t.workingDirectory, "suite-output.log");
-  const lines = existsSync(outputPath) ? readFileSync(outputPath, "utf8").split(/\r?\n/) : [];
+  const lines = existsSync(outputPath) ? readFileSync(outputPath, "utf8").replace(SGR, "").split(/\r?\n/) : [];
   for (const role of RUNTIME_ROLES)
     if (!lines.some((l) => l.includes("FAIL") && l.includes(`> B1 forbidden powers: ${role} > ${EQUALITY_TEST}`))) p.push(`suite output has no failure line for ${role}`);
   const shown = [...new Set(lines.map((l) => /^\s*([-+])\s+(".*"),?\s*$/.exec(l)).filter((x) => x !== null).map((x) => `${x[1]} ${x[2]}`))].sort();
@@ -346,7 +352,7 @@ describe("R3-H1 a substituted suite output cannot establish an edited identity",
     expect(p).toContain(`claimed edit - ${JSON.stringify(PHANTOM)} is not the release's inventory change - ${real}`);
     expect(p).toContain(`suite output diff shows - ${JSON.stringify(PHANTOM)}, not - ${real}`);
   });
-  it.each([
+  const ATTACKS = [
     ["a phantom catalogue identity on N4b", "N4b", () => ({ inventoryOnly: [], catalogueOnly: [PHANTOM] }), () => phantomOutput],
     ["a real but unedited identity claimed on N4b", "N4b", () => ({ inventoryOnly: [], catalogueOnly: [f().nonManifest[1]!] }),
       () => (l: string[]) => l.map((x) => x.replace(JSON.stringify(f().nonManifest[0]), JSON.stringify(f().nonManifest[1])))],
@@ -354,8 +360,46 @@ describe("R3-H1 a substituted suite output cannot establish an edited identity",
       () => (l: string[]) => l.filter((x) => !x.startsWith("+   "))],
     ["a phantom named beside the real N4a identity", "N4a", () => ({ inventoryOnly: [...f().shapes.N4a.inventoryOnly, PHANTOM], catalogueOnly: [] }),
       () => (l: string[]) => [...l, `-   ${JSON.stringify(PHANTOM)},`]],
-  ] as const)("%s is refused", (_name, shape, claim, output) => {
+  ] as const;
+  it.each(ATTACKS)("%s is refused", (_name, shape, claim, output) => {
     expect(check(f().shapes[shape], claim(), output()).join("\n")).toMatch(/claimed edit .* is not the release's inventory change/);
+  });
+
+  /** CI-1: the output as vitest writes it to a pipe on Linux (sequences as captured from vitest in node:22.19.0-bookworm). */
+  const E = String.fromCharCode(27), sgr = (n: number) => `${E}[${n}m`;
+  const colour = (lines: string[]) => lines.map((l) =>
+    l.startsWith(" FAIL ") ? l.replace(" FAIL ", `${sgr(41)}${sgr(1)} FAIL ${sgr(22)}${sgr(49)}`).replaceAll(" > ", `${sgr(2)} > ${sgr(22)}`)
+      : l.startsWith("-") ? `${sgr(32)}${l}${sgr(39)}` : l.startsWith("+") ? `${sgr(31)}${l}${sgr(39)}` : l);
+  /** The coloured output defeats a check that reads it as it is: no plain failure line and no plain diff line. */
+  const defeatsPlainChecks = (e: InventoryEdit) => {
+    const dir = (run(e, colour).o.record!.stageT as { workingDirectory: string }).workingDirectory;
+    const raw = readFileSync(join(dir, "suite-output.log"), "utf8").split(/\r?\n/);
+    return raw.some((l) => l.includes(E)) && !raw.some((l) => l.includes("FAIL") && l.includes(`> B1 forbidden powers: kj_worker > ${EQUALITY_TEST}`))
+      && !raw.some((l) => /^\s*([-+])\s+(".*"),?\s*$/.test(l));
+  };
+  it.each(["N4a", "N4b", "N4c"] as const)("CI-1 %s rebuilt with vitest's Linux colouring is accepted, and the claim must still be the release's own edit", (shape) => {
+    const e = f().shapes[shape];
+    expect(defeatsPlainChecks(e)).toBe(true);
+    expect(check(e, e, colour)).toEqual([]);
+    expect(check(e, { inventoryOnly: e.catalogueOnly, catalogueOnly: e.inventoryOnly }, colour).join("\n")).toMatch(/claimed edit .* is not the release's inventory change/);
+  });
+  it("CI-1 the review's attack with vitest's Linux colouring is refused with the same two problems", () => {
+    const real = JSON.stringify(f().shapes.N4a.inventoryOnly[0]);
+    const p = check(f().shapes.N4a, { inventoryOnly: [PHANTOM], catalogueOnly: [] }, (l) => colour(phantomOutput(l)));
+    expect(p).toContain(`claimed edit - ${JSON.stringify(PHANTOM)} is not the release's inventory change - ${real}`);
+    expect(p).toContain(`suite output diff shows - ${JSON.stringify(PHANTOM)}, not - ${real}`);
+  });
+  it.each(ATTACKS)("CI-1 %s, with vitest's Linux colouring, is refused", (_name, shape, claim, output) => {
+    expect(check(f().shapes[shape], claim(), (l) => colour(output()(l))).join("\n")).toMatch(/claimed edit .* is not the release's inventory change/);
+  });
+  it("CI-1 a coloured output without a role's failure line is refused", () => {
+    const e = f().shapes.N4a, p = check(e, e, (l) => colour(l.filter((x) => !x.includes("kj_worker"))));
+    expect(p).toEqual(["suite output has no failure line for kj_worker"]);
+  });
+  it("CI-1 only SGR is removed: a diff line carrying another control sequence is not read", () => {
+    const e = f().shapes.N4a, real = JSON.stringify(e.inventoryOnly[0]);
+    const p = check(e, e, (l) => colour(l).map((x) => x.replace(`-   ${real}`, `-${E}[1C  ${real}`)));
+    expect(p).toEqual([`suite output diff shows nothing, not - ${real}`]);
   });
   it("the report's counts must be the base's and R's: a run of another shape is refused", () => {
     const n = f().atBase.length, n4c = f().shapes.N4c, { o } = run(f().shapes.N4a);

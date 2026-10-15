@@ -2188,6 +2188,56 @@
     },
     {
       "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity CI-1 N4a rebuilt with vitest's Linux colouring is accepted, and the claim must still be the release's own edit",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity CI-1 N4b rebuilt with vitest's Linux colouring is accepted, and the claim must still be the release's own edit",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity CI-1 N4c rebuilt with vitest's Linux colouring is accepted, and the claim must still be the release's own edit",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity CI-1 a coloured output without a role's failure line is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity CI-1 a phantom catalogue identity on N4b, with vitest's Linux colouring, is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity CI-1 a phantom named beside the real N4a identity, with vitest's Linux colouring, is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity CI-1 a real but unedited identity claimed on N4b, with vitest's Linux colouring, is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity CI-1 one side of N4c dropped from the output and the claim, with vitest's Linux colouring, is refused",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity CI-1 only SGR is removed: a diff line carrying another control sequence is not read",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
+      "name": "R3-H1 a substituted suite output cannot establish an edited identity CI-1 the review's attack with vitest's Linux colouring is refused with the same two problems",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-staget.test.ts",
       "name": "R3-H1 a substituted suite output cannot establish an edited identity N4a rebuilt is accepted, and the claim must be the release's own edit",
       "refusals": []
     },
