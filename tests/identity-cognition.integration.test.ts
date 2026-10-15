@@ -210,7 +210,24 @@ async function tx(statements: Array<[string, unknown[]?]>): Promise<string> {
     c.release();
   }
 }
-const insertLatch = (taskId: string, stepId: string, mode: string, epoch: number, tenant = KERNEL_TENANT): [string, unknown[]] =>
+/**
+ * CI-3 (run 38632872265): a client whose work threw may still be inside a transaction, open or aborted by a failed
+ * statement. It is released with its error, so the pool destroys it instead of handing it to the next test; no
+ * rollback is issued. A client whose work completed is released normally.
+ */
+async function withClient<T>(work: (c: pg.PoolClient) => Promise<T>): Promise<T> {
+  const c = await pool.connect();
+  let failure: Error | undefined;
+  try {
+    return await work(c);
+  } catch (error) {
+    failure = error instanceof Error ? error : new Error(String(error));
+    throw error;
+  } finally {
+    c.release(failure);
+  }
+}
+const insertLatch =(taskId: string, stepId: string, mode: string, epoch: number, tenant = KERNEL_TENANT): [string, unknown[]] =>
   ["insert into kernel_private.identity_cognition_latches(tenant_id,task_id,step_id,mode,release_epoch) values($1,$2,$3,$4,$5)", [tenant, taskId, stepId, mode, epoch]];
 const insertPin = (p: IdentityCognitionPin, tenant = KERNEL_TENANT): [string, unknown[]] =>
   ["insert into public.identity_pins(tenant_id,task_id,step_id,identity_id,identity_version,pin) values($1,$2,$3,$4,$5,$6)", [tenant, p.taskId, p.stepId, p.identityId, p.identityVersion, p]];
@@ -276,12 +293,11 @@ describe("KJ-P7B-1 against the real ledger", () => {
       expect(await q("select * from kernel_private.identity_cognition_contract_v1")).toEqual([]);
     });
     it("activates atomically: activate_release + marker in ONE transaction; singleton and immutable afterwards", async () => {
-      const c = await pool.connect();
-      try {
+      await withClient(async (c) => {
         await c.query("begin");
         contractEpoch = await activate(c, 1, true);
         await c.query("commit");
-      } finally { c.release(); }
+      });
       expect(contractEpoch).toBe(2);
       expect((await q("select first_release_epoch::int e from kernel_private.identity_cognition_contract_v1"))[0].e).toBe(2);
       expect((await q("select release_id from kernel_private.release_activations where epoch=$1", [contractEpoch]))[0].release_id).toBe(RELEASE);
@@ -335,9 +351,8 @@ describe("KJ-P7B-1 against the real ledger", () => {
       const a = await prepared();
       await facultyPinFor(a.taskId, a.reviewerStep);
       expect(await tx([insertLatch(a.taskId, a.reviewerStep, "NONE", contractEpoch)])).toContain("IDENTITY_LATCH_NOT_ANALYST");
-      const c = await pool.connect();
       let later: number;
-      try { await c.query("begin"); later = await activate(c, contractEpoch, false); await c.query("rollback"); } finally { c.release(); }
+      await withClient(async (c) => { await c.query("begin"); later = await activate(c, contractEpoch, false); await c.query("rollback"); });
       // A higher epoch that really exists but is not the task's binding epoch: refused by the (task, tenant, epoch) FK.
       const e3 = await tx([["select kernel_private.activate_release($1,$2,$3,$4)", [randomUUID(), RELEASE, contractEpoch, { test: "e3" }]], insertLatch(a.taskId, a.analystStep, "NONE", later!)]);
       expect(e3).toMatch(/^23503 .*identity_cognition_latches_binding_epoch/);
@@ -642,10 +657,9 @@ describe("KJ-P7B-1 against the real ledger", () => {
       const { renderIdentityBlock } = await import("../services/kernel/src/identity/projection.js");
       const req = { callId: randomUUID(), taskId: t.taskId, stepId: t.analystStep, trace: { traceId: randomUUID(), correlationId: t.taskId },
         messages: [{ role: "system" as const, content: renderIdentityBlock(pin.projection, pin.projectionDigest) + "analyst" }], maxOutputTokens: 10 };
-      const corrupt = async (sql: string, args: unknown[]) => {
-        const c = await pool.connect();
-        try { await c.query("begin"); await c.query("set local session_replication_role = replica"); await c.query(sql, args); await c.query("commit"); } finally { c.release(); }
-      };
+      const corrupt = (sql: string, args: unknown[]) => withClient(async (c) => {
+        await c.query("begin"); await c.query("set local session_replication_role = replica"); await c.query(sql, args); await c.query("commit");
+      });
       const versionRow = pin.identityVersionId;
       await corrupt("update public.identity_versions set document = jsonb_set(document, '{sections,classC,persona}', '\"corrupted\"') where id=$1", [versionRow]);
       try {
@@ -653,6 +667,48 @@ describe("KJ-P7B-1 against the real ledger", () => {
       } finally {
         await corrupt("update public.identity_versions set document = $2 where id=$1", [versionRow, pin.identityVersion === 1 ? KERNEL_V1 : { ...KERNEL_V1, version: 2 }]);
       }
+    });
+  });
+
+  describe("CI-3 a connection whose work failed is never handed out again", () => {
+    /** Runs a transaction that a failed statement leaves aborted (25P02 for anything after it) and returns its backend. */
+    const abortedBackend = async () => {
+      let pid = 0;
+      await expect(withClient(async (c) => {
+        await c.query("begin");
+        pid = Number((await c.query("select pg_backend_pid() p")).rows[0].p);
+        await c.query("select 1/0");
+      })).rejects.toThrow("division by zero");
+      expect(pid).toBeGreaterThan(0);
+      return pid;
+    };
+    it("the client is destroyed: its backend leaves the server, and no client the pool hands out is that backend or not idle", async () => {
+      const pid = await abortedBackend();
+      let present = true;
+      for (const deadline = Date.now() + 10_000; present && Date.now() < deadline;) {
+        present = (await pool.query("select 1 from pg_stat_activity where pid=$1", [pid])).rows.length > 0;
+        if (present) await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(present).toBe(false);
+      const held: pg.PoolClient[] = [];
+      try {
+        for (let i = 0, n = pool.idleCount + 1; i < n; i++) held.push(await pool.connect());
+        for (const c of held) {
+          expect(c.getTransactionStatus()).toBe("I");
+          expect(Number((await c.query("select pg_backend_pid() p")).rows[0].p)).not.toBe(pid);
+        }
+      } finally {
+        for (const c of held) c.release();
+      }
+    });
+    it("a completed transaction's client is released normally and its work is kept", async () => {
+      const n = await withClient(async (c) => {
+        await c.query("begin");
+        const r = Number((await c.query("select 41 + 1 n")).rows[0].n);
+        await c.query("commit");
+        return r;
+      });
+      expect(n).toBe(42);
     });
   });
 });
