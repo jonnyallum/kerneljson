@@ -119,7 +119,10 @@ async function ownerChange(identityId: string, persona: string) {
 }
 
 beforeAll(async () => {
-  compose("down", "--volumes");
+  // KJ-P8 B1 CI-2: reset only Restate, the worker and Restate's journal volume (restate-test-data), never db. A10.7
+  // 2-R4e(2) requires every connection in a G7 invocation to reach the container verified before it; the plan database
+  // below is still new (testDatabase gives it a unique name), so the workflow starts from a clean journal and database.
+  compose("down", "--volumes", "restate", "worker");
   database = await testDatabase("kj_identity_workflow");
   pool = new pg.Pool({ connectionString: database.url });
   useStackDatabase(database.name);
