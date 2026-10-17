@@ -1,6 +1,8 @@
 # KJ-P8 B1 entry brief: least-privilege runtime database roles
 
-Status: BRIEF ONLY, reconciled to ADR-0023 revision 2.6. It extracts the B1 contract from the sealed design so an
+Status: BRIEF ONLY. **Status at the candidate (17/10/2026): technical CI passed at `f5387b8`; not qualified.** Reconciled to ADR-0023 revisions 2.7 to
+2.7.9 at `af2f7320aae32eaa0ce699b1c09d015371f156d5` for candidate `f5387b8a161e38c2165f51974f24b10925e27952` (tree `c0a4aba0`, governed run `38977990692`, `push`, all 26 jobs `success`); see "Reconciliation to revisions 2.7 to 2.7.9"
+below. The revision 2.6 text that follows is retained where those revisions leave it standing. It extracts the B1 contract from the sealed design so an
 engineering session starts from one place. It adds nothing to the design and changes nothing in it. Where this brief
 and the ADR differ, the ADR wins. B1 is authorised for remediation and qualification only; it is not merged, not
 deployed and not cut over.
@@ -16,6 +18,27 @@ was BLOCKED.
 Reconciliation note: the revision 2.3 version of this brief said B1 changes no P1 to P7 trigger and that trigger
 functions are `security invoker`. Revision 2.5 replaces that: B1 changes exactly one existing function to
 `SECURITY DEFINER` (section 15 of this brief), and the definer inventory is stage-aware (section 16).
+
+## Reconciliation to revisions 2.7 to 2.7.9 (ADR-0023 27.12.8 item 11; docs only)
+
+Design: ADR-0023 revision 2.7.9 at `af2f7320aae32eaa0ce699b1c09d015371f156d5`, section 27, the closure contract named
+by the owner directive of 17/10/2026; revision 2.7.2 was hostile-sealed at `3acd6b2` and 2.7.5 at `c7c0fba`. Where this
+brief and the ADR differ, the ADR wins. What revisions 2.7 to 2.7.9 change for B1, by revision (ADR section 0):
+
+| Revision | What it adds or replaces for B1 | ADR sections |
+|---|---|---|
+| 2.7 | the one co-resident platform exception, `public.rls_auto_enable()` with event trigger `ensure_rls`, admitted only by exact pin and a frozen target declaration; it grants nothing and B1 never touches its ACL. `ACTUAL` = platform baseline, co-resident exceptions and the stage's own definer (replaces section 16's two terms); the frozen `count = 1` check becomes exact set equality | 27.10.1, 27.12, 27.12.7 |
+| 2.7.1 | three mandatory pre-COMMIT settings on every target (absence is never an empty declaration); the database name is checked; health makes a missing, malformed or incomplete declaration P0 | 27.12.6, 27.12.7, 27.12.9 cases 31 to 35 |
+| 2.7.2 | no schema-wide routine ACL statement in B1 (one enumerated cleanup); B1 is applied only by the committed runner through the pinned Supabase CLI after a read-only ledger gate; production refuses at that gate while the six historical ledger rows stay unresolved | 27.12.5, 27.12.11 |
+| 2.7.3, 2.7.4 | declaration and baseline modes `HOSTED_COMMITTED` and `EPHEMERAL_RUN_BOUND`; deployed health accepts hosted artefacts only; the closed hook registry and the computed qualification status | 27.10.4, 27.12.13 |
+| 2.7.5 | the non-vacuous `REPOSITORY_QUALIFIED` predicate over a planned application sequence | 27.12.13.3, 27.12.13.6 |
+| 2.7.6 | the four test lanes and stage T: regression that needs B1 runs only as a registered consumer of a runner-created cluster | 27.12.15 |
+| 2.7.7, 2.7.8, 2.7.9 | the retained gates G1 to G9 (trace and database log, zero refusal, discover inventory, protected baseline 224, skips 62, recovery at least 27, three mutation suites), the coverage partition and CI gate over every registered suite, expanded-report test identity, exact refusal accounting, the pinned collection and the log extraction | 27.6 item 3, 27.12.15 |
+
+In particular section 9 ("full P1 to P7 requalification") is now met only through those lanes and gates, section 10
+(cutover) only through the runner and ledger gate of 27.12.11, and section 14's artefacts now include the frozen
+co-resident declaration beside the platform baseline (27.12.6). This brief claims no qualification. The independent
+B1 review required by 27.9.6 has not approved this candidate.
 
 ## Rule
 

@@ -5,6 +5,12 @@ ADR-0023 revision 2.7.9 at sealed design commit `af2f7320aae32eaa0ce699b1c09d015
 full for this record), as constrained by the [owner ruling on the helper rethrow](KJ_P8_B1_R279_OWNER_RULING.md).
 This is a self-review. It is not a hostile review and claims no approval.
 
+**Anchor at the candidate (17/10/2026; 27.12.8 item 11).** Status: technical CI passed at `f5387b8`; not qualified. This record was anchored at
+`e97726c` (run `38075242249`). The current candidate is `f5387b8a161e38c2165f51974f24b10925e27952` (tree `c0a4aba0`, governed run `38977990692`, `push`, all 26 jobs `success`); its gate artefact (sha256 `a4af6c68…e54e`) reports
+problems `[]`, with G2/G3 "224/224; recovery 31>=27; skips 62; total 2817". Commits `e97726c..f5387b8` carry no
+qualification claim. The rows below at `e97726c` are retained as history and are evidence for that SHA only. The
+independent B1 review of 27.9.6 at `f5387b8` returned BLOCK; that verdict is not rewritten here.
+
 Status vocabulary, used exactly:
 
 | Status | Meaning |
@@ -206,6 +212,7 @@ frozen-test change in `e97726c` awaits independent review (section 6).
 | `38056781302` | `e31e216` | FAIL | `regression-definers-discover` (section 6); `runner-cases (refusals)` (CON-4, CON-9, both Linux timing; change committed in `042d327`, passed on Linux in `38066367638` and `38075242249`); gate: 235 problems = definers-discover + the refused runner-cases report + its coverage cascade |
 | `38066367638` | `6147cbc` | FAIL | `regression-definers-discover` only (the two skips of section 6); gate: that suite alone. `runner-cases (refusals)` passed on Linux, CON-4 and CON-9 included. The gate's G2/G3 recomputation: 2,670 tests, 0 failed, 19 skipped, recovery 31, no baseline, unexpected-skip or vanished-skip deviation |
 | `38075242249` | `e97726c` | PASS | none: all 26 jobs `success`; gate "CI gate passed for e97726ce4d9f6ca0352d847abd31f9168d373c80" (section 6b) |
+| `38977990692` | `f5387b8` | PASS | none: all 26 jobs `success`; gate problems `[]`, G2/G3 total 2817 (technical CI only; not qualified) |
 
 At `e31e216` every other job passed on Linux:
 - **Static:** typecheck, lint, build, and the G1 generators and collection checks.

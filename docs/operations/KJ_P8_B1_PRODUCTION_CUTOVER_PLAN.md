@@ -4,9 +4,32 @@ Status: PLAN ONLY. **Nothing in this document has been executed.** No production
 configuration or deployment was touched while preparing the B1 candidate. Executing this plan needs its own explicit
 authorisation and its own change window (new-system `docs/migration/CHANGE_WINDOWS.md`).
 
-Design: ADR-0023 revision 2.6, section 27 (including 27.9, 27.10 and 27.11), hostile-sealed APPROVE at
-`7712702020ef5d3d841f68f4d425d9707fb703eb`.
-Candidate: branch `feat/kjp8-b1-runtime-least-privilege` (see `KJ_P8_B1_IMPLEMENTATION_REPORT.md`).
+Design: ADR-0023 revision 2.7.9 at `af2f7320aae32eaa0ce699b1c09d015371f156d5`, section 27, reconciled to revisions
+2.7 to 2.7.9 in section 0 below (first written against revision 2.6 at `7712702`).
+Candidate: `f5387b8a161e38c2165f51974f24b10925e27952` (tree `c0a4aba0`, governed run `38977990692`, `push`, all 26 jobs `success`) (see `KJ_P8_B1_IMPLEMENTATION_REPORT.md`).
+**Status at the candidate (17/10/2026): technical CI passed at `f5387b8`; not qualified.** Production cutover stays BLOCKED (section 0).
+
+## 0. Reconciliation to revisions 2.7 to 2.7.9 (ADR-0023 27.12.8 item 11; docs only)
+
+Where a later section of this plan and this list differ, this list and the ADR win:
+- **How B1 is applied** (replaces section 3 step 2's "as the owner, in one transaction"): only by the committed hosted
+  runner (`scripts/b1/hosted.ts`) through the pinned Supabase CLI 2.120.0 (`infrastructure/database/b1-engine-pins.json`),
+  over migration files exported byte-exactly from the release commit, after the read-only ledger gate, with the three
+  settings of 27.12.7 P3 as startup parameters; the runner writes the cutover record (27.12.6, 27.12.11). It never
+  passes `--include-all` and never runs `migration repair`, `db push` or `db reset`.
+- **Target artefacts** (extends precondition 4a): a `HOSTED_COMMITTED` co-resident declaration
+  (`infrastructure/database/co-resident-platform-exceptions.json`) is snapshotted in the same READ ONLY transaction
+  as the platform baseline and committed beside it; neither may carry a `run` field (27.10.4, 27.12.6, 27.12.13). An
+  empty declaration is still required on a target without the helper.
+- **`public.rls_auto_enable()` and `ensure_rls`** are left exactly as they are; B1 does not relocate, disable or
+  re-grant them, and contains no schema-wide routine ACL statement (27.12, 27.12.5).
+- **Ledger gate.** The runner refuses unless the live ledger equals the sealed base set exactly. Production's six
+  historical ledger rows are unresolved and unauthorised (section 26 of the ADR), so production refuses at that gate
+  today: the cutover is BLOCKED until a separate, authorised track resolves them (27.12.11).
+- **Precondition 2** reads: governed CI green on the exact SHA, including the three G7 mutation suites (faculties,
+  identity, identity-cognition) and every registered stage T suite and its discover twin (27.6 item 3, 27.12.15).
+- **Precondition 1** needs the independent B1 review of 27.9.6 to approve that SHA; it has not approved `f5387b8`.
+- **Step 11 health** includes the declaration assertions of 27.12.6; each failure listed there is P0.
 
 ## 1. What changes in production
 
@@ -25,7 +48,7 @@ Nothing else changes: no table, column, trigger body, owner or existing migratio
 ## 2. Preconditions (all must hold before the window opens)
 
 1. The exact candidate SHA has an independent hostile review with verdict APPROVE.
-2. CI is green on that SHA, including both mutation jobs.
+2. CI is green on that SHA, including the three G7 mutation suites (section 0).
 3. The frozen manifest has been reviewed line by line by a human.
 4. The `security definer` change is ruled: ADR-0023 revision 2.5 section 27.9, sealed at `424f85c`. Closed.
 4a. **The target platform `SECURITY DEFINER` baseline is frozen** (ADR 27.10.4). Before any B1 migration on the target,
@@ -71,7 +94,8 @@ Each step has a check chosen before acting and a result that means failure.
 
 1. **Hold ingress.** Stop new admissions at the door (existing procedure). Check: no new `task_admissions` row for
    60 seconds.
-2. **Apply the B1 migration** as the owner, in one transaction: `20261002090000_runtime_least_privilege_roles.sql`.
+2. **Apply the B1 migration** `20261002090000_runtime_least_privilege_roles.sql` through the hosted runner and pinned
+   engine only (section 0; revision 2.6 said "as the owner, in one transaction", which 27.12.11 replaces).
    Its own pre-COMMIT check refuses to commit if a role's attributes are not as sealed, or if the stamp function is not
    exactly as ADR 27.9.4 requires (definer, `proconfig`, owner-only ACL, source digest equal to the pin, one function of
    that name, one KernelJSON definer).

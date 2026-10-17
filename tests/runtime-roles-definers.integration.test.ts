@@ -1,6 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import pg from "pg";
 import { testDatabase, testDatabaseArtifacts, type TestDatabase } from "./support/database.js";
 import { fetchRuntimeRoles } from "../services/kernel/src/health/collect.js";
@@ -9,6 +11,16 @@ import type { Declaration } from "../services/kernel/src/database/co-resident.js
 import {
   INVENTORY_SQL_SHA256, baselineBindingProblems, definerInventoryProblems, loadStageManifest, readStampFacts, stageFunctions, type PlatformBaseline,
 } from "../services/kernel/src/database/security-definers.js";
+import { evaluateDatabase } from "../services/kernel/src/health/evaluate.js";
+import { resolvePolicy } from "../services/kernel/src/alerting/policy.js";
+
+// 27.12.9 cases 31 to 35: health reads the declaration file through loadDeclaration(). Those cases point that one read
+// at a scratch file; with no scratch file set the real loader and its committed path are used unchanged.
+const declarationFile = vi.hoisted(() => ({ path: undefined as string | undefined }));
+vi.mock("../services/kernel/src/database/security-definers.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/kernel/src/database/security-definers.js")>();
+  return { ...actual, loadDeclaration: (path?: string) => actual.loadDeclaration(path ?? declarationFile.path) };
+});
 
 /**
  * KJ-P8 B1 - the SECURITY DEFINER inventory and the section 27.9 exception against a real catalogue
@@ -314,5 +326,70 @@ describe("27.10.2 the excluded-schema predicate, observed", () => {
     evidence["reservedPrefix"] = { statement: "create schema pg_kj_probe", sqlstate: code };
     if (code === "OK") await pool.query(`drop schema pg_kj_probe`);
     expect(code).toBe("42939");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// 27.12.9 cases 31 to 35 (rule: for health, failure means a named problem and P0). Each fault is written to the
+// declaration file that database.runtimeRolesLeastPrivilege reads, health is read as kj_worker exactly as the green check
+// above, and the result is evaluated by the health model and the alert policy. The control row is the same run-bound
+// declaration, unchanged, read from that file.
+type DeclarationCase = [label: string, text: () => string | null, named: (problem: string) => boolean];
+const declarationText = (edit: (o: Record<string, unknown>) => void = () => undefined) => {
+  const o = JSON.parse(JSON.stringify(declaration)) as Record<string, unknown>;
+  edit(o);
+  return JSON.stringify(o, null, 2) + "\n";
+};
+const provenanceOf = (o: Record<string, unknown>) => o["provenance"] as Record<string, unknown>;
+const refused = (fragment: RegExp) => (p: string) => p.startsWith("runtime role qualification failed: ") && fragment.test(p);
+const zodPath = (...path: string[]) => new RegExp(`"path": \\[\\s*${path.map((k) => `"${k}"`).join(",\\s*")}\\s*\\]`);
+const REQUIRED_FIELDS = ["kind", "environment", "provenance", "pinsSha256", "setSha256", "entries", "mode", "run"] as const;
+const DECLARATION_CASES: DeclarationCase[] = [
+  ["control: the run-bound declaration, unchanged, read from the file is green", () => declarationText(), () => false],
+  ["case 31: declaration file missing", () => null, (p) => p === "TARGET_CO_RESIDENT_DECLARATION_PENDING: no frozen co-resident declaration"],
+  ["case 32: declaration not valid JSON", () => "{not json\n", refused(/^runtime role qualification failed: INVALID_JSON at byte offset [0-9]+$/)],
+  ["case 32: truncated file", () => { const t = declarationText(); return t.slice(0, Math.floor(t.length / 2)); },
+    refused(/^runtime role qualification failed: INVALID_JSON at byte offset [0-9]+$/)],
+  ["case 32: a byte-order mark before the JSON", () => "\uFEFF" + declarationText(), refused(/^runtime role qualification failed: INVALID_JSON at byte offset 0$/)],
+  ["case 33: wrong kind", () => declarationText((o) => { o["kind"] = "kerneljson:security-definer-platform-baseline/v1"; }), refused(zodPath("kind"))],
+  ["case 33: kind /v2", () => declarationText((o) => { o["kind"] = "kerneljson:co-resident-platform-exceptions/v2"; }), refused(zodPath("kind"))],
+  ["case 33: kind missing", () => declarationText((o) => { delete o["kind"]; }), refused(zodPath("kind"))],
+  ...REQUIRED_FIELDS.map((field): DeclarationCase => [`case 34: required field ${field} removed`, () => declarationText((o) => { delete o[field]; }),
+    refused(field === "mode" ? /"discriminator": "mode"/ : zodPath(field))]),
+  ["case 34: one unknown field added", () => declarationText((o) => { o["exceptions"] = []; }), refused(/Unrecognized key: \\"exceptions\\"/)],
+  ["case 35: pinsSha256 one character changed", () => declarationText((o) => { const v = o["pinsSha256"] as string; o["pinsSha256"] = (v[0] === "0" ? "1" : "0") + v.slice(1); }),
+    (p) => p === "runtime role qualification failed: co-resident pinsSha256 mismatch"],
+  ["case 35: setSha256 malformed (uppercase)", () => declarationText((o) => { o["setSha256"] = (o["setSha256"] as string).toUpperCase(); }), refused(zodPath("setSha256"))],
+  ["case 35: setSha256 malformed (63 characters)", () => declarationText((o) => { o["setSha256"] = (o["setSha256"] as string).slice(1); }), refused(zodPath("setSha256"))],
+  ["case 35: declared database not the live value", () => declarationText((o) => { provenanceOf(o)["database"] = "kj_b1_other"; }),
+    (p) => p === `platform baseline belongs to database kj_b1_other, not ${name}`],
+  ["case 35: declared systemIdentifier not the live value", () => declarationText((o) => { provenanceOf(o)["systemIdentifier"] = "1"; }),
+    (p) => /^platform baseline belongs to system 1, not this database's [0-9]+$/.test(p)],
+  ["case 35: systemIdentifier malformed", () => declarationText((o) => { provenanceOf(o)["systemIdentifier"] = "0x6ad"; }), refused(zodPath("provenance", "systemIdentifier"))],
+];
+describe("27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0", () => {
+  let dir = "";
+  beforeAll(() => { dir = mkdtempSync(join(tmpdir(), "kj-b1-declaration-")); });
+  afterAll(() => { declarationFile.path = undefined; if (dir) rmSync(dir, { recursive: true, force: true }); });
+  it.each(DECLARATION_CASES)("%s", async (label, text, named) => {
+    const file = join(dir, `${DECLARATION_CASES.findIndex((c) => c[0] === label)}.json`);
+    const body = text();
+    if (body !== null) writeFileSync(file, body);
+    declarationFile.path = file;
+    let observed: Awaited<ReturnType<typeof fetchRuntimeRoles>>;
+    try { observed = await fetchRuntimeRoles(worker, { baseline, run }); } finally { declarationFile.path = undefined; }
+    const check = evaluateDatabase({ reachable: true, scheduleReadOk: true, taskReadOk: true, runtimeRoles: observed }, new Date().toISOString())
+      .checks.find((c) => c.id === "database.runtimeRolesLeastPrivilege")!;
+    const severity = resolvePolicy(check.id).severityFor(check.status);
+    if (label.startsWith("control:")) {
+      expect(observed).toEqual({ available: true, problems: [] });
+      expect(severity).toBeNull();
+      return;
+    }
+    expect(observed.available, JSON.stringify(observed)).toBe(true);
+    const problems = observed.available ? observed.problems : [];
+    expect(problems.some(named), JSON.stringify(problems)).toBe(true);
+    expect(check.status).toBe("CRITICAL");
+    expect(severity).toBe("P0");
   });
 });

@@ -50,6 +50,7 @@ describe("27.12.13.3 the ephemeral entry point accepts no other input (EPH-3, EP
   it("refuses an unregistered hook combination",()=>refusedBeforeL1(eph(head(),"--hook","ledger-absent","--hook","ledger-extra"),/hook combination or profile not registered/),CASE_TIMEOUT);
   it("refuses a hook with a profile its expectation does not name",()=>refusedBeforeL1(["--release",head(),"--profile","platform-definer-fixture","--hook","ledger-absent"],/hook combination or profile not registered/),CASE_TIMEOUT);
   it("refuses an unknown regression suite id",()=>refusedBeforeL1(eph(head(),"--regression-suite","regression-unknown"),/EPHEMERAL_REFUSED: unknown regression suite id/),CASE_TIMEOUT);
+  it("refuses a regression suite run with a profile other than its registered one (CON-31)",()=>refusedBeforeL1(eph(head(),"--regression-suite","regression-definers"),/EPHEMERAL_REFUSED: regression suite profile differs/),CASE_TIMEOUT);
   it("refuses a regression suite together with a hook (CON-3)",()=>refusedBeforeL1(eph(head(),"--hook","ledger-absent","--regression-suite","regression-enforce"),/cannot be combined with a hook/),CASE_TIMEOUT);
   it("refuses an unknown profile",()=>refusedBeforeL1(["--release",head(),"--profile","platform"],/EPHEMERAL_REFUSED: expected --release/),CASE_TIMEOUT);
 });

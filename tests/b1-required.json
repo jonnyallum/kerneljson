@@ -108,6 +108,11 @@
     },
     {
       "file": "tests/b1-coverage.test.ts",
+      "name": "coverage cannot be recovered from an empty table or a failed setup refuses protected-renamed",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-coverage.test.ts",
       "name": "coverage cannot be recovered from an empty table or a failed setup refuses recovery-26",
       "refusals": []
     },
@@ -1643,6 +1648,11 @@
     },
     {
       "file": "tests/b1-runner-refusals.test.ts",
+      "name": "27.12.13.3 the ephemeral entry point accepts no other input (EPH-3, EPH-21, EPH-22, EPH-25, CON-2, CON-3) refuses a regression suite run with a profile other than its registered one (CON-31)",
+      "refusals": []
+    },
+    {
+      "file": "tests/b1-runner-refusals.test.ts",
       "name": "27.12.13.3 the ephemeral entry point accepts no other input (EPH-3, EPH-21, EPH-22, EPH-25, CON-2, CON-3) refuses a regression suite together with a hook (CON-3)",
       "refusals": []
     },
@@ -3089,6 +3099,121 @@
     {
       "file": "tests/runtime-roles-definers.integration.test.ts",
       "name": "27.10.4 the read-only platform snapshot was taken before B1 in a READ ONLY transaction with an empty search_path, and holds exactly the platform definers",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 31: declaration file missing",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 32: a byte-order mark before the JSON",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 32: declaration not valid JSON",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 32: truncated file",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 33: kind /v2",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 33: kind missing",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 33: wrong kind",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 34: one unknown field added",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 34: required field entries removed",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 34: required field environment removed",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 34: required field kind removed",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 34: required field mode removed",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 34: required field pinsSha256 removed",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 34: required field provenance removed",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 34: required field run removed",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 34: required field setSha256 removed",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 35: declared database not the live value",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 35: declared systemIdentifier not the live value",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 35: pinsSha256 one character changed",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 35: setSha256 malformed (63 characters)",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 35: setSha256 malformed (uppercase)",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 case 35: systemIdentifier malformed",
+      "refusals": []
+    },
+    {
+      "file": "tests/runtime-roles-definers.integration.test.ts",
+      "name": "27.12.9 cases 31 to 35: a missing or faulty declaration is a named problem and P0 control: the run-bound declaration, unchanged, read from the file is green",
       "refusals": []
     },
     {

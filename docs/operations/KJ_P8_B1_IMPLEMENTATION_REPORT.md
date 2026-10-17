@@ -1,6 +1,14 @@
 # KJ-P8 B1 implementation report: least-privilege runtime database roles
 
-> **Current status (10/10/2026):** the governed `gate` job concluded `success` at
+> **Current status (17/10/2026): technical CI passed at `f5387b8`; not qualified.** Design: ADR-0023 revision 2.7.9 at `af2f732` (revisions 2.7 to 2.7.9;
+> 27.12.8 item 11). Candidate `f5387b8a161e38c2165f51974f24b10925e27952` (tree `c0a4aba0`, governed run `38977990692`, `push`, all 26 jobs `success`). The gate artefact (sha256 `a4af6c68…e54e`) reports problems `[]`; G2/G3 read
+> "224/224; recovery 31>=27; skips 62; total 2817"; lane A 1,776 tests; G7 5/57/62. That evidence is for `f5387b8`
+> only. The independent B1 review of 27.9.6 at `f5387b8` returned BLOCK on six items; the next commit adds the missing
+> cases (health 31 to 35, CON-31, the CON-17/CON-19 oracles) and this reconciliation, and needs its own governed run;
+> the registry-schema and lane-move items await an owner-sealed erratum. No qualification of any level is claimed, and
+> the "Repository-qualified" wording below is a revision 2.6 historical status, not a claim under revision 2.7.9.
+>
+> **Earlier status (10/10/2026, historical):** the governed `gate` job concluded `success` at
 > `e97726ce4d9f6ca0352d847abd31f9168d373c80` (run `38075242249`, Linux engine, `push`). All 26 jobs succeeded. The
 > gate's G2/G3 result reads "Baseline retained: 224/224 passing; recovery 31>=27; intentional env-gated skips 62;
 > total 2670". That evidence is for `e97726c` only. A later documentation-only commit, including the one that adds this
@@ -64,8 +72,8 @@ Outstanding: complete closed hook registries; stage-T plans and consumers; lane 
 > rethrow behaviour. See [the contradiction report](KJ_P8_B1_R279_DESIGN_CONTRADICTION.md).
 > Remediation is incomplete and no R279 qualification is claimed. Historical evidence below is retained.
 
-Status: ENGINEERING CANDIDATE, not merged, not deployed. **Repository-qualified; target platform baseline pending
-(section 12).** Production was not touched. No P8A-0 object exists in this candidate.
+Status (historical, revision 2.6 at `74869ef`; superseded by the current status above): ENGINEERING CANDIDATE, not
+merged, not deployed. **Repository-qualified; target platform baseline pending (section 12).** Production was not touched. No P8A-0 object exists in this candidate.
 
 Design authority: ADR-0023 revision 2.6, section 27 (including 27.9, 27.10 and 27.11), hostile-sealed APPROVE at
 `7712702020ef5d3d841f68f4d425d9707fb703eb` on branch `design/kjp8-reflection-governed-growth`, on revision 2.5

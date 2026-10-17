@@ -83,16 +83,31 @@ describe("coverage cannot be recovered from an empty table or a failed setup",()
     expect(partitionProblems(f.partition,Object.keys(f.partition.files),f.collection,f.registry)).toEqual([]);
     expect(coverageProblems(f.partition,f.collection,f.reports,f.baseline,f.required)).toEqual([]);
   });
-  it.each(["protected","required-each-empty","missing-location","skip-vanished","skip-runs","gated-skip","recovery-26"])("refuses %s",fault=>{
+  it.each(["protected","protected-renamed","required-each-empty","missing-location","skip-vanished","skip-runs","gated-skip","recovery-26"])("refuses %s",fault=>{
     const f=fixture(),report=f.reports.get("regression-enforce")!;
-    if(fault==="protected") report.entries.shift();
+    // CON-17 and CON-19: a removed or renamed test leaves the pinned collection and the report together, so source
+    // coverage still agrees and only G2 (the protected rows) or G3 (recovery) can see it; their exact problems are asserted.
+    const drop=(e:ReportEntry)=>{
+      report.entries.splice(report.entries.indexOf(e),1);
+      f.collection.splice(f.collection.findIndex(c=>c.file===e.file && c.name===e.name),1);
+      return `protected test missing or not passed: ${e.file}: ${e.name}`;
+    };
+    let expected:string[]|undefined;
+    if(fault==="protected") expected=[drop(report.entries[0]!)];
+    if(fault==="protected-renamed"){
+      const e=report.entries[0]!,c=f.collection.find(x=>x.file===e.file && x.name===e.name)!,old=e.name;
+      e.name=c.name=`${old} (renamed)`;
+      expected=[`protected test missing or not passed: ${e.file}: ${old}`];
+    }
+    if(fault==="recovery-26") expected=[drop(report.entries.find(e=>e.file==="tests/recovery.test.ts")!),"recovery passed fewer than 27"];
     if(fault==="required-each-empty") f.reports.get("runner-cases")!.entries=[];
     if(fault==="missing-location") report.entries[0]!.location={line:99999,column:1};
     if(fault==="skip-vanished") report.entries=report.entries.filter(e=>e.status!=="skipped");
     if(fault==="skip-runs") report.entries.find(e=>e.status==="skipped")!.status="passed";
     if(fault==="gated-skip") f.reports.get("regression-gated")!.entries[0]!.status="skipped";
-    if(fault==="recovery-26") report.entries.splice(report.entries.findIndex(e=>e.file==="tests/recovery.test.ts"),1);
-    expect(coverageProblems(f.partition,f.collection,f.reports,f.baseline,f.required).length).toBeGreaterThan(0);
+    const problems=coverageProblems(f.partition,f.collection,f.reports,f.baseline,f.required);
+    if(expected) expect(problems).toEqual(expected);
+    else expect(problems.length).toBeGreaterThan(0);
   });
   it("refuses a file omitted from the partition or registry",()=>{
     const f=fixture();
