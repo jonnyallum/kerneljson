@@ -12,6 +12,8 @@ export const RecipeId = z.enum([
   "repo-analysis-mission/v1",
   // KJ-P7A: a governed Primary Identity change, through IdentityChangeWorkflowV1. See ADR-0021.
   "identity-change/v1",
+  // The daily morning brief: the repo-analysis shape over GitHub activity and the kernel's own state.
+  "morning-brief/v1",
 ]);
 export type RecipeId = z.infer<typeof RecipeId>;
 export const KernelSubmission = z.strictObject({

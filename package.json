@@ -14,6 +14,7 @@
     "health": "tsx services/kernel/src/health/cli.ts",
     "alerts": "tsx services/kernel/src/alerting/cli.ts",
     "mission": "tsx services/kernel/src/mission/mission-cli.ts",
+    "brief:dry-run": "tsx services/kernel/src/mission/brief-cli.ts",
     "alerts:outbox-gate": "tsx services/kernel/src/alerting/outbox-gate-cli.ts",
     "alerts:test-notification": "tsx services/kernel/src/alerting/test-notification-cli.ts",
     "telegram:discover-chat": "tsx services/kernel/src/alerting/telegram-discover-cli.ts",

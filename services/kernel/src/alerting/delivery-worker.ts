@@ -1,5 +1,6 @@
 import { decideNextOutboxState, recoverIfStaleSending } from "./outbox.js";
 import { isOperatorReplyCheckId } from "./operator-reply.js";
+import { isBriefCompletedCheckId } from "./brief-notice.js";
 import type { NotificationOutboxStore } from "./outbox-store.js";
 import {
   DEFAULT_DELIVERY_CONFIG,
@@ -126,6 +127,8 @@ function rowToPayload(row: NotificationOutboxRow): NotificationPayload {
   // KJ-P4A: the single exception. An operator reply IS its text (see operator-reply.ts for why that is
   // safe); every other row keeps the synthetic summary above.
   if (isOperatorReplyCheckId(row.checkId)) return payload;
+  // A completed morning brief is its text too (see brief-notice.ts).
+  if (isBriefCompletedCheckId(row.checkId)) return payload;
   return { ...payload, message: `${row.checkId}: ${row.kind} (${row.severity})` };
 }
 

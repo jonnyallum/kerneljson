@@ -10,8 +10,9 @@ import {
 import { planTask, orderedSteps, projectStep } from "../planner/index.js";
 import { digest } from "../deterministic.js";
 import { assertClaudeMdReceipt } from "../../../../packages/runtimes/src/index.js";
-import { MISSION_RECIPE } from "../../../../packages/contracts/src/index.js";
+import { BRIEF_RECIPE, MISSION_RECIPE } from "../../../../packages/contracts/src/index.js";
 import { verifyMissionCompletion } from "../mission/verify.js";
+import { verifyBriefCompletion } from "../mission/verify-brief.js";
 
 /** Approved-digest config threaded from the worker so the completion boundary can
  *  independently enforce the canary drift check over the persisted receipt. */
@@ -68,6 +69,11 @@ export function verifyPlanCompletion(
   // KJ-P3 mission: every check is re-derived from persisted evidence, not from the workflow.
   if (plan.recipe === MISSION_RECIPE) {
     verifyMissionCompletion(task, outcome, plan, steps, records);
+    return;
+  }
+  // The morning brief: the same discipline, its own citation checks.
+  if (plan.recipe === BRIEF_RECIPE) {
+    verifyBriefCompletion(task, outcome, plan, steps, records);
     return;
   }
   // Capability recipe: the deterministic re-derivation below cannot reproduce a

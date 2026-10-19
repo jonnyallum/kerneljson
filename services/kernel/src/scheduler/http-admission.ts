@@ -31,8 +31,16 @@ export interface HttpAdmissionOptions {
    *  same `(scheduleId, fireWindowKey)` always yields the same payload under one
    *  Idempotency-Key; a varying objective would trip the 409 payload-conflict guard. */
   objectiveFor?: (req: AdmissionRequestInput) => string;
+  /** Per-schedule overrides: a schedule listed here admits ITS recipe and objective instead of the
+   *  defaults above. Every other schedule is unaffected. Same purity rule for `objectiveFor`. */
+  routes?: Readonly<Record<string, ScheduleRoute>>;
   /** Injected for tests; defaults to global fetch. */
   fetchImpl?: typeof fetch;
+}
+
+export interface ScheduleRoute {
+  recipe: string;
+  objectiveFor: (req: AdmissionRequestInput) => string;
 }
 
 /** Raised when the door rejects a repeat of the same Idempotency-Key with a changed
@@ -54,7 +62,10 @@ export class HttpAdmissionGateway implements AdmissionGateway {
   }
 
   async admit(req: AdmissionRequestInput): Promise<AdmissionResult> {
+    const route = this.opts.routes?.[req.scheduleId];
+    const recipe = route?.recipe ?? this.opts.recipe;
     const objective =
+      route?.objectiveFor(req) ??
       this.opts.objectiveFor?.(req) ??
       `schedule ${req.scheduleId} ${req.fireWindowKey}`;
     const res = await this.fetchImpl(`${this.baseUrl}/v1/tasks`, {
@@ -65,7 +76,7 @@ export class HttpAdmissionGateway implements AdmissionGateway {
         // fireIdentity, verbatim. No secondary idempotency identity.
         "idempotency-key": req.admissionIdentity,
       },
-      body: JSON.stringify({ recipe: this.opts.recipe, objective }),
+      body: JSON.stringify({ recipe, objective }),
     });
     if (res.status === 409) throw new AdmissionIdempotencyConflict(req.admissionIdentity);
     if (res.status !== 202) throw new Error(`admission door returned HTTP ${res.status}`);

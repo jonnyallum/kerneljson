@@ -5,6 +5,7 @@ import {
   RecipeId,
   GITHUB_READ_CAPABILITY,
   MISSION_RECIPE,
+  BRIEF_RECIPE,
   IDENTITY_CHANGE_RECIPE,
   type PlanStep,
 } from "../../../../packages/contracts/src/index.js";
@@ -24,7 +25,7 @@ export function planTask(raw: Task, recipe: RecipeId): ExecutionPlan {
   const operations: PlanStep["operation"][] =
     recipe === "uppercase-reverse/v1"
       ? ["UPPERCASE", "WAIT_FOR_EVENT", "REVERSE"]
-      : recipe === MISSION_RECIPE
+      : recipe === MISSION_RECIPE || recipe === BRIEF_RECIPE
         ? ["GITHUB_EVIDENCE", "RUNTIME_ANALYSE", "RUNTIME_REVIEW", "RECONCILE"]
       : recipe === "repository-read/v1" || recipe === "claude_md_check/v1"
         ? // The canary reuses the sealed read-only REPOSITORY_READ capability; the

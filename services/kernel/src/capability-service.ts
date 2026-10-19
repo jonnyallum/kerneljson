@@ -14,6 +14,7 @@ import {
   GithubReadError,
   type GithubReaderConfig,
 } from "../../../packages/runtimes/src/github-read.js";
+import { createGithubActivityReader } from "../../../packages/runtimes/src/github-activity.js";
 
 /**
  * Production capability-execution boundary (Gate 3): `CapabilityServiceV1`.
@@ -46,6 +47,11 @@ export interface GithubReadRequest {
   repo: string;
 }
 
+/** The morning brief: activity across every repository the token can see, for the window ending here. */
+export interface GithubActivityRequest {
+  windowEnd: string;
+}
+
 /** Request from the workflow. The target file is fixed by the caller (the recipe),
  *  never derived from task payload; `repo_path` is not accepted (root is config). */
 export interface RepositoryReadRequest {
@@ -65,6 +71,7 @@ export function createCapabilityService(config: CapabilityServiceConfig) {
     }),
   );
   const githubReader = createGithubReader(config.github);
+  const activityReader = createGithubActivityReader(config.github);
   return restate.service({
     name: CAPABILITY_SERVICE,
     handlers: {
@@ -77,6 +84,23 @@ export function createCapabilityService(config: CapabilityServiceConfig) {
           async () => {
             try {
               return await githubReader({ repo: req.repo });
+            } catch (error) {
+              if (error instanceof GithubReadError && error.retryable) throw error;
+              throw new restate.TerminalError(
+                error instanceof GithubReadError ? error.code : "GITHUB_READ_FAILED",
+                { errorCode: 422 },
+              );
+            }
+          },
+          { maxRetryAttempts: 4, initialRetryInterval: 2_000 },
+        ),
+      // The morning brief's evidence. Same retry and terminal rules as githubRead.
+      githubActivity: async (ctx: restate.Context, req: GithubActivityRequest) =>
+        ctx.run(
+          "github.activity",
+          async () => {
+            try {
+              return await activityReader({ windowEnd: req.windowEnd });
             } catch (error) {
               if (error instanceof GithubReadError && error.retryable) throw error;
               throw new restate.TerminalError(
