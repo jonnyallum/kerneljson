@@ -40,7 +40,10 @@ pnpm brief:dry-run [--send-to-telegram] [--out run.json]
 
 ## Release (production change window, owner approval required)
 
-1. **Deploy** the worker and admission door images from the merged commit, with matching `KERNELJSON_RELEASE_ID`. Both are needed, because the door's recipe allowlist gains `morning-brief/v1`.
+1. **Deploy** the worker and admission door images from the merged commit, with matching `KERNELJSON_RELEASE_ID`.
+   - Both images are needed, because the door's recipe allowlist gains `morning-brief/v1`.
+   - Re-register the worker's Restate deployment: `CapabilityServiceV1` gains a `githubActivity` handler.
+   - From here a brief can already be admitted by hand through the door (`recipe: morning-brief/v1`, `objective: morning brief`). Use that for the first verified run before any schedule exists.
 2. **Seed the schedule (disabled):**
    ```
    canary-runner install-brief --schedule-id <new uuid> --tenant-id <tenant> --owner-id <Jonny's principal> --created-at <iso>
