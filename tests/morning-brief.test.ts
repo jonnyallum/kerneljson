@@ -488,3 +488,39 @@ describe("SCHED_BRIEF_SCHEDULE_ID at worker startup", () => {
     expect(mod.services.map((x) => (x as { name: string }).name)).toEqual(expect.arrayContaining(["ScheduleDriver", "KernelWorkflowV1", "CapabilityServiceV1"]));
   });
 });
+
+describe("a withheld item can never leave the model's headline in front of Jonny", () => {
+  const three = { items: [{ refs: ["ci:jonnyallum/kerneljson"] }, { refs: ["repo:jonnyallum/agent-hub-conductor"] }, { refs: ["kj:canary"] }] };
+
+  it("replaces the headline in the message and the outcome summary, and the ledger re-derives it", async () => {
+    const r = await run({ analyst: fakeBriefAnalyst(three), reviewer: fakeBriefReviewer({ verdict: "approve_with_notes", unsupported: [1] }) });
+    expect(r.verifyError).toBeNull();
+    expect(r.outcome.status).toBe("COMPLETED");
+    const headline = "2 of 3 items passed review; the model's headline is not shown because an item was withheld.";
+    expect(r.outcome.summary).toBe(`Brief accepted: ${headline}`);
+    expect(r.notices[0]!.text!.split("\n\n")[1]).toBe(headline);
+    expect(r.notices[0]!.text).not.toContain("CI is failing");
+    // The ledger refuses the model's headline as the summary once an item was withheld.
+    expect(() => verify(r, r.evidence, { ...r.outcome, summary: "Brief accepted: CI is failing on kerneljson after last night's brief work; one PR is open." }))
+      .toThrow(/summary/);
+  });
+
+  it("negative control: with nothing withheld the model's headline is kept", async () => {
+    const r = await run({ analyst: fakeBriefAnalyst(three) });
+    expect(r.outcome.summary).toMatch(/^Brief accepted: CI is failing/);
+  });
+});
+
+describe("the dry run sends a completed, labelled brief or nothing", () => {
+  it("labels a completed brief and refuses failures, missing text and anything but exactly one notice", async () => {
+    const { dryRunNotice } = await import("../services/kernel/src/mission/brief-cli.js");
+    const done = { taskId: "d10442d5-0000-4000-8000-000000000000", status: "COMPLETED" as const, at: WINDOW_END, text: "Morning brief" };
+    expect(dryRunNotice([done])!.text).toBe("DRY RUN from a local machine: KernelJSON's own state was not read.\n\nMorning brief");
+    const { text: _text, ...untexted } = done;
+    expect(dryRunNotice([{ ...untexted, status: "FAILED" }])).toBeNull();
+    expect(dryRunNotice([{ ...done, status: "FAILED" }])).toBeNull();
+    expect(dryRunNotice([untexted])).toBeNull();
+    expect(dryRunNotice([])).toBeNull();
+    expect(dryRunNotice([done, done])).toBeNull();
+  });
+});

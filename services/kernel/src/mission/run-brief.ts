@@ -245,7 +245,7 @@ export async function runMorningBriefMission(deps: BriefDeps): Promise<Outcome> 
     status: "COMPLETED",
     acceptanceResults: task.acceptanceCriteria.map((criterion) => ({ criterion, passed: true, evidenceRefs: [...evidenceIds] })),
     evidenceRefs: [...evidenceIds],
-    summary: briefSummary(brief),
+    summary: briefSummary(brief, rec.withheldItems),
     completedAt: at,
   });
   // The ledger re-verifies this from persisted evidence and converts a mismatch to FAILED.

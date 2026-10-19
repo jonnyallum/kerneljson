@@ -39,6 +39,16 @@ import type { Emit } from "./run.js";
  */
 const SEND = "--send-to-telegram";
 
+/**
+ * What a dry run may send: a COMPLETED brief, labelled, or nothing. A failed dry run is never sent,
+ * because its notice would be indistinguishable from a production failure alert.
+ */
+export function dryRunNotice(notices: readonly BriefNotice[]): BriefNotice | null {
+  const [notice] = notices;
+  if (notices.length !== 1 || !notice || notice.status !== "COMPLETED" || !notice.text) return null;
+  return { ...notice, text: `DRY RUN from a local machine: KernelJSON's own state was not read.\n\n${notice.text}` };
+}
+
 async function main(argv: readonly string[]): Promise<number> {
   const runtimes = loadMissionConfig(process.env);
   if (!runtimes) throw new Error("MISSION_* configuration is required");
@@ -112,14 +122,13 @@ async function main(argv: readonly string[]): Promise<number> {
   );
   if (out) writeFileSync(out, JSON.stringify({ outcome, evidence, notices }, null, 2), { encoding: "utf8", mode: 0o600 });
 
-  if (send && notices[0]) {
+  const toSend = dryRunNotice(notices);
+  if (send && !toSend) process.stdout.write("telegram: nothing sent (a dry run only ever sends a completed brief)\n");
+  if (send && toSend) {
     const transport = loadTransportConfig(process.env);
     if (transport.mode !== "telegram") throw new Error("ALERT_TRANSPORT must be telegram to send");
     const outbox = new InMemoryNotificationOutboxStore();
-    // Labelled, so a dry run can never be mistaken for the production brief.
-    await enqueueBriefNotice(outbox, { ...notices[0], text: `DRY RUN from a local machine: KernelJSON's own state was not read.
-
-${notices[0].text ?? ""}` });
+    await enqueueBriefNotice(outbox, toSend);
     const { notifier } = selectNotifier(transport);
     const summary = await runDeliveryWorker({ outbox, notifier, transport: "telegram" });
     process.stdout.write(`telegram: delivered=${summary.delivered} retried=${summary.retried} poisoned=${summary.poisoned}\n`);

@@ -225,8 +225,20 @@ export function reconcileBrief(input: BriefReconcileInput): BriefReconciliation 
   });
 }
 
+/**
+ * The headline as delivered. The reviewer judges items, not the headline, so once any item is withheld
+ * the model's headline may describe a withheld claim. It is then replaced by a fixed kernel sentence.
+ */
+export function briefHeadline(brief: BriefAnalysis, withheldItems: readonly number[] = []): string {
+  const withheld = new Set(withheldItems).size;
+  if (withheld === 0) return brief.headline;
+  const kept = brief.items.length - withheld;
+  return `${kept} of ${brief.items.length} items passed review; the model's headline is not shown because ${withheld === 1 ? "an item was" : "items were"} withheld.`;
+}
+
 /** Deterministic outcome summary, so the ledger can require the outcome to say exactly this. */
-export const briefSummary = (brief: BriefAnalysis): string => `Brief accepted: ${brief.headline}`.slice(0, 500);
+export const briefSummary = (brief: BriefAnalysis, withheldItems: readonly number[] = []): string =>
+  `Brief accepted: ${briefHeadline(brief, withheldItems)}`.slice(0, 500);
 
 export const briefFailedChecks = (rec: BriefReconciliation): string[] => rec.checks.filter((c) => !c.passed).map((c) => c.name);
 
@@ -291,7 +303,7 @@ export function briefMessage(
 ): string {
   const withheld = new Set(args.withheldItems ?? []);
   const kept = brief.items.filter((_, i) => !withheld.has(i));
-  const head = [`Morning brief, ${UK_DATE.format(new Date(brief.windowEnd)).replace(",", "")}`, brief.headline];
+  const head = [`Morning brief, ${UK_DATE.format(new Date(brief.windowEnd)).replace(",", "")}`, briefHeadline(brief, args.withheldItems)];
   const foot = (dropped: number) =>
     [
       ...(dropped > 0 ? [`(${dropped} more item${dropped === 1 ? "" : "s"}: /task ${args.taskId})`] : []),

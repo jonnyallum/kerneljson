@@ -109,7 +109,7 @@ export function verifyBriefCompletion(
   }
 
   const brief = parseBrief(analysisText);
-  if (!brief || outcome.summary !== briefSummary(brief)) fail("outcome summary is not the verified one");
+  if (!brief || outcome.summary !== briefSummary(brief, recomputed.withheldItems)) fail("outcome summary is not the verified one");
   const ids = [e1, e2, e3, e4].map((e) => e.id).sort();
   if (JSON.stringify([...outcome.evidenceRefs].sort()) !== JSON.stringify(ids)) fail("outcome evidence set mismatch");
   assertCompletion(task, outcome, [e1, e2, e3, e4]);
