@@ -38,7 +38,7 @@ export interface MissionWiring {
   /** The morning brief: its notice, and the kernel's own task state. Both absent means no brief is served. */
   brief?: {
     notify: (notice: BriefNotice) => Promise<void>;
-    kernelState: (req: { since: string; excludeTaskId: string }) => Promise<KernelState>;
+    kernelState: (req: { tenantId: string; since: string; excludeTaskId: string }) => Promise<KernelState>;
   };
 }
 

@@ -21,7 +21,7 @@ A completed brief is delivered as its own text, the one exception besides operat
 
 ## Configuration
 
-- No new secret. It uses the existing `MISSION_*` runtimes and `GITHUB_READ_TOKEN`, and the token must be able to list repositories (`GET /user/repos`).
+- No new secret. It uses the existing `MISSION_*` runtimes and `GITHUB_READ_TOKEN`, and the token must be able to list repositories (`GET /user/repos`). It also needs read access to Contents on every repository it can list: a 403 on commits fails the whole brief (fail closed).
 - `SCHED_BRIEF_SCHEDULE_ID` is the UUID of the brief's schedule:
   - unset or empty means no schedule admits a brief;
   - set, the worker refuses to start without the mission runtimes, the read token and the admission seam.
@@ -56,7 +56,7 @@ pnpm brief:dry-run [--send-to-telegram] [--out run.json]
 5. **Arm the first wake**, as for the canary (`docs/production/phase-s1-canary/DURABLE_RESTATE_WAKE_RESULT_2026-09-13.md`): one `POST /ScheduleDriver/<uuid>/fire/send` for the next 07:00 window. With `SCHED_ARM_NEXT=true` it then re-arms itself.
 
 **Rollback:**
-- `disable-canary` on the brief's schedule, and unset `SCHED_BRIEF_SCHEDULE_ID`.
+- `disable-canary` on the brief's schedule, and unset `SCHED_BRIEF_SCHEDULE_ID`. The disable is required, not optional: an armed brief schedule on a worker without the variable would fire as the canary.
 - The canary is unaffected throughout.
 
 ## Verification

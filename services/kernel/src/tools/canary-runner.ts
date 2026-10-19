@@ -303,6 +303,9 @@ export async function runCanaryOperation(
       at: parsed.values["at"]!,
       expectedActiveVersion: parsed.values["expected-active-version"],
     });
+  // fire-once admits the canary recipe; on the brief's schedule it would spend that window as a canary.
+  if (parsed.values["schedule-id"] === process.env["SCHED_BRIEF_SCHEDULE_ID"])
+    throw new RunnerError("BRIEF_SCHEDULE", "fire-once admits the canary recipe and must not target the morning brief's schedule");
   return deps.fireOnce({
     pool,
     scheduleId: parsed.values["schedule-id"]!,

@@ -406,6 +406,13 @@ describe("the GitHub activity reader", () => {
       "/repos/jonnyallum/kerneljson/pulls": () => json({}, 403, { "x-ratelimit-remaining": "0" }),
     });
     await expect(createGithubActivityReader({ token: "ghp_testtokenvalue", fetch: perRepo.fetchImpl })({ windowEnd: WINDOW_END })).rejects.toThrow("RATE_LIMITED");
+    // GitHub's secondary limit: 403 with retry-after while remaining is above 0. Still a rate limit, never "unreadable".
+    const secondary = fake({
+      "/user/repos": () => json([repo("jonnyallum/kerneljson", "2026-10-19T21:00:00Z")]),
+      "/repos/jonnyallum/kerneljson/commits": () => json([]),
+      "/repos/jonnyallum/kerneljson/pulls": () => json({}, 403, { "x-ratelimit-remaining": "4000", "retry-after": "60" }),
+    });
+    await expect(createGithubActivityReader({ token: "ghp_testtokenvalue", fetch: secondary.fetchImpl })({ windowEnd: WINDOW_END })).rejects.toThrow("RATE_LIMITED");
   });
 });
 
@@ -522,5 +529,25 @@ describe("the dry run sends a completed, labelled brief or nothing", () => {
     expect(dryRunNotice([untexted])).toBeNull();
     expect(dryRunNotice([])).toBeNull();
     expect(dryRunNotice([done, done])).toBeNull();
+  });
+});
+
+describe("fire-once cannot spend the brief's schedule as a canary fire", () => {
+  const saved = process.env["SCHED_BRIEF_SCHEDULE_ID"];
+  afterEach(() => { if (saved === undefined) delete process.env["SCHED_BRIEF_SCHEDULE_ID"]; else process.env["SCHED_BRIEF_SCHEDULE_ID"] = saved; });
+  it("refuses the brief's schedule id and still fires any other", async () => {
+    const { parseArgs, runCanaryOperation } = await import("../services/kernel/src/tools/canary-runner.js");
+    const BRIEF = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    process.env["SCHED_BRIEF_SCHEDULE_ID"] = BRIEF;
+    let fired = 0;
+    const deps = {
+      provisionHuman: async () => ({}), installCanary: async () => ({}), enableCanary: async () => ({}), disableCanary: async () => ({}),
+      fireOnce: async () => { fired++; return {}; },
+    };
+    const args = (id: string) => parseArgs(["fire-once", "--schedule-id", id, "--tenant-id", randomUUID(), "--actor-id", randomUUID(),
+      "--expected-active-version", "v2", "--last-tick", WINDOW_END, "--now", WINDOW_END, "--owner", "o", "--production", "true", "--preview", "true"]);
+    await expect(runCanaryOperation(deps, {} as never, args(BRIEF))).rejects.toThrow(/morning brief/);
+    await runCanaryOperation(deps, {} as never, args(randomUUID()));
+    expect(fired).toBe(1);
   });
 });

@@ -131,6 +131,14 @@ describe("morning-brief/v1 against a real ledger", () => {
     expect(facts.kernel.tasks.find((t) => t.recipe === BRIEF_RECIPE && t.status === "COMPLETED")?.count).toBeGreaterThanOrEqual(1);
   });
 
+  it("negative control: the kernel-state read sees only the brief's own tenant", async () => {
+    await runBrief();
+    const read = createKernelStateReader(pool);
+    const own = await read({ tenantId: fixtureId, since: "2000-01-01T00:00:00Z", excludeTaskId: randomUUID() });
+    expect(own.tasks.length).toBeGreaterThan(0);
+    expect(await read({ tenantId: randomUUID(), since: "2000-01-01T00:00:00Z", excludeTaskId: randomUUID() })).toEqual({ tasks: [], lastCanary: null });
+  });
+
   it("negative control: a rejected brief commits FAILED and queues only the redacted P2 notice", async () => {
     const { outcome, taskId } = await runBrief({ reviewer: fakeBriefReviewer({ unsupported: [0] }) });
     expect(outcome.status).toBe("FAILED");

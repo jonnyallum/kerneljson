@@ -134,11 +134,13 @@ export function createGithubGet(config: GithubReaderConfig = {}) {
       await response.body?.cancel().catch(() => {});
       const status = response.status;
       if (status === 404 && allowNotFound) return null;
-      if (softStatuses.includes(status) && !(status === 403 && response.headers.get("x-ratelimit-remaining") === "0")) return null;
+      // GitHub's primary limit sets remaining=0; its secondary limit sends retry-after instead.
+      const rateLimited = status === 429 || (status === 403 && (response.headers.get("x-ratelimit-remaining") === "0" || response.headers.has("retry-after")));
+      if (softStatuses.includes(status) && !rateLimited) return null;
       if (status === 404) throw new GithubReadError("NOT_FOUND", false);
       if (status === 301 || status === 302 || status === 307 || status === 308)
         throw new GithubReadError("RENAMED", false);
-      if (status === 429 || (status === 403 && response.headers.get("x-ratelimit-remaining") === "0"))
+      if (rateLimited)
         throw new GithubReadError("RATE_LIMITED", true);
       if (status === 401 || status === 403) throw new GithubReadError("AUTH", false);
       if (status >= 500) throw new GithubReadError("UPSTREAM", true);

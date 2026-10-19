@@ -54,7 +54,7 @@ export interface BriefDeps {
   /** In production: `CapabilityServiceV1.githubActivity` via the Restate client. */
   githubActivity: (req: { windowEnd: string }) => Promise<{ activity: unknown; activityDigest: string }>;
   /** The kernel's own recent task state, read from the ledger. */
-  kernelState: (req: { since: string; excludeTaskId: string }) => Promise<KernelState>;
+  kernelState: (req: { tenantId: string; since: string; excludeTaskId: string }) => Promise<KernelState>;
   analyst: ModelPort;
   reviewer: ModelPort;
   memory?: MissionMemoryPort;
@@ -126,7 +126,7 @@ export async function runMorningBriefMission(deps: BriefDeps): Promise<Outcome> 
     const github = GithubActivity.parse(read.activity);
     if (capabilityDigest(github) !== read.activityDigest) throw new Error("DIGEST_MISMATCH");
     const kernel = KernelState.parse(
-      await deps.ctx.run("brief-kernel-state", () => deps.kernelState({ since: github.windowStart, excludeTaskId: task.id })),
+      await deps.ctx.run("brief-kernel-state", () => deps.kernelState({ tenantId: task.tenant.id, since: github.windowStart, excludeTaskId: task.id })),
     );
     facts = BriefFacts.parse({ github, githubDigest: read.activityDigest, kernel });
   } catch (error) {
