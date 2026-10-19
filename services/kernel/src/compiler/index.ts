@@ -4,6 +4,9 @@ import {
   MISSION_CRITERION,
   MISSION_RECIPE,
   parseMissionObjective,
+  BRIEF_CRITERION,
+  BRIEF_RECIPE,
+  parseBriefObjective,
   IDENTITY_CHANGE_CRITERION,
   IDENTITY_CHANGE_RECIPE,
   parseIdentityChangeObjective,
@@ -21,6 +24,7 @@ export const criteria: Record<RecipeId, string> = {
     "repository.read of CLAUDE.md returns content_sha256 == approved digest with mutations_detected=0",
   [MISSION_RECIPE]: MISSION_CRITERION,
   [IDENTITY_CHANGE_RECIPE]: IDENTITY_CHANGE_CRITERION,
+  [BRIEF_RECIPE]: BRIEF_CRITERION,
 };
 // A content-derived UUID in a kernel-specific namespace. Pure across processes.
 export function stableId(value: unknown): string {
@@ -35,6 +39,7 @@ export function compileIntent(raw: unknown): {
   const { intent, recipe } = submission;
   // Rejected at admission, not mid-run: a mission objective is `owner/repo [question]`.
   if (recipe === MISSION_RECIPE) parseMissionObjective(intent.objective);
+  if (recipe === BRIEF_RECIPE) parseBriefObjective(intent.objective);
   // Rejected at admission, not mid-run: an identity-change objective is a JSON IdentityChangeRequest.
   if (recipe === IDENTITY_CHANGE_RECIPE) parseIdentityChangeObjective(intent.objective);
   if (intent.attachments.length || intent.contextRefs.length)

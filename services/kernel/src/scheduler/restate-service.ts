@@ -2,7 +2,7 @@ import * as restate from "@restatedev/restate-sdk";
 import type pg from "pg";
 import { PgScheduleStore } from "./pg-store.js";
 import { StaleFenceError } from "./store.js";
-import { HttpAdmissionGateway } from "./http-admission.js";
+import { HttpAdmissionGateway, type ScheduleRoute } from "./http-admission.js";
 import {
   ScheduleTimerDriver,
   type AdmissionGateway,
@@ -57,6 +57,8 @@ export interface ScheduleDriverConfig {
   authorization: string;
   /** Recipe the scheduled admission requests. */
   recipe: string;
+  /** Per-schedule recipe overrides (for example the morning brief's schedule). */
+  routes?: Readonly<Record<string, ScheduleRoute>>;
   /** Lease owner id for this driver instance. Stable ⇒ re-invocations extend the
    *  same lease; a different owner (takeover) bumps the epoch and fences this one. */
   owner?: string;
@@ -142,6 +144,7 @@ export function createScheduleDriverService(cfg: ScheduleDriverConfig) {
     new HttpAdmissionGateway(cfg.admissionUrl, {
       authorization: cfg.authorization,
       recipe: cfg.recipe,
+      ...(cfg.routes ? { routes: cfg.routes } : {}),
     });
 
   return restate.object({

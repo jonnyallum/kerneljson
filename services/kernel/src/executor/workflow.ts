@@ -14,10 +14,11 @@ import { digest, Signal } from "../deterministic.js";
 import { Ledger, type Write } from "../ledger.js";
 import { verifyClaudeMdCheck } from "../../../../packages/runtimes/src/index.js";
 import type { CapabilityService } from "../capability-service.js";
-import { MISSION_RECIPE } from "../../../../packages/contracts/src/index.js";
+import { BRIEF_RECIPE, MISSION_RECIPE, type KernelState } from "../../../../packages/contracts/src/index.js";
 import type { ModelPort } from "../../../../packages/models/src/index.js";
 import { runRepoAnalysisMission, type Emit } from "../mission/run.js";
-import type { MissionNotice } from "../mission/notify.js";
+import type { BriefNotice, MissionNotice } from "../mission/notify.js";
+import { runMorningBriefMission } from "../mission/run-brief.js";
 import type { MissionMemoryPort } from "../mission/memory-port.js";
 import type { MissionFacultyPort } from "../faculty/registry.js";
 import type { MissionIdentityPort } from "../identity/cognition-binding.js";
@@ -34,6 +35,11 @@ export interface MissionWiring {
   faculties?: MissionFacultyPort;
   /** KJ-P7B-1: identity cognition latch + call-time authorisation. */
   identity?: MissionIdentityPort;
+  /** The morning brief: its notice, and the kernel's own task state. Both absent means no brief is served. */
+  brief?: {
+    notify: (notice: BriefNotice) => Promise<void>;
+    kernelState: (req: { tenantId: string; since: string; excludeTaskId: string }) => Promise<KernelState>;
+  };
 }
 
 /** A deterministic event id for a call's MODEL_CALLED record, so a re-executed receipt step writes identical bytes. */
@@ -155,6 +161,31 @@ export function createKernelWorkflow(
         );
         await emit("ready", "TASK_READY", "READY");
         await emit("start", "TASK_STARTED", "RUNNING");
+        // The morning brief: the mission's runtimes over GitHub activity and the kernel's own state.
+        if (plan.recipe === BRIEF_RECIPE) {
+          const capability = options?.capabilityService;
+          const mission = options?.mission;
+          if (!capability || !mission?.brief)
+            throw new restate.TerminalError(
+              "Morning brief requires configured mission runtimes, brief wiring and a capability service",
+              { errorCode: 500 },
+            );
+          const brief = mission.brief;
+          return runMorningBriefMission({
+            ctx,
+            task,
+            plan,
+            emit: emit as Emit,
+            now,
+            uuid: () => ctx.rand.uuidv4(),
+            githubActivity: (req) => ctx.serviceClient(capability).githubActivity(req),
+            kernelState: brief.kernelState,
+            analyst: mission.analyst,
+            reviewer: mission.reviewer,
+            ...(mission.memory ? { memory: mission.memory } : {}),
+            notify: brief.notify,
+          });
+        }
         // KJ-P3 repository-analysis mission. Runtimes return text; only this workflow,
         // through the ledger, moves the task, and completion is re-verified from evidence.
         if (plan.recipe === MISSION_RECIPE) {

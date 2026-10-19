@@ -2,6 +2,7 @@ import { fingerprintFor } from "../alerting/fingerprint.js";
 import { intentsFromDecisions } from "../alerting/outbox.js";
 import type { NotificationOutboxStore } from "../alerting/outbox-store.js";
 import type { AlertDecision } from "../alerting/types.js";
+import { briefCheckId } from "../alerting/brief-notice.js";
 
 /**
  * KJ-P3 - tell Jonny a mission finished. A notice, never an authority: it is queued
@@ -46,6 +47,48 @@ export async function enqueueMissionNotice(
   const intents = intentsFromDecisions([missionNoticeDecision(n)], n.at);
   const [intent] = intents;
   if (intents.length !== 1 || !intent) throw new Error("mission notice must produce exactly one intent");
+  await outbox.enqueue(intents);
+  return { notificationId: intent.notificationId };
+}
+
+/**
+ * The morning brief's notice. Same outbox, same replay-safe identity. A completed brief carries the
+ * brief itself as its message, which the delivery worker forwards (see alerting/brief-notice.ts); a
+ * failed one is an ordinary P2 notice.
+ */
+export interface BriefNotice {
+  taskId: string;
+  status: "COMPLETED" | "FAILED";
+  at: string;
+  /** The verified brief text. Required for COMPLETED, ignored for FAILED. */
+  text?: string;
+}
+
+export function briefNoticeDecision(n: BriefNotice): AlertDecision {
+  const checkId = briefCheckId(n.taskId, n.status);
+  if (n.status === "COMPLETED" && !n.text) throw new Error("a completed brief notice needs its text");
+  return {
+    kind: "NEW",
+    severity: n.status === "COMPLETED" ? "P3" : "P2",
+    fingerprint: fingerprintFor(checkId, n.taskId),
+    checkId,
+    entityId: n.taskId,
+    message: n.status === "COMPLETED" ? n.text! : "Morning brief FAILED",
+    notify: true,
+    firstSeenAt: n.at,
+    lastSeenAt: n.at,
+    lastNotifiedAt: null,
+    occurrenceCount: 1,
+  };
+}
+
+export async function enqueueBriefNotice(
+  outbox: NotificationOutboxStore,
+  n: BriefNotice,
+): Promise<{ notificationId: string }> {
+  const intents = intentsFromDecisions([briefNoticeDecision(n)], n.at);
+  const [intent] = intents;
+  if (intents.length !== 1 || !intent) throw new Error("brief notice must produce exactly one intent");
   await outbox.enqueue(intents);
   return { notificationId: intent.notificationId };
 }

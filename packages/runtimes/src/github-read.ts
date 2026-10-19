@@ -100,14 +100,18 @@ export interface GithubReaderConfig {
   timeoutMs?: number;
 }
 
-export function createGithubReader(config: GithubReaderConfig = {}) {
+/**
+ * The bounded, read-only GET both GitHub capabilities share: no redirects, no writes, a size and time cap,
+ * and errors classified by status only. `softStatuses` are answered with null instead of an error.
+ */
+export function createGithubGet(config: GithubReaderConfig = {}) {
   const send = config.fetch ?? globalThis.fetch;
   const timeoutMs = config.timeoutMs ?? 15_000;
   const token = config.token;
   if (token !== undefined && !/^[^\s]{8,512}$/.test(token))
     throw new Error("Invalid GitHub read token configuration");
 
-  async function get(path: string, allowNotFound = false): Promise<unknown | null> {
+  return async function get(path: string, allowNotFound = false, softStatuses: readonly number[] = []): Promise<unknown | null> {
     let response: Response;
     try {
       response = await send(`${API}${path}`, {
@@ -130,10 +134,13 @@ export function createGithubReader(config: GithubReaderConfig = {}) {
       await response.body?.cancel().catch(() => {});
       const status = response.status;
       if (status === 404 && allowNotFound) return null;
+      // GitHub's primary limit sets remaining=0; its secondary limit sends retry-after instead.
+      const rateLimited = status === 429 || (status === 403 && (response.headers.get("x-ratelimit-remaining") === "0" || response.headers.has("retry-after")));
+      if (softStatuses.includes(status) && !rateLimited) return null;
       if (status === 404) throw new GithubReadError("NOT_FOUND", false);
       if (status === 301 || status === 302 || status === 307 || status === 308)
         throw new GithubReadError("RENAMED", false);
-      if (status === 429 || (status === 403 && response.headers.get("x-ratelimit-remaining") === "0"))
+      if (rateLimited)
         throw new GithubReadError("RATE_LIMITED", true);
       if (status === 401 || status === 403) throw new GithubReadError("AUTH", false);
       if (status >= 500) throw new GithubReadError("UPSTREAM", true);
@@ -145,13 +152,18 @@ export function createGithubReader(config: GithubReaderConfig = {}) {
       if (error instanceof GithubReadError) throw error;
       throw new GithubReadError("MALFORMED", false);
     }
-  }
-
-  const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
-    const result = schema.safeParse(value);
-    if (!result.success) throw new GithubReadError("MALFORMED", false);
-    return result.data;
   };
+}
+
+export const parseGithub = <T>(schema: z.ZodType<T>, value: unknown): T => {
+  const result = schema.safeParse(value);
+  if (!result.success) throw new GithubReadError("MALFORMED", false);
+  return result.data;
+};
+
+export function createGithubReader(config: GithubReaderConfig = {}) {
+  const get = createGithubGet(config);
+  const parse = parseGithub;
 
   return async function read(input: { repo: string }): Promise<{ facts: GithubFacts; factsDigest: string }> {
     const slug = RepoSlug.parse(input.repo);

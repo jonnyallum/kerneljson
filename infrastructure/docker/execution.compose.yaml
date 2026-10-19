@@ -103,6 +103,9 @@ services:
       MISSION_ANALYST_MODEL: ${MISSION_ANALYST_MODEL:-}
       MISSION_REVIEWER_MODEL: ${MISSION_REVIEWER_MODEL:-}
       GITHUB_READ_TOKEN: ${GITHUB_READ_TOKEN:-}
+      # Morning brief: the UUID of the schedule that admits morning-brief/v1. Unset or empty = no brief
+      # schedule. Set, it needs the mission runtimes, GITHUB_READ_TOKEN and the admission seam above.
+      SCHED_BRIEF_SCHEDULE_ID: ${SCHED_BRIEF_SCHEDULE_ID:-}
       # KJ-P4A Telegram operator channel. Off unless TELEGRAM_INBOUND_ENABLED=true (unset or empty
       # both mean off). Undeclared means silently dropped, like every var above.
       TELEGRAM_INBOUND_ENABLED: ${TELEGRAM_INBOUND_ENABLED:-}

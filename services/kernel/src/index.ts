@@ -12,7 +12,9 @@ import { productionTelegramOperator } from "./channel/telegram/production.js";
 import { productionApprovalWorkflow, productionIdentityWorkflow } from "./approval-boundary.js";
 import { PgNotificationOutboxStore } from "./alerting/pg-outbox-store.js";
 import { loadMissionConfig } from "./mission/config.js";
-import { enqueueMissionNotice } from "./mission/notify.js";
+import { enqueueBriefNotice, enqueueMissionNotice } from "./mission/notify.js";
+import { createKernelStateReader } from "./mission/kernel-state.js";
+import { BRIEF_RECIPE } from "../../../packages/contracts/src/index.js";
 import { createConfiguredMemory, loadMemoryConfig } from "../../memory/src/canonical/config.js";
 import { createMissionMemoryPort } from "../../memory/src/canonical/mission-port.js";
 import { PgFacultyRegistry } from "./faculty/registry.js";
@@ -74,6 +76,17 @@ const mission = missionRuntimes
       notify: async (notice: Parameters<typeof enqueueMissionNotice>[1]) => {
         await enqueueMissionNotice(new PgNotificationOutboxStore(pool), notice);
       },
+      // The morning brief rides on the same runtimes. It needs the read token, since it lists repositories.
+      ...(githubToken
+        ? {
+            brief: {
+              notify: async (notice: Parameters<typeof enqueueBriefNotice>[1]) => {
+                await enqueueBriefNotice(new PgNotificationOutboxStore(pool), notice);
+              },
+              kernelState: createKernelStateReader(pool),
+            },
+          }
+        : {}),
     }
   : undefined;
 
@@ -131,6 +144,25 @@ if (admissionUrl && admissionBearer && !canary)
       "(KJ_REPO_ROOT + SCHED_RECIPE + SCHED_APPROVED_SHA256) is not — ScheduleDriver " +
       "requires both, refusing to start half-configured",
   );
+/**
+ * The morning brief's schedule. Unset (or empty) means no schedule admits a brief, exactly as before.
+ * Set, it must be the schedule's UUID, and the brief must be servable (mission runtimes plus the read
+ * token) and the admission seam configured, or the worker refuses to start. That schedule admits
+ * `morning-brief/v1`; every other schedule keeps the canary recipe.
+ */
+export function parseBriefScheduleId(env: NodeJS.ProcessEnv): string | undefined {
+  const raw = env["SCHED_BRIEF_SCHEDULE_ID"];
+  if (raw === undefined || raw === "") return undefined;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(raw))
+    throw new Error("SCHED_BRIEF_SCHEDULE_ID must be a lowercase schedule UUID when set - refusing to start");
+  return raw;
+}
+const briefScheduleId = parseBriefScheduleId(process.env);
+if (briefScheduleId && !(mission?.brief && admissionUrl && admissionBearer && canary))
+  throw new Error(
+    "SCHED_BRIEF_SCHEDULE_ID is set but the brief cannot be served (mission runtimes, GITHUB_READ_TOKEN " +
+      "and the admission seam are all required) - refusing to start half-configured",
+  );
 const scheduleDriver =
   admissionUrl && admissionBearer && canary
     ? createScheduleDriverService({
@@ -138,6 +170,16 @@ const scheduleDriver =
         admissionUrl,
         authorization: `Bearer ${admissionBearer}`,
         recipe: canary.recipe,
+        ...(briefScheduleId
+          ? {
+              routes: {
+                [briefScheduleId]: {
+                  recipe: BRIEF_RECIPE,
+                  objectiveFor: (req: { fireWindowKey: string }) => `morning brief ${req.fireWindowKey}`,
+                },
+              },
+            }
+          : {}),
         owner: "restate-schedule-driver",
         productionRuntime: true,
         armNext,

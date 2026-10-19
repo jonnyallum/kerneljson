@@ -24,6 +24,8 @@ import { HttpAdmissionGateway } from "../scheduler/http-admission.js";
  * Explicit, separate operations (each fail-closed; no generated IDs; no hidden defaults):
  *   provision-human --principal-id <uuid> --tenant-id <uuid>
  *   install-canary  --schedule-id <uuid> --tenant-id <uuid> --owner-id <uuid> --created-at <iso>
+ *   install-brief   --schedule-id <uuid> --tenant-id <uuid> --owner-id <uuid> --created-at <iso>
+ *                   (the morning brief's schedule, 07:00 Europe/London; enable it with enable-canary)
  *   enable-canary   --schedule-id <uuid> --tenant-id <uuid> --actor-id <uuid>
  *                   --from-version <v> --to-version <v> --created-at <iso> --expected-state <state>
  *   disable-canary  --schedule-id <uuid> --actor-id <uuid> --at <iso> [--expected-active-version <v>]
@@ -49,6 +51,30 @@ export const CANARY_SPEC = Object.freeze({
   perScheduleConcurrency: 1,
 });
 
+/** What install-* seeds. The canary's and the brief's specs differ only in name and time. */
+export interface SeedSpec {
+  version: string;
+  name: string;
+  timezone: string;
+  calendar: { kind: "dailyAt"; hour: number; minute: number };
+  missedRunPolicy: "SKIP";
+  overlapPolicy: "FORBID";
+  nonexistentTimePolicy: "SHIFT_FORWARD";
+  maxBackfillRuns: number;
+  perScheduleConcurrency: number;
+}
+
+/**
+ * The morning brief's schedule. Same seed, same disabled-by-default lifecycle as the canary; only the
+ * time and name differ. Which recipe it admits is bound by the worker (SCHED_BRIEF_SCHEDULE_ID), never
+ * stored here, exactly like the canary.
+ */
+export const BRIEF_SPEC: Readonly<SeedSpec> = Object.freeze({
+  ...CANARY_SPEC,
+  name: "morning_brief",
+  calendar: { kind: "dailyAt", hour: 7, minute: 0 } as const,
+});
+
 export class RunnerError extends Error {
   constructor(
     readonly code: string,
@@ -62,6 +88,7 @@ export class RunnerError extends Error {
 export type Operation =
   | "provision-human"
   | "install-canary"
+  | "install-brief"
   | "enable-canary"
   | "disable-canary"
   | "fire-once";
@@ -74,6 +101,7 @@ export interface ParsedArgs {
 const REQUIRED: Record<Operation, string[]> = {
   "provision-human": ["principal-id", "tenant-id"],
   "install-canary": ["schedule-id", "tenant-id", "owner-id", "created-at"],
+  "install-brief": ["schedule-id", "tenant-id", "owner-id", "created-at"],
   "enable-canary": [
     "schedule-id",
     "tenant-id",
@@ -147,6 +175,7 @@ export interface RunnerDeps {
     tenantId: string;
     ownerId: string;
     createdAt: string;
+    spec?: Readonly<SeedSpec>;
   }): Promise<unknown>;
   enableCanary(args: {
     pool: pg.Pool;
@@ -203,22 +232,22 @@ export function buildAdmissionGatewayFromEnv(): HttpAdmissionGateway {
 export const realDeps: RunnerDeps = {
   provisionHuman: ({ pool, principalId, tenantId }) =>
     runHumanProvision({ pool, principalId, tenantId }),
-  installCanary: ({ pool, scheduleId, tenantId, ownerId, createdAt }) =>
+  installCanary: ({ pool, scheduleId, tenantId, ownerId, createdAt, spec = CANARY_SPEC }) =>
     installDisabledCanary(new PgScheduleStore(pool), new PgIdentityGate(pool), {
       scheduleId,
-      version: CANARY_SPEC.version,
+      version: spec.version,
       tenantId,
       principalId: ownerId, // the acting principal for the canary is the HUMAN owner
       ownerId,
       createdBy: ownerId,
-      name: CANARY_SPEC.name,
-      timezone: CANARY_SPEC.timezone,
-      calendar: CANARY_SPEC.calendar,
-      missedRunPolicy: CANARY_SPEC.missedRunPolicy,
-      overlapPolicy: CANARY_SPEC.overlapPolicy,
-      nonexistentTimePolicy: CANARY_SPEC.nonexistentTimePolicy,
-      maxBackfillRuns: CANARY_SPEC.maxBackfillRuns,
-      perScheduleConcurrency: CANARY_SPEC.perScheduleConcurrency,
+      name: spec.name,
+      timezone: spec.timezone,
+      calendar: spec.calendar,
+      missedRunPolicy: spec.missedRunPolicy,
+      overlapPolicy: spec.overlapPolicy,
+      nonexistentTimePolicy: spec.nonexistentTimePolicy,
+      maxBackfillRuns: spec.maxBackfillRuns,
+      perScheduleConcurrency: spec.perScheduleConcurrency,
       createdAt,
     }),
   enableCanary: ({ pool, ...input }) =>
@@ -246,8 +275,9 @@ export async function runCanaryOperation(
       principalId: parsed.values["principal-id"]!,
       tenantId: parsed.values["tenant-id"]!,
     });
-  if (parsed.operation === "install-canary")
+  if (parsed.operation === "install-canary" || parsed.operation === "install-brief")
     return deps.installCanary({
+      ...(parsed.operation === "install-brief" ? { spec: BRIEF_SPEC } : {}),
       pool,
       scheduleId: parsed.values["schedule-id"]!,
       tenantId: parsed.values["tenant-id"]!,
@@ -273,6 +303,9 @@ export async function runCanaryOperation(
       at: parsed.values["at"]!,
       expectedActiveVersion: parsed.values["expected-active-version"],
     });
+  // fire-once admits the canary recipe; on the brief's schedule it would spend that window as a canary.
+  if (parsed.values["schedule-id"] === process.env["SCHED_BRIEF_SCHEDULE_ID"])
+    throw new RunnerError("BRIEF_SCHEDULE", "fire-once admits the canary recipe and must not target the morning brief's schedule");
   return deps.fireOnce({
     pool,
     scheduleId: parsed.values["schedule-id"]!,
