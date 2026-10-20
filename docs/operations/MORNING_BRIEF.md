@@ -40,23 +40,37 @@ pnpm brief:dry-run [--send-to-telegram] [--out run.json]
 
 ## Release (production change window, owner approval required)
 
+This release changes `KERNELJSON_RELEASE_ID`, so [RELEASE_PROVENANCE.md](RELEASE_PROVENANCE.md) applies in the same window. Record the baseline first: release, current `release_epoch`, both image IDs, the runtime env files, the Restate deployment and the canary's state and next wake.
+
 1. **Deploy** the worker and admission door images from the merged commit, with matching `KERNELJSON_RELEASE_ID`.
    - Both images are needed, because the door's recipe allowlist gains `morning-brief/v1`.
+   - Quiesce binding ingress first: stop the door (the scheduler and Telegram admit through it) and confirm binding and admission counts stop changing and no task is nonterminal. Preserve Restate and the canary's pending wake.
    - Re-register the worker's Restate deployment: `CapabilityServiceV1` gains a `githubActivity` handler.
+   - Keep the door stopped until step 2 commits.
+2. **Activate the release (mandatory).** As the database owner, in a dedicated transaction:
+   ```sql
+   BEGIN;
+   SET LOCAL lock_timeout = '10s';
+   SELECT kernel_private.activate_release(:request_uuid, :release_sha, :current_epoch, :evidence_json);
+   COMMIT;
+   ```
+   - Choose `:request_uuid` once and reuse it for any uncertain retry. `:current_epoch` is the baseline epoch; the call must return that epoch plus one.
+   - From a fresh connection, verify the singleton epoch and its activation record name `:release_sha`, worker and door report the same release, there are zero binding/epoch mismatches and the canary is unchanged. Then start the door.
    - From here a brief can already be admitted by hand through the door (`recipe: morning-brief/v1`, `objective: morning brief`). Use that for the first verified run before any schedule exists.
-2. **Seed the schedule (disabled):**
+3. **Seed the schedule (disabled):**
    ```
    canary-runner install-brief --schedule-id <new uuid> --tenant-id <tenant> --owner-id <Jonny's principal> --created-at <iso>
    ```
-3. **Enable it:**
+4. **Enable it:**
    ```
    canary-runner enable-canary --schedule-id <uuid> --tenant-id <tenant> --actor-id <Jonny's principal> --from-version v1 --to-version v2 --created-at <iso> --expected-state disabled
    ```
-4. **Point the worker at it:** set `SCHED_BRIEF_SCHEDULE_ID=<uuid>` in the worker's runtime env and recreate the worker.
-5. **Arm the first wake**, as for the canary (`docs/production/phase-s1-canary/DURABLE_RESTATE_WAKE_RESULT_2026-09-13.md`): one `POST /ScheduleDriver/<uuid>/fire/send` for the next 07:00 window. With `SCHED_ARM_NEXT=true` it then re-arms itself.
+5. **Point the worker at it:** set `SCHED_BRIEF_SCHEDULE_ID=<uuid>` in the worker's runtime env and recreate the worker.
+6. **Arm the first wake**, as for the canary (`docs/production/phase-s1-canary/DURABLE_RESTATE_WAKE_RESULT_2026-09-13.md`): one `POST /ScheduleDriver/<uuid>/fire/send` for the next 07:00 window. With `SCHED_ARM_NEXT=true` it then re-arms itself.
 
 **Rollback:**
 - `disable-canary` on the brief's schedule, and unset `SCHED_BRIEF_SCHEDULE_ID`. The disable is required, not optional: an armed brief schedule on a worker without the variable would fire as the canary.
+- To revert the release as well: quiesce ingress again and drain nonterminal tasks, restore the prior images and env files, re-register Restate, then activate the prior release with a **new** request UUID and the then-current epoch. Never reuse the forward request or move the epoch back. Verify epoch and parity before starting the door.
 - The canary is unaffected throughout.
 
 ## Verification
