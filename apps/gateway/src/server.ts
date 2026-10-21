@@ -13,6 +13,7 @@ import { MemoryStore } from "../../../services/memory/src/index.js";
 import { WorldStore } from "../../../services/world-model/src/index.js";
 import type { ControlPort } from "../../mission-control/src/server.js";
 import { Signal } from "../../../services/kernel/src/deterministic.js";
+import { TaskListQuery,listTasks,operatorHealth } from "./operator-views.js";
 // S1 canary (Gate 1.5): `claude_md_check/v1` is admitted through the normal task
 // path. The accept-list is an explicit enum — no wildcard — so only these exact
 // recipe ids are admissible; any other/ malformed id is rejected by the parse.
@@ -31,7 +32,7 @@ const Key=z.string().regex(/^[A-Za-z0-9._:-]{8,128}$/);
 // KJ-P4A: a channel adapter may attribute its admissions to itself, but ONLY to a label on this
 // allow-list, so `source` on the IntentEnvelope stays a fixed vocabulary and never caller text.
 // The bearer still decides principal and tenant; the header changes nothing about authority.
-export const CHANNEL_SOURCES:Readonly<Record<string,string>>={'telegram/v1':'kerneljson:channel/telegram/v1'};
+export const CHANNEL_SOURCES:Readonly<Record<string,string>>={'telegram/v1':'kerneljson:channel/telegram/v1','chatgpt-mcp/v1':'kerneljson:channel/chatgpt-mcp/v1'};
 export function sourceFor(header:string|string[]|undefined):string{
  if(header===undefined)return 'kerneljson:gateway/v1';
  const source=typeof header==='string'?CHANNEL_SOURCES[header]:undefined;
@@ -124,6 +125,9 @@ export function createGateway(options:GatewayOptions){
     res.setHeader('location',`/v1/tasks/${accepted.binding.taskId}`);
     reply(202,{...await status(context,accepted.binding.taskId),dispatch:dispatched.status});return;
    }
+   // ADR-0025: read-only list and ledger-side health for the operator MCP server.
+   if(req.method==='GET'&&url.pathname==='/v1/tasks'){reply(200,await listTasks(options.pool,context,TaskListQuery.parse(Object.fromEntries(url.searchParams))));return;}
+   if(req.method==='GET'&&url.pathname==='/v1/health'){reply(200,await operatorHealth(options.pool,context,options.releaseId));return;}
    if(req.method==='GET'&&url.pathname==='/v1/memory'){reply(200,await memory.retrieve(context,Object.fromEntries(url.searchParams)));return;}
    if(req.method==='GET'&&url.pathname==='/v1/world'){reply(200,await world.view(context,Object.fromEntries(url.searchParams)));return;}
    const match=/^\/v1\/tasks\/([^/]+)(?:\/(history|evidence|outcome|cancel|signal|approve))?$/.exec(url.pathname);if(!match)throw new GatewayError(404,'NOT_FOUND');
