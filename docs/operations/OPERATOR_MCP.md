@@ -88,51 +88,49 @@ Fastest first. Each one is independent; none touches the brief, canary or Phase 
 
 ## Which ChatGPT plans can use it
 
-Checked 21/10/2026. OpenAI's help page returned 403 to an automated fetch, so this rests on search summaries of that page, a dated September 2026 guide and a June-July 2026 community thread. **Treat it as a guide and let the connection test decide.**
+Checked 21/10/2026 against OpenAI's developer guide "Add custom MCP server" (fetched) and the help article "Connecting custom MCP servers in ChatGPT" (403 to an automated fetch, so taken from search summaries). **Let the connection test decide on your own account.**
+
+How custom servers are added now: **Plugins** (chatgpt.com/plugins), the **+** button, **Add custom MCP server**. The developer guide does not mention Developer mode for this path, and states no plan restriction. It says write tools need confirmation by default, and the approval can be remembered for the rest of a conversation.
 
 | Plan | Custom MCP server | Write tools (`kj_run_brief`, `kj_run_analysis`, `kj_cancel_task`) |
 |---|---|---|
-| Business | Yes. An admin or owner must first allow Developer mode for the workspace. Then each person turns it on for themselves | Supported, in beta. ChatGPT asks for confirmation before each write call |
-| Enterprise, Edu | Yes, with role-based access. Admins choose which actions a published app may use, and new actions start **disabled** | As Business, once the admin enables the actions |
-| Plus, Pro | **Unclear.** Developer mode launched on Plus and Pro in September 2025. A September 2026 guide says custom servers have since moved to workspace plans only | Unclear. Some sources say write actions are available to everyone, others that they are not |
+| Business, Enterprise, Edu | Yes. Workspace permissions apply: an admin may have to allow custom servers, and on Enterprise and Edu new actions start disabled | Yes ("full MCP"), with confirmation |
+| Pro | Yes, per the help article | **No**: read and fetch only |
+| Plus | **Not stated** by either OpenAI page. Third-party guides disagree | Assume **no**, as Pro |
 | Free | No | No |
 
-**Admin path (Business).** Workspace settings, then Permissions & roles, then Connected data: allow "Developer mode / Create custom MCP connectors".
-
-**Personal path.** Settings, then Apps (or Apps & Connectors), then Advanced settings: turn on Developer mode.
-
-**Using it in ordinary conversations.** A connector you create is a draft visible only to you, marked "Dev". Enable it for a chat from the composer's **+** menu; it then works in that conversation like any other app. On a workspace plan an admin can publish it to the workspace instead. On Business a published app cannot be edited in place: any change to tool descriptions means recreating and republishing it. A draft is enough for one person.
+**On Plus or Pro, only the seven read tools can be expected to work.** That still gives tasks, evidence, history, memory, the world model and health from ordinary chat. Starting a brief or an analysis would stay on Telegram. Whether ChatGPT hides the three write tools or refuses the whole server on these plans is not documented. The connection test shows which.
 
 **Known failure: "This tool call was blocked by OpenAI's safety checks".** In June and July 2026 builders on Business and Plus reported this, mostly on write tools, sometimes on read tools. OpenAI has not confirmed a cause.
 - Workarounds reported: tool descriptions that state plainly what a tool changes and that it is not destructive; a new chat after a block.
-- Ours already describe exactly what each tool does, and `kj_run_brief` and `kj_run_analysis` are marked non-destructive.
+- Ours already describe exactly what each tool does, and every read tool carries `readOnlyHint`.
 - If it happens, record which tool, then retry in a new chat. A block happens inside ChatGPT, so nothing reaches the server and nothing appears in its log.
 
-**What to check on your own plan before the window.** Open ChatGPT Settings, then Apps.
-- If there is no Developer mode toggle, or no **Create** button after turning it on, the plan does not allow custom servers. Stop there: the deploy would serve nobody.
-- If both are there, the connection test (checklist step 10) settles write access.
+**What to check on your own account before the window.** Open chatgpt.com/plugins and press **+**.
+- No **Add custom MCP server** option means this account cannot use the server. Stop there: the deploy would serve nobody.
+- If the option is there, the connection test (checklist step 10) settles which tools work.
 
 Sources:
-- https://help.openai.com/en/articles/12584461-developer-mode-apps-and-full-mcp-connectors-in-chatgpt-beta
-- https://peliqan.io/blog/chatgpt-mcp/ (21/09/2026)
+- https://developers.openai.com/api/docs/guides/custom-mcp-server
+- https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt
 - https://community.openai.com/t/write-actions-blocked-on-custom-mcp-server-business-plan-workspace-developer-mode-unavailable-at-workspace-level/1384381
 
 ## Connecting ChatGPT
 
 The labels below are ChatGPT's at the time of writing; they move occasionally.
 
-1. ChatGPT on the web, signed in as yourself, with Developer mode on (see above).
-2. Settings, Apps, then **Create** (add a custom app or connector):
+1. ChatGPT on the web, signed in as yourself.
+2. Plugins (chatgpt.com/plugins), **+**, **Add custom MCP server**:
    - Name: `KernelJSON`.
    - Description: `Jonny's task kernel: read tasks and health, run a morning brief or a repository analysis, cancel a task started from ChatGPT.`
-   - MCP server URL: `https://kj-mcp.jonnyai.co.uk/mcp`.
-   - Authentication: **OAuth**. Leave client id and secret empty; ChatGPT registers itself.
-   - Tick that you trust the application, then Create.
+   - Server URL: `https://kj-mcp.jonnyai.co.uk/mcp`.
+   - Authentication: **OAuth**. Leave client id and secret empty; ChatGPT registers itself (dynamic client registration).
+   - Accept the risk warning, then **Create as a plugin**, then install it.
 3. ChatGPT opens the sign-in:
    1. Google account chooser: pick `jonnyallum@gmail.com`.
    2. KernelJSON's "Allow access to KernelJSON?" page: check it names ChatGPT and `https://chatgpt.com`, then choose **Allow**.
-   3. You land back in ChatGPT, connected. The ten `kj_*` tools should be listed.
-4. In a new chat, use the composer's **+** menu and enable KernelJSON for that chat. Then ask in plain words, for example "Check KernelJSON's health", "What tasks ran today?" or "Run a morning brief".
+   3. You land back in ChatGPT, connected. The `kj_*` tools should be listed: ten on a full-MCP plan, possibly seven read tools elsewhere.
+4. In a new chat, enable KernelJSON from the composer's **+** menu. Then ask in plain words, for example "Check KernelJSON's health", "What tasks ran today?" or, on a full-MCP plan, "Run a morning brief".
    - ChatGPT asks you to confirm each call to `kj_run_brief`, `kj_run_analysis` and `kj_cancel_task`, because they are not read-only.
    - It passes a fresh `request_id` for each new run.
 5. Close registration (checklist step 11).

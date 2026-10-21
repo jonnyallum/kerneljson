@@ -22,7 +22,7 @@ SC="python C:\Users\jonny\Desktop\new-system\AgentHub\scripts\secretctl.py"
 
 | # | Do | Expect |
 |---|---|---|
-| P1 | ChatGPT, Settings, Apps: turn on Developer mode, look for **Create** | Both present. If not, stop: the plan cannot use custom servers (see OPERATOR_MCP.md, "Which ChatGPT plans") |
+| P1 | chatgpt.com/plugins, press **+** | **Add custom MCP server** is offered. If not, stop: this account cannot use the server. On Plus or Pro expect the read tools only (OPERATOR_MCP.md, "Which ChatGPT plans") |
 | P2 | One-time setup in OPERATOR_MCP.md (Google client, DNS, secrets) | `$SC check kerneljson/MCP_GOOGLE_CLIENT_SECRET kerneljson/MCP_TOKEN_SIGNING_KEY kerneljson/KJ_MCP_BEARER` reports all three, the last two at length 64. `nslookup kj-mcp.jonnyai.co.uk` gives `34.105.219.103` |
 | P3 | Merge PR #60 | `gh run list --commit $SHA` shows `validate` and `identity-cognition-mutations` succeeded |
 | P4 | Claude prepares `/tmp/kjwin/mcp-prep.sh`, `mcp-deploy.sh` and `activate60.js` from the 21/10 `07eac9f` scripts, with prior epoch 15 and a new request UUID. Jonny reads them | Scripts on the VM. Diff against the `07eac9f` versions is only the SHA, the epoch, the evidence text and the door env keys below |
@@ -55,14 +55,14 @@ Run it in ChatGPT on the web. Every line must hold.
 
 | # | Do | Pass |
 |---|---|---|
-| 10a | Settings, Apps, Create: URL `https://kj-mcp.jonnyai.co.uk/mcp`, OAuth (OPERATOR_MCP.md, "Connecting ChatGPT") | Google chooser, then "Allow access to KernelJSON?" naming ChatGPT and `https://chatgpt.com`. After Allow, ten `kj_*` tools listed |
+| 10a | Plugins, **+**, Add custom MCP server: URL `https://kj-mcp.jonnyai.co.uk/mcp`, OAuth (OPERATOR_MCP.md, "Connecting ChatGPT") | Google chooser, then "Allow access to KernelJSON?" naming ChatGPT and `https://chatgpt.com`. After Allow, the `kj_*` tools are listed (ten on a full-MCP plan) |
 | 10b | New chat, **+**, enable KernelJSON. "Check KernelJSON's health" | A read call, no confirmation asked. Answer shows epoch 16 and `doorMatchesActive: true` |
 | 10c | "What tasks ran today?" | Lists today's tasks, including the 06:00Z brief |
 | 10d | "Run a morning brief" | ChatGPT asks to confirm, you confirm, it returns a task id. The brief reaches Telegram within about 5 minutes. On the VM the admission row for that task has `principal_id = $MCP_PRINCIPAL` and source `kerneljson:channel/chatgpt-mcp/v1` |
 | 10e | "Follow that task until it finishes" | `kj_get_task` shows COMPLETED. Evidence is listed |
 | 10f | On the VM: `docker logs kerneljson-mcp 2>&1 \| grep -c 'kjm1\.'` | `0`: no token text in the log |
 
-Record the plan used and the result of 10d, which is the write call. If 10d is "blocked by OpenAI's safety checks", record it, retry once in a new chat, and leave the deploy in place: reads still work and the block happens inside ChatGPT.
+On a plan without write actions, 10d is expected to be unavailable: 10a to 10c, 10e (on an existing task) and 10f are then the pass. Record the plan used and the result of 10d, which is the write call. If 10d is "blocked by OpenAI's safety checks", record it, retry once in a new chat, and leave the deploy in place: reads still work and the block happens inside ChatGPT.
 
 | # | Then | Expect |
 |---|---|---|
