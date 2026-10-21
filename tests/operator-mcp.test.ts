@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { HttpOperatorDoor, MCP_CHANNEL, type DoorResult, type OperatorDoor } from "../apps/mcp/src/door.js";
 import { LATEST_PROTOCOL_VERSION, handleMessage } from "../apps/mcp/src/protocol.js";
-import { createMcpServer } from "../apps/mcp/src/server.js";
+import { createMcpServer, requestGuard } from "../apps/mcp/src/server.js";
 import { TOOLS, analysisObjective, toolList } from "../apps/mcp/src/tools.js";
 import { loadConfig } from "../apps/mcp/src/main.js";
 import { parseMissionObjective } from "../packages/contracts/src/index.js";
@@ -130,7 +130,7 @@ describe("HTTP transport", () => {
   let allow = true;
   beforeAll(async () => {
     const handler = createMcpServer({
-      door: fakeDoor().door, release: "test-release", verify: async (auth) => allow && auth === "Bearer ok",
+      door: fakeDoor().door, release: "test-release", verify: async (auth) => allow && auth === "Bearer ok", guard: requestGuard({ kind: "local" }),
       allowedOrigins: ["https://chatgpt.com"], resourceMetadataUrl: "https://kj-mcp.example/.well-known/oauth-protected-resource",
     });
     server = createServer((req, res) => void handler(req, res));
@@ -208,8 +208,8 @@ describe("local mode guard", () => {
   const base = { KJ_ADMISSION_URL: "http://127.0.0.1:8081", KJ_ADMISSION_BEARER: BEARER, MCP_AUTH: "local-unauthenticated" };
   it("starts only when told it is local and bound to loopback", () => {
     expect(loadConfig(base)).toMatchObject({ host: "127.0.0.1", port: 8090 });
-    expect(() => loadConfig({ ...base, MCP_AUTH: undefined })).toThrow(/OAuth/);
-    expect(() => loadConfig({ ...base, MCP_AUTH: "none" })).toThrow(/OAuth/);
+    expect(() => loadConfig({ ...base, MCP_AUTH: undefined })).toThrow(/MCP_AUTH/);
+    expect(() => loadConfig({ ...base, MCP_AUTH: "none" })).toThrow(/MCP_AUTH/);
     expect(() => loadConfig({ ...base, MCP_HOST: "0.0.0.0" })).toThrow(/loopback/);
     expect(() => loadConfig({ ...base, KJ_ADMISSION_BEARER: "" })).toThrow(/required/);
   });

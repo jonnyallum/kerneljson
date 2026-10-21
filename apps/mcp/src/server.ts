@@ -22,6 +22,30 @@ export interface McpServerOptions {
   /** Sent in WWW-Authenticate on a 401 so an OAuth client can discover the authorisation server. */
   resourceMetadataUrl?: string;
   log?: (entry: CallLog & { correlationId: string }) => void;
+  /** Extra routes served before /mcp (the OAuth endpoints). Returns true when it answered. */
+  routes?: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean>;
+  /** Refuses a request that should never reach this server at all (see requestGuard). */
+  guard: (req: IncomingMessage) => string | null;
+}
+
+const PROXY_HEADERS = ["forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip", "via"];
+const LOOPBACK_HOST = /^(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$/;
+
+/**
+ * Local unauthenticated mode must be unreachable through any reverse proxy: a proxied request carries
+ * forwarding headers, a non-loopback Host, or both, and is refused before anything else happens.
+ * OAuth mode answers only to its own public host name.
+ */
+export function requestGuard(mode: { kind: "local" } | { kind: "oauth"; publicHost: string }) {
+  return (req: IncomingMessage): string | null => {
+    const host = req.headers.host ?? "";
+    if (mode.kind === "local") {
+      if (PROXY_HEADERS.some((h) => req.headers[h] !== undefined)) return "PROXIED_REQUEST_REFUSED_IN_LOCAL_MODE";
+      if (!LOOPBACK_HOST.test(host)) return "NON_LOOPBACK_HOST_REFUSED_IN_LOCAL_MODE";
+      return null;
+    }
+    return host === mode.publicHost ? null : "UNKNOWN_HOST";
+  };
 }
 
 class HttpError extends Error {
@@ -52,7 +76,7 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 }
 
 export function createMcpServer(options: McpServerOptions) {
-  if (typeof options.verify !== "function") throw new Error("An access verifier is required");
+  if (typeof options.verify !== "function" || typeof options.guard !== "function") throw new Error("An access verifier and a request guard are required");
   const origins = new Set(options.allowedOrigins);
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const correlationId = randomUUID();
@@ -70,7 +94,11 @@ export function createMcpServer(options: McpServerOptions) {
     };
     try {
       const url = new URL(req.url ?? "/", "http://mcp.invalid");
+      // Liveness for the container healthcheck only: no auth, no door call, nothing about configuration.
       if (req.method === "GET" && url.pathname === "/healthz") return send(200, { ok: true });
+      const refused = options.guard(req);
+      if (refused) throw new HttpError(421, refused);
+      if (options.routes && (await options.routes(req, res, url))) return;
       if (url.pathname !== MCP_PATH) throw new HttpError(404, "NOT_FOUND");
       const origin = req.headers.origin;
       if (origin !== undefined && !origins.has(origin)) throw new HttpError(403, "ORIGIN_NOT_ALLOWED");
