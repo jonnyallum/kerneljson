@@ -71,7 +71,11 @@ export interface GatewayOptions {
  authenticate:(headers:IncomingHttpHeaders)=>Promise<TenantContext>;
  admit:(context:TenantContext,operation:'submit'|'control')=>Promise<boolean>;
  dispatch:Dispatch; controls:ControlPort;
+ /** ADR-0025: an optional per-principal limit on what a caller may start or control. Absent, nothing
+  *  is limited beyond membership. Reads are never limited here; tenant membership still governs them. */
+ scope?:(context:TenantContext,operation:ScopedOperation)=>boolean;
 }
+export type ScopedOperation={kind:'submit';recipe:string}|{kind:'control';action:'cancel'|'signal'|'approve'};
 async function body(req:IncomingMessage){
  if(req.headers['content-type']?.split(';')[0]!=='application/json')throw new GatewayError(415,'JSON_REQUIRED');
  if(Number(req.headers['content-length']??0)>MAX_BODY_BYTES){req.resume();throw new GatewayError(413,'PAYLOAD_TOO_LARGE');}
@@ -101,6 +105,7 @@ export function createGateway(options:GatewayOptions){
    const url=new URL(req.url??'/','http://gateway.invalid');
    if(req.method==='POST'&&url.pathname==='/v1/tasks'){
     const input=PublicSubmission.parse(await body(req)),key=Key.parse(req.headers['idempotency-key']),source=sourceFor(req.headers['x-kj-channel']);
+    if(options.scope&&!options.scope(context,{kind:'submit',recipe:input.recipe}))throw new GatewayError(403,'OUT_OF_SCOPE');
     const keyDigest=capabilityDigest(key),requestDigest=capabilityDigest(input);
     const accepted=await withTenant(options.pool,context,async(db,ctx)=>{
      if(!(await options.admit(ctx,'submit')))throw new GatewayError(429,'ADMISSION_DENIED');
@@ -138,6 +143,7 @@ export function createGateway(options:GatewayOptions){
     const view=await views.task(context,taskId);if(!view)throw new GatewayError(404,'TASK_NOT_FOUND');reply(200,action==='history'?view.events:action==='evidence'?view.evidence:view.outcome);return;
    }
    if(req.method!=='POST'||!action||!['cancel','signal','approve'].includes(action))throw new GatewayError(405,'METHOD_NOT_ALLOWED');
+   if(options.scope&&!options.scope(context,{kind:'control',action:action as 'cancel'|'signal'|'approve'}))throw new GatewayError(403,'OUT_OF_SCOPE');
    await withTenant(options.pool,context,async(_db,ctx)=>{if(!(await options.admit(ctx,'control')))throw new GatewayError(429,'ADMISSION_DENIED');},action as 'cancel'|'signal'|'approve');
    const input=await body(req);
    const result=action==='approve'?await options.controls.approve(context,taskId,ApprovalAnswer.parse(input)):action==='signal'?await options.controls.signal?.(context,taskId,Signal.parse(input)):(z.strictObject({}).parse(input),await options.controls.cancel(context,taskId));

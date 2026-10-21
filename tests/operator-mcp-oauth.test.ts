@@ -4,6 +4,7 @@ import { createServer, request, type IncomingMessage, type Server, type ServerRe
 import { buildHandler, loadConfig } from "../apps/mcp/src/main.js";
 import { checkIdToken, type GoogleSignIn } from "../apps/mcp/src/oauth/google.js";
 import { ACCESS_TTL_S } from "../apps/mcp/src/oauth/server.js";
+import { DEFAULT_RATE_LIMITS } from "../apps/mcp/src/oauth/rate-limit.js";
 import { TokenSigner } from "../apps/mcp/src/oauth/tokens.js";
 
 /**
@@ -83,10 +84,13 @@ beforeAll(async () => {
   oauthEnv = {
     MCP_AUTH: "oauth", MCP_PUBLIC_URL: base, MCP_ALLOWED_GOOGLE_SUB: JONNY,
     GOOGLE_CLIENT_ID: "123456789012-test.apps.googleusercontent.com", GOOGLE_CLIENT_SECRET: "google-secret-for-tests",
-    MCP_TOKEN_SIGNING_KEY: SIGNING_KEY, MCP_REGISTRATION: "open", KJ_ADMISSION_URL: `http://127.0.0.1:${d.port}`, KJ_ADMISSION_BEARER: DOOR_BEARER,
+    MCP_TOKEN_SIGNING_KEY: SIGNING_KEY, MCP_REGISTRATION: "open", KJ_ADMISSION_URL: `http://127.0.0.1:${d.port}`, KJ_MCP_BEARER: DOOR_BEARER,
     KERNELJSON_RELEASE_ID: "test-release",
   };
-  handler = buildHandler(loadConfig(oauthEnv), { google, now });
+  // The flow tests run many sign-ins in one simulated minute from one address, so they get room; the
+  // production limits are exercised in their own describe below.
+  const roomy = { limit: 100_000, windowMs: 60_000 };
+  handler = buildHandler(loadConfig(oauthEnv), { google, now, rateLimits: { perClient: roomy, registerPerClient: roomy, global: roomy } });
 });
 afterAll(async () => {
   await Promise.all([door, mcp].map((s) => new Promise<void>((r) => s.close(() => r()))));
@@ -355,11 +359,80 @@ describe("rejected access", () => {
   });
 });
 
+describe("the public OAuth endpoints are rate limited (production defaults)", () => {
+  let limited: Server;
+  let port = 0;
+  let t = Date.UTC(2026, 9, 21, 15, 0, 0);
+  const lines: string[] = [];
+  beforeAll(async () => {
+    let h: (req: IncomingMessage, res: ServerResponse) => Promise<void> = async () => {};
+    limited = createServer((req, res) => void h(req, res));
+    await new Promise<void>((r) => limited.listen(0, "127.0.0.1", r));
+    port = (limited.address() as { port: number }).port;
+    const env = { ...oauthEnv, MCP_PUBLIC_URL: `http://127.0.0.1:${port}` };
+    h = buildHandler(loadConfig(env), { google, now: () => t, log: (l) => lines.push(l) });
+  });
+  afterAll(() => new Promise<void>((r) => limited.close(() => r())));
+  const hit = (path: string, from: string, method = "GET") =>
+    new Promise<{ status: number; retryAfter: string | undefined }>((resolve, reject) => {
+      const req = request(
+        { host: "127.0.0.1", port, path, method, headers: { host: `127.0.0.1:${port}`, "x-forwarded-for": from, "content-type": "application/json" } },
+        (res) => {
+          res.resume();
+          resolve({ status: res.statusCode ?? 0, retryAfter: res.headers["retry-after"] as string | undefined });
+        },
+      );
+      req.on("error", reject);
+      req.end(method === "POST" ? JSON.stringify({ redirect_uris: [CHATGPT], client_name: "ChatGPT" }) : undefined);
+    });
+
+  it("refuses one address after its per-minute allowance, with Retry-After, and recovers when the window ends", async () => {
+    const { limit } = DEFAULT_RATE_LIMITS.perClient;
+    for (let i = 0; i < limit; i++) expect((await hit("/oauth/authorize", "203.0.113.7")).status).not.toBe(429);
+    const refused = await hit("/oauth/authorize", "203.0.113.7");
+    expect(refused.status).toBe(429);
+    expect(Number(refused.retryAfter)).toBeGreaterThan(0);
+    expect(Number(refused.retryAfter)).toBeLessThanOrEqual(60);
+    // Other paths under /oauth/ share the allowance; discovery and other addresses do not.
+    expect((await hit("/oauth/token", "203.0.113.7", "POST")).status).toBe(429);
+    expect((await hit("/.well-known/oauth-authorization-server", "203.0.113.7")).status).toBe(200);
+    expect((await hit("/oauth/authorize", "203.0.113.8")).status).not.toBe(429);
+    // Only the last X-Forwarded-For entry (the one Caddy writes) names the client.
+    expect((await hit("/oauth/authorize", "198.51.100.1, 203.0.113.7")).status).toBe(429);
+    expect((await hit("/oauth/authorize", "203.0.113.7, 198.51.100.1")).status).not.toBe(429);
+    t += DEFAULT_RATE_LIMITS.perClient.windowMs;
+    expect((await hit("/oauth/authorize", "203.0.113.7")).status).not.toBe(429);
+    const logged = lines.map((l) => JSON.parse(l) as Record<string, unknown>).filter((l) => l["oauth"] === "rate_limited");
+    expect(logged.length).toBeGreaterThan(0);
+    expect(logged[0]).toMatchObject({ route: "GET /oauth/authorize", rule: "perClient" });
+    expect(lines.join(" ")).not.toContain("203.0.113.7");
+  });
+
+  it("allows only a few registrations an hour from one address", async () => {
+    t += 3_600_000;
+    const { limit } = DEFAULT_RATE_LIMITS.registerPerClient;
+    for (let i = 0; i < limit; i++) expect((await hit("/oauth/register", "192.0.2.50", "POST")).status).toBe(201);
+    expect((await hit("/oauth/register", "192.0.2.50", "POST")).status).toBe(429);
+    t += DEFAULT_RATE_LIMITS.perClient.windowMs; // the per-minute window resets, the hourly one does not
+    expect((await hit("/oauth/register", "192.0.2.50", "POST")).status).toBe(429);
+    expect((await hit("/oauth/authorize", "192.0.2.50")).status).not.toBe(429);
+  });
+
+  it("caps everyone together, so many addresses cannot fill the sign-in table", async () => {
+    t += 3_600_000;
+    const { limit } = DEFAULT_RATE_LIMITS.global;
+    for (let i = 0; i < limit; i++) expect((await hit("/oauth/authorize", `10.1.${Math.floor(i / 250)}.${i % 250}`)).status).not.toBe(429);
+    expect((await hit("/oauth/authorize", "10.9.9.9")).status).toBe(429);
+    t += DEFAULT_RATE_LIMITS.global.windowMs;
+    expect((await hit("/oauth/authorize", "10.9.9.9")).status).not.toBe(429);
+  });
+});
+
 describe("local unauthenticated mode cannot be reached through a proxy", () => {
   let local: Server;
   let port = 0;
   beforeAll(async () => {
-    const handler = buildHandler(loadConfig({ MCP_AUTH: "local-unauthenticated", KJ_ADMISSION_URL: "http://127.0.0.1:9", KJ_ADMISSION_BEARER: DOOR_BEARER }));
+    const handler = buildHandler(loadConfig({ MCP_AUTH: "local-unauthenticated", KJ_ADMISSION_URL: "http://127.0.0.1:9", KJ_MCP_BEARER: DOOR_BEARER }));
     local = createServer((req, res) => void handler(req, res));
     await new Promise<void>((r) => local.listen(0, "127.0.0.1", r));
     port = (local.address() as { port: number }).port;
@@ -383,7 +456,7 @@ describe("local unauthenticated mode cannot be reached through a proxy", () => {
   });
 
   it("refuses to start on a non-loopback address", () => {
-    expect(() => loadConfig({ MCP_AUTH: "local-unauthenticated", MCP_HOST: "0.0.0.0", KJ_ADMISSION_URL: "http://x", KJ_ADMISSION_BEARER: DOOR_BEARER })).toThrow(/loopback/);
+    expect(() => loadConfig({ MCP_AUTH: "local-unauthenticated", MCP_HOST: "0.0.0.0", KJ_ADMISSION_URL: "http://x", KJ_MCP_BEARER: DOOR_BEARER })).toThrow(/loopback/);
   });
 });
 

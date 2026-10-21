@@ -4,12 +4,14 @@
 # Image:     the admission door image of the SAME release (it already contains apps/mcp), run with a
 #            different command. KJ_MCP_IMAGE must be set explicitly, e.g. kerneljson-admission-door:<sha>.
 # Secrets:   from a mode-600 env file built from jVault (never argv, never committed):
-#              KJ_ADMISSION_BEARER, GOOGLE_CLIENT_SECRET, MCP_TOKEN_SIGNING_KEY
+#              KJ_MCP_BEARER (the MCP principal's own door bearer; never the worker's),
+#              MCP_GOOGLE_CLIENT_SECRET, MCP_TOKEN_SIGNING_KEY. These are the jVault entry names in
+#              project kerneljson, so `secretctl env` writes this file directly.
 # Public:    MCP_PUBLIC_URL, MCP_ALLOWED_GOOGLE_SUB, GOOGLE_CLIENT_ID, KERNELJSON_RELEASE_ID
 # Networks:  kerneljson-exec (to reach the door by container name) and kj-mcp-edge (Caddy reaches the
 #            server by container name). Both are pre-created EXTERNAL networks. No host port is
 #            published: the only way in is Caddy on kj-mcp.jonnyai.co.uk.
-# Start:     docker compose --env-file /opt/kerneljson/runtime/mcp/runtime.env -f mcp.compose.yaml up -d
+# Start:     docker compose --env-file /opt/kerneljson/runtime/mcp/public.env --env-file /opt/kerneljson/runtime/mcp/secrets.env \n#              -f mcp.compose.yaml up -d
 name: kerneljson-mcp
 services:
   mcp:
@@ -24,14 +26,14 @@ services:
       MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:?set MCP_PUBLIC_URL, e.g. https://kj-mcp.jonnyai.co.uk}
       MCP_ALLOWED_GOOGLE_SUB: ${MCP_ALLOWED_GOOGLE_SUB:?set the permitted Google subject id}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?set the Google OAuth client id}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?set from jVault; never commit}
+      GOOGLE_CLIENT_SECRET: ${MCP_GOOGLE_CLIENT_SECRET:?set from jVault; never commit}
       MCP_TOKEN_SIGNING_KEY: ${MCP_TOKEN_SIGNING_KEY:?set from jVault; never commit}
       MCP_ALLOWED_REDIRECT_URIS: ${MCP_ALLOWED_REDIRECT_URIS:-}
       MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
       # open for the first ChatGPT connection, then closed (runbook step 9).
       MCP_REGISTRATION: ${MCP_REGISTRATION:?set open or closed}
       KJ_ADMISSION_URL: http://kerneljson-admission-door-gateway-1:8081
-      KJ_ADMISSION_BEARER: ${KJ_ADMISSION_BEARER:?set from jVault; never commit}
+      KJ_MCP_BEARER: ${KJ_MCP_BEARER:?set from jVault; never commit}
       KERNELJSON_RELEASE_ID: ${KERNELJSON_RELEASE_ID:?set to the door release}
       TSX_DISABLE_CACHE: "1"
     user: "node"

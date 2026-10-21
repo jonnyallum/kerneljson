@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { HttpOperatorDoor } from "./door.js";
 import { HttpGoogleSignIn, type GoogleSignIn } from "./oauth/google.js";
 import { createOAuthServer } from "./oauth/server.js";
+import type { RateLimits } from "./oauth/rate-limit.js";
 import { TokenSigner } from "./oauth/tokens.js";
 import { createMcpServer, requestGuard } from "./server.js";
 
@@ -13,7 +14,8 @@ import { createMcpServer, requestGuard } from "./server.js";
  *   MCP_AUTH=local-unauthenticated   development only: loopback bind, and every proxied or non-loopback
  *                                    request is refused (server.ts requestGuard)
  *
- * Common:  KJ_ADMISSION_URL, KJ_ADMISSION_BEARER (the door bearer, from an env file; never argv),
+ * Common:  KJ_ADMISSION_URL, KJ_MCP_BEARER (the MCP principal's own door bearer, never the worker's;
+ *          from an env file, never argv),
  *          MCP_HOST, MCP_PORT (default 8090), KERNELJSON_RELEASE_ID
  * OAuth:   MCP_PUBLIC_URL (https origin), MCP_ALLOWED_GOOGLE_SUB, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
  *          MCP_TOKEN_SIGNING_KEY (>= 32 bytes), MCP_ALLOWED_REDIRECT_URIS (comma list; default ChatGPT's
@@ -40,8 +42,8 @@ export function loadConfig(env: NodeJS.ProcessEnv) {
   const port = Number(env["MCP_PORT"] || 8090);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("MCP_PORT must be a port number");
   const doorUrl = env["KJ_ADMISSION_URL"];
-  const bearer = env["KJ_ADMISSION_BEARER"];
-  if (!doorUrl || !bearer) throw new Error("KJ_ADMISSION_URL and KJ_ADMISSION_BEARER are required");
+  const bearer = env["KJ_MCP_BEARER"];
+  if (!doorUrl || !bearer) throw new Error("KJ_ADMISSION_URL and KJ_MCP_BEARER are required");
   const common = { host, port, doorUrl, bearer, release: env["KERNELJSON_RELEASE_ID"] || "unreleased-development" };
   const mode = env["MCP_AUTH"];
   if (mode === "local-unauthenticated") {
@@ -79,8 +81,11 @@ export function loadConfig(env: NodeJS.ProcessEnv) {
   };
 }
 
-/** `google` and `now` exist for tests; production passes neither. */
-export function buildHandler(config: McpConfig, deps: { fetchImpl?: typeof fetch; now?: () => number; log?: (line: string) => void; google?: GoogleSignIn } = {}) {
+/** `google`, `now` and `rateLimits` exist for tests; production passes none of them. */
+export function buildHandler(
+  config: McpConfig,
+  deps: { fetchImpl?: typeof fetch; now?: () => number; log?: (line: string) => void; google?: GoogleSignIn; rateLimits?: RateLimits } = {},
+) {
   const door = new HttpOperatorDoor(config.doorUrl, config.bearer, deps.fetchImpl);
   const log = (entry: object) => deps.log?.(JSON.stringify({ at: new Date().toISOString(), ...entry }));
   if (config.auth.kind === "local") {
@@ -95,6 +100,7 @@ export function buildHandler(config: McpConfig, deps: { fetchImpl?: typeof fetch
     signer: new TokenSigner(a.signingKey),
     google: deps.google ?? new HttpGoogleSignIn({ clientId: a.googleClientId, clientSecret: a.googleClientSecret, redirectUri: `${a.publicUrl}/oauth/google/callback` }, deps.fetchImpl, deps.now),
     ...(deps.now ? { now: deps.now } : {}),
+    ...(deps.rateLimits ? { rateLimits: deps.rateLimits } : {}),
     log,
   });
   return createMcpServer({

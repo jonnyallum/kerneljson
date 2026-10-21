@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 import type { GoogleSignIn } from "./google.js";
+import { DEFAULT_RATE_LIMITS, RateLimiter, clientAddress, type RateLimits } from "./rate-limit.js";
 import {
   AccessClaims,
   ClientClaims,
@@ -49,6 +50,8 @@ export interface OAuthConfig {
   now?: () => number;
   /** Security events, never tokens, codes or secrets. */
   log?: (event: Record<string, unknown>) => void;
+  /** Limits for /oauth/*. Defaults to DEFAULT_RATE_LIMITS. */
+  rateLimits?: RateLimits;
 }
 
 interface PendingLogin {
@@ -164,6 +167,7 @@ export function createOAuthServer(config: OAuthConfig) {
   const revokedFamilies = new Map<string, number>();
   const seconds = () => Math.floor(now() / 1000);
   const audit = (event: string, detail: Record<string, unknown> = {}) => config.log?.({ oauth: event, ...detail });
+  const limiter = new RateLimiter(config.rateLimits ?? DEFAULT_RATE_LIMITS, now);
 
   const resourceMetadata = {
     resource,
@@ -398,6 +402,17 @@ export function createOAuthServer(config: OAuthConfig) {
   /** Handles the OAuth and discovery routes; returns false for anything else. */
   async function handle(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     const route = `${req.method} ${url.pathname}`;
+    // Discovery is static and cheap; every /oauth/* request is counted, recognised route or not.
+    if (url.pathname.startsWith("/oauth/")) {
+      const decision = limiter.check(clientAddress(req), route === "POST /oauth/register");
+      if (!decision.ok) {
+        audit("rate_limited", { route, rule: decision.rule });
+        req.resume();
+        res.setHeader("retry-after", String(decision.retryAfterS));
+        json(res, 429, { error: "rate_limited", error_description: "Too many requests; try again shortly" });
+        return true;
+      }
+    }
     try {
       switch (route) {
         case "GET /.well-known/oauth-protected-resource":

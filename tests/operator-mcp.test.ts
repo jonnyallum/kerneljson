@@ -205,12 +205,12 @@ describe("HttpOperatorDoor", () => {
 });
 
 describe("local mode guard", () => {
-  const base = { KJ_ADMISSION_URL: "http://127.0.0.1:8081", KJ_ADMISSION_BEARER: BEARER, MCP_AUTH: "local-unauthenticated" };
+  const base = { KJ_ADMISSION_URL: "http://127.0.0.1:8081", KJ_MCP_BEARER: BEARER, MCP_AUTH: "local-unauthenticated" };
   it("starts only when told it is local and bound to loopback", () => {
     expect(loadConfig(base)).toMatchObject({ host: "127.0.0.1", port: 8090 });
     expect(() => loadConfig({ ...base, MCP_AUTH: undefined })).toThrow(/MCP_AUTH/);
     expect(() => loadConfig({ ...base, MCP_AUTH: "none" })).toThrow(/MCP_AUTH/);
     expect(() => loadConfig({ ...base, MCP_HOST: "0.0.0.0" })).toThrow(/loopback/);
-    expect(() => loadConfig({ ...base, KJ_ADMISSION_BEARER: "" })).toThrow(/required/);
+    expect(() => loadConfig({ ...base, KJ_MCP_BEARER: "" })).toThrow(/required/);
   });
 });

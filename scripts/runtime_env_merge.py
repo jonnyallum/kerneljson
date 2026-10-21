@@ -50,6 +50,9 @@ PUBLIC_KEYS = {
     "KJ_MEMORY_APPROVAL_TTL_SECONDS": re.compile(r"^[0-9]{2,6}$"),
     # KJ-P7B-1 identity cognition: an on/off switch, latched per analyst step (ADR-0022). Not a secret.
     "KJ_IDENTITY_COGNITION_ENABLED": re.compile(r"^(true|false)$"),
+    # ADR-0025 operator MCP: the door's second identity. The principal id and kind are not secret.
+    "KJ_MCP_PRINCIPAL_ID": re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"),
+    "KJ_MCP_PRINCIPAL_KIND": re.compile(r"^SERVICE$"),
 }
 SECRET_KEYS = {
     "TELEGRAM_BOT_TOKEN": re.compile(r"^\d{6,12}:[A-Za-z0-9_-]{35}$"),
@@ -59,6 +62,8 @@ SECRET_KEYS = {
     # KJ-P4B.1: the door/worker signing keys (43 to 128 URL-safe characters). Never argv, never transmitted.
     "KJ_CONTROL_SIGNING_KEY": re.compile(r"^[A-Za-z0-9_-]{43,128}$"),
     "KJ_CONTROL_SIGNING_KEY_PREVIOUS": re.compile(r"^[A-Za-z0-9_-]{43,128}$"),
+    # ADR-0025: the operator MCP server's own door bearer (48 random bytes, base64url). Never the worker's.
+    "KJ_MCP_BEARER": re.compile(r"^[A-Za-z0-9_-]{43,128}$"),
     "GITHUB_READ_TOKEN": re.compile(r"^(gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{50,255})$"),
 }
 

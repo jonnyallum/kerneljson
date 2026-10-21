@@ -6,6 +6,8 @@
 #
 #   Required:  DATABASE_URL (production Postgres), KJ_ADMISSION_BEARER (jVault),
 #              KJ_ADMISSION_TENANT_ID, KJ_ADMISSION_PRINCIPAL_ID, KJ_ADMISSION_PRINCIPAL_KIND
+#   MCP:       KJ_MCP_BEARER (jVault), KJ_MCP_PRINCIPAL_ID, KJ_MCP_PRINCIPAL_KIND=SERVICE, all three
+#              or none (ADR-0025). Unset => the door accepts no MCP credential, exactly as before.
 #   Optional:  PORT (default 8081), KERNELJSON_RELEASE_ID (default unreleased-development),
 #              KJ_RESTATE_INGRESS_URL (unset => admission-only mode; set => Restate dispatch),
 #              KJ_GATEWAY_IMAGE (default kerneljson-admission-door:dev; a deploy sets the
@@ -47,6 +49,11 @@ services:
       # (Restate journals request headers for 24 hours). Optional; unset signs nothing. Not the admission bearer.
       KJ_CONTROL_SIGNING_KEY: ${KJ_CONTROL_SIGNING_KEY:-}
       KJ_CONTROL_KEY_ID: ${KJ_CONTROL_KEY_ID:-}
+      # ADR-0025: the operator MCP server's own credential and SERVICE principal, scoped at the door to
+      # morning-brief/v1, repo-analysis-mission/v1 and cancel. Optional; all three or none.
+      KJ_MCP_BEARER: ${KJ_MCP_BEARER:-}
+      KJ_MCP_PRINCIPAL_ID: ${KJ_MCP_PRINCIPAL_ID:-}
+      KJ_MCP_PRINCIPAL_KIND: ${KJ_MCP_PRINCIPAL_KIND:-}
     ports: ["127.0.0.1:${PORT:-8081}:${PORT:-8081}"]
     healthcheck:
       test:

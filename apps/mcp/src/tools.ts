@@ -139,7 +139,7 @@ export const TOOLS: readonly ToolDefinition[] = [
   }),
   define({
     name: "kj_cancel_task",
-    description: "Ask KernelJSON to cancel a task that has not finished. The kernel decides whether it can; cancelling never undoes work already done.",
+    description: "Ask KernelJSON to cancel a task started from ChatGPT that has not finished. Tasks started elsewhere (the scheduled brief, Telegram) cannot be cancelled from here. The kernel decides whether it can; cancelling never undoes work already done.",
     input: TaskRef,
     annotations: { title: "Cancel a task", readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     run: (door, args) => door.cancel(args.task_id),

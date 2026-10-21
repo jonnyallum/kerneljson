@@ -76,7 +76,7 @@ export interface OperatorHealth {
 }
 
 /**
- * Ledger-side operational health. It is deployment detail, so it needs the `schedule` permission
+ * Ledger-side operational health. It is deployment detail, so it needs the `health` permission
  * (owner or operator), not just `read`. Restate-side checks stay in the operator CLI: the door has no
  * Restate admin access and does not gain any.
  */
@@ -165,6 +165,6 @@ export async function operatorHealth(pool: pg.Pool, context: TenantContext, door
         },
       };
     },
-    "schedule",
+    "health",
   );
 }
