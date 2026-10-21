@@ -45,8 +45,8 @@ async function call(token, method, path, body) {
     console.log(`${good ? "PASS" : "FAIL"} ${name}: ${result.status}${result.error ? " " + result.error : ""}`);
   }
   console.log(ok ? "MCP_DOOR OK" : "MCP_DOOR FAILED");
-  process.exit(ok ? 0 : 1);
+  process.exitCode = ok ? 0 : 1; // not process.exit(): it can abort with fetch sockets still open
 })().catch(() => {
   console.log("MCP_DOOR ERROR");
-  process.exit(1);
+  process.exitCode = 1;
 });
