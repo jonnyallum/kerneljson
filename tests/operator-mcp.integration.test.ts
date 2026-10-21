@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { knowledgeDatabase } from "./support/knowledge-db.js";
 import { buildDoorHandler, loadDoorConfig } from "../apps/gateway/src/main.js";
 import { buildHandler, loadConfig } from "../apps/mcp/src/main.js";
@@ -124,17 +124,24 @@ it("holds the MCP credential to its scope at the door, and leaves the worker cre
   expect((await doorPost("/v1/tasks", `${MCP_BEARER}x`, { recipe: "morning-brief/v1", objective: "x" })).status).toBe(401);
 });
 
-it("the deploy window's door check passes on the scoped credential and fails on an unscoped one", () => {
+it("the deploy window's door check passes on the scoped credential and fails on an unscoped one", async () => {
   const port = new URL(doorUrl).port;
+  // Asynchronous on purpose: the door under test runs in this process, so a synchronous spawn would
+  // block the very server the check is calling.
   const check = (bearer: string) =>
-    spawnSync(process.execPath, ["infrastructure/ops/mcp-door-check.js"], { env: { PATH: process.env["PATH"], PORT: port, KJ_MCP_BEARER: bearer }, encoding: "utf8" });
-  const good = check(MCP_BEARER);
-  expect(good.status, good.stdout).toBe(0);
+    new Promise<{ code: number; stdout: string }>((resolve) => {
+      execFile(process.execPath, ["infrastructure/ops/mcp-door-check.js"], { env: { PATH: process.env["PATH"], PORT: port, KJ_MCP_BEARER: bearer }, timeout: 30_000 }, (error, stdout) => {
+        const code = error === null ? 0 : typeof error.code === "number" ? error.code : -1;
+        resolve({ code, stdout: String(stdout) });
+      });
+    });
+  const good = await check(MCP_BEARER);
+  expect(good.code, good.stdout).toBe(0);
   expect(good.stdout.trim().split(/\r?\n/).at(-1)).toBe("MCP_DOOR OK");
   expect(good.stdout).not.toContain(MCP_BEARER);
   // The worker's credential is not scoped, so the same check must fail: the check can fail on purpose.
-  const unscoped = check(WORKER_BEARER);
-  expect(unscoped.status).toBe(1);
+  const unscoped = await check(WORKER_BEARER);
+  expect(unscoped.code).toBe(1);
   expect(unscoped.stdout).toContain("FAIL canary recipe refused");
-  expect(check("").stdout.trim()).toBe("MCP_DOOR NOT_CONFIGURED");
+  expect((await check("")).stdout.trim()).toBe("MCP_DOOR NOT_CONFIGURED");
 });
