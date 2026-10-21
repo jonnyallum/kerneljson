@@ -142,6 +142,16 @@ describe("morning-brief/v1 end to end against an in-memory ledger and the real c
     expect(r.outcome.status).toBe("COMPLETED");
   });
 
+  // 21/10/2026: the analyst copied the evidence's brackets onto every reference and a correct brief was rejected.
+  it("accepts real references the analyst wrapped in the evidence's square brackets", async () => {
+    const r = await run({
+      analyst: fakeBriefAnalyst({ items: [{ refs: ["[ci:jonnyallum/kerneljson]", " [repo:jonnyallum/kerneljson] "] }, { refs: ["[kj:canary]", "scan"] }] }),
+    });
+    expect(r.verifyError).toBeNull();
+    expect(r.outcome.status).toBe("COMPLETED");
+    expect(r.evidence[3]!.metadata["decision"]).toBe("ACCEPTED");
+  });
+
   it("memory the analyst was given can be cited; memory it was not given cannot", async () => {
     const memoryId = "abcdef12-3456-4789-8abc-def012345678";
     const memory: MissionMemoryPort = {
@@ -166,6 +176,9 @@ describe("morning-brief/v1 end to end against an in-memory ledger and the real c
     ["an item cites nothing", { analyst: fakeBriefAnalyst({ items: [{ refs: [] }] }) }, "brief_items_cited"],
     ["an item cites a commit that is not in the evidence", { analyst: fakeBriefAnalyst({ items: [{ refs: [`commit:jonnyallum/kerneljson@${"9".repeat(12)}`] }] }) }, "brief_refs_exist_in_evidence"],
     ["an item cites a repository that was not active", { analyst: fakeBriefAnalyst({ items: [{ refs: ["ci:jonnyallum/agent-hub-conductor"] }] }) }, "brief_refs_exist_in_evidence"],
+    ["an item cites, in brackets, a commit that is not in the evidence", { analyst: fakeBriefAnalyst({ items: [{ refs: [`[commit:jonnyallum/kerneljson@${"9".repeat(12)}]`] }] }) }, "brief_refs_exist_in_evidence"],
+    ["an item cites a reference with doubled brackets", { analyst: fakeBriefAnalyst({ items: [{ refs: ["[[ci:jonnyallum/kerneljson]]"] }] }) }, "brief_refs_exist_in_evidence"],
+    ["an item cites a reference with an unclosed bracket", { analyst: fakeBriefAnalyst({ items: [{ refs: ["[ci:jonnyallum/kerneljson"] }] }) }, "brief_refs_exist_in_evidence"],
     ["the reviewer rejects", { reviewer: fakeBriefReviewer({ verdict: "reject" }) }, "review_verdict_acceptable"],
     ["the reviewer flags the only item", { reviewer: fakeBriefReviewer({ unsupported: [0] }) }, "review_leaves_supported_items"],
     ["the reviewer flags an item that does not exist", { reviewer: fakeBriefReviewer({ unsupported: [5] }) }, "review_leaves_supported_items"],

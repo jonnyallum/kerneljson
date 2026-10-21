@@ -37,6 +37,12 @@ export const BRIEF_REVIEWER_MAX_TOKENS = 4096;
 
 const short = (sha: string): string => sha.slice(0, 12);
 
+/**
+ * The evidence shows each reference in square brackets, and the analyst sometimes copies the brackets
+ * (`[repo:owner/name]`). The reference is what is inside them; it must still exist in the evidence.
+ */
+export const normaliseRef = (ref: string): string => ref.trim().replace(/^\[([^[\]]+)\]$/, "$1").trim();
+
 /** Every reference the evidence supports. Memory references are the 8 character prefix the prompt shows. */
 export function briefRefs(facts: BriefFacts, memoryIds: readonly string[]): Set<string> {
   const refs = new Set<string>(["scan", "kj:tasks"]);
@@ -87,7 +93,7 @@ const ANALYST_SYSTEM = [
   "You see only the evidence provided: the last 24 hours of activity across his GitHub repositories and KernelJSON's own task state, plus any operator memory.",
   "Write what he needs to know this morning: what moved, what is stuck or failing (failed CI, stale or draft pull requests, failed tasks, a failed canary), and anything his operator memory says he cares about. Group related activity; do not list every commit.",
   "A quiet day is a valid brief: say so plainly and cite [scan].",
-  "Every item must cite at least one reference, copied exactly from the square brackets in the evidence or the memory lines (for memory, write memory: followed by the 8 character id shown). Do not invent references, repositories, commits or numbers.",
+  "Every item must cite at least one reference, copied exactly from the square brackets in the evidence or the memory lines (for memory, write memory: followed by the 8 character id shown). Write the reference without the brackets: \"repo:owner/name\", not \"[repo:owner/name]\". Do not invent references, repositories, commits or numbers.",
   "Cite what the item actually rests on. An item that summarises a repository's activity as a whole cites that repository's [repo:...] reference; an item about a specific commit, pull request or run cites that one.",
   "Reply with ONE JSON object and nothing else, in exactly this shape:",
   '{"windowEnd": "<the window end from the evidence, copied exactly>", "headline": "<one sentence>", "items": [{"title": "<string>", "detail": "<string>", "refs": ["<reference>"]}]}',
@@ -188,7 +194,7 @@ export function reconcileBrief(input: BriefReconcileInput): BriefReconciliation 
     brief_schema_valid: brief !== null,
     brief_window_matches_evidence: brief !== null && Date.parse(brief.windowEnd) === Date.parse(facts.github.windowEnd),
     brief_items_cited: brief !== null && items.every((i) => i.refs.length > 0),
-    brief_refs_exist_in_evidence: brief !== null && items.every((i) => i.refs.every((r) => refs.has(r.trim()))),
+    brief_refs_exist_in_evidence: brief !== null && items.every((i) => i.refs.every((r) => refs.has(normaliseRef(r)))),
     review_schema_valid: review !== null,
     review_binds_to_analysis: review !== null && review.reviewedAnalysisSha256 === analysisDigest,
     analyst_runtime_allowed: runtimeAllowed(input.analystModel),
