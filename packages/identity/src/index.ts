@@ -7,6 +7,9 @@ export const permissions = {
  signal: ["owner","operator","member"],
  approve: ["owner","operator","reviewer"],
  schedule: ["owner","operator"],
+ // ADR-0025: operational health (release, schedules, outbox). Same roles as schedule, but a SERVICE
+ // principal such as the operator MCP may hold it, because it confers no power to change anything.
+ health: ["owner","operator"],
  "knowledge-write": ["owner","operator","member"],
 } as const;
 export type Permission = keyof typeof permissions;

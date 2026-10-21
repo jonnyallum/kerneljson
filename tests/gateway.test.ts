@@ -67,10 +67,42 @@ it.each(['REVOKED','REMOVED'] as const)('denies %s HTTP and Mission Control oper
   expect((await post('/v1/tasks',input)).status).toBe(403);
   for(const suffix of ['','/history','/evidence','/outcome'])expect((await fetch(url+`/v1/tasks/${fixture.task.id}${suffix}`,{headers:headers()})).status).toBe(403);
   for(const action of ['cancel','signal','approve'])expect((await post(`/v1/tasks/${fixture.task.id}/${action}`,{})).status).toBe(403);
+  for(const path of ['/v1/tasks','/v1/health'])expect((await fetch(url+path,{headers:headers()})).status).toBe(403);
   expect((await fetch(url+'/v1/memory?text=test&at=2026-09-09T00%3A00%3A00.000Z',{headers:headers()})).status).toBe(403);
   expect((await fetch(url+`/v1/world?entityId=${randomUUID()}&at=2026-09-09T00%3A00%3A00.000Z`,{headers:headers()})).status).toBe(403);
   expect((await fetch(missionUrl,{headers:headers()})).status).toBe(403);
   expect((await fetch(missionUrl+`/tasks/${fixture.task.id}/cancel`,{method:'POST',headers:{...headers(),origin:missionUrl},body:'{}'})).status).toBe(403);
  }finally{await fixture.pool.query("update tenant_memberships set status='ACTIVE' where tenant_id=$1 and principal_id=$2",[fixture.context.tenantId,fixture.context.principal.id]);}
  expect((await fixture.pool.query('select 1 from tasks where id=$1',[fixture.task.id])).rowCount).toBe(1);
+});
+// ADR-0025: the operator MCP server's read-only views and its channel label.
+it('lists recent tasks for the caller tenant only, newest first and bounded',async()=>{
+ const own=await (await post('/v1/tasks',input)).json();
+ const response=await fetch(url+'/v1/tasks?limit=50',{headers:headers()});expect(response.status).toBe(200);
+ const list=await response.json() as Array<{taskId:string;recipe:string|null;status:string;createdAt:string}>;
+ expect(list.length).toBeGreaterThan(0);expect(list.length).toBeLessThanOrEqual(50);
+ expect(list.map(t=>t.taskId)).toContain(fixture.task.id);
+ const created=list.map(t=>Date.parse(t.createdAt));expect(created).toEqual([...created].sort((x,y)=>y-x));
+ expect((await (await fetch(url+'/v1/tasks?limit=1',{headers:headers()})).json())).toHaveLength(1);
+ const foreignList=await (await fetch(url+'/v1/tasks',{headers:headers('foreign')})).json() as Array<{taskId:string}>;
+ expect(foreignList.map(t=>t.taskId)).not.toContain(fixture.task.id);expect(foreignList.map(t=>t.taskId)).not.toContain(own.taskId);
+ for(const q of ['limit=0','limit=51','limit=x','limit=1&tenant=other'])expect((await fetch(url+'/v1/tasks?'+q,{headers:headers()})).status).toBe(400);
+ expect((await fetch(url+'/v1/tasks',{headers:headers('unknown')})).status).toBe(401);
+ expect((await fetch(url+'/v1/tasks',{headers:{}})).status).toBe(401);
+});
+it('serves ledger-side health to an owner only, naming the door and active releases',async()=>{
+ const response=await fetch(url+'/v1/health',{headers:headers()});expect(response.status).toBe(200);
+ const health=await response.json();
+ expect(health.release).toMatchObject({door:'test-release',active:{epoch:1,releaseId:'test-release'},doorMatchesActive:true,bindingMismatches:0});
+ expect(Array.isArray(health.schedules)).toBe(true);
+ expect(health.tasks).toEqual(expect.objectContaining({nonterminal:expect.any(Number),failedLast24h:expect.any(Number)}));
+ expect(JSON.stringify(health)).not.toMatch(/message|objective|DATABASE_URL|Bearer/);
+ expect((await fetch(url+'/v1/health',{headers:headers('reader')})).status).toBe(403);
+ expect((await fetch(url+'/v1/health',{headers:headers('unknown')})).status).toBe(401);
+});
+it('attributes chatgpt-mcp/v1 admissions to their channel and still refuses unknown channels',async()=>{
+ const send=(channel:string)=>fetch(url+'/v1/tasks',{method:'POST',headers:{...headers(),'idempotency-key':randomUUID(),'x-kj-channel':channel},body:JSON.stringify(input)});
+ const accepted=await send('chatgpt-mcp/v1');expect(accepted.status).toBe(202);const {taskId}=await accepted.json();
+ expect((await fixture.pool.query("select payload->'intent'->>'source' as source from kernel_private.task_admissions where task_id=$1",[taskId])).rows[0].source).toBe('kerneljson:channel/chatgpt-mcp/v1');
+ for(const channel of ['chatgpt-mcp','CHATGPT-MCP/V1','kerneljson:channel/chatgpt-mcp/v1','chatgpt-mcp/v2'])expect((await send(channel)).status).toBe(400);
 });

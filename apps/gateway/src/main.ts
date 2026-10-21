@@ -2,13 +2,14 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createHash, timingSafeEqual } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import pg from "pg";
-import { TenantContext } from "../../../packages/contracts/src/index.js";
+import { BRIEF_RECIPE, MISSION_RECIPE, TenantContext } from "../../../packages/contracts/src/index.js";
 import {
   createGateway,
   createRestateDispatch,
   bearerAuthenticator,
   type CredentialsFor,
   type Dispatch,
+  type ScopedOperation,
 } from "./server.js";
 import { createRestateControls } from "./index.js";
 import { createControlSigner, isKeyId, MIN_SIGNING_KEY_LENGTH, type ControlSigner } from "../../../services/kernel/src/control-signing.js";
@@ -61,6 +62,11 @@ export interface DoorConfig {
    * null => nothing is signed, exactly as before. Distinct from `bearer`, which never leaves the door.
    */
   controlSigning: { keyId: string; key: string } | null;
+  /**
+   * ADR-0025. The operator MCP server's own credential and SERVICE principal, distinct from the worker's.
+   * null => no MCP credential is accepted. `bearer` is SENSITIVE, like the main bearer.
+   */
+  mcp: { bearer: string; context: TenantContext } | null;
 }
 
 /** ONLY the non-secret fields — safe to log/return. Never includes bearer or DATABASE_URL. */
@@ -70,6 +76,7 @@ export interface DoorConfigSummary {
   tenantId: string;
   principalId: string;
   principalKind: string;
+  mcpPrincipalId: string | null;
   mode: "restate-dispatch" | "admission-only";
 }
 
@@ -80,6 +87,7 @@ export function summariseDoorConfig(config: DoorConfig): DoorConfigSummary {
     tenantId: config.context.tenantId,
     principalId: config.context.principal.id,
     principalKind: config.context.principal.kind,
+    mcpPrincipalId: config.mcp?.context.principal.id ?? null,
     mode: config.restateIngressUrl ? "restate-dispatch" : "admission-only",
   };
 }
@@ -148,10 +156,81 @@ export function loadDoorConfig(env: Record<string, string | undefined>): DoorCon
     databaseUrl,
     bearer,
     context,
+    mcp: loadMcpIdentity(env, bearer, context),
     port,
     releaseId,
     restateIngressUrl: normaliseIngress(env["KJ_RESTATE_INGRESS_URL"]),
     controlSigning: signingKey === null ? null : { keyId, key: signingKey },
+  };
+}
+
+/** Bearers below this length are refused for the MCP credential (it is newly minted, so no legacy). */
+export const MIN_MCP_BEARER_LENGTH = 32;
+
+/**
+ * ADR-0025: the MCP credential is all-or-nothing. All three variables set => a second bearer for a
+ * SERVICE principal of the same tenant; none set => no MCP credential. A partial set, a HUMAN kind, the
+ * worker's principal id or the worker's bearer are refused, so the two identities can never merge.
+ */
+function loadMcpIdentity(
+  env: Record<string, string | undefined>,
+  mainBearer: string,
+  main: TenantContext,
+): { bearer: string; context: TenantContext } | null {
+  const names = ["KJ_MCP_BEARER", "KJ_MCP_PRINCIPAL_ID", "KJ_MCP_PRINCIPAL_KIND"] as const;
+  const set = names.filter((n) => env[n] !== undefined && env[n] !== "");
+  if (set.length === 0) return null;
+  if (set.length !== names.length)
+    throw new DoorConfigError("KJ_MCP_CONFIG_PARTIAL", "KJ_MCP_BEARER, KJ_MCP_PRINCIPAL_ID and KJ_MCP_PRINCIPAL_KIND must be set together");
+  const bearer = env["KJ_MCP_BEARER"]!;
+  if (bearer.length < MIN_MCP_BEARER_LENGTH)
+    throw new DoorConfigError("KJ_MCP_BEARER_TOO_SHORT", "KJ_MCP_BEARER is too short");
+  if (bearer === mainBearer)
+    throw new DoorConfigError("KJ_MCP_BEARER_REUSED", "KJ_MCP_BEARER must differ from KJ_ADMISSION_BEARER");
+  if (env["KJ_MCP_PRINCIPAL_KIND"] !== "SERVICE")
+    throw new DoorConfigError("KJ_MCP_PRINCIPAL_KIND_INVALID", "KJ_MCP_PRINCIPAL_KIND must be SERVICE");
+  let context: TenantContext;
+  try {
+    context = TenantContext.parse({ tenantId: main.tenantId, principal: { id: env["KJ_MCP_PRINCIPAL_ID"], kind: "SERVICE" } });
+  } catch {
+    throw new DoorConfigError("KJ_MCP_PRINCIPAL_ID_INVALID", "KJ_MCP_PRINCIPAL_ID must be a UUID");
+  }
+  if (context.principal.id === main.principal.id)
+    throw new DoorConfigError("KJ_MCP_PRINCIPAL_REUSED", "KJ_MCP_PRINCIPAL_ID must differ from KJ_ADMISSION_PRINCIPAL_ID");
+  return { bearer, context };
+}
+
+/** What the MCP principal may start and control at the door. Reads are governed by membership alone. */
+export const MCP_RECIPES: readonly string[] = [BRIEF_RECIPE, MISSION_RECIPE];
+export const MCP_CONTROLS: readonly string[] = ["cancel"];
+
+/**
+ * The door's per-principal scope: the MCP principal may submit only MCP_RECIPES and use only
+ * MCP_CONTROLS. Every other principal is unchanged. Membership (`withTenant`) still applies on top, and
+ * as a SERVICE principal the MCP can never approve or schedule there either.
+ */
+export function doorScope(mcpPrincipalId: string | null): (context: TenantContext, operation: ScopedOperation) => boolean {
+  return (context, operation) => {
+    if (mcpPrincipalId === null || context.principal.id !== mcpPrincipalId) return true;
+    return operation.kind === "submit" ? MCP_RECIPES.includes(operation.recipe) : MCP_CONTROLS.includes(operation.action);
+  };
+}
+
+/**
+ * Several bearers, each mapped to its own fixed identity. Every entry is compared, in constant time
+ * over SHA-256 digests, whatever matches first, so timing does not say which credential was close.
+ */
+export function createBearerTable(
+  entries: ReadonlyArray<{ bearer: string; context: TenantContext }>,
+): (token: string) => Promise<TenantContext | null> {
+  const table = entries.map((e) => ({ digest: createHash("sha256").update(e.bearer, "utf8").digest(), context: TenantContext.parse(e.context) }));
+  if (new Set(table.map((t) => t.digest.toString("hex"))).size !== table.length) throw new Error("Duplicate bearer");
+  return async (token: string): Promise<TenantContext | null> => {
+    if (typeof token !== "string" || token.length === 0) return null;
+    const got = createHash("sha256").update(token, "utf8").digest();
+    let found: TenantContext | null = null;
+    for (const t of table) if (timingSafeEqual(got, t.digest)) found = t.context;
+    return found;
   };
 }
 
@@ -199,7 +278,9 @@ export function buildDoorHandler(
   pool: pg.Pool,
   config: DoorConfig,
 ): (req: IncomingMessage, res: ServerResponse) => void {
-  const authenticate = bearerAuthenticator(createBearerResolver(config.bearer, config.context));
+  const authenticate = bearerAuthenticator(
+    config.mcp === null ? createBearerResolver(config.bearer, config.context) : createBearerTable([{ bearer: config.bearer, context: config.context }, config.mcp]),
+  );
   // KJ-P4B.1: the internal hop to the workflow carries a signed assertion for each exact request when a
   // signing key is configured, so the approval workflow can authenticate it without the key ever
   // crossing Restate. Absent, the headers are empty, as before. It never sends `Authorization`.
@@ -219,6 +300,7 @@ export function buildDoorHandler(
     admit: async () => true, // transport auth + ACTIVE-membership authority + allow-list are the gate
     controls,
     dispatch,
+    scope: doorScope(config.mcp?.context.principal.id ?? null),
   });
   return (req: IncomingMessage, res: ServerResponse): void => {
     // Liveness only: no auth, no DB, no admission, no secret, no internal detail.
@@ -242,7 +324,7 @@ export function startDoor(config: DoorConfig): { server: Server; pool: pg.Pool }
     const s = summariseDoorConfig(config);
     console.log(
       `[admission-door] listening on :${s.port} release=${s.releaseId} ` +
-        `tenant=${s.tenantId} principal=${s.principalId}(${s.principalKind}) mode=${s.mode}`,
+        `tenant=${s.tenantId} principal=${s.principalId}(${s.principalKind}) mcp=${s.mcpPrincipalId ?? "none"} mode=${s.mode}`,
     );
   });
   let closing = false;

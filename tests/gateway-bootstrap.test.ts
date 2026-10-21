@@ -7,6 +7,8 @@ import {
   buildDoorHandler,
   summariseDoorConfig,
   DoorConfigError,
+  createBearerTable,
+  doorScope,
 } from "../apps/gateway/src/main.js";
 import { TenantContext } from "../packages/contracts/src/index.js";
 
@@ -136,6 +138,62 @@ describe("admission door — bearer resolver (constant-time, deterministic, stab
     const r = createBearerResolver(BEARER, ctx);
     expect(await r(BEARER)).toEqual(await r(BEARER));
     expect(await r(BEARER)).toEqual(ctx);
+  });
+});
+
+describe("admission door — the operator MCP credential (ADR-0025)", () => {
+  const MCP_PRINCIPAL = "0b6c39d5-6d1b-4f43-9c43-0f7a6a3f2d11";
+  const MCP_BEARER = "test-mcp-bearer-supersecret-0123456789abcdef";
+  const mcpEnv = () => ({ ...baseEnv(), KJ_MCP_BEARER: MCP_BEARER, KJ_MCP_PRINCIPAL_ID: MCP_PRINCIPAL, KJ_MCP_PRINCIPAL_KIND: "SERVICE" });
+  const worker = TenantContext.parse({ tenantId: TENANT, principal: { id: PRINCIPAL, kind: "HUMAN" } });
+  const mcp = TenantContext.parse({ tenantId: TENANT, principal: { id: MCP_PRINCIPAL, kind: "SERVICE" } });
+
+  it("is absent unless configured, and loads as a SERVICE principal of the same tenant when it is", () => {
+    expect(loadDoorConfig(baseEnv()).mcp).toBeNull();
+    const c = loadDoorConfig(mcpEnv());
+    expect(c.mcp?.context).toEqual(mcp);
+    expect(summariseDoorConfig(c).mcpPrincipalId).toBe(MCP_PRINCIPAL);
+    expect(JSON.stringify(summariseDoorConfig(c))).not.toContain(MCP_BEARER);
+  });
+
+  it("refuses a partial, short, reused, HUMAN or malformed MCP identity, without echoing either bearer", () => {
+    expect(configCode({ ...mcpEnv(), KJ_MCP_PRINCIPAL_KIND: undefined })).toBe("KJ_MCP_CONFIG_PARTIAL");
+    expect(configCode({ ...baseEnv(), KJ_MCP_BEARER: MCP_BEARER })).toBe("KJ_MCP_CONFIG_PARTIAL");
+    expect(configCode({ ...mcpEnv(), KJ_MCP_BEARER: "short-but-sixteen+" })).toBe("KJ_MCP_BEARER_TOO_SHORT");
+    expect(configCode({ ...mcpEnv(), KJ_ADMISSION_BEARER: MCP_BEARER })).toBe("KJ_MCP_BEARER_REUSED");
+    expect(configCode({ ...mcpEnv(), KJ_MCP_PRINCIPAL_KIND: "HUMAN" })).toBe("KJ_MCP_PRINCIPAL_KIND_INVALID");
+    expect(configCode({ ...mcpEnv(), KJ_MCP_PRINCIPAL_ID: "not-a-uuid" })).toBe("KJ_MCP_PRINCIPAL_ID_INVALID");
+    expect(configCode({ ...mcpEnv(), KJ_MCP_PRINCIPAL_ID: PRINCIPAL })).toBe("KJ_MCP_PRINCIPAL_REUSED");
+    let text = "";
+    try {
+      loadDoorConfig({ ...mcpEnv(), KJ_ADMISSION_BEARER: MCP_BEARER });
+    } catch (e) {
+      text = `${(e as DoorConfigError).code}|${(e as Error).message}`;
+    }
+    expect(text).not.toContain(MCP_BEARER);
+  });
+
+  it("maps each bearer to its own identity and nothing else", async () => {
+    const r = createBearerTable([{ bearer: BEARER, context: worker }, { bearer: MCP_BEARER, context: mcp }]);
+    expect(await r(BEARER)).toEqual(worker);
+    expect(await r(MCP_BEARER)).toEqual(mcp);
+    expect(await r(MCP_BEARER + "x")).toBeNull();
+    expect(await r(MCP_BEARER.slice(0, -1))).toBeNull();
+    expect(await r("")).toBeNull();
+    expect(() => createBearerTable([{ bearer: BEARER, context: worker }, { bearer: BEARER, context: mcp }])).toThrow(/Duplicate/);
+  });
+
+  it("scopes the MCP principal to the brief, repository analysis and cancel, and leaves others alone", () => {
+    const scope = doorScope(MCP_PRINCIPAL);
+    expect(scope(mcp, { kind: "submit", recipe: "morning-brief/v1" })).toBe(true);
+    expect(scope(mcp, { kind: "submit", recipe: "repo-analysis-mission/v1" })).toBe(true);
+    for (const recipe of ["claude_md_check/v1", "uppercase/v1", "identity-change/v1"]) expect(scope(mcp, { kind: "submit", recipe })).toBe(false);
+    expect(scope(mcp, { kind: "control", action: "cancel" })).toBe(true);
+    expect(scope(mcp, { kind: "control", action: "approve" })).toBe(false);
+    expect(scope(mcp, { kind: "control", action: "signal" })).toBe(false);
+    expect(scope(worker, { kind: "submit", recipe: "identity-change/v1" })).toBe(true);
+    expect(scope(worker, { kind: "control", action: "approve" })).toBe(true);
+    expect(doorScope(null)(mcp, { kind: "control", action: "approve" })).toBe(true);
   });
 });
 

@@ -324,3 +324,34 @@ MISSION_OPENROUTER_API_KEY=${OR_KEY}
     });
   });
 });
+
+describe("ADR-0025: the door's MCP identity", () => {
+  const MCP_BEARER = "M".repeat(32) + "-cp_" + "b".repeat(28);
+  const MCP_PRINCIPAL = "0b6c39d5-6d1b-4f43-9c43-0f7a6a3f2d11";
+  it("adds the MCP bearer from a file and the principal as public values, preserving every other line", () => {
+    const d = fixture();
+    writeFileSync(join(d, "mcp.txt"), `\uFEFF${MCP_BEARER}\r\n`); // BOM + CRLF on purpose
+    const r = run([
+      "merge", "--base", join(d, "base.env"), "--out", join(d, "new.env"),
+      "--set-from", `KJ_MCP_BEARER=${join(d, "mcp.txt")}`,
+      "--set-public", `KJ_MCP_PRINCIPAL_ID=${MCP_PRINCIPAL}`, "--set-public", "KJ_MCP_PRINCIPAL_KIND=SERVICE",
+    ]);
+    expect(r.code, r.err).toBe(0);
+    expect(r.out + r.err).not.toContain(MCP_BEARER);
+    const out = readFileSync(join(d, "new.env"), "utf8");
+    expect(out).toContain(`KJ_MCP_BEARER=${MCP_BEARER}\n`);
+    expect(out.startsWith(BASE)).toBe(true);
+    const v = run(["verify", "--base", join(d, "base.env"), "--new", join(d, "new.env"), "--changed", "KJ_MCP_BEARER,KJ_MCP_PRINCIPAL_ID,KJ_MCP_PRINCIPAL_KIND"]);
+    expect(v.code, v.err).toBe(0);
+  });
+  it("refuses the bearer via argv, a short bearer, a HUMAN kind and a malformed principal", () => {
+    const d = fixture();
+    const argv = run(["merge", "--base", join(d, "base.env"), "--out", join(d, "a.env"), "--set-public", `KJ_MCP_BEARER=${MCP_BEARER}`]);
+    expect(argv.code).toBe(2);
+    expect(argv.out + argv.err).not.toContain(MCP_BEARER);
+    writeFileSync(join(d, "short.txt"), "tooshort-mcp-bearer");
+    expect(run(["merge", "--base", join(d, "base.env"), "--out", join(d, "b.env"), "--set-from", `KJ_MCP_BEARER=${join(d, "short.txt")}`]).code).toBe(2);
+    expect(run(["merge", "--base", join(d, "base.env"), "--out", join(d, "c.env"), "--set-public", "KJ_MCP_PRINCIPAL_KIND=HUMAN"]).code).toBe(2);
+    expect(run(["merge", "--base", join(d, "base.env"), "--out", join(d, "e.env"), "--set-public", "KJ_MCP_PRINCIPAL_ID=not-a-uuid"]).code).toBe(2);
+  });
+});

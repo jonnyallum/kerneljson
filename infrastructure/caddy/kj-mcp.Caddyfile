@@ -1,0 +1,28 @@
+# kj-mcp.jonnyai.co.uk - the operator MCP server (ADR-0025). PREPARED, NOT DEPLOYED.
+# Append to /opt/n8n/Caddyfile on kerneljson-prod-01 in the MCP deploy window (runbook:
+# docs/operations/OPERATOR_MCP.md). The n8n Caddy container must also join the kj-mcp-edge network.
+#
+# Only the MCP, OAuth and discovery paths are proxied; everything else is a 404 from Caddy itself.
+# There is no basic auth here: the server's own OAuth is the authentication, and a basic-auth prompt
+# would break ChatGPT's connector flow.
+kj-mcp.jonnyai.co.uk {
+	encode zstd gzip
+
+	request_body {
+		max_size 128KB
+	}
+
+	@mcp path /mcp /oauth/register /oauth/authorize /oauth/google/callback /oauth/consent /oauth/token /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/mcp /.well-known/oauth-authorization-server /.well-known/openid-configuration
+	handle @mcp {
+		reverse_proxy kerneljson-mcp:8090
+	}
+
+	handle {
+		respond 404
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}
