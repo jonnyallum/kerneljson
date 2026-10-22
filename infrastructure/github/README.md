@@ -1,7 +1,8 @@
 # code-change/v1 pilot repository setup
 
-These two workflows are templates for the ONE allowlisted pilot repository. Nothing here is installed by
-this PR; installing them is PR C, with Jonny, against a repository he has chosen.
+These two workflows are templates for the ONE allowlisted pilot repository, `jonnyallum/kj-pilot`. Every
+`uses:` is pinned to a full commit (the tests refuse a tag). The installed copies must stay byte-identical to
+these files.
 
 | File | Installed as | Dispatched by the kernel on | Holds |
 |---|---|---|---|
@@ -20,12 +21,13 @@ reconciliation refuses CI paths again).
    be created only by Jonny (restrict creation, bypass for repository admins only).
 3. **Actions, Workflow permissions**: read repository contents by default; do NOT allow GitHub Actions to
    create or approve pull requests.
-4. **Actions variables**: `KJ_CLAUDE_CODE_VERSION` (an exact version), `KJ_CODER_MODEL`,
+4. **Actions variables**: `KJ_CLAUDE_CODE_VERSION` (an exact version), `KJ_CODER_MODEL` (a bare Anthropic
+   model id; the worker's `KJ_CODE_CHANGE_CODER_MODEL` is the same id with `anthropic/` in front),
    `KJ_TEST_COMMAND` (for example `npm ci && npm test`), optionally `KJ_NODE_VERSION`.
 5. **Actions secret** `KJ_CODER_ANTHROPIC_KEY`: a key from a dedicated Anthropic Console workspace with a
    monthly spend limit set in the Console. It is the only secret in the repository and is visible only to
    the `code` job. It has no access to anything but the model.
-6. Before PR C installs the files, pin every `uses:` to a full commit SHA.
+6. Every `uses:` is pinned to a full commit SHA (done in PR C; re-pin deliberately, never to a tag).
 
 ## The worker's token (kernel side)
 

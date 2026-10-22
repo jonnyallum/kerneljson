@@ -355,3 +355,32 @@ describe("ADR-0025: the door's MCP identity", () => {
     expect(run(["merge", "--base", join(d, "base.env"), "--out", join(d, "e.env"), "--set-public", "KJ_MCP_PRINCIPAL_ID=not-a-uuid"]).code).toBe(2);
   });
 });
+
+describe("code-change/v1 worker keys", () => {
+  const PAT = `github_pat_${"A1b2C3d4E5f6G7h8I9j0K1"}_${"z".repeat(59)}`;
+  const set = ["--set-public", "KJ_CODE_CHANGE_REPOS=jonnyallum/kj-pilot", "--set-public", "KJ_CODE_CHANGE_CODER_MODEL=anthropic/claude-sonnet-5-5", "--set-public", "KJ_CODE_CHANGE_REVIEWER_MODEL=deepseek-v4-pro"];
+  it("adds the token from a file and the rest as public values, preserving every other line", () => {
+    const d = fixture();
+    writeFileSync(join(d, "pat.txt"), `﻿${PAT}
+`); // BOM + CRLF on purpose
+    const r = run(["merge", "--base", join(d, "base.env"), "--out", join(d, "new.env"), "--set-from", `KJ_CODE_CHANGE_GITHUB_TOKEN=${join(d, "pat.txt")}`, ...set]);
+    expect(r.code, r.err).toBe(0);
+    expect(r.out + r.err).not.toContain(PAT);
+    const out = readFileSync(join(d, "new.env"), "utf8");
+    expect(out).toContain(`KJ_CODE_CHANGE_GITHUB_TOKEN=${PAT}
+`);
+    expect(out.startsWith(BASE)).toBe(true);
+    const v = run(["verify", "--base", join(d, "base.env"), "--new", join(d, "new.env"), "--changed", "KJ_CODE_CHANGE_GITHUB_TOKEN,KJ_CODE_CHANGE_REPOS,KJ_CODE_CHANGE_CODER_MODEL,KJ_CODE_CHANGE_REVIEWER_MODEL"]);
+    expect(v.code, v.err).toBe(0);
+  });
+  it("refuses the token via argv, a classic token, a bare coder, a foreign family and a malformed allowlist", () => {
+    const d = fixture();
+    const argv = run(["merge", "--base", join(d, "base.env"), "--out", join(d, "a.env"), "--set-public", `KJ_CODE_CHANGE_GITHUB_TOKEN=${PAT}`]);
+    expect(argv.code).toBe(2);
+    expect(argv.out + argv.err).not.toContain(PAT);
+    writeFileSync(join(d, "classic.txt"), `ghp_${"a".repeat(36)}`);
+    expect(run(["merge", "--base", join(d, "base.env"), "--out", join(d, "b.env"), "--set-from", `KJ_CODE_CHANGE_GITHUB_TOKEN=${join(d, "classic.txt")}`]).code).toBe(2);
+    for (const bad of ["KJ_CODE_CHANGE_CODER_MODEL=claude-sonnet-5-5", "KJ_CODE_CHANGE_REVIEWER_MODEL=openai/gpt-5", "KJ_CODE_CHANGE_REPOS=kj-pilot", "KJ_CODE_CHANGE_REPOS=a/a,b/b,c/c,d/d,e/e,f/f"])
+      expect(run(["merge", "--base", join(d, "base.env"), "--out", join(d, `${bad.length}.env`), "--set-public", bad]).code, bad).toBe(2);
+  });
+});

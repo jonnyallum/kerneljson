@@ -247,6 +247,15 @@ describe("code-change/v1 workflow templates", () => {
     expect(codeJob).toMatch(/timeout-minutes: \d+/);
   });
 
+  it("pins every action to a full commit, not a movable tag", () => {
+    const unpinned = (wf: string) => [...wf.matchAll(/^\s*(?:- )?uses:\s*(\S+)/gm)].map((m) => m[1]!).filter((u) => !/^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/.test(u));
+    expect(unpinned("steps:\n  - uses: actions/checkout@v4\n  - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020\n")).toEqual(["actions/checkout@v4"]);
+    for (const wf of [code, test]) {
+      expect(wf).toMatch(/uses:/);
+      expect(unpinned(wf)).toEqual([]);
+    }
+  });
+
   it("publishes only to the task branch, refuses CI paths, never forces or merges", () => {
     expect(publishJob).toContain('git push origin "HEAD:refs/heads/kj/$TASK_ID"');
     expect(publishJob).toContain("\\.github/");

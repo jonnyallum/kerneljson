@@ -20,6 +20,7 @@ import { codeChangeNoticeDecision, type CodeChangeNotice } from "../services/ker
 import { isCodeChangeCheckId } from "../services/kernel/src/alerting/code-change-notice.js";
 import { formatTelegramMessage } from "../services/kernel/src/alerting/format.js";
 import { loadCodeChangeConfig } from "../services/kernel/src/mission/code-change-config.js";
+import { modelRequest } from "../evals/fixtures/models.js";
 import { sha256Text } from "../services/kernel/src/mission/reconcile.js";
 import { id as tenantId, principal } from "../evals/fixtures/contracts.js";
 import { fakeRuntime, type FakeReply } from "./support/mission-fixture.js";
@@ -299,32 +300,61 @@ describe("code-change/v1 notices", () => {
 });
 
 describe("code-change/v1 worker configuration", () => {
-  const ok = { KJ_CODE_CHANGE_GITHUB_TOKEN: "github_pat_SYNTHETIC_0000000000000000", KJ_CODE_CHANGE_REPOS: `${REPO}`, KJ_CODE_CHANGE_CODER_MODEL: "anthropic/claude-sonnet-test" };
+  const keys = { MISSION_OPENROUTER_API_KEY: "sk-or-v1-SYNTHETIC", MISSION_DEEPSEEK_API_KEY: "sk-SYNTHETIC" };
+  const ok = {
+    ...keys,
+    KJ_CODE_CHANGE_GITHUB_TOKEN: "github_pat_SYNTHETIC_0000000000000000",
+    KJ_CODE_CHANGE_REPOS: `${REPO}`,
+    KJ_CODE_CHANGE_CODER_MODEL: "anthropic/claude-sonnet-test",
+    KJ_CODE_CHANGE_REVIEWER_MODEL: "deepseek-v4-pro",
+  };
 
   it("is off when unset and loads a complete configuration", () => {
-    expect(loadCodeChangeConfig({}, "x-ai/grok-test")).toBeUndefined();
-    expect(loadCodeChangeConfig({ KJ_CODE_CHANGE_REPOS: "" }, "x-ai/grok-test")).toBeUndefined();
-    expect(loadCodeChangeConfig(ok, "x-ai/grok-test")).toEqual({ token: ok.KJ_CODE_CHANGE_GITHUB_TOKEN, allowedRepos: [REPO], coderModel: "anthropic/claude-sonnet-test" });
+    expect(loadCodeChangeConfig(keys)).toBeUndefined();
+    expect(loadCodeChangeConfig({ ...keys, KJ_CODE_CHANGE_REPOS: "" })).toBeUndefined();
+    const config = loadCodeChangeConfig(ok)!;
+    expect({ ...config, reviewer: undefined }).toEqual({
+      token: ok.KJ_CODE_CHANGE_GITHUB_TOKEN, allowedRepos: [REPO], coderModel: "anthropic/claude-sonnet-test",
+      reviewerModel: "deepseek-v4-pro", reviewerProvider: "deepseek", reviewer: undefined,
+    });
+    expect(loadCodeChangeConfig({ ...ok, KJ_CODE_CHANGE_REVIEWER_MODEL: "x-ai/grok-test" })!.reviewerProvider).toBe("openrouter");
+  });
+
+  it("serves its own reviewer, independent of the mission reviewer the brief uses", async () => {
+    const seen: string[] = [];
+    const fetchImpl = (async (_url: unknown, init?: { body?: unknown }) => {
+      seen.push(JSON.parse(String(init?.body)).model);
+      return new Response("{}", { status: 500 });
+    }) as unknown as typeof fetch;
+    const config = loadCodeChangeConfig({ ...ok, MISSION_REVIEWER_MODEL: "anthropic/claude-sonnet-5" }, fetchImpl)!;
+    await config.reviewer.generate(modelRequest).catch(() => undefined);
+    expect(seen).toEqual(["deepseek-v4-pro"]);
   });
 
   it.each([
-    ["half configured", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "" }, "x-ai/grok-test"],
-    ["a bare coder name", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "claude-sonnet-test" }, "x-ai/grok-test"],
-    ["a coder outside the families", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "openai/gpt-test" }, "x-ai/grok-test"],
-    ["a reviewer of the coder's family", ok, "anthropic/claude-opus-test"],
-    ["no reviewer runtime", ok, undefined],
-    ["too many repositories", { ...ok, KJ_CODE_CHANGE_REPOS: "a/a,b/b,c/c,d/d,e/e,f/f" }, "x-ai/grok-test"],
-    ["a malformed repository", { ...ok, KJ_CODE_CHANGE_REPOS: `${REPO},../x` }, "x-ai/grok-test"],
-    ["a malformed token", { ...ok, KJ_CODE_CHANGE_GITHUB_TOKEN: "short token" }, "x-ai/grok-test"],
-  ])("refuses to start with %s", (_label, env, reviewer) => {
-    expect(() => loadCodeChangeConfig(env, reviewer)).toThrow();
+    ["half configured", { ...ok, KJ_CODE_CHANGE_REVIEWER_MODEL: "" }],
+    ["a bare coder name", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "claude-sonnet-test" }],
+    ["a coder outside the families", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "openai/gpt-test" }],
+    ["a reviewer of the coder's family", { ...ok, KJ_CODE_CHANGE_REVIEWER_MODEL: "anthropic/claude-opus-test" }],
+    ["a reviewer outside the families", { ...ok, KJ_CODE_CHANGE_REVIEWER_MODEL: "openai/gpt-test" }],
+    ["a reviewer whose provider key is not set", { ...ok, MISSION_DEEPSEEK_API_KEY: "" }],
+    ["too many repositories", { ...ok, KJ_CODE_CHANGE_REPOS: "a/a,b/b,c/c,d/d,e/e,f/f" }],
+    ["a malformed repository", { ...ok, KJ_CODE_CHANGE_REPOS: `${REPO},../x` }],
+    ["a malformed token", { ...ok, KJ_CODE_CHANGE_GITHUB_TOKEN: "short token" }],
+  ])("refuses to start with %s", (_label, env) => {
+    expect(() => loadCodeChangeConfig(env)).toThrow();
   });
 
-  it("never echoes the token in its errors", () => {
-    try {
-      loadCodeChangeConfig({ ...ok, KJ_CODE_CHANGE_REPOS: "../x" }, "x-ai/grok-test");
-    } catch (error) {
-      expect(String(error)).not.toContain(ok.KJ_CODE_CHANGE_GITHUB_TOKEN);
+  it("never echoes the token or a key in its errors", () => {
+    for (const env of [{ ...ok, KJ_CODE_CHANGE_REPOS: "../x" }, { ...ok, MISSION_DEEPSEEK_API_KEY: "" }, { ...ok, KJ_CODE_CHANGE_REVIEWER_MODEL: "anthropic/x" }]) {
+      let message = "";
+      try {
+        loadCodeChangeConfig(env);
+      } catch (error) {
+        message = String(error);
+      }
+      expect(message).not.toBe("");
+      for (const secret of [ok.KJ_CODE_CHANGE_GITHUB_TOKEN, keys.MISSION_DEEPSEEK_API_KEY, keys.MISSION_OPENROUTER_API_KEY]) expect(message).not.toContain(secret);
     }
   });
 });

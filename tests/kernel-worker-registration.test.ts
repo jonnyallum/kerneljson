@@ -435,7 +435,7 @@ describe("execution.compose.yaml worker env passthrough (S1D2 regression guard)"
 
   it("declares every env var the code-change config reads, defaulting to empty", () => {
     const read = envVarsRead(readFileSync("services/kernel/src/mission/code-change-config.ts", "utf8"));
-    expect(read.sort()).toEqual(["KJ_CODE_CHANGE_CODER_MODEL", "KJ_CODE_CHANGE_GITHUB_TOKEN", "KJ_CODE_CHANGE_REPOS"]);
+    expect(read.sort()).toEqual(["KJ_CODE_CHANGE_CODER_MODEL", "KJ_CODE_CHANGE_GITHUB_TOKEN", "KJ_CODE_CHANGE_REPOS", "KJ_CODE_CHANGE_REVIEWER_MODEL"]);
     expect(undeclared(read, workerBlock)).toEqual([]);
     for (const v of read) expect(workerBlock, v).toMatch(new RegExp(`^\\s+${v}: \\$\\{${v}:-\\}\\s*$`, "m"));
     const without = workerBlock.replace(/^\s+KJ_CODE_CHANGE_REPOS:.*\r?\n/m, "");

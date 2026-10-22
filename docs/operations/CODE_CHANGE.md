@@ -1,6 +1,6 @@
 # code-change/v1 (Mission #2)
 
-Status: built (PR A core, PR B wiring), not deployed. Activation is PR C, in a change window.
+Status: built (PR A core, PR B wiring, PR C activation prep), not deployed. Activation is a change window: [CODE_CHANGE_ACTIVATION.md](CODE_CHANGE_ACTIVATION.md).
 
 ## What it does
 
@@ -28,17 +28,22 @@ failure ends the task FAILED and Telegram says why. Nothing merges or deploys: t
 | 5 | `RECONCILE` | `kerneljson:code-change-reconcile/v1` |
 | 6 | `OPEN_DRAFT_PR` | `kerneljson:code-change-pr/v1` |
 
-## Worker configuration (all three or none)
+## Worker configuration (all four or none)
 
 | Variable | Value |
 |---|---|
 | `KJ_CODE_CHANGE_GITHUB_TOKEN` | fine-grained token, pilot repository only: Actions read/write, Contents read, Pull requests read/write. jVault `kerneljson/KJ_CODE_CHANGE_GITHUB_TOKEN` |
 | `KJ_CODE_CHANGE_REPOS` | `jonnyallum/kj-pilot` |
-| `KJ_CODE_CHANGE_CODER_MODEL` | the runner's model, vendor-qualified, for example `anthropic/claude-sonnet-...`; must match `KJ_CODER_MODEL` in the pilot repository |
+| `KJ_CODE_CHANGE_CODER_MODEL` | the runner's model, vendor-qualified: `anthropic/<id>` where `<id>` is the pilot repository's `KJ_CODER_MODEL` variable |
+| `KJ_CODE_CHANGE_REVIEWER_MODEL` | the diff reviewer, a different family from the coder, for example `deepseek-v4-pro` (DeepSeek direct) or `x-ai/...` (OpenRouter) |
 
-It also needs the mission runtimes (the reviewer, `MISSION_REVIEWER_MODEL`, must be a different family from the
-coder) and the capability service (`KJ_REPO_ROOT`). A partial or inconsistent configuration stops the worker at
-startup. The gateway and MCP releases must include `code-change/v1` in the door's MCP scope (they do from PR B).
+The reviewer is its own setting, not `MISSION_REVIEWER_MODEL`: the brief's reviewer is an Anthropic model, the
+same family as the coder, and the brief keeps it. The code-change reviewer is served by the mission provider its
+name selects (the same rule as the mission models), so that provider's key must already be set. Code-change also
+needs the mission runtimes and the capability service (`KJ_REPO_ROOT`). A partial or inconsistent configuration
+stops the worker at startup, which would stop the brief too, so the window checks the configuration in the new
+image before it recreates the worker. The gateway and MCP releases must include `code-change/v1` in the door's
+MCP scope (they do from PR B).
 
 ## Pilot repository
 
