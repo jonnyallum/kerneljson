@@ -1,0 +1,154 @@
+# KernelJSON code-change/v1 - the coding runner. Installed as .github/workflows/kj-code-change.yml in the
+# pilot repository ONLY (see README.md beside this file). Dispatched by the kernel from the default branch.
+#
+# Two jobs on two fresh runners, so no single job holds both the model key and a write token:
+#   code    - contents: read, the capped model key, no push credential. Produces a patch artifact.
+#   publish - contents: write, no secrets at all. Applies the patch to a clean checkout of base_sha and
+#             pushes it to kj/<task_id>, which must not already exist. It cannot merge and never force-pushes.
+#
+# Inputs reach shell steps only through env, never by ${{ }} interpolation inside a script.
+name: kj-code-change
+run-name: kj:${{ inputs.task_id }} code
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: KernelJSON task id (uuid)
+        required: true
+        type: string
+      base_sha:
+        description: Commit of the default branch the change is made on
+        required: true
+        type: string
+      instructions:
+        description: The bounded change to make
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: kj-code-change-${{ inputs.task_id }}
+  cancel-in-progress: false
+
+jobs:
+  code:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      TASK_ID: ${{ inputs.task_id }}
+      BASE_SHA: ${{ inputs.base_sha }}
+      INSTRUCTIONS: ${{ inputs.instructions }}
+      CLAUDE_CODE_VERSION: ${{ vars.KJ_CLAUDE_CODE_VERSION }}
+      CODER_MODEL: ${{ vars.KJ_CODER_MODEL }}
+      MAX_TURNS: "30"
+    steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          [[ "$TASK_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || { echo "bad task_id"; exit 1; }
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "bad base_sha"; exit 1; }
+          n=${#INSTRUCTIONS}
+          (( n >= 10 && n <= 2000 )) || { echo "instructions out of bounds"; exit 1; }
+          [[ "$CLAUDE_CODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "KJ_CLAUDE_CODE_VERSION must be an exact version"; exit 1; }
+          [[ -n "$CODER_MODEL" ]] || { echo "KJ_CODER_MODEL is not set"; exit 1; }
+
+      - name: Check out the base commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.base_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install Claude Code
+        run: npm install --global --ignore-scripts "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+      # File tools only: no Bash, no web fetch, so the agent cannot run code or reach the network itself.
+      # The key belongs to a workspace with its own monthly spend limit; --max-turns bounds a single run.
+      - name: Make the change
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.KJ_CODER_ANTHROPIC_KEY }}
+        run: |
+          set -euo pipefail
+          {
+            echo "You are making one bounded change to this repository for KernelJSON task $TASK_ID."
+            echo "Change only what the instructions below ask for. Do not edit CI, infrastructure, secrets,"
+            echo "billing code or dependency manifests; such a change will be refused. Do not delete files."
+            echo "When finished, stop. Do not commit."
+            echo
+            echo "Instructions:"
+            printf '%s\n' "$INSTRUCTIONS"
+          } > "$RUNNER_TEMP/prompt.txt"
+          claude -p "$(cat "$RUNNER_TEMP/prompt.txt")" \
+            --model "$CODER_MODEL" \
+            --max-turns "$MAX_TURNS" \
+            --allowedTools "Read,Edit,Write,Glob,Grep" \
+            --disallowedTools "Bash,WebFetch,WebSearch" \
+            --output-format json > "$RUNNER_TEMP/claude-result.json"
+          jq '{subtype, is_error, num_turns, total_cost_usd}' "$RUNNER_TEMP/claude-result.json"
+
+      - name: Capture the patch
+        run: |
+          set -euo pipefail
+          git add --all
+          git diff --cached --binary "$BASE_SHA" > "$RUNNER_TEMP/change.patch"
+          bytes=$(stat -c %s "$RUNNER_TEMP/change.patch")
+          (( bytes > 0 )) || { echo "no change produced"; exit 1; }
+          (( bytes <= 400000 )) || { echo "patch too large"; exit 1; }
+          git diff --cached --stat "$BASE_SHA"
+
+      - name: Upload the patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: kj-change-${{ inputs.task_id }}
+          path: ${{ runner.temp }}/change.patch
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    needs: code
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      TASK_ID: ${{ inputs.task_id }}
+      BASE_SHA: ${{ inputs.base_sha }}
+    steps:
+      - name: Check out the base commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.base_sha }}
+          fetch-depth: 1
+
+      - name: Download the patch
+        uses: actions/download-artifact@v4
+        with:
+          name: kj-change-${{ inputs.task_id }}
+          path: ${{ runner.temp }}/kj
+
+      # The model's output is untrusted. Refuse anything that could change automation or escape the tree
+      # before it is applied; the kernel's reconciliation checks the pushed result again from GitHub.
+      - name: Refuse unsafe patches
+        run: |
+          set -euo pipefail
+          p="$RUNNER_TEMP/kj/change.patch"
+          if git apply --numstat "$p" | cut -f3- | grep -E '(^|/)\.github/|(^|/)\.\.(/|$)|^/' ; then
+            echo "patch touches a refused path"; exit 1
+          fi
+          if grep -E '^(deleted file mode|new file mode 120000|old mode|new mode|rename from .*\.github|GIT binary patch)' "$p"; then
+            echo "patch deletes files, changes modes, adds symlinks or carries binaries"; exit 1
+          fi
+
+      - name: Apply and push the task branch
+        run: |
+          set -euo pipefail
+          git apply --index "$RUNNER_TEMP/kj/change.patch"
+          git -c user.name="kerneljson[bot]" -c user.email="kerneljson-bot@users.noreply.github.com" \
+            commit --quiet -m "kj: code change for task $TASK_ID"
+          # A plain push creates the branch; it fails rather than overwrite one that already exists.
+          git push origin "HEAD:refs/heads/kj/$TASK_ID"
+          git rev-parse HEAD
