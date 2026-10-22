@@ -10,6 +10,9 @@ import {
   IDENTITY_CHANGE_CRITERION,
   IDENTITY_CHANGE_RECIPE,
   parseIdentityChangeObjective,
+  CODE_CHANGE_CRITERION,
+  CODE_CHANGE_RECIPE,
+  parseCodeChangeObjective,
   type RecipeId,
 } from "../../../../packages/contracts/src/index.js";
 import { digest, CRITERION } from "../deterministic.js";
@@ -25,6 +28,7 @@ export const criteria: Record<RecipeId, string> = {
   [MISSION_RECIPE]: MISSION_CRITERION,
   [IDENTITY_CHANGE_RECIPE]: IDENTITY_CHANGE_CRITERION,
   [BRIEF_RECIPE]: BRIEF_CRITERION,
+  [CODE_CHANGE_RECIPE]: CODE_CHANGE_CRITERION,
 };
 // A content-derived UUID in a kernel-specific namespace. Pure across processes.
 export function stableId(value: unknown): string {
@@ -40,6 +44,8 @@ export function compileIntent(raw: unknown): {
   // Rejected at admission, not mid-run: a mission objective is `owner/repo [question]`.
   if (recipe === MISSION_RECIPE) parseMissionObjective(intent.objective);
   if (recipe === BRIEF_RECIPE) parseBriefObjective(intent.objective);
+  // `owner/repo instructions`, within the instruction bounds. Whether the repository is allowed is the worker's call.
+  if (recipe === CODE_CHANGE_RECIPE) parseCodeChangeObjective(intent.objective);
   // Rejected at admission, not mid-run: an identity-change objective is a JSON IdentityChangeRequest.
   if (recipe === IDENTITY_CHANGE_RECIPE) parseIdentityChangeObjective(intent.objective);
   if (intent.attachments.length || intent.contextRefs.length)

@@ -78,6 +78,7 @@ const CompareResponse = z.object({
     )
     .default([]),
 });
+const PullsResponse = z.array(z.unknown()).max(100);
 const PullResponse = z.object({
   number: z.number().int().positive(),
   html_url: z.string().url(),
@@ -193,8 +194,24 @@ export function createGithubRunner(config: GithubRunnerConfig) {
     return raw === null ? null : parseGithub(RefResponse, raw).object.sha;
   }
 
+  /** An open PR from the task branch into the default branch, if one exists: a retried open must not make a second. */
+  async function openPrFor(repo: string, taskId: string, defaultBranch: string): Promise<z.infer<typeof PullResponse> | null> {
+    const owner = RepoSlug.parse(repo).split("/")[0]!;
+    const q = new URLSearchParams({ state: "open", head: `${owner}:${codeChangeBranch(taskId)}`, base: defaultBranch, per_page: "10" });
+    const list = parseGithub(PullsResponse, await get(`${base(repo)}/pulls?${q}`));
+    const prs = list.map((p) => parseGithub(PullResponse, p)).filter((p) => p.head.ref === codeChangeBranch(taskId));
+    return prs[0] ?? null;
+  }
+
   return {
     defaultBranch,
+
+    /** The default branch and its head commit: the base every change is made on and compared against. */
+    async baseCommit(input: { repo: string }): Promise<{ defaultBranch: string; baseSha: string }> {
+      const branch = await defaultBranch(input.repo);
+      const ref = parseGithub(RefResponse, await get(`${base(input.repo)}/git/ref/heads/${branch.split("/").map(encodeURIComponent).join("/")}`));
+      return { defaultBranch: branch, baseSha: ref.object.sha };
+    },
 
     /** Start the coding run from the default branch's own workflow file; the instructions travel as an input. */
     async dispatchCode(input: { repo: string; taskId: string; baseSha: string; instructions: string }): Promise<void> {
@@ -283,14 +300,16 @@ export function createGithubRunner(config: GithubRunnerConfig) {
       const branch = codeChangeBranch(input.taskId);
       if (input.title.length < 1 || input.title.length > 200 || input.body.length > 60_000) throw new GithubRunnerError("BAD_INPUT");
       if ((await branchHead(input.repo, input.taskId)) !== input.expectedHeadSha) throw new GithubRunnerError("HEAD_MOVED");
-      const pr = parseGithub(
-        PullResponse,
-        await post(
-          `${repoBase}/pulls`,
-          { title: input.title, body: input.body, head: branch, base: input.defaultBranch, draft: true, maintainer_can_modify: false },
-          201,
-        ),
-      );
+      const pr =
+        (await openPrFor(input.repo, input.taskId, input.defaultBranch)) ??
+        parseGithub(
+          PullResponse,
+          await post(
+            `${repoBase}/pulls`,
+            { title: input.title, body: input.body, head: branch, base: input.defaultBranch, draft: true, maintainer_can_modify: false },
+            201,
+          ),
+        );
       if (!pr.draft || pr.head.ref !== branch || pr.base.ref !== input.defaultBranch) throw new GithubRunnerError("NOT_DRAFT");
       if (pr.head.sha !== input.expectedHeadSha) throw new GithubRunnerError("HEAD_MOVED");
       return { number: pr.number, url: pr.html_url, headSha: pr.head.sha };

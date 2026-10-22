@@ -36,8 +36,8 @@ export const CODE_CHANGE_LIMITS = {
   maxFiles: 20,
   /** Additions plus deletions across the whole change. */
   maxChangedLines: 800,
-  /** The diff text the reviewer is shown, in bytes. */
-  maxPatchBytes: 200_000,
+  /** The diff text the reviewer is shown, in bytes. Kept under the 128k-character model message bound. */
+  maxPatchBytes: 100_000,
 } as const;
 
 /**
@@ -200,3 +200,11 @@ export const CodeChangeReconciliation = z
       ctx.addIssue({ code: "custom", message: "Decision does not follow the checks" });
   });
 export type CodeChangeReconciliation = z.infer<typeof CodeChangeReconciliation>;
+
+/** The draft pull request as GitHub returned it, re-checked by the kernel before it is evidence. */
+export const CodeChangePr = z.strictObject({
+  number: z.number().int().positive(),
+  url: z.string().regex(/^https:\/\/github\.com\/[A-Za-z0-9-]+\/[A-Za-z0-9._-]+\/pull\/\d+$/),
+  headSha: Sha40,
+});
+export type CodeChangePr = z.infer<typeof CodeChangePr>;

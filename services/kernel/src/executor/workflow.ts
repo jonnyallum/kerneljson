@@ -14,10 +14,11 @@ import { digest, Signal } from "../deterministic.js";
 import { Ledger, type Write } from "../ledger.js";
 import { verifyClaudeMdCheck } from "../../../../packages/runtimes/src/index.js";
 import type { CapabilityService } from "../capability-service.js";
-import { BRIEF_RECIPE, MISSION_RECIPE, type KernelState } from "../../../../packages/contracts/src/index.js";
+import { BRIEF_RECIPE, CODE_CHANGE_RECIPE, MISSION_RECIPE, type KernelState } from "../../../../packages/contracts/src/index.js";
 import type { ModelPort } from "../../../../packages/models/src/index.js";
 import { runRepoAnalysisMission, type Emit } from "../mission/run.js";
-import type { BriefNotice, MissionNotice } from "../mission/notify.js";
+import type { BriefNotice, CodeChangeNotice, MissionNotice } from "../mission/notify.js";
+import { runCodeChangeMission } from "../mission/run-code-change.js";
 import { runMorningBriefMission } from "../mission/run-brief.js";
 import type { MissionMemoryPort } from "../mission/memory-port.js";
 import type { MissionFacultyPort } from "../faculty/registry.js";
@@ -56,6 +57,15 @@ export interface KernelWorkflowOptions {
   capabilityService?: CapabilityService;
   canaryTargetFile?: string;
   mission?: MissionWiring;
+  codeChange?: CodeChangeWiring;
+}
+
+/** code-change/v1: the reviewer runtime, the coder it must be independent of, the allowlist and the notices. */
+export interface CodeChangeWiring {
+  reviewer: ModelPort;
+  coderModel: string;
+  allowedRepos: readonly string[];
+  notify: (notice: CodeChangeNotice) => Promise<void>;
 }
 
 export function createKernelWorkflow(
@@ -184,6 +194,37 @@ export function createKernelWorkflow(
             reviewer: mission.reviewer,
             ...(mission.memory ? { memory: mission.memory } : {}),
             notify: brief.notify,
+          });
+        }
+        // code-change/v1: a GitHub Actions coding run, its test run, an independent review and the kernel's own
+        // reconciliation, ending in a DRAFT pull request. All GitHub I/O goes through the capability service.
+        if (plan.recipe === CODE_CHANGE_RECIPE) {
+          const capability = options?.capabilityService;
+          const wiring = options?.codeChange;
+          if (!capability || !wiring)
+            throw new restate.TerminalError("code-change/v1 is not configured on this worker", { errorCode: 500 });
+          const gh = () => ctx.serviceClient(capability);
+          return runCodeChangeMission({
+            ctx,
+            sleep: (ms) => ctx.sleep(ms),
+            task,
+            plan,
+            emit: emit as Emit,
+            now,
+            uuid: () => ctx.rand.uuidv4(),
+            github: {
+              base: (req) => gh().codeChangeBase(req),
+              dispatch: (req) => gh().codeChangeDispatch(req),
+              dispatchTest: (req) => gh().codeChangeDispatchTest(req),
+              run: (req) => gh().codeChangeRun(req),
+              branchHead: (req) => gh().codeChangeBranchHead(req),
+              capture: (req) => gh().codeChangeCapture(req),
+              openPr: (req) => gh().codeChangeOpenPr(req),
+            },
+            reviewer: wiring.reviewer,
+            coderModel: wiring.coderModel,
+            allowedRepos: wiring.allowedRepos,
+            notify: wiring.notify,
           });
         }
         // KJ-P3 repository-analysis mission. Runtimes return text; only this workflow,

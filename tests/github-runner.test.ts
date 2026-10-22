@@ -161,11 +161,32 @@ describe("code-change/v1 GitHub runner client", () => {
   });
 
   it("opens a draft PR for the reviewed head only", async () => {
-    const { gh, calls } = runner({ [`GET ${R}/git/ref/heads/${BRANCH}`]: json({ object: { sha: HEAD } }), [`POST ${R}/pulls`]: json(pr(), 201) });
+    const { gh, calls } = runner({ [`GET ${R}/git/ref/heads/${BRANCH}`]: json({ object: { sha: HEAD } }), [`GET ${R}/pulls`]: json([]), [`POST ${R}/pulls`]: json(pr(), 201) });
     const out = await gh.openDraftPr({ repo: REPO, taskId: TASK, defaultBranch: "main", expectedHeadSha: HEAD, title: "kj: greet helper", body: "evidence" });
     expect(out).toEqual({ number: 7, url: `https://github.com/${REPO}/pull/7`, headSha: HEAD });
     const body = JSON.parse(calls.find((c) => c.method === "POST")!.init.body as string);
     expect(body).toMatchObject({ head: BRANCH, base: "main", draft: true, maintainer_can_modify: false });
+  });
+
+  it("returns the existing draft instead of opening a second one on retry", async () => {
+    const { gh, calls } = runner({
+      [`GET ${R}/git/ref/heads/${BRANCH}`]: json({ object: { sha: HEAD } }),
+      [`GET ${R}/pulls`]: (url) => {
+        expect(url.searchParams.get("head")).toBe(`jonnyallum:${BRANCH}`);
+        return json([pr()]);
+      },
+    });
+    const out = await gh.openDraftPr({ repo: REPO, taskId: TASK, defaultBranch: "main", expectedHeadSha: HEAD, title: "t", body: "" });
+    expect(out.number).toBe(7);
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+  });
+
+  it("reads the base commit of the default branch", async () => {
+    const { gh } = runner({
+      [`GET ${R}`]: json({ full_name: REPO, default_branch: "main" }),
+      [`GET ${R}/git/ref/heads/main`]: json({ object: { sha: BASE } }),
+    });
+    expect(await gh.baseCommit({ repo: REPO })).toEqual({ defaultBranch: "main", baseSha: BASE });
   });
 
   it("refuses to open a PR when the branch moved, without posting", async () => {
@@ -180,13 +201,13 @@ describe("code-change/v1 GitHub runner client", () => {
     ["NOT_DRAFT", { base: { ref: "release" } }],
     ["HEAD_MOVED", { head: { sha: BASE, ref: BRANCH } }],
   ])("reports %s when GitHub's answer is not the PR asked for", async (code, over) => {
-    const { gh } = runner({ [`GET ${R}/git/ref/heads/${BRANCH}`]: json({ object: { sha: HEAD } }), [`POST ${R}/pulls`]: json(pr(over), 201) });
+    const { gh } = runner({ [`GET ${R}/git/ref/heads/${BRANCH}`]: json({ object: { sha: HEAD } }), [`GET ${R}/pulls`]: json([]), [`POST ${R}/pulls`]: json(pr(over), 201) });
     const e = await errorOf(gh.openDraftPr({ repo: REPO, taskId: TASK, defaultBranch: "main", expectedHeadSha: HEAD, title: "t", body: "" }));
     expect((e as GithubRunnerError).code).toBe(code);
   });
 
   it("has no method that merges, pushes or deletes", () => {
     const { gh } = runner({});
-    expect(Object.keys(gh).sort()).toEqual(["branchHead", "captureChange", "defaultBranch", "dispatchCode", "dispatchTest", "findRun", "getRun", "openDraftPr"]);
+    expect(Object.keys(gh).sort()).toEqual(["baseCommit", "branchHead", "captureChange", "defaultBranch", "dispatchCode", "dispatchTest", "findRun", "getRun", "openDraftPr"]);
   });
 });

@@ -12,7 +12,8 @@ import { productionTelegramOperator } from "./channel/telegram/production.js";
 import { productionApprovalWorkflow, productionIdentityWorkflow } from "./approval-boundary.js";
 import { PgNotificationOutboxStore } from "./alerting/pg-outbox-store.js";
 import { loadMissionConfig } from "./mission/config.js";
-import { enqueueBriefNotice, enqueueMissionNotice } from "./mission/notify.js";
+import { enqueueBriefNotice, enqueueCodeChangeNotice, enqueueMissionNotice } from "./mission/notify.js";
+import { loadCodeChangeConfig } from "./mission/code-change-config.js";
 import { createKernelStateReader } from "./mission/kernel-state.js";
 import { BRIEF_RECIPE } from "../../../packages/contracts/src/index.js";
 import { createConfiguredMemory, loadMemoryConfig } from "../../memory/src/canonical/config.js";
@@ -41,15 +42,20 @@ const canary = canaryConfig
   : undefined;
 // KJ-P3: optional read-only token for private repositories; public ones need none.
 const githubToken = process.env["GITHUB_READ_TOKEN"] || undefined;
+// KJ-P3 mission runtimes (Claude analyst, Grok reviewer). All-or-nothing, like the seams
+// above: unset serves no mission, a partial configuration refuses to start.
+const missionRuntimes = loadMissionConfig(process.env);
+// code-change/v1. All-or-nothing too, and it needs the mission reviewer and the capability service.
+const codeChangeConfig = loadCodeChangeConfig(process.env, missionRuntimes?.reviewerModel);
+if (codeChangeConfig && !repositoryRoot)
+  throw new Error("code-change/v1 is configured but the capability service (KJ_REPO_ROOT) is not - refusing to start half-configured");
 const capabilityService = repositoryRoot
   ? createCapabilityService({
       repositoryRoot,
       ...(githubToken ? { github: { token: githubToken } } : {}),
+      ...(codeChangeConfig ? { codeChange: { token: codeChangeConfig.token, allowedRepos: codeChangeConfig.allowedRepos } } : {}),
     })
   : undefined;
-// KJ-P3 mission runtimes (Claude analyst, Grok reviewer). All-or-nothing, like the seams
-// above: unset serves no mission, a partial configuration refuses to start.
-const missionRuntimes = loadMissionConfig(process.env);
 if (missionRuntimes && !(canary && capabilityService))
   throw new Error(
     "Mission runtimes are configured but the canary/capability service (KJ_REPO_ROOT) is not " +
@@ -90,7 +96,26 @@ const mission = missionRuntimes
     }
   : undefined;
 
-const ledger = new Ledger(pool, undefined, undefined, undefined, canary);
+const codeChange =
+  codeChangeConfig && missionRuntimes
+    ? {
+        reviewer: missionRuntimes.reviewer,
+        coderModel: codeChangeConfig.coderModel,
+        allowedRepos: codeChangeConfig.allowedRepos,
+        notify: async (notice: Parameters<typeof enqueueCodeChangeNotice>[1]) => {
+          await enqueueCodeChangeNotice(new PgNotificationOutboxStore(pool), notice);
+        },
+      }
+    : undefined;
+
+const ledger = new Ledger(
+  pool,
+  undefined,
+  undefined,
+  undefined,
+  canary,
+  codeChangeConfig ? { allowedRepos: codeChangeConfig.allowedRepos } : undefined,
+);
 
 // ScheduleDriver (the durable Restate-driven wake path) is enabled only when the
 // admission seam is fully configured — same fail-closed, all-or-nothing gating as
@@ -202,7 +227,7 @@ export const services = [
   createKernelWorkflow(
     ledger,
     canary && capabilityService
-      ? { canary, capabilityService, ...(mission ? { mission } : {}) }
+      ? { canary, capabilityService, ...(mission ? { mission } : {}), ...(codeChange ? { codeChange } : {}) }
       : undefined,
   ),
   ...(capabilityService ? [capabilityService] : []),

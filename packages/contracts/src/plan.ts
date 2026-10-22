@@ -14,6 +14,8 @@ export const RecipeId = z.enum([
   "identity-change/v1",
   // The daily morning brief: the repo-analysis shape over GitHub activity and the kernel's own state.
   "morning-brief/v1",
+  // Mission #2: a bounded change to one allowlisted repository, ending in a DRAFT pull request.
+  "code-change/v1",
 ]);
 export type RecipeId = z.infer<typeof RecipeId>;
 export const KernelSubmission = z.strictObject({
@@ -36,6 +38,10 @@ export const PlanStep = z.strictObject({
     // KJ-P7A: IdentityChangeWorkflowV1's own single deterministic step. Never routed through the
     // generic capability/faculty execution path - identity governance is not a capability.
     "IDENTITY_GOVERN",
+    // code-change/v1: the GitHub Actions coding run, the test run on its commit, and the draft PR.
+    "CODE_RUN",
+    "CODE_TEST",
+    "OPEN_DRAFT_PR",
   ]),
   dependencies: z.array(Id),
   input: z.discriminatedUnion("source", [
