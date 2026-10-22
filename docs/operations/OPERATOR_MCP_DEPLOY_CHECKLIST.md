@@ -2,6 +2,11 @@
 
 ADR-0025. Background, identity and security review: [OPERATOR_MCP.md](OPERATOR_MCP.md).
 
+**Executed 22/10/2026** for `c5de3f5` (epoch 16); what differed is in OPERATOR_MCP.md, "Deploy record". Lessons for the next run of these steps:
+- Judge `caddy validate` by its exit code. "Valid configuration" is not reliably the last line of its output.
+- Step 10 runs on chatgpt.com in a browser, not the ChatGPT desktop app.
+- In step 9, make sure the "Not permitted" id came from `jonnyallum@gmail.com`.
+
 **Needs Jonny's explicit approval for one window.**
 - Pick a time clear of the 06:00Z brief and 08:00Z canary wakes, for example 10:00Z to 16:00Z. It takes about 45 minutes.
 - No step changes a schedule, the canary, Phase 8.1 or release provenance, except the new release in step 3.

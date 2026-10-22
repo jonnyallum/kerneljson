@@ -85,12 +85,19 @@ class OAuthError extends Error {
 
 const escapeHtml = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-function page(res: ServerResponse, status: number, title: string, body: string): void {
+/**
+ * `redirectOrigin` is set only on the consent page. Chrome applies form-action to the redirect that follows a
+ * submit, so the client's own origin must be listed or the Allow redirect is silently blocked. Referrer-Policy is
+ * same-origin, not no-referrer: under no-referrer a browser sends `Origin: null` on a form POST, which the consent
+ * cross-site check rightly refuses (both found live, 22/10/2026).
+ */
+function page(res: ServerResponse, status: number, title: string, body: string, redirectOrigin?: string): void {
   res.statusCode = status;
   res.setHeader("content-type", "text/html; charset=utf-8");
-  res.setHeader("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+  const formAction = redirectOrigin ? `'self' ${redirectOrigin}` : "'self'";
+  res.setHeader("content-security-policy", `default-src 'none'; style-src 'unsafe-inline'; form-action ${formAction}; frame-ancestors 'none'; base-uri 'none'`);
   res.setHeader("x-frame-options", "DENY");
-  res.setHeader("referrer-policy", "no-referrer");
+  res.setHeader("referrer-policy", "same-origin");
   res.end(
     `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title>` +
       `<style>body{font:16px/1.5 system-ui,sans-serif;max-width:34rem;margin:3rem auto;padding:0 1rem;color:#1a1a1a}button{font:inherit;padding:.5rem 1.2rem;margin-right:.5rem}code{background:#eee;padding:0 .2rem}</style>` +
@@ -330,6 +337,7 @@ export function createOAuthServer(config: OAuthConfig) {
         `<p>Access goes to <code>${escapeHtml(target.origin)}</code>. Only allow this if you have just asked ChatGPT to connect to KernelJSON.</p>` +
         `<form method="post" action="/oauth/consent"><input type="hidden" name="ticket" value="${escapeHtml(ticket)}">` +
         `<button type="submit" name="decision" value="allow">Allow</button><button type="submit" name="decision" value="deny">Deny</button></form>`,
+      target.origin,
     );
   }
 
