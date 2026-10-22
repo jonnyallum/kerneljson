@@ -21,7 +21,7 @@ export interface McpServerOptions {
   allowedOrigins: readonly string[];
   /** Sent in WWW-Authenticate on a 401 so an OAuth client can discover the authorisation server. */
   resourceMetadataUrl?: string;
-  log?: (entry: CallLog & { correlationId: string }) => void;
+  log?: (entry: (CallLog | { refused: string; origin: string }) & { correlationId: string }) => void;
   /** Extra routes served before /mcp (the OAuth endpoints). Returns true when it answered. */
   routes?: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean>;
   /** Refuses a request that should never reach this server at all (see requestGuard). */
@@ -101,7 +101,11 @@ export function createMcpServer(options: McpServerOptions) {
       if (options.routes && (await options.routes(req, res, url))) return;
       if (url.pathname !== MCP_PATH) throw new HttpError(404, "NOT_FOUND");
       const origin = req.headers.origin;
-      if (origin !== undefined && !origins.has(origin)) throw new HttpError(403, "ORIGIN_NOT_ALLOWED");
+      if (origin !== undefined && !origins.has(origin)) {
+        // Named in the log so a new client's origin can be found at enrolment time. An origin is not a secret.
+        options.log?.({ refused: "ORIGIN_NOT_ALLOWED", origin: origin.slice(0, 200), correlationId });
+        throw new HttpError(403, "ORIGIN_NOT_ALLOWED");
+      }
       const caller = await options.verify(req.headers.authorization);
       if (!caller) {
         if (options.resourceMetadataUrl) res.setHeader("www-authenticate", `Bearer resource_metadata="${options.resourceMetadataUrl}"`);

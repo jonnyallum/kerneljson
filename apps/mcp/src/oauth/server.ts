@@ -225,8 +225,14 @@ export function createOAuthServer(config: OAuthConfig) {
     };
   }
 
-  /** The profile a registered client resolves to, or null if its URIs do not resolve to exactly one. */
-  const profileOf = (client: Client): ClientProfile | null => profileFor(client.redirect_uris);
+  /**
+   * The profile a registered client resolves to, or null if its URIs do not resolve to exactly one, or if none of
+   * them is still in MCP_ALLOWED_REDIRECT_URIS. The last makes the allow-list a kill switch per client kind:
+   * removing Grok Bot's callbacks ends its access tokens and refreshes at once, without rotating the signing key
+   * (which would also log ChatGPT out).
+   */
+  const profileOf = (client: Client): ClientProfile | null =>
+    client.redirect_uris.some((u) => redirectAllowList.has(u)) ? profileFor(client.redirect_uris) : null;
 
   /**
    * Bearer verifier for /mcp. Re-checks the permitted subject on every request, and that the token's scope is
@@ -418,6 +424,9 @@ export function createOAuthServer(config: OAuthConfig) {
       if (!claims || claims.iss !== issuer || claims.aud !== resource || claims.exp <= seconds() || claims.cid !== clientId)
         throw new OAuthError(400, "invalid_grant", "Invalid refresh token");
       if (claims.sub !== config.allowedGoogleSub || revokedFamilies.has(claims.fam)) throw new OAuthError(400, "invalid_grant", "Access revoked");
+      const refreshing = clientFrom(clientId);
+      const profile = refreshing ? profileOf(refreshing) : null;
+      if (!profile || claims.scope !== profile.scope) throw new OAuthError(400, "invalid_grant", "Access revoked");
       if (usedRefresh.has(claims.jti)) {
         // A refresh token presented twice means one copy is not the client's: end the whole family.
         revokedFamilies.set(claims.fam, seconds() + REFRESH_TTL_S);

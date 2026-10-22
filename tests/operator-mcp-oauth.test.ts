@@ -6,6 +6,7 @@ import { checkIdToken, type GoogleSignIn } from "../apps/mcp/src/oauth/google.js
 import { ACCESS_TTL_S } from "../apps/mcp/src/oauth/server.js";
 import { DEFAULT_RATE_LIMITS } from "../apps/mcp/src/oauth/rate-limit.js";
 import { TokenSigner } from "../apps/mcp/src/oauth/tokens.js";
+import { TOOLS } from "../apps/mcp/src/tools.js";
 
 /**
  * ADR-0025 end to end: ChatGPT's connector flow against the real MCP server and OAuth server, with a
@@ -527,6 +528,8 @@ describe("the Grok Bot read-only profile", () => {
     const googleState = new URL(toGoogle.headers.get("location")!).searchParams.get("state")!;
     const back = await fetch(`${base}/oauth/google/callback?${new URLSearchParams({ state: googleState, code: "jonny" })}`, { redirect: "manual" });
     const consentPage = await back.clone().text();
+    // Chrome applies form-action to the redirect after Allow: the consent page must list this client's origin.
+    expect(back.headers.get("content-security-policy")).toContain("form-action 'self' https://www.cursor.com;");
     const redirect = await consentAndCode(back);
     expect(redirect.origin + redirect.pathname).toBe(CURSOR_BOT);
     const tokens = await exchange({ grant_type: "authorization_code", code: redirect.searchParams.get("code")!, redirect_uri: CURSOR_BOT, client_id, code_verifier: verifier });
@@ -559,6 +562,7 @@ describe("the Grok Bot read-only profile", () => {
       expect(String(init.body!.result["instructions"])).toContain("This connection is read-only");
       const tools = (await call(access_token, "tools/list")).body!.result["tools"] as Array<{ name: string }>;
       expect(tools.map((t) => t.name).sort()).toEqual([...READ_TOOLS].sort());
+      expect(TOOLS.filter((t) => t.annotations.readOnlyHint).map((t) => t.name).sort()).toEqual([...READ_TOOLS].sort());
       const health = (await call(access_token, "tools/call", { name: "kj_health", arguments: {} })).body!.result as { isError: boolean };
       expect(health.isError).toBe(false);
       const admittedBefore = doorSeen.length;
@@ -586,10 +590,18 @@ describe("the Grok Bot read-only profile", () => {
       const chatgpt = await connect();
       expect(chatgpt).toMatchObject({ scope: "kerneljson.operator" });
       const tools = (await call(chatgpt.access_token, "tools/list")).body!.result["tools"] as unknown[];
-      expect(tools).toHaveLength(10);
+      expect(tools).toHaveLength(TOOLS.length);
       const brief = (await call(chatgpt.access_token, "tools/call", { name: "kj_run_brief", arguments: { request_id: `chatgpt-${randomUUID()}` } })).body!.result as { isError: boolean };
       expect(brief.isError).toBe(false);
       expect(logs.at(-1)).toMatchObject({ tool: "kj_run_brief", outcome: "OK", profile: "chatgpt", client: "ChatGPT" });
+    });
+  });
+
+  it("names a refused browser origin in the log, so a new client's origin can be found at enrolment", async () => {
+    await withHandler(enrolmentEnv(), async () => {
+      const r = await fetch(`${base}/mcp`, { method: "POST", headers: { origin: "https://grok.com", "content-type": "application/json" }, body: "{}" });
+      expect(r.status).toBe(403);
+      expect(logs.at(-1)).toMatchObject({ refused: "ORIGIN_NOT_ALLOWED", origin: "https://grok.com" });
     });
   });
 
@@ -617,6 +629,20 @@ describe("the Grok Bot read-only profile", () => {
       expect((await call(access_token, "ping")).status).toBe(200);
       expect((await exchange({ grant_type: "refresh_token", refresh_token, client_id })).status).toBe(200);
     });
+  });
+
+  it("is revoked at once by removing its callbacks from the allow-list, without touching ChatGPT", async () => {
+    let grok = { access_token: "", refresh_token: "", client_id: "" };
+    let chatgpt = { access_token: "", refresh_token: "", client_id: "" };
+    await withHandler(enrolmentEnv(), async () => {
+      grok = await connectGrokBot();
+      chatgpt = await connect();
+    });
+    // Back to the production default (ChatGPT's callback only): the same signing key, nothing rotated.
+    expect((await call(grok.access_token, "ping")).status).toBe(401);
+    expect((await exchange({ grant_type: "refresh_token", refresh_token: grok.refresh_token, client_id: grok.client_id })).status).toBe(400);
+    expect((await call(chatgpt.access_token, "ping")).status).toBe(200);
+    expect((await exchange({ grant_type: "refresh_token", refresh_token: chatgpt.refresh_token, client_id: chatgpt.client_id })).status).toBe(200);
   });
 
   it("refuses to start with an unbounded, malformed or unknown enrolment setting", () => {
