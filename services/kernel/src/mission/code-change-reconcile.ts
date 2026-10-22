@@ -75,7 +75,7 @@ export function reconcileCodeChange(input: CodeChangeReconcileInput): CodeChange
       const category = p === null ? null : refusedPathCategory(p);
       if (category) refused.add(category);
     }
-  let branch: string | null = null;
+  let branch: string | null;
   try {
     branch = codeChangeBranch(input.taskId);
   } catch {
