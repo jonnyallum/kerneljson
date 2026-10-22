@@ -36,3 +36,10 @@ export {
   type GithubReadCode,
   type GithubReaderConfig,
 } from "./github-read.js";
+export {
+  createGithubRunner,
+  GithubRunnerError,
+  type GithubRunner,
+  type GithubRunnerCode,
+  type GithubRunnerConfig,
+} from "./github-runner.js";

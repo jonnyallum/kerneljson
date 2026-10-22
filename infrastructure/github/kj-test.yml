@@ -1,0 +1,50 @@
+# KernelJSON code-change/v1 - the test run. Installed as .github/workflows/kj-test.yml in the pilot
+# repository ONLY. The kernel dispatches it ON the task branch kj/<task_id>, so GitHub records the exact
+# commit it tested; the kernel accepts a pass only when that commit is the branch head it will propose.
+#
+# It runs model-written code, so it holds no secrets and only a read token.
+name: kj-test
+run-name: kj:${{ inputs.task_id }} test
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: KernelJSON task id (uuid)
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      TASK_ID: ${{ inputs.task_id }}
+      REF: ${{ github.ref }}
+      TEST_COMMAND: ${{ vars.KJ_TEST_COMMAND }}
+    steps:
+      - name: Validate the ref
+        run: |
+          set -euo pipefail
+          [[ "$TASK_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || { echo "bad task_id"; exit 1; }
+          [[ "$REF" == "refs/heads/kj/$TASK_ID" ]] || { echo "must run on the task branch"; exit 1; }
+          [[ -n "$TEST_COMMAND" ]] || { echo "KJ_TEST_COMMAND is not set"; exit 1; }
+
+      - name: Check out the task branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Node
+        if: ${{ vars.KJ_NODE_VERSION != '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ vars.KJ_NODE_VERSION }}
+
+      - name: Run the tests
+        run: bash -euo pipefail -c "$TEST_COMMAND"
