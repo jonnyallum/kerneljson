@@ -202,7 +202,7 @@ describe("the connected session", () => {
     const init = await rpc(access_token, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "ChatGPT", version: "1" } });
     expect(init.body!.result).toMatchObject({ protocolVersion: "2025-06-18", serverInfo: { name: "kerneljson-operator", version: "test-release" } });
     expect((await rpc(access_token, "notifications/initialized")).status).toBe(202);
-    expect(((await rpc(access_token, "tools/list")).body!.result as { tools: unknown[] }).tools).toHaveLength(10);
+    expect(((await rpc(access_token, "tools/list")).body!.result as { tools: unknown[] }).tools).toHaveLength(11);
     const health = await toolCall(access_token, "kj_health", {});
     expect(health.isError).toBe(false);
     expect(health.structuredContent.data).toEqual({ release: { doorMatchesActive: true } });

@@ -103,6 +103,11 @@ services:
       MISSION_ANALYST_MODEL: ${MISSION_ANALYST_MODEL:-}
       MISSION_REVIEWER_MODEL: ${MISSION_REVIEWER_MODEL:-}
       GITHUB_READ_TOKEN: ${GITHUB_READ_TOKEN:-}
+      # code-change/v1: all three or none. Unset or empty = the recipe is not served. The token is a
+      # fine-grained token for the allowlisted pilot repository only; it cannot write contents or merge.
+      KJ_CODE_CHANGE_GITHUB_TOKEN: ${KJ_CODE_CHANGE_GITHUB_TOKEN:-}
+      KJ_CODE_CHANGE_REPOS: ${KJ_CODE_CHANGE_REPOS:-}
+      KJ_CODE_CHANGE_CODER_MODEL: ${KJ_CODE_CHANGE_CODER_MODEL:-}
       # Morning brief: the UUID of the schedule that admits morning-brief/v1. Unset or empty = no brief
       # schedule. Set, it needs the mission runtimes, GITHUB_READ_TOKEN and the admission seam above.
       SCHED_BRIEF_SCHEDULE_ID: ${SCHED_BRIEF_SCHEDULE_ID:-}

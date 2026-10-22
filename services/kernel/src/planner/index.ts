@@ -7,6 +7,7 @@ import {
   MISSION_RECIPE,
   BRIEF_RECIPE,
   IDENTITY_CHANGE_RECIPE,
+  CODE_CHANGE_RECIPE,
   type PlanStep,
 } from "../../../../packages/contracts/src/index.js";
 import { stableId, criteria } from "../compiler/index.js";
@@ -33,6 +34,8 @@ export function planTask(raw: Task, recipe: RecipeId): ExecutionPlan {
           ["REPOSITORY_READ"]
       : recipe === IDENTITY_CHANGE_RECIPE
         ? ["IDENTITY_GOVERN"]
+      : recipe === CODE_CHANGE_RECIPE
+        ? ["GITHUB_EVIDENCE", "CODE_RUN", "CODE_TEST", "RUNTIME_REVIEW", "RECONCILE", "OPEN_DRAFT_PR"]
         : ["UPPERCASE"];
   const steps: PlanStep[] = operations.map((operation, index) => ({
     id: stableId([task.id, recipe, index]),
@@ -79,7 +82,10 @@ export function projectStep(step: PlanStep): TaskStep {
         ? "WAIT_FOR_EVENT"
         : step.operation === "REPOSITORY_READ"
           ? "SANDBOX_EXEC"
-          : step.operation === "GITHUB_EVIDENCE"
+          : step.operation === "GITHUB_EVIDENCE" ||
+              step.operation === "CODE_RUN" ||
+              step.operation === "CODE_TEST" ||
+              step.operation === "OPEN_DRAFT_PR"
             ? "TOOL_CALL"
             : step.operation === "RUNTIME_ANALYSE" ||
                 step.operation === "RUNTIME_REVIEW"

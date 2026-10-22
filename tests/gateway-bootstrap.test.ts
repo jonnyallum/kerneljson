@@ -187,6 +187,7 @@ describe("admission door — the operator MCP credential (ADR-0025)", () => {
     const scope = doorScope(MCP_PRINCIPAL);
     expect(scope(mcp, { kind: "submit", recipe: "morning-brief/v1" })).toBe(true);
     expect(scope(mcp, { kind: "submit", recipe: "repo-analysis-mission/v1" })).toBe(true);
+    expect(scope(mcp, { kind: "submit", recipe: "code-change/v1" })).toBe(true);
     for (const recipe of ["claude_md_check/v1", "uppercase/v1", "identity-change/v1"]) expect(scope(mcp, { kind: "submit", recipe })).toBe(false);
     expect(scope(mcp, { kind: "control", action: "cancel" })).toBe(true);
     expect(scope(mcp, { kind: "control", action: "approve" })).toBe(false);

@@ -2,7 +2,7 @@ import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "node:
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { z } from "zod";
-import { ApprovalAnswer, BRIEF_RECIPE, Id, IDENTITY_CHANGE_RECIPE, KernelSubmission, MISSION_RECIPE, Task, TenantContext, type ExecutionBinding } from "../../../packages/contracts/src/index.js";
+import { ApprovalAnswer, BRIEF_RECIPE, CODE_CHANGE_RECIPE, Id, IDENTITY_CHANGE_RECIPE, KernelSubmission, MISSION_RECIPE, Task, TenantContext, type ExecutionBinding } from "../../../packages/contracts/src/index.js";
 import { withTenant } from "../../../packages/identity/src/index.js";
 import { compileIntent, stableId } from "../../../services/kernel/src/compiler/index.js";
 import { bindingFor,persistBinding,readBinding,workflowTargets } from "../../../services/kernel/src/execution-binding.js";
@@ -21,7 +21,7 @@ import { TaskListQuery,listTasks,operatorHealth } from "./operator-views.js";
 // can run to tens of thousands of characters at its schema's own worst case, well past the other
 // recipes' short objectives — hence MAX_BODY_BYTES below and this field's matching max, not 8000.
 export const MAX_BODY_BYTES=65536;
-export const PublicSubmission=z.strictObject({recipe:z.enum(['uppercase/v1','uppercase-reverse/v1','claude_md_check/v1',MISSION_RECIPE,IDENTITY_CHANGE_RECIPE,BRIEF_RECIPE]),objective:z.string().trim().min(1).max(MAX_BODY_BYTES)});
+export const PublicSubmission=z.strictObject({recipe:z.enum(['uppercase/v1','uppercase-reverse/v1','claude_md_check/v1',MISSION_RECIPE,IDENTITY_CHANGE_RECIPE,BRIEF_RECIPE,CODE_CHANGE_RECIPE]),objective:z.string().trim().min(1).max(MAX_BODY_BYTES)});
 export type PublicSubmission=z.infer<typeof PublicSubmission>;
 // Recipe -> durable workflow target. Only the golden uppercase recipe routes to the golden
 // workflow, identity-change/v1 routes to its own dedicated workflow (never through the generic

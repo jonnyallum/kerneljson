@@ -2,6 +2,7 @@ import type { AlertDecision } from "./types.js";
 import type { NotificationPayload } from "./outbox-types.js";
 import { isOperatorReplyCheckId } from "./operator-reply.js";
 import { isBriefCompletedCheckId } from "./brief-notice.js";
+import { isCodeChangeCheckId } from "./code-change-notice.js";
 
 const DOMAIN_LABELS: Record<string, string> = {
   authority: "Authority",
@@ -125,7 +126,8 @@ const SEVERITY_ICON: Record<NotificationPayload["severity"], string> = {
 export function formatTelegramMessage(p: NotificationPayload): string {
   // KJ-P4A: an operator reply is the answer to a command, not an alert. Its text was built from fixed
   // templates by the channel adapter, so it is sent as written (escaped), with none of the alert header.
-  if (isOperatorReplyCheckId(p.checkId) || isBriefCompletedCheckId(p.checkId)) return escapeTelegramMarkdownV2(p.message);
+  if (isOperatorReplyCheckId(p.checkId) || isBriefCompletedCheckId(p.checkId) || isCodeChangeCheckId(p.checkId))
+    return escapeTelegramMarkdownV2(p.message);
   const icon = SEVERITY_ICON[p.severity];
   const lines = [
     `${icon} *${escapeTelegramMarkdownV2(p.severity)} ${escapeTelegramMarkdownV2(p.kind)}*`,
