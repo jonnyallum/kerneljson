@@ -361,8 +361,7 @@ describe("code-change/v1 worker keys", () => {
   const set = ["--set-public", "KJ_CODE_CHANGE_REPOS=jonnyallum/kj-pilot", "--set-public", "KJ_CODE_CHANGE_CODER_MODEL=anthropic/claude-sonnet-5-5", "--set-public", "KJ_CODE_CHANGE_REVIEWER_MODEL=deepseek-v4-pro"];
   it("adds the token from a file and the rest as public values, preserving every other line", () => {
     const d = fixture();
-    writeFileSync(join(d, "pat.txt"), `﻿${PAT}
-`); // BOM + CRLF on purpose
+    writeFileSync(join(d, "pat.txt"), `\uFEFF${PAT}\r\n`); // BOM + CRLF on purpose
     const r = run(["merge", "--base", join(d, "base.env"), "--out", join(d, "new.env"), "--set-from", `KJ_CODE_CHANGE_GITHUB_TOKEN=${join(d, "pat.txt")}`, ...set]);
     expect(r.code, r.err).toBe(0);
     expect(r.out + r.err).not.toContain(PAT);
