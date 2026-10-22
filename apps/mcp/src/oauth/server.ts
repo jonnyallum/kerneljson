@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 import type { GoogleSignIn } from "./google.js";
+import { OPERATOR_SCOPE, READ_SCOPE, profileFor, type ClientProfile, type ClientProfileName } from "./profiles.js";
 import { DEFAULT_RATE_LIMITS, RateLimiter, clientAddress, type RateLimits } from "./rate-limit.js";
 import {
   AccessClaims,
@@ -18,7 +19,8 @@ import {
  * ADR-0025: the operator MCP server's own OAuth 2.1 authorisation server, for exactly one human.
  *
  *   discovery     RFC 9728 protected-resource metadata, RFC 8414 authorisation-server metadata
- *   registration  RFC 7591 dynamic client registration, redirect URIs limited to an exact allow-list
+ *   registration  RFC 7591 dynamic client registration, redirect URIs limited to an exact allow-list; the
+ *                 URIs decide the client's profile (profiles.ts: ChatGPT operator, Grok Bot read-only)
  *   authorise     authorisation code + PKCE S256 only; sign-in delegated to Google; the Google subject
  *                 must equal MCP_ALLOWED_GOOGLE_SUB; then an explicit consent page (the defence against
  *                 a confused deputy: a client someone else registered cannot get a code silently)
@@ -26,7 +28,7 @@ import {
  *
  * Tokens are audience-bound to this server's /mcp resource and are never forwarded anywhere.
  */
-export const SCOPE = "kerneljson.operator";
+export const SCOPE = OPERATOR_SCOPE;
 export const ACCESS_TTL_S = 3600;
 export const REFRESH_TTL_S = 30 * 24 * 3600;
 const CODE_TTL_MS = 5 * 60_000;
@@ -38,13 +40,17 @@ export interface OAuthConfig {
   /** Public origin, e.g. https://kj-mcp.jonnyai.co.uk. The issuer, and the base of every URL served. */
   publicUrl: string;
   allowedGoogleSub: string;
-  /** Exact redirect URIs a client may register (ChatGPT's connector callback). */
+  /** Exact redirect URIs a client may register or use (each must also belong to a profile). */
   allowedRedirectUris: readonly string[];
   /**
-   * Close once ChatGPT is connected: an already-issued client id keeps working (it is self-contained),
-   * but nobody else can register a lookalike "ChatGPT" client to phish a consent.
+   * Close once a client is connected: an already-issued client id keeps working (it is self-contained),
+   * but nobody else can register a lookalike client to phish a consent.
    */
   registrationOpen: boolean;
+  /** Bounded enrolment: registration also closes by itself at this time (ms since epoch). */
+  registrationUntil?: number;
+  /** Bounded enrolment: only these profiles may register. Default: every profile. */
+  registrationProfiles?: readonly ClientProfileName[];
   signer: TokenSigner;
   google: GoogleSignIn;
   now?: () => number;
@@ -180,7 +186,7 @@ export function createOAuthServer(config: OAuthConfig) {
     resource,
     authorization_servers: [issuer],
     bearer_methods_supported: ["header"],
-    scopes_supported: [SCOPE],
+    scopes_supported: [OPERATOR_SCOPE, READ_SCOPE],
     resource_name: "KernelJSON operator",
   };
   const serverMetadata = {
@@ -188,7 +194,7 @@ export function createOAuthServer(config: OAuthConfig) {
     authorization_endpoint: `${origin}/oauth/authorize`,
     token_endpoint: `${origin}/oauth/token`,
     registration_endpoint: `${origin}/oauth/register`,
-    scopes_supported: [SCOPE],
+    scopes_supported: [OPERATOR_SCOPE, READ_SCOPE],
     response_types_supported: ["code"],
     response_modes_supported: ["query"],
     grant_types_supported: ["authorization_code", "refresh_token"],
@@ -219,17 +225,25 @@ export function createOAuthServer(config: OAuthConfig) {
     };
   }
 
-  /** Bearer verifier for /mcp. Re-checks the permitted subject on every request. */
-  function verifyAccess(authorization: string | undefined): Access | null {
+  /** The profile a registered client resolves to, or null if its URIs do not resolve to exactly one. */
+  const profileOf = (client: Client): ClientProfile | null => profileFor(client.redirect_uris);
+
+  /**
+   * Bearer verifier for /mcp. Re-checks the permitted subject on every request, and that the token's scope is
+   * exactly its client's profile scope, so a read-only client's token can never carry the operator scope.
+   */
+  function verifyAccess(authorization: string | undefined): (Access & { profile: ClientProfile; clientName: string }) | null {
     if (typeof authorization !== "string" || !authorization.startsWith("Bearer ")) return null;
     const claims = config.signer.verify(authorization.slice(7), AccessClaims, "access");
     if (!claims) return null;
     if (claims.iss !== issuer || claims.aud !== resource || claims.exp <= seconds()) return null;
-    if (claims.sub !== config.allowedGoogleSub || claims.scope !== SCOPE) return null;
+    if (claims.sub !== config.allowedGoogleSub) return null;
     pruneRefresh();
     if (revokedFamilies.has(claims.fam)) return null;
-    if (!clientFrom(claims.cid)) return null;
-    return claims;
+    const client = clientFrom(claims.cid);
+    const profile = client ? profileOf(client) : null;
+    if (!client || !profile || claims.scope !== profile.scope) return null;
+    return { ...claims, profile, clientName: client.name };
   }
 
   function redirectWith(res: ServerResponse, redirectUri: string, params: Record<string, string | undefined>): void {
@@ -243,16 +257,21 @@ export function createOAuthServer(config: OAuthConfig) {
   }
 
   function register(body: unknown, res: ServerResponse): void {
-    if (!config.registrationOpen) {
+    if (!config.registrationOpen || (config.registrationUntil !== undefined && now() >= config.registrationUntil)) {
       audit("registration_refused_closed");
       return json(res, 403, { error: "access_denied", error_description: "Client registration is closed" });
     }
     const parsed = RegistrationRequest.safeParse(body);
     if (!parsed.success) return json(res, 400, { error: "invalid_client_metadata", error_description: "Malformed registration" });
     const r = parsed.data;
-    if (!r.redirect_uris.every((u) => redirectAllowList.has(u))) {
+    const profile = profileFor(r.redirect_uris);
+    if (!profile || !r.redirect_uris.every((u) => redirectAllowList.has(u))) {
       audit("registration_refused", { redirectUris: r.redirect_uris });
-      return json(res, 400, { error: "invalid_redirect_uri", error_description: "This server accepts only the registered ChatGPT connector callback" });
+      return json(res, 400, { error: "invalid_redirect_uri", error_description: "This server accepts only its registered connector callbacks" });
+    }
+    if (config.registrationProfiles && !config.registrationProfiles.includes(profile.name)) {
+      audit("registration_refused_profile", { profile: profile.name });
+      return json(res, 403, { error: "access_denied", error_description: "Registration is not open for this kind of client" });
     }
     if (r.grant_types && !r.grant_types.every((g) => ["authorization_code", "refresh_token"].includes(g)))
       return json(res, 400, { error: "invalid_client_metadata", error_description: "Unsupported grant type" });
@@ -262,7 +281,7 @@ export function createOAuthServer(config: OAuthConfig) {
     const clientId = config.signer.sign({
       typ: "client", iss: issuer, name: r.client_name ?? "Unnamed client", redirect_uris: r.redirect_uris, auth: r.token_endpoint_auth_method, iat, jti: randomToken(9),
     } satisfies Client);
-    audit("client_registered", { name: r.client_name ?? "Unnamed client", redirectUris: r.redirect_uris, auth: r.token_endpoint_auth_method });
+    audit("client_registered", { name: r.client_name ?? "Unnamed client", profile: profile.name, redirectUris: r.redirect_uris, auth: r.token_endpoint_auth_method });
     json(res, 201, {
       client_id: clientId,
       ...(r.token_endpoint_auth_method === "none" ? {} : { client_secret: config.signer.clientSecret(clientId), client_secret_expires_at: 0 }),
@@ -272,7 +291,7 @@ export function createOAuthServer(config: OAuthConfig) {
       token_endpoint_auth_method: r.token_endpoint_auth_method,
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
-      scope: SCOPE,
+      scope: profile.scope,
     });
   }
 
@@ -283,7 +302,8 @@ export function createOAuthServer(config: OAuthConfig) {
     const client = clientFrom(clientId);
     const redirectUri = q.get("redirect_uri");
     // Without a known client and one of its own redirect URIs, never redirect anywhere.
-    if (!client || !clientId || !redirectUri || !client.redirect_uris.includes(redirectUri) || !redirectAllowList.has(redirectUri))
+    const profile = client ? profileOf(client) : null;
+    if (!client || !profile || !clientId || !redirectUri || !client.redirect_uris.includes(redirectUri) || !redirectAllowList.has(redirectUri))
       return page(res, 400, "Invalid request", "<p>Unknown client or redirect address.</p>");
     const state = q.get("state") ?? undefined;
     const fail = (error: string, description: string) => redirectWith(res, redirectUri, { error, error_description: description, state });
@@ -293,12 +313,13 @@ export function createOAuthServer(config: OAuthConfig) {
     const requestedResource = q.get("resource");
     if (requestedResource !== null && requestedResource !== resource) return fail("invalid_target", "Unknown resource");
     const scope = q.get("scope");
-    if (scope !== null && scope !== "" && !scope.split(" ").every((s) => s === SCOPE)) return fail("invalid_scope", "Unknown scope");
+    // Either known scope may be asked for; what is issued is always the client's profile scope (RFC 6749 3.3).
+    if (scope !== null && scope !== "" && !scope.split(" ").every((s) => s === OPERATOR_SCOPE || s === READ_SCOPE)) return fail("invalid_scope", "Unknown scope");
     const googleState = randomToken();
     const nonce = randomToken();
     const googleVerifier = randomToken(48);
     const stored = logins.put(googleState, {
-      client, clientId, redirectUri, state, codeChallenge: challenge, scope: SCOPE, nonce, googleVerifier, expiresAt: now() + LOGIN_TTL_MS,
+      client, clientId, redirectUri, state, codeChallenge: challenge, scope: profile.scope, nonce, googleVerifier, expiresAt: now() + LOGIN_TTL_MS,
     });
     if (!stored) return fail("temporarily_unavailable", "Too many sign-ins in progress");
     res.statusCode = 302;
@@ -309,7 +330,7 @@ export function createOAuthServer(config: OAuthConfig) {
 
   async function googleCallback(url: URL, res: ServerResponse): Promise<void> {
     const login = logins.take(url.searchParams.get("state"));
-    if (!login) return page(res, 400, "Sign-in expired", "<p>This sign-in link has expired or was already used. Start again from ChatGPT.</p>");
+    if (!login) return page(res, 400, "Sign-in expired", "<p>This sign-in link has expired or was already used. Start again from the application that asked.</p>");
     const code = url.searchParams.get("code");
     if (!code) return redirectWith(res, login.redirectUri, { error: "access_denied", error_description: "Google sign-in was cancelled", state: login.state });
     const identity = await config.google.exchange({ code, codeVerifier: login.googleVerifier, nonce: login.nonce });
@@ -328,13 +349,15 @@ export function createOAuthServer(config: OAuthConfig) {
     if (!consents.put(ticket, { ...login, sub: identity.sub, expiresAt: now() + LOGIN_TTL_MS }))
       return redirectWith(res, login.redirectUri, { error: "temporarily_unavailable", state: login.state });
     const target = new URL(login.redirectUri);
+    // Resolved at authorise time from the signed client, so it is present.
+    const profile = profileOf(login.client)!;
     page(
       res,
       200,
       "Allow access to KernelJSON?",
-      `<p><strong>${escapeHtml(login.client.name)}</strong> is asking to act as you in KernelJSON.</p>` +
-        `<p>It will be able to read your tasks, evidence, memory and health, start a morning brief or a read-only repository analysis, and cancel tasks. It cannot approve anything.</p>` +
-        `<p>Access goes to <code>${escapeHtml(target.origin)}</code>. Only allow this if you have just asked ChatGPT to connect to KernelJSON.</p>` +
+      `<p><strong>${escapeHtml(login.client.name)}</strong> (${escapeHtml(profile.label)}) is asking to act as you in KernelJSON.</p>` +
+        `<p>It will be able to ${escapeHtml(profile.grants)}</p>` +
+        `<p>Access goes to <code>${escapeHtml(target.origin)}</code>. Only allow this if you have just asked ${escapeHtml(profile.label)} to connect to KernelJSON.</p>` +
         `<form method="post" action="/oauth/consent"><input type="hidden" name="ticket" value="${escapeHtml(ticket)}">` +
         `<button type="submit" name="decision" value="allow">Allow</button><button type="submit" name="decision" value="deny">Deny</button></form>`,
       target.origin,
@@ -347,8 +370,8 @@ export function createOAuthServer(config: OAuthConfig) {
     if (sent !== undefined && sent !== origin) return page(res, 403, "Not permitted", "<p>Cross-site request refused.</p>");
     const form = await readForm(req);
     const pending = consents.take(form.get("ticket"));
-    if (!pending) return page(res, 400, "Sign-in expired", "<p>This approval has expired or was already used. Start again from ChatGPT.</p>");
-    audit(form.get("decision") === "allow" ? "consent_allowed" : "consent_denied", { client: pending.client.name });
+    if (!pending) return page(res, 400, "Sign-in expired", "<p>This approval has expired or was already used. Start again from the application that asked.</p>");
+    audit(form.get("decision") === "allow" ? "consent_allowed" : "consent_denied", { client: pending.client.name, profile: profileOf(pending.client)?.name ?? null });
     if (form.get("decision") !== "allow") return redirectWith(res, pending.redirectUri, { error: "access_denied", error_description: "Access was denied", state: pending.state });
     const code = randomToken();
     codes.put(code, {
@@ -396,7 +419,7 @@ export function createOAuthServer(config: OAuthConfig) {
         throw new OAuthError(400, "invalid_grant", "Invalid refresh token");
       if (claims.sub !== config.allowedGoogleSub || revokedFamilies.has(claims.fam)) throw new OAuthError(400, "invalid_grant", "Access revoked");
       if (usedRefresh.has(claims.jti)) {
-        // A refresh token presented twice means one copy is not ChatGPT's: end the whole family.
+        // A refresh token presented twice means one copy is not the client's: end the whole family.
         revokedFamilies.set(claims.fam, seconds() + REFRESH_TTL_S);
         audit("refresh_reuse_family_revoked", { client: clientFrom(clientId)?.name ?? null });
         throw new OAuthError(400, "invalid_grant", "Refresh token reuse detected");

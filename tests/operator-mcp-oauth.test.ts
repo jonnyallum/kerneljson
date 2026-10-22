@@ -492,3 +492,140 @@ describe("Google ID token checks", () => {
     expect(checkIdToken("not.a-token", expect_)).toBeNull();
   });
 });
+
+// ---- Grok Bot: a second, read-only client, enrolled in a bounded window ---------------------
+describe("the Grok Bot read-only profile", () => {
+  const CURSOR_BOT = "https://www.cursor.com/bot/mcp/oauth/callback";
+  // Exactly the redirect_uris of https://cursor.com/oauth/mcp-client.json, as Cursor's client would register them.
+  const GROKBOT_ALL = [CURSOR_BOT, "https://www.cursor.com/agents/mcp/oauth/callback", "https://grok.com/connectors-oauth-exchange-code/", "http://localhost:8787/callback", "http://127.0.0.1:8787/callback"];
+  const READ_TOOLS = ["kj_list_tasks", "kj_get_task", "kj_task_evidence", "kj_task_history", "kj_memory", "kj_world", "kj_health"];
+  const enrolmentEnv = () => ({ ...oauthEnv, MCP_ALLOWED_REDIRECT_URIS: [CHATGPT, ...GROKBOT_ALL].join(",") });
+  const logs: Array<Record<string, unknown>> = [];
+  const withHandler = async (env: Record<string, string | undefined>, body: () => Promise<void>) => {
+    const original = handler;
+    const roomy = { limit: 100_000, windowMs: 60_000 };
+    handler = buildHandler(loadConfig(env, clock), { google, now, rateLimits: { perClient: roomy, registerPerClient: roomy, global: roomy }, log: (l) => logs.push(JSON.parse(l)) });
+    try {
+      await body();
+    } finally {
+      handler = original;
+    }
+  };
+  const register = (redirect_uris: string[], client_name = "Cursor") =>
+    fetch(`${base}/oauth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris, client_name }) });
+  async function connectGrokBot(requestedScope = "kerneljson.operator kerneljson.read") {
+    const reg = await register(GROKBOT_ALL);
+    expect(reg.status).toBe(201);
+    const { client_id, scope } = (await reg.json()) as { client_id: string; scope: string };
+    expect(scope).toBe("kerneljson.read");
+    const verifier = randomBytes(48).toString("base64url");
+    const q = new URLSearchParams({
+      response_type: "code", client_id, redirect_uri: CURSOR_BOT, code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+      code_challenge_method: "S256", state: "s", scope: requestedScope, resource: `${base}/mcp`,
+    });
+    const toGoogle = await fetch(`${base}/oauth/authorize?${q}`, { redirect: "manual" });
+    const googleState = new URL(toGoogle.headers.get("location")!).searchParams.get("state")!;
+    const back = await fetch(`${base}/oauth/google/callback?${new URLSearchParams({ state: googleState, code: "jonny" })}`, { redirect: "manual" });
+    const consentPage = await back.clone().text();
+    const redirect = await consentAndCode(back);
+    expect(redirect.origin + redirect.pathname).toBe(CURSOR_BOT);
+    const tokens = await exchange({ grant_type: "authorization_code", code: redirect.searchParams.get("code")!, redirect_uri: CURSOR_BOT, client_id, code_verifier: verifier });
+    expect(tokens.status).toBe(200);
+    return { client_id, consentPage, ...tokens.body } as { client_id: string; consentPage: string; access_token: string; refresh_token: string; scope: string };
+  }
+  // Server-to-server calls carry no Origin header.
+  async function call(token: string, method: string, params?: unknown) {
+    const r = await fetch(`${base}/mcp`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json", "mcp-protocol-version": "2025-06-18" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, ...(params ? { params } : {}) }),
+    });
+    return { status: r.status, body: r.status === 200 ? ((await r.json()) as { result: Record<string, unknown> }) : null };
+  }
+
+  it("is refused by the production default allow-list, which names ChatGPT's callback only", async () => {
+    const r = await register(GROKBOT_ALL);
+    expect(r.status).toBe(400);
+    expect(await r.json()).toMatchObject({ error: "invalid_redirect_uri" });
+  });
+
+  it("connects read-only: a read scope even when it asks for more, read tools only, act tools refused, nothing admitted", async () => {
+    await withHandler(enrolmentEnv(), async () => {
+      const { access_token, consentPage, scope } = await connectGrokBot();
+      expect(scope).toBe("kerneljson.read");
+      expect(consentPage).toContain("Grok Bot (Cursor MCP client)");
+      expect(consentPage).toContain("cannot start, cancel or approve anything");
+      const init = await call(access_token, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "grok", version: "1" } });
+      expect(String(init.body!.result["instructions"])).toContain("This connection is read-only");
+      const tools = (await call(access_token, "tools/list")).body!.result["tools"] as Array<{ name: string }>;
+      expect(tools.map((t) => t.name).sort()).toEqual([...READ_TOOLS].sort());
+      const health = (await call(access_token, "tools/call", { name: "kj_health", arguments: {} })).body!.result as { isError: boolean };
+      expect(health.isError).toBe(false);
+      const admittedBefore = doorSeen.length;
+      const attempts: Array<[string, Record<string, unknown>]> = [
+        ["kj_run_brief", { request_id: "grokbot-attempt-0001" }],
+        ["kj_run_analysis", { request_id: "grokbot-attempt-0002", repo: "jonnyallum/kerneljson" }],
+        ["kj_cancel_task", { task_id: randomUUID() }],
+      ];
+      for (const [name, args] of attempts) {
+        const r = (await call(access_token, "tools/call", { name, arguments: args })).body!.result as { isError: boolean; structuredContent: { error: string } };
+        expect(r.isError, name).toBe(true);
+        expect(r.structuredContent.error, name).toBe("NOT_PERMITTED");
+      }
+      expect(doorSeen.length).toBe(admittedBefore);
+      const calls = logs.filter((l) => l["tool"] !== undefined && l["profile"] === "grokbot");
+      expect(calls.map((l) => `${l["tool"]}:${l["outcome"]}`)).toEqual(["kj_health:OK", "kj_run_brief:NOT_PERMITTED", "kj_run_analysis:NOT_PERMITTED", "kj_cancel_task:NOT_PERMITTED"]);
+      expect(calls.every((l) => l["client"] === "Cursor")).toBe(true);
+      expect(logs.some((l) => l["oauth"] === "client_registered" && l["profile"] === "grokbot")).toBe(true);
+      expect(JSON.stringify(logs)).not.toContain(access_token);
+    });
+  });
+
+  it("leaves ChatGPT's operator access as it was, and tells the two apart in the log", async () => {
+    await withHandler(enrolmentEnv(), async () => {
+      const chatgpt = await connect();
+      expect(chatgpt).toMatchObject({ scope: "kerneljson.operator" });
+      const tools = (await call(chatgpt.access_token, "tools/list")).body!.result["tools"] as unknown[];
+      expect(tools).toHaveLength(10);
+      const brief = (await call(chatgpt.access_token, "tools/call", { name: "kj_run_brief", arguments: { request_id: `chatgpt-${randomUUID()}` } })).body!.result as { isError: boolean };
+      expect(brief.isError).toBe(false);
+      expect(logs.at(-1)).toMatchObject({ tool: "kj_run_brief", outcome: "OK", profile: "chatgpt", client: "ChatGPT" });
+    });
+  });
+
+  it("refuses a registration that mixes profiles or names an unknown callback, and a token whose scope exceeds its client", async () => {
+    await withHandler(enrolmentEnv(), async () => {
+      expect((await register([CHATGPT, CURSOR_BOT])).status).toBe(400);
+      expect((await register([CURSOR_BOT, "grokbot://mcp/oauth/callback"])).status).toBe(400);
+      const { access_token } = await connectGrokBot();
+      const claims = JSON.parse(Buffer.from(access_token.split(".")[1]!, "base64url").toString());
+      // Even signed with the real key: a read-only client's token carrying the operator scope is refused.
+      const escalated = new TokenSigner(SIGNING_KEY).sign({ ...claims, scope: "kerneljson.operator" });
+      expect((await call(escalated, "ping")).status).toBe(401);
+      expect((await call(access_token, "ping")).status).toBe(200);
+    });
+  });
+
+  it("enrols in a bounded window: Grok Bot only, closing by itself, without disconnecting the client it enrolled", async () => {
+    const until = new Date(clock + 30 * 60_000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    await withHandler({ ...enrolmentEnv(), MCP_REGISTRATION: `open-until=${until}`, MCP_REGISTRATION_PROFILES: "grokbot" }, async () => {
+      expect((await register([CHATGPT], "ChatGPT")).status).toBe(403);
+      const { access_token, refresh_token, client_id } = await connectGrokBot();
+      clock += 31 * 60_000;
+      expect((await register(GROKBOT_ALL)).status).toBe(403);
+      expect(logs.at(-1)).toMatchObject({ oauth: "registration_refused_closed" });
+      expect((await call(access_token, "ping")).status).toBe(200);
+      expect((await exchange({ grant_type: "refresh_token", refresh_token, client_id })).status).toBe(200);
+    });
+  });
+
+  it("refuses to start with an unbounded, malformed or unknown enrolment setting", () => {
+    const ahead = (ms: number) => new Date(clock + ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+    expect(() => loadConfig({ ...oauthEnv, MCP_REGISTRATION: `open-until=${ahead(25 * 3600_000)}` }, clock)).toThrow(/24 hours/);
+    expect(() => loadConfig({ ...oauthEnv, MCP_REGISTRATION: "open-until=tomorrow" }, clock)).toThrow(/MCP_REGISTRATION/);
+    expect(() => loadConfig({ ...oauthEnv, MCP_REGISTRATION: "open", MCP_REGISTRATION_PROFILES: "grokbot,claude" }, clock)).toThrow(/MCP_REGISTRATION_PROFILES/);
+    expect(loadConfig({ ...oauthEnv, MCP_REGISTRATION: `open-until=${ahead(23 * 3600_000)}`, MCP_REGISTRATION_PROFILES: "grokbot" }, clock).auth).toMatchObject({
+      registration: { open: true }, registrationProfiles: ["grokbot"],
+    });
+  });
+});

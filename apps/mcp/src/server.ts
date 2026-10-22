@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import type { OperatorDoor } from "./door.js";
-import { SUPPORTED_PROTOCOL_VERSIONS, handleMessage, type CallLog } from "./protocol.js";
+import { SUPPORTED_PROTOCOL_VERSIONS, handleMessage, type CallLog, type Caller } from "./protocol.js";
 
 export const MCP_PATH = "/mcp";
 export const MAX_BODY_BYTES = 65536;
@@ -11,7 +11,7 @@ export const MAX_BODY_BYTES = 65536;
  * short-lived audience-bound tokens) is a separate piece; until it exists the only verifier is the
  * loopback-only local one in main.ts. A verifier must never forward the token anywhere.
  */
-export type AccessVerifier = (authorization: string | undefined) => Promise<boolean>;
+export type AccessVerifier = (authorization: string | undefined) => Promise<Caller | null>;
 
 export interface McpServerOptions {
   door: OperatorDoor;
@@ -102,7 +102,8 @@ export function createMcpServer(options: McpServerOptions) {
       if (url.pathname !== MCP_PATH) throw new HttpError(404, "NOT_FOUND");
       const origin = req.headers.origin;
       if (origin !== undefined && !origins.has(origin)) throw new HttpError(403, "ORIGIN_NOT_ALLOWED");
-      if (!(await options.verify(req.headers.authorization))) {
+      const caller = await options.verify(req.headers.authorization);
+      if (!caller) {
         if (options.resourceMetadataUrl) res.setHeader("www-authenticate", `Bearer resource_metadata="${options.resourceMetadataUrl}"`);
         throw new HttpError(401, "UNAUTHENTICATED");
       }
@@ -116,7 +117,7 @@ export function createMcpServer(options: McpServerOptions) {
       const accept = req.headers.accept;
       if (accept !== undefined && !/application\/json|\*\/\*/.test(accept)) throw new HttpError(406, "JSON_RESPONSE_ONLY");
       const message = await readJson(req);
-      const answer = await handleMessage(message, options.door, options.release, (entry) => options.log?.({ ...entry, correlationId }));
+      const answer = await handleMessage(message, options.door, options.release, (entry) => options.log?.({ ...entry, correlationId }), caller);
       if (answer === null) return send(202);
       return send(200, answer);
     } catch (e) {
