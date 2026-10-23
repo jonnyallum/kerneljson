@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { HttpOperatorDoor, MCP_CHANNEL, type DoorResult, type OperatorDoor } from "../apps/mcp/src/door.js";
@@ -24,8 +25,9 @@ function fakeDoor(answer: DoorResult = { ok: true, status: 200, body: { taskId: 
   return { door, calls };
 }
 
+const OPERATOR = { profile: "chatgpt", readOnly: false, client: "ChatGPT" };
 const call = (name: string, args: unknown, door: OperatorDoor) =>
-  handleMessage({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, door, "test-release");
+  handleMessage({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, door, "test-release", () => {}, OPERATOR);
 
 type ToolCallResult = { result: { isError: boolean; structuredContent: Record<string, unknown>; content: Array<{ type: string; text: string }> } };
 
@@ -130,7 +132,7 @@ describe("HTTP transport", () => {
   let allow = true;
   beforeAll(async () => {
     const handler = createMcpServer({
-      door: fakeDoor().door, release: "test-release", verify: async (auth) => allow && auth === "Bearer ok", guard: requestGuard({ kind: "local" }),
+      door: fakeDoor().door, release: "test-release", verify: async (auth) => (allow && auth === "Bearer ok" ? OPERATOR : null), guard: requestGuard({ kind: "local" }),
       allowedOrigins: ["https://chatgpt.com"], resourceMetadataUrl: "https://kj-mcp.example/.well-known/oauth-protected-resource",
     });
     server = createServer((req, res) => void handler(req, res));
@@ -212,5 +214,24 @@ describe("local mode guard", () => {
     expect(() => loadConfig({ ...base, MCP_AUTH: "none" })).toThrow(/MCP_AUTH/);
     expect(() => loadConfig({ ...base, MCP_HOST: "0.0.0.0" })).toThrow(/loopback/);
     expect(() => loadConfig({ ...base, KJ_MCP_BEARER: "" })).toThrow(/required/);
+  });
+});
+
+// A variable the server reads but the compose file does not declare is silently dropped in production.
+describe("mcp.compose.yaml declares every variable the MCP server reads", () => {
+  const read = (source: string) => [...new Set([...source.matchAll(/(?:env\["|required\(")([A-Z][A-Z0-9_]+)"/g)].map((m) => m[1]!))].sort();
+  const declared = (compose: string, names: string[]) => names.filter((n) => !new RegExp(`^\\s+${n}:`, "m").test(compose));
+  const source = readFileSync("apps/mcp/src/main.ts", "utf8");
+  const compose = readFileSync("infrastructure/docker/mcp.compose.yaml", "utf8");
+
+  it("finds the bounded-enrolment variables, and every one is declared", () => {
+    const names = read(source);
+    expect(names).toEqual(expect.arrayContaining(["MCP_REGISTRATION", "MCP_REGISTRATION_PROFILES", "MCP_ALLOWED_REDIRECT_URIS", "GOOGLE_CLIENT_SECRET"]));
+    expect(declared(compose, names)).toEqual([]);
+  });
+
+  it("names a variable the compose file drops (negative case)", () => {
+    const without = compose.replace(/^\s+MCP_REGISTRATION_PROFILES:.*\r?\n/m, "");
+    expect(declared(without, read(source))).toEqual(["MCP_REGISTRATION_PROFILES"]);
   });
 });
