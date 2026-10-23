@@ -57,14 +57,34 @@ jobs:
           [[ -n "$CODER_MODEL" ]] || { echo "KJ_CODER_MODEL is not set"; exit 1; }
 
       - name: Check out the base commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ inputs.base_sha }}
           persist-credentials: false
           fetch-depth: 1
 
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      # The model may write any file under the working directory, and a written .git/config or hook makes the
+      # next git command run code (core.fsmonitor, hooks) - while Claude Code runs, with the model key in reach.
+      # So the git metadata is moved outside the tree, where Claude Code cannot write, and fingerprinted; it is
+      # put back only after the model has exited and only if the fingerprint still matches.
+      - name: Hide git metadata from the model
+        run: |
+          set -euo pipefail
+          mv .git "$RUNNER_TEMP/kj-git"
+          (cd "$RUNNER_TEMP/kj-git" && find . -type f -print0 | sort -z | xargs -0 sha256sum) > "$RUNNER_TEMP/kj-git.sha256"
+
+      # No dependency's install script runs, except Claude Code's own, which fetches its native binary.
       - name: Install Claude Code
-        run: npm install --global --ignore-scripts "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+        run: |
+          set -euo pipefail
+          npm install --global --ignore-scripts "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+          node "$(npm root --global)/@anthropic-ai/claude-code/install.cjs"
+          claude --version | grep -F "$CLAUDE_CODE_VERSION"
 
       # File tools only: no Bash, no web fetch, so the agent cannot run code or reach the network itself.
       # The key belongs to a workspace with its own monthly spend limit; --max-turns bounds a single run.
@@ -82,17 +102,25 @@ jobs:
             echo "Instructions:"
             printf '%s\n' "$INSTRUCTIONS"
           } > "$RUNNER_TEMP/prompt.txt"
+          status=0
           claude -p "$(cat "$RUNNER_TEMP/prompt.txt")" \
             --model "$CODER_MODEL" \
             --max-turns "$MAX_TURNS" \
             --allowedTools "Read,Edit,Write,Glob,Grep" \
             --disallowedTools "Bash,WebFetch,WebSearch" \
-            --output-format json > "$RUNNER_TEMP/claude-result.json"
-          jq '{subtype, is_error, num_turns, total_cost_usd}' "$RUNNER_TEMP/claude-result.json"
+            --output-format json > "$RUNNER_TEMP/claude-result.json" || status=$?
+          # The summary only (never the transcript), on failure too.
+          jq '{subtype, is_error, num_turns, total_cost_usd}' "$RUNNER_TEMP/claude-result.json" || echo "no result summary"
+          [ "$status" = 0 ] || { echo "claude exited $status"; exit 1; }
+          jq -e '.is_error == false' "$RUNNER_TEMP/claude-result.json" > /dev/null
 
       - name: Capture the patch
         run: |
           set -euo pipefail
+          [ ! -e .git ] || { echo "the model created .git"; exit 1; }
+          (cd "$RUNNER_TEMP/kj-git" && find . -type f -print0 | sort -z | xargs -0 sha256sum) | cmp -s - "$RUNNER_TEMP/kj-git.sha256" \
+            || { echo "git metadata changed while the model ran"; exit 1; }
+          mv "$RUNNER_TEMP/kj-git" .git
           git add --all
           git diff --cached --binary "$BASE_SHA" > "$RUNNER_TEMP/change.patch"
           bytes=$(stat -c %s "$RUNNER_TEMP/change.patch")
@@ -101,7 +129,7 @@ jobs:
           git diff --cached --stat "$BASE_SHA"
 
       - name: Upload the patch
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kj-change-${{ inputs.task_id }}
           path: ${{ runner.temp }}/change.patch
@@ -119,13 +147,13 @@ jobs:
       BASE_SHA: ${{ inputs.base_sha }}
     steps:
       - name: Check out the base commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ inputs.base_sha }}
           fetch-depth: 1
 
       - name: Download the patch
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kj-change-${{ inputs.task_id }}
           path: ${{ runner.temp }}/kj

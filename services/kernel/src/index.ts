@@ -45,10 +45,14 @@ const githubToken = process.env["GITHUB_READ_TOKEN"] || undefined;
 // KJ-P3 mission runtimes (Claude analyst, Grok reviewer). All-or-nothing, like the seams
 // above: unset serves no mission, a partial configuration refuses to start.
 const missionRuntimes = loadMissionConfig(process.env);
-// code-change/v1. All-or-nothing too, and it needs the mission reviewer and the capability service.
-const codeChangeConfig = loadCodeChangeConfig(process.env, missionRuntimes?.reviewerModel);
-if (codeChangeConfig && !repositoryRoot)
-  throw new Error("code-change/v1 is configured but the capability service (KJ_REPO_ROOT) is not - refusing to start half-configured");
+// code-change/v1. All-or-nothing too, and it needs the mission runtimes (its reviewer uses their provider keys)
+// and the capability service.
+const codeChangeConfig = loadCodeChangeConfig(process.env);
+if (codeChangeConfig && !(repositoryRoot && missionRuntimes))
+  throw new Error(
+    "code-change/v1 is configured but the mission runtimes or the capability service (KJ_REPO_ROOT) are not " +
+      "- refusing to start half-configured",
+  );
 const capabilityService = repositoryRoot
   ? createCapabilityService({
       repositoryRoot,
@@ -99,7 +103,7 @@ const mission = missionRuntimes
 const codeChange =
   codeChangeConfig && missionRuntimes
     ? {
-        reviewer: missionRuntimes.reviewer,
+        reviewer: codeChangeConfig.reviewer,
         coderModel: codeChangeConfig.coderModel,
         allowedRepos: codeChangeConfig.allowedRepos,
         notify: async (notice: Parameters<typeof enqueueCodeChangeNotice>[1]) => {

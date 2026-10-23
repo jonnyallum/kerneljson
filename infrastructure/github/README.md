@@ -1,7 +1,8 @@
 # code-change/v1 pilot repository setup
 
-These two workflows are templates for the ONE allowlisted pilot repository. Nothing here is installed by
-this PR; installing them is PR C, with Jonny, against a repository he has chosen.
+These two workflows are templates for the ONE allowlisted pilot repository, `jonnyallum/kj-pilot`. Every
+`uses:` is pinned to a full commit (the tests refuse a tag). The installed copies must stay byte-identical to
+these files.
 
 | File | Installed as | Dispatched by the kernel on | Holds |
 |---|---|---|---|
@@ -20,12 +21,13 @@ reconciliation refuses CI paths again).
    be created only by Jonny (restrict creation, bypass for repository admins only).
 3. **Actions, Workflow permissions**: read repository contents by default; do NOT allow GitHub Actions to
    create or approve pull requests.
-4. **Actions variables**: `KJ_CLAUDE_CODE_VERSION` (an exact version), `KJ_CODER_MODEL`,
+4. **Actions variables**: `KJ_CLAUDE_CODE_VERSION` (an exact version), `KJ_CODER_MODEL` (a bare Anthropic
+   model id; the worker's `KJ_CODE_CHANGE_CODER_MODEL` is the same id with `anthropic/` in front),
    `KJ_TEST_COMMAND` (for example `npm ci && npm test`), optionally `KJ_NODE_VERSION`.
 5. **Actions secret** `KJ_CODER_ANTHROPIC_KEY`: a key from a dedicated Anthropic Console workspace with a
    monthly spend limit set in the Console. It is the only secret in the repository and is visible only to
    the `code` job. It has no access to anything but the model.
-6. Before PR C installs the files, pin every `uses:` to a full commit SHA.
+6. Every `uses:` is pinned to a full commit SHA (done in PR C; re-pin deliberately, never to a tag).
 
 ## The worker's token (kernel side)
 
@@ -43,9 +45,10 @@ is not a production credential for anything else, and the runner workflows never
 
 | Risk | Stopped by |
 |---|---|
-| Change merged or deployed | Contents read on the kernel token, the default-branch ruleset, no merge call in the client |
-| Model edits CI to escalate | `publish` refuses `.github/`; reconciliation refuses CI paths; workflows run from the default branch |
+| Change merged or deployed | Contents read on the kernel token (a merge needs Contents write), no merge call in the client, Actions cannot approve pull requests. No ruleset: GitHub refuses one on a private repository on the free plan |
+| Model edits CI to escalate | `publish` refuses any `.github/` path, including a rename into or out of it; GitHub refuses a `GITHUB_TOKEN` push that creates or changes a workflow; reconciliation refuses CI paths. This matters because `kj-test` runs the workflow file on the task branch, so the branch must never carry its own |
 | Model exfiltrates the key | No Bash or web tools in the `code` job; the key is spend-capped and model-only |
+| Model plants git config that runs code (`core.fsmonitor`, hooks) | `.git` is moved outside the tree before the model runs and restored only if its fingerprint is unchanged and the model created no `.git`; `publish` applies with `git apply`, which refuses `.git/` paths |
 | Test pass for a different commit | Test run dispatched on the task branch; kernel requires `head_sha` equal to the proposed head |
 | Overspend | Workspace spend limit, `--max-turns`, job timeouts, one run per task |
 | Work on another repository | Allowlist in the client (refused before any request) and in reconciliation; token scoped to one repository |

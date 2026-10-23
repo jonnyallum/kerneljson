@@ -86,6 +86,8 @@ export interface CodeChangeDeps {
   allowedRepos: readonly string[];
   notify: (notice: CodeChangeNotice) => Promise<void>;
   polls?: { code: PollPlan; test: PollPlan };
+  /** True once the operator has cancelled the task. Checked before each step that asks GitHub for more. */
+  cancelled?: () => Promise<boolean>;
 }
 
 /** A terminal error from the capability service carries a code as its message; anything else is generic. */
@@ -125,6 +127,21 @@ export async function runCodeChangeMission(deps: CodeChangeDeps): Promise<Outcom
         return false;
       }
     });
+  };
+  // A cancel is honoured at each boundary before GitHub is asked to do more: a cancelled task dispatches nothing
+  // further, opens no PR and never reports COMPLETED. A coding run already under way finishes on its own branch.
+  const cancelledBefore = async (node: PlanStep): Promise<Outcome | null> => {
+    if (!deps.cancelled || !(await deps.cancelled())) return null;
+    const outcome = Outcome.parse({
+      taskId: task.id,
+      status: "CANCELLED",
+      acceptanceResults: [],
+      evidenceRefs: [],
+      summary: `Cancelled at a step boundary, before ${node.id}`,
+      completedAt: await deps.now(),
+    });
+    await emit("cancel", "TASK_CANCELLED", "CANCELLED", { outcome, step: step(node, { status: "CANCELLED", input: node.input }) });
+    return outcome;
   };
   const failWith = async (reason: string, failures: string[]): Promise<Outcome> => {
     const at = await deps.now();
@@ -193,6 +210,8 @@ export async function runCodeChangeMission(deps: CodeChangeDeps): Promise<Outcom
   await notify("started", { taskId: task.id, status: "STARTED", at: await deps.now(), text: codeChangeText.started(task.id, repo) });
 
   // 2. The coding run, dispatched from the default branch's own workflow file.
+  const cancelledAtCode = await cancelledBefore(codeNode);
+  if (cancelledAtCode) return cancelledAtCode;
   await begin(codeNode);
   try {
     await deps.github.dispatch({ repo, taskId: task.id, baseSha: base.baseSha, instructions });
@@ -208,6 +227,8 @@ export async function runCodeChangeMission(deps: CodeChangeDeps): Promise<Outcom
   }));
 
   // 3. The test run on the task branch, then the change captured at exactly the commit it tested.
+  const cancelledAtTest = await cancelledBefore(testNode);
+  if (cancelledAtTest) return cancelledAtTest;
   await begin(testNode);
   let facts: ChangeFacts;
   let factsDigest: string;
@@ -280,6 +301,8 @@ export async function runCodeChangeMission(deps: CodeChangeDeps): Promise<Outcom
   }
 
   // 6. Only now, the draft PR, for exactly the reconciled head.
+  const cancelledAtPr = await cancelledBefore(prNode);
+  if (cancelledAtPr) return cancelledAtPr;
   await begin(prNode);
   let pr: CodeChangePr;
   try {

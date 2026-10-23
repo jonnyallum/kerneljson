@@ -101,3 +101,25 @@ export function loadMissionConfig(
     reviewerProvider,
   };
 }
+
+/**
+ * One more runtime on the mission providers, for a recipe that needs its own model (code-change/v1's reviewer).
+ * Same provider rule as above; the key it needs must already be set for the mission runtimes.
+ */
+export function createMissionPort(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  model: string,
+  fetchImpl?: typeof fetch,
+): { port: ModelPort; provider: MissionProvider } {
+  const provider = providerFor(name, model);
+  const apiKey = provider === "deepseek" ? env["MISSION_DEEPSEEK_API_KEY"] : env["MISSION_OPENROUTER_API_KEY"];
+  if (!apiKey) throw new Error(`${name} needs ${KEY_NAME[provider]}, which is not set`);
+  const port = (provider === "deepseek" ? createDeepSeekPort : createOpenRouterPort)({
+    apiKey,
+    timeoutMs: 110_000,
+    ...(fetchImpl ? { fetch: fetchImpl } : {}),
+    model,
+  });
+  return { port, provider };
+}
