@@ -19,7 +19,7 @@ SC="python -I C:\Users\jonny\Desktop\new-system\AgentHub\scripts\secretctl.py"
 | What | State |
 |---|---|
 | `jonnyallum/kj-pilot` | private, `node --test`, no deploy path |
-| Workflows | `kj-code-change.yml` and `kj-test.yml` on `main`, byte-identical to `infrastructure/github/` (`code-change-config-check.ts` re-proves this in the window) |
+| Workflows | `kj-test.yml` on `main` is byte-identical to `infrastructure/github/`. `kj-code-change.yml` is one change behind (the git-metadata guard): jonnyallum/kj-pilot#1 brings it level (sha256 `6b7aad16b8ed…`). `code-change-config-check.ts` re-proves both in the window and fails until kj-pilot#1 is merged |
 | Actions policy | GitHub-owned actions only, SHA pinning required, workflow token read-only by default, Actions cannot approve pull requests |
 | Variables | `KJ_CLAUDE_CODE_VERSION=2.1.296`, `KJ_CODER_MODEL=claude-sonnet-5-5`, `KJ_TEST_COMMAND=npm test`, `KJ_NODE_VERSION=22` |
 | Dry runs, no key | `kj-test` on `main` refused at "Validate the ref". `kj-code-change` validated, checked out, set up Node 22, installed and version-checked Claude Code, then stopped at "Make the change" with `is_error: true`, cost 0 |
@@ -31,7 +31,7 @@ SC="python -I C:\Users\jonny\Desktop\new-system\AgentHub\scripts\secretctl.py"
 | J1 | Anthropic Console: a new workspace (for example `kj-pilot-coder`) with a monthly spend limit, and an API key in it. Then in a terminal: `gh secret set KJ_CODER_ANTHROPIC_KEY -R jonnyallum/kj-pilot` and paste the key at the hidden prompt | `gh secret list -R jonnyallum/kj-pilot` lists `KJ_CODER_ANTHROPIC_KEY`. The key exists only in that workspace and that secret |
 | J2 | GitHub, fine-grained token: owner `jonnyallum`, only `kj-pilot`; Actions read and write, Contents read, Pull requests read and write (Metadata read is automatic); 90-day expiry. Save it in jVault as `kerneljson/KJ_CODE_CHANGE_GITHUB_TOKEN` | `$SC check kerneljson/KJ_CODE_CHANGE_GITHUB_TOKEN` reports length 93 |
 | J3 | Main branch protection for `kj-pilot` (see "Rulesets" below) | Decided and recorded here |
-| J4 | Merge #62, then #63 (its base becomes `main`), then this PR | `gh run list --commit $SHA` shows `validate` succeeded |
+| J4 | Merge jonnyallum/kj-pilot#1. Then merge #62, then #63 (its base becomes `main`), then this PR. #61 and #65 are already in `main`, so the release keeps the Grok Bot MCP code | `gh run list --commit $SHA` shows `validate` succeeded |
 
 ## Rulesets
 
@@ -63,9 +63,9 @@ including the instructions, become public), or accepting the construction alone 
 
 | # | Do | Expect |
 |---|---|---|
-| 5 | ChatGPT: "Use kj_run_code_change on jonnyallum/kj-pilot: add a `slugify(text)` function to `src/text.js` that lowercases, replaces runs of non-alphanumerics with a single hyphen and trims hyphens from both ends, with tests in `test/text.test.js`." | A task id. Telegram: started |
+| 5 | ChatGPT: "Use kj_run_code_change with repo `jonnyallum/kj-pilot` and these instructions: Add an exported function `slugify(text)` to `src/text.js`. It lowercases the text, replaces every run of characters that are not a-z or 0-9 with a single hyphen, and removes hyphens from both ends, so an empty or all-punctuation string gives an empty string. Add tests in `test/text.test.js` covering spaces, punctuation, repeated separators, mixed case and empty input. Change no other file." | A task id. Telegram: started. The objective is admissible: an allowlisted slug and 10 to 2000 characters of instructions |
 | 6 | Follow it (`kj_get_task`, or the Actions tab) | `kj:<task> code` succeeds, `kj/<task>` exists, `kj:<task> test` passes on that commit, then COMPLETED. Telegram: draft PR opened, with the link |
-| 7 | Read the draft PR | Draft, from `kj/<task>` into `main`, one bot commit, only `src/` and `test/` changed. Nothing merged. Merge or close it yourself |
+| 7 | Read the draft PR | Draft, from `kj/<task>` into `main`, one bot commit, only `src/text.js` and `test/text.test.js` changed. The three existing tests still pass, plus new ones equivalent to: `"Hello World"` gives `hello-world`, `"Hello, World!"` gives `hello-world`, `"a -- b__c"` gives `a-b-c`, `"MiXeD CaSe"` gives `mixed-case`, `""` gives `""`. Nothing merged. Merge or close it yourself |
 | 8 | On the VM, the task's evidence | Six rows, one per source in CODE_CHANGE.md, and the ledger's COMPLETED (it re-verified the whole chain) |
 
 A FAILED first run is a result, not an incident: Telegram says why, nothing is merged or deployed, and the brief is
