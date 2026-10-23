@@ -238,6 +238,31 @@ describe("code-change/v1 end to end against an in-memory ledger and the real com
     const r = await run({ files: [{ path: "package.json", status: "modified", previousPath: null, additions: 1, deletions: 0, blobSha: "e".repeat(40), patchSha256: "a".repeat(64) }] });
     expect(r.outcome.summary).toContain("refused: dependencies");
   });
+
+  // [cancel after this many boundary checks, the step it stops before, GitHub calls that must not happen]
+  const cancels: Array<[number, string, string[]]> = [
+    [0, "code", ["dispatch", "dispatchTest", "capture", "openPr"]],
+    [1, "test", ["dispatchTest", "capture", "openPr"]],
+    [2, "pr", ["openPr"]],
+  ];
+  for (const [after, before, never] of cancels) {
+    it(`a cancel before the ${before} step ends CANCELLED and asks GitHub for nothing more`, async () => {
+      let checks = 0;
+      const r = await run({ deps: { cancelled: async () => checks++ >= after } });
+      expect(r.outcome.status).toBe("CANCELLED");
+      expect(r.outcome.summary).toContain("Cancelled at a step boundary");
+      for (const name of never) expect(r.calls.some((c) => c.name === name), name).toBe(false);
+      expect(r.notices.map((n) => n.status)).not.toContain("PR_OPENED");
+      expect([...r.steps.values()].at(-1)!.status).toBe("CANCELLED");
+    });
+  }
+
+  it("runs to completion when the cancel check stays false (positive control)", async () => {
+    let checks = 0;
+    const r = await run({ deps: { cancelled: async () => (checks++, false) } });
+    expect(r.outcome.status).toBe("COMPLETED");
+    expect(checks).toBe(3);
+  });
 });
 
 describe("code-change/v1 completion verifier refuses tampered or unconfigured completions", () => {

@@ -28,6 +28,10 @@ failure ends the task FAILED and Telegram says why. Nothing merges or deploys: t
 | 5 | `RECONCILE` | `kerneljson:code-change-reconcile/v1` |
 | 6 | `OPEN_DRAFT_PR` | `kerneljson:code-change-pr/v1` |
 
+A cancel (`kj_cancel_task`) is honoured before the coding run is dispatched, before the test run and before the
+PR is opened: the task ends CANCELLED and GitHub is asked for nothing more. A coding run already under way finishes
+on its own `kj/<task>` branch, and no PR is opened for it.
+
 ## Worker configuration (all four or none)
 
 | Variable | Value |
