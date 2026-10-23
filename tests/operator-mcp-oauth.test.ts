@@ -271,6 +271,24 @@ describe("rejected access", () => {
     expect(replay.status).toBe(400);
   });
 
+  // Found live on 22/10/2026: each passed the fetch tests above and failed in Chrome.
+  it("serves the consent page with headers a real browser can complete it under", async () => {
+    const { client_id } = await registerClient();
+    const { back } = await authorizeToConsent(client_id);
+    expect(back.status).toBe(200);
+    // no-referrer makes a browser send `Origin: null` on the form POST, which the cross-site check refuses.
+    expect(back.headers.get("referrer-policy")).toBe("same-origin");
+    // Chrome applies form-action to the redirect after the submit: ChatGPT's origin must be allowed, and only it.
+    const csp = back.headers.get("content-security-policy")!;
+    expect(/form-action ([^;]+)/.exec(csp)![1]).toBe(`'self' ${new URL(CHATGPT).origin}`);
+    const ticket = /name="ticket" value="([^"]+)"/.exec(await back.text())![1]!;
+    const nullOrigin = await fetch(`${base}/oauth/consent`, { ...form({ ticket, decision: "allow" }), headers: { ...form({}).headers, origin: "null" }, redirect: "manual" });
+    expect(nullOrigin.status).toBe(403);
+    // Every other page still allows form posts to this origin only.
+    const other = await fetch(`${base}/oauth/authorize?client_id=unknown`, { redirect: "manual" });
+    expect(other.headers.get("content-security-policy")).toContain("form-action 'self';");
+  });
+
   it("refuses registration for any redirect except ChatGPT's, and never redirects to an unregistered address", async () => {
     const bad = await fetch(`${base}/oauth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: ["https://evil.example/cb"] }) });
     expect(bad.status).toBe(400);

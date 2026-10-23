@@ -1,10 +1,40 @@
 project: kerneljson
-state: production_qualification_gate_1_passed_locally
+state: in_production
 version: 0.0.1
 
+# Reconciled 22/10/2026 against observed production. Everything above `implemented:` is current; the
+# phaseN_validation, validation, preservation_audit and production_qualification_gate_1 blocks further down
+# are the historical record of September and are kept unchanged. The migration-wide state of record is
+# new-system docs/migration/STATE_OF_RECORD.md; this file covers this repository only.
 github:
   repository: jonnyallum/kerneljson
-  branch: docs/kerneljson-prep-track-c
+  branch: main
+
+production:
+  observed_at: 2026-10-22T14:26Z
+  host: kerneljson-prod-01 (europe-west2-b, project-c407f628-c71c-45fa-994)
+  release: c5de3f50281ce13374d63ec1cc764d0f93b2d7ef
+  epoch: 16
+  activated_at: 2026-10-22T11:49Z
+  release_history:
+    - { epoch: 14, release: 33f3949, activated: 2026-10-19, change: "morning-brief/v1" }
+    - { epoch: 15, release: 07eac9f, activated: 2026-10-21, change: "brief reconcile fix (PR #58)" }
+    - { epoch: 16, release: c5de3f5, activated: 2026-10-22, change: "operator MCP (PR #60), MCP SERVICE principal, OAuth rate limits" }
+  containers: [kerneljson-execution-worker-1, kerneljson-admission-door-gateway-1, kerneljson-execution-restate-1, kerneljson-mcp]
+  schedules:
+    morning_brief: { id: a87ae652-add2-4844-a9f8-b5b1035ecfe5, state: enabled, version: v2, fires: "07:00 Europe/London" }
+    canary: { id: acab9ebc-dc92-5c3a-90d6-4d6f9ddb0a1b, state: enabled, version: v2, fires: "09:00 Europe/London" }
+  missions_live:
+    - morning-brief/v1: unattended daily since 2026-10-21, Telegram delivery
+    - operator MCP: https://kj-mcp.jonnyai.co.uk/mcp, ChatGPT connected 2026-10-22, read tools verified
+  open:
+    - canary fire dailyAt/09:00|2026-09-24 admitted but never materialised (authority.admittedFiresMaterialised DEGRADED, predates epoch 14)
+    - MCP registration still open (OPERATOR_MCP_DEPLOY_CHECKLIST step 11)
+    - consent-page header fixes are Caddy overrides until the next release
+  runbooks:
+    release: docs/operations/RELEASE_PROVENANCE.md
+    morning_brief: docs/operations/MORNING_BRIEF.md
+    operator_mcp: docs/operations/OPERATOR_MCP.md
 
 supabase:
   project_ref: banqdzddfganzfhckdps
@@ -15,11 +45,11 @@ vault:
 
 runtime:
   durable_execution: restate
-  model_provider: deepseek_adapter_live_verified
-  production_model_recipes: not_enabled
+  model_provider: mission runtimes per MISSION_ANALYST_MODEL and MISSION_REVIEWER_MODEL (worker env)
+  production_model_recipes: enabled (morning-brief/v1 analyst and reviewer, observed in its evidence)
   capability_layer: deterministic_registry_and_durable_receipts_verified
-  production_capability_recipes: not_enabled
-  sandbox: not_implemented
+  production_capability_recipes: enabled (github-activity, read-only, observed in the brief's evidence)
+  sandbox: not_implemented (planned for code-change/v1 as an isolated GitHub Actions runner)
 
 implemented:
   - repository_bootstrap
@@ -63,11 +93,12 @@ implemented:
   - bounded_evaluated_adaptive_capability_routing
   - bounded_scheduled_tasks_with_independent_child_evidence_verification
 
-current_phase: 15
+current_phase: 15  # the build phases; production work since is tracked under production: above
 
 next:
-  - production_readiness_review_separately_scoped
-  - remote_migration_review_still_pending
+  - mission_2_code_change_v1 (docs/missions/CODE_CHANGE_V1_GAP_ANALYSIS.md)
+  - close MCP registration, then ship the consent fixes and drop the Caddy overrides
+  - resolve the unmaterialised 2026-09-24 canary fire
 
 blocked: []
 

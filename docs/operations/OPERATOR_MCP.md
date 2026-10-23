@@ -2,7 +2,7 @@
 
 ADR-0025. The server lets ChatGPT, in ordinary chat, read KernelJSON and start a morning brief, a read-only repository analysis or a cancellation, through the admission door and nothing else. It holds its own door credential and no database, Restate or shell access. Approvals stay on Telegram.
 
-Status: built and tested; **not deployed**. Deploying it is a production change and needs its own approved window. The deploy steps are in [OPERATOR_MCP_DEPLOY_CHECKLIST.md](OPERATOR_MCP_DEPLOY_CHECKLIST.md). The daily brief, the canary and Phase 8.1 are not touched by any step except the door and worker release, which follows `RELEASE_PROVENANCE.md`.
+Status: **deployed 22/10/2026**, release `c5de3f5`, epoch 16, at `https://kj-mcp.jonnyai.co.uk/mcp`. ChatGPT (Plus, on the web) connected the same day and its first read calls (`kj_health`, `kj_list_tasks`) returned `OK`. The deploy steps are in [OPERATOR_MCP_DEPLOY_CHECKLIST.md](OPERATOR_MCP_DEPLOY_CHECKLIST.md), and what the window found is in "Deploy record" below. The daily brief, the canary and Phase 8.1 were not touched by any step except the door and worker release, which followed `RELEASE_PROVENANCE.md`.
 
 ## What it serves
 
@@ -69,8 +69,9 @@ Fastest first. Each one is independent; none touches the brief, canary or Phase 
    2. Audience: External, publishing status **Testing**, test user `jonnyallum@gmail.com` only. Testing mode is enough: the server keeps no Google token.
    3. Data access: scope `openid` only.
    4. Clients, Create client: Web application, name `kj-mcp`. Authorised redirect URI: `https://kj-mcp.jonnyai.co.uk/oauth/google/callback`. No JavaScript origins.
-   5. Record the client id (public).
-   6. Save the client secret straight into jVault as `kerneljson/MCP_GOOGLE_CLIENT_SECRET`. It never goes through chat.
+   5. Record the client id (public). In production it is `95360091919-iibco300iipdb3c2uevaa29ikt4fgosl.apps.googleusercontent.com`.
+   6. Save the client secret straight into jVault as `kerneljson/MCP_GOOGLE_CLIENT_SECRET`. It never goes through chat. A Google client secret is 35 characters (`GOCSPX-...`): check the stored length, because a double paste stores 70 and fails as a wrong secret.
+   7. Prove it before the window, without a sign-in: a token request with the real secret and a made-up code must answer `invalid_grant`, and the same with a made-up secret `invalid_client`. An authorise request with the real redirect URI must reach Google's sign-in page, and with a wrong one `redirect_uri_mismatch`.
 2. **Two generated secrets**, each 48 random bytes in base64url (64 characters), into jVault without the value ever being printed:
 
    ```
@@ -99,6 +100,8 @@ How custom servers are added now: **Plugins** (chatgpt.com/plugins), the **+** b
 | Plus | **Not stated** by either OpenAI page. Third-party guides disagree | Assume **no**, as Pro |
 | Free | No | No |
 
+**Observed on Plus, 22/10/2026:** the server connected and the read tools work (`kj_health`, `kj_list_tasks`). The three write tools are not yet tested on Plus.
+
 **On Plus or Pro, only the seven read tools can be expected to work.** That still gives tasks, evidence, history, memory, the world model and health from ordinary chat. Starting a brief or an analysis would stay on Telegram. Whether ChatGPT hides the three write tools or refuses the whole server on these plans is not documented. The connection test shows which.
 
 **Known failure: "This tool call was blocked by OpenAI's safety checks".** In June and July 2026 builders on Business and Plus reported this, mostly on write tools, sometimes on read tools. OpenAI has not confirmed a cause.
@@ -119,7 +122,7 @@ Sources:
 
 The labels below are ChatGPT's at the time of writing; they move occasionally.
 
-1. ChatGPT on the web, signed in as yourself.
+1. ChatGPT **on the web** (chatgpt.com in a browser), signed in as yourself. Not the Windows desktop app: on 22/10/2026 it failed every attempt with "OAuth authorization response issuer does not match the expected issuer" while the web connected first time with nothing changed on the server. Other servers report the same desktop failure (openai/codex issues #55092 and #55064, open). Once connected on the web, the connection is the account's.
 2. Plugins (chatgpt.com/plugins), **+**, **Add custom MCP server**:
    - Name: `KernelJSON`.
    - Description: `Jonny's task kernel: read tasks and health, run a morning brief or a repository analysis, cancel a task started from ChatGPT.`
@@ -127,7 +130,7 @@ The labels below are ChatGPT's at the time of writing; they move occasionally.
    - Authentication: **OAuth**. Leave client id and secret empty; ChatGPT registers itself (dynamic client registration).
    - Accept the risk warning, then **Create as a plugin**, then install it.
 3. ChatGPT opens the sign-in:
-   1. Google account chooser: pick `jonnyallum@gmail.com`.
+   1. Google account chooser: pick `jonnyallum@gmail.com`. With several accounts signed in to the browser the chooser can default to another one, and the "Not permitted" page then shows **that** account's id. Before putting an id into `MCP_ALLOWED_GOOGLE_SUB`, be sure which account produced it (an incognito window with only this account removes the doubt).
    2. KernelJSON's "Allow access to KernelJSON?" page: check it names ChatGPT and `https://chatgpt.com`, then choose **Allow**.
    3. You land back in ChatGPT, connected. The `kj_*` tools should be listed: ten on a full-MCP plan, possibly seven read tools elsewhere.
 4. In a new chat, enable KernelJSON from the composer's **+** menu. Then ask in plain words, for example "Check KernelJSON's health", "What tasks ran today?" or, on a full-MCP plan, "Run a morning brief".
@@ -135,14 +138,29 @@ The labels below are ChatGPT's at the time of writing; they move occasionally.
    - It passes a fresh `request_id` for each new run.
 5. Close registration (checklist step 11).
 
-**If the connection fails:** `docker logs kerneljson-mcp` shows OAuth events, never tokens.
+**If the connection fails:** `docker logs kerneljson-mcp` shows OAuth events (`client_registered`, `signin_refused`, `consent_allowed`) and one line per tool call, never tokens. A successful token exchange is not logged: the Caddy access log (`docker logs n8n-caddy-1`, filtered as in `infrastructure/caddy/kj-mcp.Caddyfile`) shows whether `POST /oauth/token` happened.
 
-| Log line | Meaning | Fix |
+| Symptom | Meaning | Fix |
 |---|---|---|
 | `registration_refused` | ChatGPT used a different callback address than expected | Add the logged address to `MCP_ALLOWED_REDIRECT_URIS` and recreate the container |
-| `signin_refused` | The account is not the permitted one | Check `MCP_ALLOWED_GOOGLE_SUB` |
+| `signin_refused` | The account is not the permitted one | Check `MCP_ALLOWED_GOOGLE_SUB`, and which account the chooser picked |
 | `rate_limited` | Too many OAuth requests from one address or in total | Wait for `Retry-After`; if it was you, it resets within a minute |
+| Google `redirect_uri_mismatch` | The callback is not on the client the server uses | Check `GOOGLE_CLIENT_ID` and the client's redirect URIs |
+| "Not permitted: Cross-site request refused" on Allow | The browser sent `Origin: null` (Referrer-Policy `no-referrer`) | Fixed in code after `c5de3f5`; on `c5de3f5` Caddy overrides the header |
+| "Sign-in expired: This approval has expired" after `consent_allowed` | The browser blocked the redirect to ChatGPT (CSP `form-action 'self'`), and a second click reused the ticket | Fixed in code after `c5de3f5`; on `c5de3f5` Caddy overrides the CSP |
+| "issuer does not match the expected issuer", no `POST /oauth/token` | ChatGPT desktop app fault (see step 1) | Connect from chatgpt.com in a browser |
 | no log line at all, tool "blocked" in ChatGPT | ChatGPT's own safety check | See "Known failure" above |
+
+## Deploy record (22/10/2026)
+
+Window 11:50Z to 14:15Z. Release `c5de3f5` activated as epoch 16 at 11:49Z (`DEPLOY OK`, seven door-check PASS lines, no task in flight, no admission during the window). The brief and canary schedules (both enabled after the release), restate and n8n were untouched. The first brief and canary on epoch 16 are on 23/10 (checklist step 12).
+
+What the window changed beyond the checklist:
+- **Google client.** The first client (`...mo4j5kadp251k2kmdljmpvckp9i0bol5`) was deleted and restored during setup, and a second client (`...iibco300iipdb3c2uevaa29ikt4fgosl`) created with the callback. Production uses the second. jVault: `MCP_GOOGLE_CLIENT_SECRET` and `GOOGLE_OAUTH_CLIENT_SECRET` hold its secret (35 characters, sha8 `5D1FB830`); `GOOGLE_AUTH_CLIENT_SECRET` holds the first client's (sha8 `A828E558`). The first client is unused and can be deleted.
+- **Caddy, in the `kj-mcp` site only** (backups beside `/opt/n8n/Caddyfile` as `.pre-mcp`, `.pre-referrer`, `.pre-csp`, `.pre-log`, `.pre-iss`): the two header overrides above, and the filtered access log. An experiment that added a trailing slash to `iss` was tried and reverted; it made no difference.
+- **Subject id.** The first id allowed came from another Google account the chooser picked; it was replaced with `jonnyallum@gmail.com`'s within minutes, before any token was issued.
+
+Open after the window: close registration (checklist step 11); add the `Referer` filter to the live access log; ship the two consent fixes in the next release, then drop the Caddy overrides.
 
 ## Security review (focused, 21/10/2026)
 
@@ -156,7 +174,7 @@ One pass over the externally reachable surface. Each control is backed by a test
 | Someone else signs in | The Google subject must equal `MCP_ALLOWED_GOOGLE_SUB`, compared in constant time, before any consent or code exists. It is re-checked on every token use |
 | Code sent to an attacker | Redirect URIs are exact-match against ChatGPT's callback at registration and again at authorise. An unknown client or redirect gets an error page, never a redirect |
 | Code interception or injection | PKCE S256 is mandatory. Codes are single-use, last 5 minutes, and are bound to client, redirect and challenge. The `iss` parameter is returned (mix-up defence) |
-| Confused deputy or lookalike client | An explicit consent page shows the client name and destination. It is CSRF-protected (single-use ticket, Origin check) and cannot be framed (`frame-ancestors 'none'`, `X-Frame-Options`). Registration can be closed after the first connection |
+| Confused deputy or lookalike client | An explicit consent page shows the client name and destination. It is CSRF-protected (single-use ticket, Origin check; Referrer-Policy `same-origin` so a browser sends the real Origin) and cannot be framed (`frame-ancestors 'none'`, `X-Frame-Options`). Its form may post to this origin and redirect only to the requesting client's origin. Registration can be closed after the first connection |
 | Token forgery or type confusion | HMAC-SHA256 with the purpose in the MAC, so an access token cannot pass as a refresh token or client id. Issuer, audience, expiry and scope are all checked |
 | Stolen refresh token | Rotation on every use. A replay revokes the whole family, including the newest access token |
 | Long-lived compromise | Tokens die on signing key rotation or subject change. Access tokens last 1 hour |

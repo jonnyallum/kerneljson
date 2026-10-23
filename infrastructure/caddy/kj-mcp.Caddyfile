@@ -1,12 +1,27 @@
-# kj-mcp.jonnyai.co.uk - the operator MCP server (ADR-0025). PREPARED, NOT DEPLOYED.
-# Append to /opt/n8n/Caddyfile on kerneljson-prod-01 in the MCP deploy window (runbook:
-# docs/operations/OPERATOR_MCP.md). The n8n Caddy container must also join the kj-mcp-edge network.
+# kj-mcp.jonnyai.co.uk - the operator MCP server (ADR-0025). DEPLOYED 22/10/2026 (release c5de3f5, epoch 16).
+# This is the block as it runs in /opt/n8n/Caddyfile on kerneljson-prod-01, plus the Referer filter (see the runbook).
+# The n8n Caddy container joins the kj-mcp-edge network (runbook: docs/operations/OPERATOR_MCP.md).
 #
 # Only the MCP, OAuth and discovery paths are proxied; everything else is a 404 from Caddy itself.
 # There is no basic auth here: the server's own OAuth is the authentication, and a basic-auth prompt
 # would break ChatGPT's connector flow.
 kj-mcp.jonnyai.co.uk {
 	encode zstd gzip
+	# Access log for diagnosis. No credential is logged: Authorization, cookies, Referer and redirect Locations are dropped, and so are code, state and code_challenge values.
+	log {
+		format filter {
+			request>uri query {
+				delete code
+				delete state
+				delete code_challenge
+			}
+			request>headers>Authorization delete
+			request>headers>Cookie delete
+			request>headers>Referer delete
+			resp_headers>Location delete
+			resp_headers>Set-Cookie delete
+		}
+	}
 
 	request_body {
 		max_size 128KB
@@ -14,7 +29,11 @@ kj-mcp.jonnyai.co.uk {
 
 	@mcp path /mcp /oauth/register /oauth/authorize /oauth/google/callback /oauth/consent /oauth/token /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/mcp /.well-known/oauth-authorization-server /.well-known/openid-configuration
 	handle @mcp {
-		reverse_proxy kerneljson-mcp:8090
+		# Interim, live since 22/10/2026: the server sends these itself from the release after c5de3f5, then they can go.
+		reverse_proxy kerneljson-mcp:8090 {
+			header_down Referrer-Policy same-origin
+			header_down Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://chatgpt.com; frame-ancestors 'none'; base-uri 'none'"
+		}
 	}
 
 	handle {
