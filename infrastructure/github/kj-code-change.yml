@@ -68,6 +68,16 @@ jobs:
         with:
           node-version: "22"
 
+      # The model may write any file under the working directory, and a written .git/config or hook makes the
+      # next git command run code (core.fsmonitor, hooks) - while Claude Code runs, with the model key in reach.
+      # So the git metadata is moved outside the tree, where Claude Code cannot write, and fingerprinted; it is
+      # put back only after the model has exited and only if the fingerprint still matches.
+      - name: Hide git metadata from the model
+        run: |
+          set -euo pipefail
+          mv .git "$RUNNER_TEMP/kj-git"
+          (cd "$RUNNER_TEMP/kj-git" && find . -type f -print0 | sort -z | xargs -0 sha256sum) > "$RUNNER_TEMP/kj-git.sha256"
+
       # No dependency's install script runs, except Claude Code's own, which fetches its native binary.
       - name: Install Claude Code
         run: |
@@ -107,6 +117,10 @@ jobs:
       - name: Capture the patch
         run: |
           set -euo pipefail
+          [ ! -e .git ] || { echo "the model created .git"; exit 1; }
+          (cd "$RUNNER_TEMP/kj-git" && find . -type f -print0 | sort -z | xargs -0 sha256sum) | cmp -s - "$RUNNER_TEMP/kj-git.sha256" \
+            || { echo "git metadata changed while the model ran"; exit 1; }
+          mv "$RUNNER_TEMP/kj-git" .git
           git add --all
           git diff --cached --binary "$BASE_SHA" > "$RUNNER_TEMP/change.patch"
           bytes=$(stat -c %s "$RUNNER_TEMP/change.patch")

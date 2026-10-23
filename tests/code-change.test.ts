@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   CODE_CHANGE_CHECKS,
   CodeChangeReconciliation,
@@ -261,5 +264,81 @@ describe("code-change/v1 workflow templates", () => {
     expect(publishJob).toContain("\\.github/");
     expect(code).not.toMatch(/--force|push -f|\+HEAD|gh pr merge|\/merge/);
     expect(test).toContain('[[ "$REF" == "refs/heads/kj/$TASK_ID" ]]');
+  });
+});
+
+/** The shell of one named step, as the runner would execute it. */
+function stepScript(workflow: string, name: string): string {
+  const lines = workflow.split("\n");
+  const at = lines.findIndex((l) => l.trim() === `- name: ${name}`);
+  if (at < 0) throw new Error(`no step ${name}`);
+  const run = lines.findIndex((l, i) => i > at && /^\s+run: \|$/.test(l));
+  const indent = lines[run + 1]!.search(/\S/);
+  const body: string[] = [];
+  for (let i = run + 1; i < lines.length && (lines[i]!.trim() === "" || lines[i]!.search(/\S/) >= indent); i++) body.push(lines[i]!.slice(indent));
+  return body.join("\n");
+}
+
+describe("code-change/v1 coding job keeps git metadata away from the model", () => {
+  const wf = readFileSync("infrastructure/github/kj-code-change.yml", "utf8");
+  const hide = stepScript(wf, "Hide git metadata from the model");
+  const capture = stepScript(wf, "Capture the patch");
+  const git = (cwd: string, ...args: string[]) => {
+    const r = spawnSync("git", ["-c", "core.autocrlf=false", ...args], { cwd, encoding: "utf8" });
+    if (r.status !== 0) throw new Error(r.stderr);
+    return r.stdout.trim();
+  };
+  function checkout(): { repo: string; env: NodeJS.ProcessEnv } {
+    const root = mkdtempSync(join(tmpdir(), "kj-cc-"));
+    const repo = join(root, "repo");
+    const temp = join(root, "temp");
+    mkdirSync(join(repo, "src"), { recursive: true });
+    mkdirSync(temp);
+    git(repo, "init", "-q");
+    writeFileSync(join(repo, "src", "a.js"), "export const a = 1;\n");
+    git(repo, "add", "--all");
+    git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base");
+    return { repo, env: { ...process.env, RUNNER_TEMP: temp, BASE_SHA: git(repo, "rev-parse", "HEAD"), GIT_CONFIG_PARAMETERS: "'core.autocrlf'='false'" } };
+  }
+  const sh = (script: string, cwd: string, env: NodeJS.ProcessEnv) => spawnSync("bash", ["-c", script], { cwd, env, encoding: "utf8" });
+
+  it("an honest change: the model sees no .git, and the patch is captured against the base", () => {
+    const { repo, env } = checkout();
+    expect(sh(hide, repo, env).status).toBe(0);
+    expect(existsSync(join(repo, ".git"))).toBe(false);
+    writeFileSync(join(repo, "src", "a.js"), "export const a = 2;\n"); // the model's edit
+    const r = sh(capture, repo, env);
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(readFileSync(join(env["RUNNER_TEMP"]!, "change.patch"), "utf8")).toContain("+export const a = 2;");
+  });
+
+  it("refuses a .git the model created in the tree (negative case: its config would run code)", () => {
+    const { repo, env } = checkout();
+    expect(sh(hide, repo, env).status).toBe(0);
+    mkdirSync(join(repo, ".git"));
+    writeFileSync(join(repo, ".git", "config"), '[core]\n\tfsmonitor = "touch PWNED; false"\n');
+    const r = sh(capture, repo, env);
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain("the model created .git");
+    expect(existsSync(join(repo, "PWNED"))).toBe(false);
+  });
+
+  it("refuses hidden metadata that changed while the model ran (negative case)", () => {
+    const { repo, env } = checkout();
+    expect(sh(hide, repo, env).status).toBe(0);
+    const hidden = join(env["RUNNER_TEMP"]!, "kj-git");
+    writeFileSync(join(hidden, "config"), readFileSync(join(hidden, "config"), "utf8") + '[core]\n\tfsmonitor = "touch PWNED; false"\n');
+    const r = sh(capture, repo, env);
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain("git metadata changed while the model ran");
+    expect(existsSync(join(repo, "PWNED"))).toBe(false);
+    writeFileSync(join(hidden, "hooks", "new-hook"), "x"); // an added file is caught too
+    expect(sh(capture, repo, env).stdout).toContain("git metadata changed while the model ran");
+  });
+
+  it("the hide step runs before the model and the capture step after it", () => {
+    const order = ["Check out the base commit", "Hide git metadata from the model", "Make the change", "Capture the patch"].map((n) => wf.indexOf(`- name: ${n}`));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 });
