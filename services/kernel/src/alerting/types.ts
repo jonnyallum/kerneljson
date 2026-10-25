@@ -82,7 +82,7 @@ export interface AlertPolicyEntry {
   /** KJ-P7B-1: optional per-status/per-severity notification control, applied on top of `notify` (which, when
    *  false, still wins). Absent = the existing behaviour, unchanged. An entry that uses it also never sends a
    *  standalone RECOVERED for an episode it never notified: a deliberately silent opening gets a silent close. */
-  notifyFor?: (status: HealthStatus, severity: AlertSeverity) => boolean;
+  notifyFor?: (status: HealthStatus, severity: AlertSeverity, check: CheckResult) => boolean;
   /** Overrides the check's own CheckResult.message for the alert text, when the
    *  required human-facing wording differs (e.g. matching the P1.2 finish-line
    *  example exactly). Falls back to the CheckResult's own message. */

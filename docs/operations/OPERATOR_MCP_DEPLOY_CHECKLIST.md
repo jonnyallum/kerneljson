@@ -8,7 +8,7 @@ ADR-0025. Background, identity and security review: [OPERATOR_MCP.md](OPERATOR_M
 - In step 9, make sure the "Not permitted" id came from `jonnyallum@gmail.com`.
 
 **Needs Jonny's explicit approval for one window.**
-- Pick a time clear of the 06:00Z brief and 08:00Z canary wakes, for example 10:00Z to 16:00Z. It takes about 45 minutes.
+- Pick a time clear of the brief and canary wakes (06:00 and 08:00 Europe/London, so 07:00Z and 09:00Z in winter and 05:00Z and 07:00Z in summer), for example 10:00Z to 16:00Z. It takes about 45 minutes.
 - No step changes a schedule, the canary, Phase 8.1 or release provenance, except the new release in step 3.
 - Every step names its expected result. Anything else means stop and roll back from that step.
 
@@ -62,7 +62,7 @@ Run it in ChatGPT on the web. Every line must hold.
 |---|---|---|
 | 10a | Plugins, **+**, Add custom MCP server: URL `https://kj-mcp.jonnyai.co.uk/mcp`, OAuth (OPERATOR_MCP.md, "Connecting ChatGPT") | Google chooser, then "Allow access to KernelJSON?" naming ChatGPT and `https://chatgpt.com`. After Allow, the `kj_*` tools are listed (ten on a full-MCP plan) |
 | 10b | New chat, **+**, enable KernelJSON. "Check KernelJSON's health" | A read call, no confirmation asked. Answer shows epoch 16 and `doorMatchesActive: true` |
-| 10c | "What tasks ran today?" | Lists today's tasks, including the 06:00Z brief |
+| 10c | "What tasks ran today?" | Lists today's tasks, including the 06:00 (London) brief |
 | 10d | "Run a morning brief" | ChatGPT asks to confirm, you confirm, it returns a task id. The brief reaches Telegram within about 5 minutes. On the VM the admission row for that task has `principal_id = $MCP_PRINCIPAL` and source `kerneljson:channel/chatgpt-mcp/v1` |
 | 10e | "Follow that task until it finishes" | `kj_get_task` shows COMPLETED. Evidence is listed |
 | 10f | On the VM: `docker logs kerneljson-mcp 2>&1 \| grep -c 'kjm1\.'` | `0`: no token text in the log |

@@ -52,8 +52,8 @@ but it is not bounded. This window closes it either way.
 
 ## The window
 
-Needs Jonny's approval, and PR #61 and this PR merged (merging deploys nothing). Clear of the 06:00Z brief and
-08:00Z canary. About 20 minutes, most of it the Grok Bot sign-in.
+Needs Jonny's approval, and PR #61 and this PR merged (merging deploys nothing). Clear of the brief and canary
+(06:00 and 08:00 Europe/London: 07:00Z and 09:00Z in winter, 05:00Z and 07:00Z in summer). About 20 minutes, most of it the Grok Bot sign-in.
 
 | # | Who | Do | Expect |
 |---|---|---|---|

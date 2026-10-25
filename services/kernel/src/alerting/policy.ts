@@ -28,13 +28,14 @@ function simple(
   checkId: string,
   map: Partial<Record<Exclude<HealthStatus, "HEALTHY">, AlertSeverity>>,
   rationale: string,
-  extra?: { notify?: boolean; alertMessage?: AlertPolicyEntry["alertMessage"] },
+  extra?: { notify?: boolean; notifyFor?: AlertPolicyEntry["notifyFor"]; alertMessage?: AlertPolicyEntry["alertMessage"] },
 ): AlertPolicyEntry {
   return {
     checkId,
     severityFor: (status) => (status === "HEALTHY" ? null : (map[status as Exclude<HealthStatus, "HEALTHY">] ?? null)),
     rationale,
     ...(extra?.notify !== undefined ? { notify: extra.notify } : {}),
+    ...(extra?.notifyFor ? { notifyFor: extra.notifyFor } : {}),
     ...(extra?.alertMessage ? { alertMessage: extra.alertMessage } : {}),
   };
 }
@@ -44,7 +45,8 @@ export const ALERT_POLICY: readonly AlertPolicyEntry[] = [
   simple(
     "authority.bindingReleaseConsistent",
     { CRITICAL: "P1", UNKNOWN: "P3" },
-    "Binding release must match its canonical database activation epoch; historical epochs preserve their original release.",
+    "Binding release must match its canonical database activation epoch; historical epochs preserve their original release. Straight after every activation the new epoch has no bindings yet (UNKNOWN/NO_OBSERVATION, P3, silent until the next task binds); missing provenance (NO_PROVENANCE) still notifies.",
+    { notifyFor: (status, _severity, check) => !(status === "UNKNOWN" && check.message.startsWith("NO_OBSERVATION")) },
   ),
   simple(
     "authority.admittedFiresHaveCanonicalTasks",
