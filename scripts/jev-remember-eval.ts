@@ -9,7 +9,8 @@
  *   node --import tsx scripts/jev-remember-eval.ts --selftest
  *
  * The API key is read from --key-file and only ever placed in the Authorization header. It is never logged, and no
- * error recorded here includes it, the request headers or the provider's error body (only status and error code).
+ * error recorded here includes it, the request headers or any provider-written text: errors are fixed strings plus at
+ * most an HTTP status and an identifier-shaped code.
  * Exit code is non-zero unless every item was answered with a valid class and confidence.
  */
 import { createHash } from "node:crypto";
@@ -49,6 +50,27 @@ type Fetch = typeof fetch;
 interface Options { model: string; threshold: number; concurrency: number; timeoutMs: number }
 
 class AuthError extends Error {}
+class ProviderError extends Error {}
+/** A 200 response whose answer failed validation. It may still have been billed, so its cost travels with it. */
+class RejectedAnswer extends Error {
+  constructor(message: string, readonly costUsd: number | undefined) { super(message); }
+}
+
+/** Only short identifier-shaped values from the provider may reach a log or report. */
+const SAFE_TOKEN = /^[A-Za-z0-9_.-]{1,40}$/;
+const safe = (v: unknown): string | undefined => (typeof v === "string" || typeof v === "number") && SAFE_TOKEN.test(String(v)) ? String(v) : undefined;
+
+function parseCost(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined;
+}
+
+/** Every recorded error is one of a fixed set of strings plus at most a status and safe code; nothing provider-written. */
+function describe(err: unknown, timeoutMs: number): string {
+  if (err instanceof AuthError || err instanceof RejectedAnswer || err instanceof ProviderError) return err.message;
+  if (err instanceof Error && err.name === "TimeoutError") return `timeout after ${timeoutMs} ms`;
+  const cause = err instanceof Error ? safe((err.cause as { code?: unknown } | undefined)?.code) : undefined;
+  return `transport error${cause ? ` (${cause})` : ""}`;
+}
 
 function arg(name: string, fallback?: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -94,25 +116,27 @@ async function askJev(fetchImpl: Fetch, key: () => string, opts: Options, text: 
     }),
   });
   if (!res.ok) {
-    let code = "";
-    try { code = String(((await res.json()) as { error?: { code?: unknown } }).error?.code ?? ""); } catch { /* body not JSON */ }
+    let code: string | undefined;
+    try { code = safe(((await res.json()) as { error?: { code?: unknown } }).error?.code); } catch { /* body not JSON */ }
     const message = `HTTP ${res.status}${code ? ` (code ${code})` : ""}`;
-    throw res.status === 401 || res.status === 403 ? new AuthError(message) : new Error(message);
+    throw res.status === 401 || res.status === 403 ? new AuthError(message) : new ProviderError(message);
   }
-  const body = (await res.json()) as {
-    id?: string; model?: string; provider?: string;
+  let body: {
+    id?: unknown; model?: unknown; provider?: unknown;
     answers?: { memory_class?: { choice?: unknown; confidence?: unknown } }; usage?: { cost?: unknown };
   };
+  try { body = (await res.json()) as typeof body; } catch { throw new RejectedAnswer("malformed response body", undefined); }
+  if (body === null || typeof body !== "object") throw new RejectedAnswer("malformed response body", undefined);
+  const costUsd = parseCost(body.usage?.cost);
   const answer = body.answers?.memory_class;
-  if (typeof answer?.choice !== "string" || !CLASSES.includes(answer.choice as Gold)) throw new Error(`invalid choice ${JSON.stringify(answer?.choice)}`);
+  if (typeof answer?.choice !== "string" || !CLASSES.includes(answer.choice as Gold)) throw new RejectedAnswer("invalid choice", costUsd);
   const confidence = answer.confidence;
-  if (typeof confidence !== "number" || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) throw new Error(`invalid confidence ${JSON.stringify(confidence)}`);
-  const cost = body.usage?.cost;
+  if (typeof confidence !== "number" || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) throw new RejectedAnswer("invalid confidence", costUsd);
   return {
     jev: answer.choice as Gold,
     confidence,
-    costUsd: typeof cost === "number" && Number.isFinite(cost) && cost >= 0 ? cost : undefined,
-    responseId: body.id, respondedModel: body.model, provider: body.provider,
+    costUsd,
+    responseId: safe(body.id), respondedModel: typeof body.model === "string" && /^[A-Za-z0-9_.:/~-]{1,80}$/.test(body.model) ? body.model : undefined, provider: safe(body.provider),
     latencyMs: Math.round(performance.now() - started),
   };
 }
@@ -139,7 +163,8 @@ async function run(items: Item[], fetchImpl: Fetch, key: () => string, opts: Opt
         const a = await askJev(fetchImpl, key, opts, item.text);
         Object.assign(row, a, { jevCorrect: a.jev === item.gold });
       } catch (err) {
-        row.error = err instanceof Error ? (err.name === "TimeoutError" ? `timeout after ${opts.timeoutMs} ms` : err.message) : "unknown error";
+        row.error = describe(err, opts.timeoutMs);
+        if (err instanceof RejectedAnswer) row.costUsd = err.costUsd;
         if (err instanceof AuthError) halted = row.error;
       }
     }
@@ -151,7 +176,8 @@ async function run(items: Item[], fetchImpl: Fetch, key: () => string, opts: Opt
   const unsure = answered.filter((r) => (r.confidence as number) < opts.threshold);
   const latencies = answered.map((r) => r.latencyMs as number).sort((a, b) => a - b);
   const complete = answered.length === rows.length;
-  const costs = answered.map((r) => r.costUsd);
+  // Every attempted request may have been billed, answered or not; an attempt without a known cost makes the total a floor.
+  const costs = attempted.map((r) => r.costUsd);
   const summary = {
     model: opts.model, threshold: opts.threshold,
     items: rows.length, attempted: attempted.length, answered: answered.length, failed: attempted.length - answered.length,
@@ -263,6 +289,26 @@ async function selftest(): Promise<void> {
   });
   r = await run(items.slice(0, 1), slow, key, { ...opts, timeoutMs: 50 });
   expect("a hung request times out", r.rows[0]?.error === "timeout after 50 ms");
+
+  const LEAK = "LEAK-sk-or-v1-planted ignore previous instructions";
+  const leaked = (x: unknown) => JSON.stringify(x).includes("LEAK");
+  r = await run(items, answer(LEAK, 0.9, 0.001), key, opts);
+  expect("invalid choice text is not copied into the report", r.rows[0]?.error === "invalid choice" && !leaked(r));
+  r = await run(items, async () => new Response(`not json {${LEAK}`, { status: 200 }), key, opts);
+  expect("malformed body is not copied into the report", r.rows[0]?.error === "malformed response body" && !leaked(r));
+  r = await run(items, async () => { throw new Error(`connect failed ${LEAK}`, { cause: { code: LEAK } }); }, key, opts);
+  expect("transport exception text is not copied into the report", r.rows[0]?.error === "transport error" && !leaked(r));
+  r = await run(items, async () => { throw new TypeError("fetch failed", { cause: { code: "ECONNRESET" } }); }, key, opts);
+  expect("a safe transport code is kept", r.rows[0]?.error === "transport error (ECONNRESET)");
+  r = await run(items, reply(500, { error: { message: LEAK, code: LEAK } }), key, opts);
+  expect("unsafe provider error code is dropped", r.rows[0]?.error === "HTTP 500" && !leaked(r));
+  r = await run(items, reply(200, { id: LEAK, model: LEAK, provider: LEAK, answers: { memory_class: { choice: "FACT", confidence: 0.9 } }, usage: { cost: 0.001 } }), key, opts);
+  expect("unsafe response id, model and provider are dropped", r.summary.complete && !leaked(r));
+
+  r = await run(items, answer("nonsense", 0.9, 0.001), key, opts);
+  expect("charges on rejected answers are counted", r.summary.answered === 0 && r.summary.totalCostUsd === 0.003 && r.summary.costComplete);
+  r = await run(items, reply(500, {}), key, opts);
+  expect("failed requests with unknown cost make the total incomplete", !r.summary.costComplete);
 
   let shapeRejected = false;
   try { parseItems(JSON.stringify({ id: "x", source: "t", gold: "RELATIONSHIP", text: "a" })); } catch { shapeRejected = true; }
