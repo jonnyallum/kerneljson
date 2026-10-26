@@ -79,9 +79,9 @@ function arg(name: string, fallback?: string): string {
   return v;
 }
 
+/** `"gold": "SKIP"` leaves an item out of scoring (e.g. a relationship, which Jev may never choose); a blank gold is an error. */
 function parseItems(raw: string): Item[] {
-  return raw.split(/\r?\n/).filter((l) => l.trim().length > 0).map((l, n) => {
-    const item = JSON.parse(l) as Item;
+  return raw.split(/\r?\n/).filter((l) => l.trim().length > 0).map((l) => JSON.parse(l) as Item).filter((item) => (item.gold as string) !== "SKIP").map((item, n) => {
     if (!CLASSES.includes(item.gold)) throw new Error(`line ${n + 1}: gold ${item.gold} is not an allowed class`);
     if (classifyRemember(item.text).explicit) throw new Error(`line ${n + 1}: ${item.id} is explicitly labelled; the eval covers unlabelled text only`);
     return item;
@@ -313,6 +313,10 @@ async function selftest(): Promise<void> {
   let shapeRejected = false;
   try { parseItems(JSON.stringify({ id: "x", source: "t", gold: "RELATIONSHIP", text: "a" })); } catch { shapeRejected = true; }
   expect("RELATIONSHIP gold label is rejected", shapeRejected);
+  let blankRejected = false;
+  try { parseItems(JSON.stringify({ id: "x", source: "t", gold: "", text: "a" })); } catch { blankRejected = true; }
+  expect("an unlabelled item is rejected", blankRejected);
+  expect("SKIP items are left out of scoring", parseItems([{ id: "x", source: "t", gold: "SKIP", text: "a" }, { id: "y", source: "t", gold: "FACT", text: "b" }].map((x) => JSON.stringify(x)).join("\n")).length === 1);
 
   if (failures.length > 0) { console.error(`${failures.length} selftest case(s) failed`); return; }
   console.log("selftest: all cases behaved as expected");
