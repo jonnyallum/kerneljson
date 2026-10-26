@@ -23,13 +23,13 @@ const BOMS = [String.fromCharCode(0xfeff), String.fromCharCode(0xef, 0xbb, 0xbf)
 
 /** RELATIONSHIP is deliberately absent: production only accepts it from an explicit label, so Jev may never pick it. */
 const CRITERIA = {
-  FACT: { what: "Something stated to be true about the world, a person or the business.", not_for: "Choices, plans, how the operator likes things done, or a dated event." },
+  FACT: { what: "Something stated to be true about the world, a person or the business, including an external deadline that is simply stated.", not_for: "Choices, plans, how the operator likes things done, a dated event, or how a project or system is configured." },
   PREFERENCE: { what: "How the operator likes things done: style, format, timing, tone, channel.", not_for: "A one-off choice between options (DECISION)." },
   DECISION: { what: "A choice that has been made or a standing rule the operator has set.", not_for: "A taste or style the operator likes (PREFERENCE)." },
-  COMMITMENT: { what: "Something someone will do, owes or must do, usually with a deadline or owner.", not_for: "A general rule (DECISION) or a fact about the future (FACT)." },
+  COMMITMENT: { what: "An action someone has undertaken or been assigned: they will do it, owe it or promised it.", not_for: "A general rule (DECISION), or a deadline that is stated without anyone taking on the action (FACT)." },
   LESSON: { what: "Something learned from an outcome or mistake, a rule of thumb drawn from experience.", not_for: "The bare account of what happened (EPISODE)." },
   EPISODE: { what: "A record of a specific thing that happened at a particular time.", not_for: "The takeaway learned from it (LESSON)." },
-  PROJECT_KNOWLEDGE: { what: "How a specific project, system or codebase works: architecture, behaviour, configuration.", not_for: "General facts unrelated to a project (FACT)." },
+  PROJECT_KNOWLEDGE: { what: "How a specific project, system or codebase works: architecture, behaviour, configuration, access rules.", not_for: "General facts unrelated to a project or system (FACT)." },
 } as const;
 type Gold = keyof typeof CRITERIA;
 const CLASSES = Object.keys(CRITERIA) as Gold[];
