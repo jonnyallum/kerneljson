@@ -114,8 +114,12 @@ jobs:
           claude -p "$(cat "$RUNNER_TEMP/prompt.txt")" \
             --model "$CODER_MODEL" \
             --max-turns "$MAX_TURNS" \
+            --setting-sources "" \
+            --settings '{"disableAllHooks":true}' \
+            --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
+            --tools "Read,Edit,Write,Glob,Grep" \
             --allowedTools "Read,Edit,Write,Glob,Grep" \
-            --disallowedTools "Bash,WebFetch,WebSearch" \
+            --disallowedTools "Bash,WebFetch,WebSearch,mcp__*" \
             --output-format json > "$RUNNER_TEMP/claude-result.json" || status=$?
           # The summary only (never the transcript), on failure too.
           jq '{subtype, is_error, num_turns, total_cost_usd}' "$RUNNER_TEMP/claude-result.json" || echo "no result summary"
@@ -172,7 +176,7 @@ jobs:
         run: |
           set -euo pipefail
           p="$RUNNER_TEMP/kj/change.patch"
-          if git apply --numstat "$p" | cut -f3- | grep -E '(^|/)\.github/|(^|/)\.\.(/|$)|^/' ; then
+          if git apply --numstat "$p" | cut -f3- | grep -Ei '(^|/)\.(github|claude)/|(^|/)\.mcp\.json$|(^|/)\.\.(/|$)|^/' ; then
             echo "patch touches a refused path"; exit 1
           fi
           if grep -E '^(deleted file mode|new file mode 120000|old mode|new mode|rename from .*\.github|GIT binary patch)' "$p"; then

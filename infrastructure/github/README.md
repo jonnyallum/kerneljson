@@ -56,6 +56,11 @@ is not a production credential for anything else, and the runner workflows never
 | Model edits CI to escalate | `publish` refuses any `.github/` path, including a rename into or out of it; GitHub refuses a `GITHUB_TOKEN` push that creates or changes a workflow; reconciliation refuses CI paths. This matters because `kj-test` runs the workflow file on the task branch, so the branch must never carry its own |
 | Model exfiltrates the key | No Bash or web tools in the `code` job; the key is spend-capped and model-only |
 | Model plants git config that runs code (`core.fsmonitor`, hooks) | `.git` is moved outside the tree before the model runs and restored only if its fingerprint is unchanged and the model created no `.git`; `publish` applies with `git apply`, which refuses `.git/` paths |
+| Repository agent settings start commands with the model key | The CLI loads no user/project/local settings, disables hooks and uses an explicit empty MCP configuration. `--tools` restricts built-ins to Read/Edit/Write/Glob/Grep; `--allowedTools` alone would only control approval prompts. Changes to `.claude/` and `.mcp.json` are refused before publication and by reconciliation |
 | Test pass for a different commit | Test run dispatched on the task branch; kernel requires `head_sha` equal to the proposed head |
 | Overspend | Dedicated OpenRouter key credit limit, `--max-turns`, job timeouts, task-scoped concurrency and no automatic retry after an ambiguous write failure. Dispatch is not an exactly-once API; a worker crash after GitHub accepts a request can still leave an external run to reconcile |
 | Work on another repository | Allowlist in the client (refused before any request) and in reconciliation; token scoped to one repository |
+
+The CLI isolation flags follow the [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference)
+and [hook-disable guidance](https://code.claude.com/docs/en/hooks#disable-or-remove-hooks). The pilot uses a fresh
+GitHub-hosted runner; these flags are not a claim to override administrator-managed hooks on a custom runner.

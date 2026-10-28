@@ -67,7 +67,7 @@ export const REFUSED_PATH_CATEGORIES = ["ci_and_automation", "infrastructure", "
 export type RefusedPathCategory = (typeof REFUSED_PATH_CATEGORIES)[number];
 
 const REFUSED: ReadonlyArray<readonly [RefusedPathCategory, RegExp]> = [
-  ["ci_and_automation", /^\.github\/|^\.gitlab-ci\.yml$|^\.circleci\/|(^|\/)\.husky\/|(^|\/)\.pre-commit-config\.yaml$|(^|\/)\.gitattributes$|(^|\/)CODEOWNERS$/i],
+  ["ci_and_automation", /^\.github\/|^\.gitlab-ci\.yml$|^\.circleci\/|(^|\/)\.(husky|claude)\/|(^|\/)\.mcp\.json$|(^|\/)\.pre-commit-config\.yaml$|(^|\/)\.gitattributes$|(^|\/)CODEOWNERS$/i],
   ["infrastructure", /(^|\/)(infra|infrastructure|deploy|deployment|terraform|k8s|kubernetes|helm|ansible|supabase\/migrations)\/|(^|\/)(Dockerfile[^/]*|docker-compose[^/]*\.ya?ml|compose\.ya?ml|Caddyfile|vercel\.json|netlify\.toml|fly\.toml|Procfile|app\.yaml|cloudbuild\.ya?ml)$|\.tf$|\.tfvars$/i],
   ["secrets", /(^|\/)\.env($|\.)|(^|\/)(secrets?|credentials?)(\/|\.|$)|\.(pem|key|p12|pfx|jks|keystore)$|(^|\/)id_(rsa|ed25519|ecdsa)(\.pub)?$|(^|\/)\.npmrc$|(^|\/)\.netrc$/i],
   ["billing", /(^|\/)[^/]*(billing|payment|invoice|stripe|subscription|checkout)[^/]*(\/|$)/i],

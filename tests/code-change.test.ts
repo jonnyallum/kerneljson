@@ -245,8 +245,12 @@ describe("code-change/v1 workflow templates", () => {
   });
 
   it("gives the coding agent file tools only and a turn cap", () => {
+    expect(codeJob).toContain('--tools "Read,Edit,Write,Glob,Grep"');
     expect(codeJob).toContain('--allowedTools "Read,Edit,Write,Glob,Grep"');
-    expect(codeJob).toContain('--disallowedTools "Bash,WebFetch,WebSearch"');
+    expect(codeJob).toContain('--disallowedTools "Bash,WebFetch,WebSearch,mcp__*"');
+    expect(codeJob).toContain('--setting-sources ""');
+    expect(codeJob).toContain('--settings \'{"disableAllHooks":true}\'');
+    expect(codeJob).toContain('--strict-mcp-config --mcp-config \'{"mcpServers":{}}\'');
     expect(codeJob).toMatch(/--max-turns "\$MAX_TURNS"/);
     expect(codeJob).toMatch(/timeout-minutes: \d+/);
   });
@@ -276,7 +280,7 @@ describe("code-change/v1 workflow templates", () => {
 
   it("publishes only to an absent task branch, refuses CI paths, never overwrites or merges", () => {
     expect(publishJob).toContain('git push --force-with-lease="refs/heads/kj/$TASK_ID:" origin "HEAD:refs/heads/kj/$TASK_ID"');
-    expect(publishJob).toContain("\\.github/");
+    expect(publishJob).toContain("\\.(github|claude)/");
     expect(code).not.toMatch(/--force(?:\s|$)|push -f|\+HEAD|gh pr merge|\/merge/);
     expect(test).toContain('[[ "$REF" == "refs/heads/kj/$TASK_ID" ]]');
   });
@@ -301,6 +305,7 @@ describe("code-change/v1 coding job keeps git metadata away from the model", () 
   const publish = stepScript(wf, "Apply and push the task branch");
   const validate = stepScript(wf, "Validate inputs");
   const makeChange = stepScript(wf, "Make the change");
+  const refuse = stepScript(wf, "Refuse unsafe patches");
   const git = (cwd: string, ...args: string[]) => {
     const r = spawnSync("git", ["-c", "core.autocrlf=false", ...args], { cwd, encoding: "utf8" });
     if (r.status !== 0) throw new Error(r.stderr);
@@ -319,6 +324,22 @@ describe("code-change/v1 coding job keeps git metadata away from the model", () 
     return { repo, env: { ...process.env, RUNNER_TEMP: temp, BASE_SHA: git(repo, "rev-parse", "HEAD"), GIT_CONFIG_PARAMETERS: "'core.autocrlf'='false'" } };
   }
   const sh = (script: string, cwd: string, env: NodeJS.ProcessEnv) => spawnSync("bash", ["-c", script], { cwd, env, encoding: "utf8" });
+
+  it.each([".claude/settings.json", ".mcp.json", "nested/.claude/settings.json", ".CLAUDE/settings.json"])(
+    "refuses agent automation changes to %s before publishing and in reconciliation policy", (path) => {
+      const { repo, env } = checkout();
+      const parts = path.split("/");
+      if (parts.length > 1) mkdirSync(join(repo, ...parts.slice(0, -1)), { recursive: true });
+      writeFileSync(join(repo, path), '{"hooks":{"SessionStart":[]}}\n');
+      git(repo, "add", "--all");
+      mkdirSync(join(env["RUNNER_TEMP"]!, "kj"));
+      writeFileSync(join(env["RUNNER_TEMP"]!, "kj", "change.patch"), git(repo, "diff", "--cached", "--binary", env["BASE_SHA"]!) + "\n");
+      const result = sh(refuse, repo, env);
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).toContain("patch touches a refused path");
+      expect(refusedPathCategory(path)).toBe("ci_and_automation");
+    },
+  );
 
   it.each(["", "sk-ant-synthetic-private-sentinel"])("refuses a missing or wrong-provider key before preparing a model call", (token) => {
     const { repo, env } = checkout();
@@ -358,6 +379,8 @@ describe("code-change/v1 coding job keeps git metadata away from the model", () 
       writeFileSync(join(env["RUNNER_TEMP"]!, "kj", "change.patch"), git(repo, "diff", "--binary") + "\n");
       writeFileSync(join(repo, "src", "a.js"), "export const a = 1;\n");
       git(repo, "update-index", "--refresh");
+      const checked = sh(refuse, repo, env);
+      expect(checked.status, checked.stdout + checked.stderr).toBe(0);
       const result = sh(publish, repo, { ...env, TASK_ID: TASK });
       const remoteHead = git(repo, "ls-remote", "origin", `refs/heads/${BRANCH}`).split(/\s/)[0];
       if (existing) {
