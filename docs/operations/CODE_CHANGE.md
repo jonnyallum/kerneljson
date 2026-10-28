@@ -40,6 +40,12 @@ review call. An already running GitHub workflow finishes on its own `kj/<task>` 
 that external workflow. Polling normally observes a cancel within 30 seconds plus any in-flight service call.
 Malformed run responses end the mission FAILED with a bounded error code, without persisting their raw content.
 
+GitHub reads and explicit rate-limit refusals may retry. A network failure or server error during a write is
+`WRITE_UNCERTAIN` and is terminal: GitHub may have accepted the request before the response was lost, and its
+run listings may not show it yet. Inspect the task's Actions run and `kj/<task>` branch (and draft PR, if opening
+one failed) before starting another mission. A FAILED task does not prove that no external workflow or PR exists.
+Successful PR responses use the same 2 MB response limit as GitHub reads.
+
 ## Worker configuration (all four or none)
 
 | Variable | Value |

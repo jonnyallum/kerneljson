@@ -102,13 +102,34 @@ describe("code-change/v1 GitHub runner client", () => {
   });
 
   it("classifies a refused write by status and never leaks the token", async () => {
-    for (const [status, code] of [[403, "AUTH"], [422, "MALFORMED"], [404, "NOT_FOUND"], [503, "UPSTREAM"], [302, "RENAMED"]] as const) {
+    for (const [status, code] of [[403, "AUTH"], [422, "MALFORMED"], [404, "NOT_FOUND"], [302, "RENAMED"]] as const) {
       const { gh } = runner({ [`POST ${R}/actions/workflows/kj-test.yml/dispatches`]: { body: `token ${TOKEN}`, status } });
       const e = await errorOf(gh.dispatchTest({ repo: REPO, taskId: TASK }));
       expect(e).toBeInstanceOf(GithubReadError);
       expect((e as GithubReadError).code).toBe(code);
       expect(String(e.message) + String(e.stack)).not.toContain(TOKEN);
     }
+  });
+
+  it.each([500, 502, 503, 504, "network"] as const)("does not mark an ambiguous POST failure (%s) retryable", async (failure) => {
+    const { gh, calls } = runner({
+      [`POST ${R}/actions/workflows/kj-test.yml/dispatches`]: () => {
+        if (failure === "network") throw new Error(`connection lost after accepting ${TOKEN}`);
+        return { body: `upstream detail ${TOKEN}`, status: failure };
+      },
+    });
+    const e = await errorOf(gh.dispatchTest({ repo: REPO, taskId: TASK }));
+    expect(e).toBeInstanceOf(GithubRunnerError);
+    expect(e).toMatchObject({ code: "WRITE_UNCERTAIN" });
+    expect(String(e.message) + String(e.stack)).not.toContain(TOKEN);
+    expect(calls).toHaveLength(1);
+  });
+
+  it.each([429, 403])("keeps explicit rate-limit refusals (%s) retryable", async (status) => {
+    const { gh } = runner({ [`POST ${R}/actions/workflows/kj-test.yml/dispatches`]: {
+      body: null, status, headers: { "retry-after": "10" },
+    } });
+    expect(await errorOf(gh.dispatchTest({ repo: REPO, taskId: TASK }))).toMatchObject({ code: "RATE_LIMITED", retryable: true });
   });
 
   it("finds a run by its exact title, newest first, and null when absent", async () => {
@@ -166,6 +187,16 @@ describe("code-change/v1 GitHub runner client", () => {
     expect(out).toEqual({ number: 7, url: `https://github.com/${REPO}/pull/7`, headSha: HEAD });
     const body = JSON.parse(calls.find((c) => c.method === "POST")!.init.body as string);
     expect(body).toMatchObject({ head: BRANCH, base: "main", draft: true, maintainer_can_modify: false });
+  });
+
+  it("bounds a successful PR response even without Content-Length", async () => {
+    const { gh } = runner({
+      [`GET ${R}/git/ref/heads/${BRANCH}`]: json({ object: { sha: HEAD } }),
+      [`GET ${R}/pulls`]: json([]),
+      [`POST ${R}/pulls`]: json({ ...pr(), oversized: "x".repeat(2_000_000) }, 201),
+    });
+    const e = await errorOf(gh.openDraftPr({ repo: REPO, taskId: TASK, defaultBranch: "main", expectedHeadSha: HEAD, title: "t", body: "" }));
+    expect(e).toMatchObject({ code: "TOO_LARGE", retryable: false });
   });
 
   it("returns the existing draft instead of opening a second one on retry", async () => {

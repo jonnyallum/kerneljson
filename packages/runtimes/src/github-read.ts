@@ -69,7 +69,8 @@ const ReadmeResponse = z.object({
   content: z.string(),
 });
 
-async function boundedText(response: Response): Promise<string> {
+/** Shared response cap for GitHub reads and successful write responses; never trusts Content-Length. */
+export async function readBoundedGithubText(response: Response): Promise<string> {
   if (!response.body) throw new GithubReadError("MALFORMED", false);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -147,7 +148,7 @@ export function createGithubGet(config: GithubReaderConfig = {}) {
       throw new GithubReadError("MALFORMED", false);
     }
     try {
-      return JSON.parse(await boundedText(response)) as unknown;
+      return JSON.parse(await readBoundedGithubText(response)) as unknown;
     } catch (error) {
       if (error instanceof GithubReadError) throw error;
       throw new GithubReadError("MALFORMED", false);
