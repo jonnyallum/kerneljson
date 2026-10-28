@@ -20,6 +20,7 @@ import { codeChangeNoticeDecision, type CodeChangeNotice } from "../services/ker
 import { isCodeChangeCheckId } from "../services/kernel/src/alerting/code-change-notice.js";
 import { formatTelegramMessage } from "../services/kernel/src/alerting/format.js";
 import { loadCodeChangeConfig } from "../services/kernel/src/mission/code-change-config.js";
+import { modelRequest } from "../evals/fixtures/models.js";
 import { sha256Text } from "../services/kernel/src/mission/reconcile.js";
 import { id as tenantId, principal } from "../evals/fixtures/contracts.js";
 import { fakeRuntime, type FakeReply } from "./support/mission-fixture.js";
@@ -71,6 +72,8 @@ interface GithubOpts {
   codeConclusion?: string;
   testConclusion?: string;
   runNeverAppears?: boolean;
+  malformedRun?: "code" | "test";
+  afterRunRead?: () => void;
   files?: ChangeFacts["files"];
   prError?: string;
 }
@@ -84,6 +87,9 @@ function fakeGithub(taskId: string, o: GithubOpts = {}) {
     dispatch: async (req) => (calls.push({ name: "dispatch", req }), { dispatched: true }),
     dispatchTest: async (req) => (calls.push({ name: "dispatchTest", req }), { dispatched: true }),
     run: async (req) => {
+      calls.push({ name: "run", req });
+      o.afterRunRead?.();
+      if (o.malformedRun === req.kind) return { status: "completed", untrusted: "private-response-sentinel" };
       const n = polls[req.kind]!++;
       if (o.runNeverAppears || n === 0) return null;
       if (n === 1) return runFor(taskId, req.kind, { status: "in_progress", conclusion: null });
@@ -136,7 +142,7 @@ interface Run {
 const verify = (r: Pick<Run, "task" | "plan" | "steps" | "evidence" | "outcome">, config: { allowedRepos: string[] } | null = CONFIG, evidence = r.evidence, outcome = r.outcome) =>
   verifyPlanCompletion({ ...r.task, status: "VERIFYING" }, outcome, r.plan, [...r.steps.values()], evidence.map((record) => ({ record, step: null })), undefined, config ?? undefined);
 
-async function run(o: GithubOpts & { deps?: Partial<CodeChangeDeps>; objective?: string } = {}): Promise<Run> {
+async function run(o: GithubOpts & { deps?: Partial<CodeChangeDeps>; objective?: string; cancelAfterStep?: string } = {}): Promise<Run> {
   const { task, plan } = newTask(o.objective);
   const steps = new Map<string, TaskStep>();
   const evidence: Evidence[] = [];
@@ -166,6 +172,7 @@ async function run(o: GithubOpts & { deps?: Partial<CodeChangeDeps>; objective?:
     reviewer: { generate: (req) => (reviewed++, reviewer.generate(req)) },
     coderModel: "anthropic/claude-sonnet-test", allowedRepos: [REPO],
     notify: async (n) => { notices.push(n); },
+    cancelled: async () => plan.steps.some((s) => s.operation === o.cancelAfterStep && steps.get(s.id)?.status === "COMPLETED"),
     ...o.deps,
   });
   return { outcome, task, plan, steps, evidence, notices, calls, reviewed, verifyError };
@@ -193,7 +200,7 @@ describe("code-change/v1 end to end against an in-memory ledger and the real com
       "kerneljson:runtime/reviewer", "kerneljson:code-change-reconcile/v1", "kerneljson:code-change-pr/v1",
     ]);
     expect([...r.steps.values()].map((s) => s.status)).toEqual(Array(6).fill("COMPLETED"));
-    expect(r.calls.find((c) => c.name === "dispatch")!.req).toEqual({ repo: REPO, taskId: r.task.id, baseSha: BASE, instructions: INSTRUCTIONS });
+    expect(r.calls.find((c) => c.name === "dispatch")!.req).toEqual({ repo: REPO, taskId: r.task.id, baseSha: BASE, instructions: INSTRUCTIONS, coderModel: "anthropic/claude-sonnet-test" });
     const pr = r.calls.find((c) => c.name === "openPr")!.req as { expectedHeadSha: string; title: string; body: string };
     expect(pr.expectedHeadSha).toBe(HEAD);
     expect(pr.title).toBe(`kj: ${INSTRUCTIONS}`);
@@ -208,6 +215,8 @@ describe("code-change/v1 end to end against an in-memory ledger and the real com
     ["the repository is not allowlisted", { objective: `jonnyallum/kerneljson ${INSTRUCTIONS}` }, "REPOSITORY_NOT_ALLOWLISTED", { dispatched: false, started: false }],
     ["the coding run fails", { codeConclusion: "failure" }, "CODE_RUN_FAILURE", { reviewed: false }],
     ["the coding run never appears", { runNeverAppears: true }, "CODE_RUN_NOT_FOUND", { reviewed: false }],
+    ["the coding run response is malformed", { malformedRun: "code" }, "CODE_RUN_INVALID", { reviewed: false }],
+    ["the test run response is malformed", { malformedRun: "test" }, "RUN_INVALID", { reviewed: false }],
     ["the tests fail", { testConclusion: "failure" }, "TESTS_FAILURE", { reviewed: false }],
     ["the reviewer rejects", { deps: { reviewer: fakeReviewer({ verdict: "reject" }) } }, "review_verdict_acceptable", {}],
     ["the reviewer raises a blocking concern", { deps: { reviewer: fakeReviewer({ concerns: ["Breaks squash() for tabs."] }) } }, "review_verdict_acceptable", {}],
@@ -237,6 +246,68 @@ describe("code-change/v1 end to end against an in-memory ledger and the real com
     const r = await run({ files: [{ path: "package.json", status: "modified", previousPath: null, additions: 1, deletions: 0, blobSha: "e".repeat(40), patchSha256: "a".repeat(64) }] });
     expect(r.outcome.summary).toContain("refused: dependencies");
   });
+
+  // [cancel after this completed operation, the next step, GitHub calls that must not happen]
+  const cancels: Array<[string, string, string[]]> = [
+    ["GITHUB_EVIDENCE", "code", ["dispatch", "dispatchTest", "capture", "openPr"]],
+    ["CODE_RUN", "test", ["dispatchTest", "capture", "openPr"]],
+    ["CODE_TEST", "review", ["openPr"]],
+    ["RECONCILE", "pr", ["openPr"]],
+  ];
+  for (const [after, before, never] of cancels) {
+    it(`a cancel before the ${before} step ends CANCELLED and asks GitHub for nothing more`, async () => {
+      const r = await run({ cancelAfterStep: after });
+      expect(r.outcome.status).toBe("CANCELLED");
+      expect(r.outcome.summary).toContain("Cancelled at a step boundary");
+      for (const name of never) expect(r.calls.some((c) => c.name === name), name).toBe(false);
+      expect(r.notices.map((n) => n.status)).not.toContain("PR_OPENED");
+      expect([...r.steps.values()].at(-1)!.status).toBe("CANCELLED");
+      if (before !== "pr") expect(r.reviewed).toBe(0);
+    });
+  }
+
+  it("runs to completion when the cancel check stays false (positive control)", async () => {
+    let checks = 0;
+    const r = await run({ deps: { cancelled: async () => (checks++, false) } });
+    expect(r.outcome.status).toBe("COMPLETED");
+    expect(checks).toBeGreaterThan(3);
+  });
+
+  for (const [kind, tick] of [["code", 1], ["test", 4]] as const) {
+    it(`honours cancellation during the ${kind} polling timer without another GitHub read`, async () => {
+      let sleeps = 0;
+      const r = await run({ deps: {
+        sleep: async () => { sleeps++; },
+        cancelled: async () => sleeps >= tick,
+      } });
+      expect(r.outcome.status).toBe("CANCELLED");
+      expect(sleeps).toBe(tick);
+      expect(r.calls.filter((c) => c.name === "run")).toHaveLength(tick - 1);
+      expect(r.calls.some((c) => c.name === "capture" || c.name === "openPr")).toBe(false);
+      expect(r.reviewed).toBe(0);
+      expect(r.notices.some((n) => n.status === "FAILED" || n.status === "PR_OPENED")).toBe(false);
+    });
+  }
+
+  it("does not persist malformed upstream response content", async () => {
+    const r = await run({ malformedRun: "code" });
+    expect(JSON.stringify(r)).not.toContain("private-response-sentinel");
+  });
+
+  for (const [kind, reads] of [["code", 3], ["test", 6]] as const) {
+    it(`honours cancellation while the completed ${kind} run is being read`, async () => {
+      let count = 0;
+      const r = await run({
+        afterRunRead: () => { count++; },
+        deps: { cancelled: async () => count >= reads },
+      });
+      expect(r.outcome.status).toBe("CANCELLED");
+      expect(count).toBe(reads);
+      expect(r.reviewed).toBe(0);
+      expect(r.calls.some((c) => c.name === "capture" || c.name === "openPr")).toBe(false);
+      if (kind === "code") expect(r.calls.some((c) => c.name === "dispatchTest")).toBe(false);
+    });
+  }
 });
 
 describe("code-change/v1 completion verifier refuses tampered or unconfigured completions", () => {
@@ -299,32 +370,64 @@ describe("code-change/v1 notices", () => {
 });
 
 describe("code-change/v1 worker configuration", () => {
-  const ok = { KJ_CODE_CHANGE_GITHUB_TOKEN: "github_pat_SYNTHETIC_0000000000000000", KJ_CODE_CHANGE_REPOS: `${REPO}`, KJ_CODE_CHANGE_CODER_MODEL: "anthropic/claude-sonnet-test" };
+  const keys = { MISSION_OPENROUTER_API_KEY: "sk-or-v1-SYNTHETIC", MISSION_DEEPSEEK_API_KEY: "sk-SYNTHETIC" };
+  const ok = {
+    ...keys,
+    KJ_CODE_CHANGE_GITHUB_TOKEN: "github_pat_SYNTHETIC_0000000000000000",
+    KJ_CODE_CHANGE_REPOS: `${REPO}`,
+    KJ_CODE_CHANGE_CODER_MODEL: "anthropic/claude-sonnet-test",
+    KJ_CODE_CHANGE_REVIEWER_MODEL: "deepseek-v4-pro",
+  };
 
   it("is off when unset and loads a complete configuration", () => {
-    expect(loadCodeChangeConfig({}, "x-ai/grok-test")).toBeUndefined();
-    expect(loadCodeChangeConfig({ KJ_CODE_CHANGE_REPOS: "" }, "x-ai/grok-test")).toBeUndefined();
-    expect(loadCodeChangeConfig(ok, "x-ai/grok-test")).toEqual({ token: ok.KJ_CODE_CHANGE_GITHUB_TOKEN, allowedRepos: [REPO], coderModel: "anthropic/claude-sonnet-test" });
+    expect(loadCodeChangeConfig(keys)).toBeUndefined();
+    expect(loadCodeChangeConfig({ ...keys, KJ_CODE_CHANGE_REPOS: "" })).toBeUndefined();
+    const config = loadCodeChangeConfig(ok)!;
+    expect({ ...config, reviewer: undefined }).toEqual({
+      token: ok.KJ_CODE_CHANGE_GITHUB_TOKEN, allowedRepos: [REPO], coderModel: "anthropic/claude-sonnet-test",
+      reviewerModel: "deepseek-v4-pro", reviewerProvider: "deepseek", reviewer: undefined,
+    });
+    expect(loadCodeChangeConfig({ ...ok, KJ_CODE_CHANGE_REVIEWER_MODEL: "x-ai/grok-test" })!.reviewerProvider).toBe("openrouter");
+  });
+
+  it("serves its own reviewer, independent of the mission reviewer the brief uses", async () => {
+    const seen: string[] = [];
+    const fetchImpl = (async (_url: unknown, init?: { body?: unknown }) => {
+      seen.push(JSON.parse(String(init?.body)).model);
+      return new Response("{}", { status: 500 });
+    }) as unknown as typeof fetch;
+    const config = loadCodeChangeConfig({ ...ok, MISSION_REVIEWER_MODEL: "anthropic/claude-sonnet-5" }, fetchImpl)!;
+    await config.reviewer.generate(modelRequest).catch(() => undefined);
+    expect(seen).toEqual(["deepseek-v4-pro"]);
   });
 
   it.each([
-    ["half configured", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "" }, "x-ai/grok-test"],
-    ["a bare coder name", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "claude-sonnet-test" }, "x-ai/grok-test"],
-    ["a coder outside the families", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "openai/gpt-test" }, "x-ai/grok-test"],
-    ["a reviewer of the coder's family", ok, "anthropic/claude-opus-test"],
-    ["no reviewer runtime", ok, undefined],
-    ["too many repositories", { ...ok, KJ_CODE_CHANGE_REPOS: "a/a,b/b,c/c,d/d,e/e,f/f" }, "x-ai/grok-test"],
-    ["a malformed repository", { ...ok, KJ_CODE_CHANGE_REPOS: `${REPO},../x` }, "x-ai/grok-test"],
-    ["a malformed token", { ...ok, KJ_CODE_CHANGE_GITHUB_TOKEN: "short token" }, "x-ai/grok-test"],
-  ])("refuses to start with %s", (_label, env, reviewer) => {
-    expect(() => loadCodeChangeConfig(env, reviewer)).toThrow();
+    ["half configured", { ...ok, KJ_CODE_CHANGE_REVIEWER_MODEL: "" }],
+    ["a bare coder name", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "claude-sonnet-test" }],
+    ["a coder outside the families", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "openai/gpt-test" }],
+    ["a non-Claude coder in a mission family", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "x-ai/grok-test" }],
+    ["an empty Anthropic model", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "anthropic/" }],
+    ["a coder model containing shell syntax", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "anthropic/claude-test;echo secret" }],
+    ["a reviewer of the coder's family", { ...ok, KJ_CODE_CHANGE_REVIEWER_MODEL: "anthropic/claude-opus-test" }],
+    ["a reviewer outside the families", { ...ok, KJ_CODE_CHANGE_REVIEWER_MODEL: "openai/gpt-test" }],
+    ["a reviewer whose provider key is not set", { ...ok, MISSION_DEEPSEEK_API_KEY: "" }],
+    ["too many repositories", { ...ok, KJ_CODE_CHANGE_REPOS: "a/a,b/b,c/c,d/d,e/e,f/f" }],
+    ["a malformed repository", { ...ok, KJ_CODE_CHANGE_REPOS: `${REPO},../x` }],
+    ["a malformed token", { ...ok, KJ_CODE_CHANGE_GITHUB_TOKEN: "short token" }],
+  ])("refuses to start with %s", (_label, env) => {
+    expect(() => loadCodeChangeConfig(env)).toThrow();
   });
 
-  it("never echoes the token in its errors", () => {
-    try {
-      loadCodeChangeConfig({ ...ok, KJ_CODE_CHANGE_REPOS: "../x" }, "x-ai/grok-test");
-    } catch (error) {
-      expect(String(error)).not.toContain(ok.KJ_CODE_CHANGE_GITHUB_TOKEN);
+  it("never echoes the token or a key in its errors", () => {
+    for (const env of [{ ...ok, KJ_CODE_CHANGE_REPOS: "../x" }, { ...ok, MISSION_DEEPSEEK_API_KEY: "" }, { ...ok, KJ_CODE_CHANGE_REVIEWER_MODEL: "anthropic/x" }]) {
+      let message = "";
+      try {
+        loadCodeChangeConfig(env);
+      } catch (error) {
+        message = String(error);
+      }
+      expect(message).not.toBe("");
+      for (const secret of [ok.KJ_CODE_CHANGE_GITHUB_TOKEN, keys.MISSION_DEEPSEEK_API_KEY, keys.MISSION_OPENROUTER_API_KEY]) expect(message).not.toContain(secret);
     }
   });
 });

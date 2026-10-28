@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MISSION_RECIPE, parseMissionObjective } from "../packages/contracts/src/index.js";
+import { CODE_CHANGE_RECIPE, MISSION_RECIPE, parseCodeChangeObjective, parseMissionObjective } from "../packages/contracts/src/index.js";
 import {
   DEFAULT_REVIEW_FINDINGS,
   admissionRequest,
@@ -14,6 +14,26 @@ const mission = (text: string) => {
   if (c.kind !== "MISSION") throw new Error(`expected a mission command for ${JSON.stringify(text)}, got ${c.kind}`);
   return c;
 };
+
+describe("Telegram code-change command", () => {
+  it("preserves multiline instructions and maps to the kernel's code-change recipe", () => {
+    const instructions = "Add a slugify helper.\nKeep  repeated spaces in this instruction.";
+    const cmd = mission(`/CHANGE@KernelJsonBot owner/repo ${instructions}`);
+    expect(cmd).toEqual({ kind: "MISSION", command: "CHANGE", repo: "owner/repo", findings: null, instructions });
+    const request = admissionRequest(cmd);
+    expect(request).toEqual({ recipe: CODE_CHANGE_RECIPE, objective: `owner/repo ${instructions}` });
+    expect(parseCodeChangeObjective(request.objective)).toEqual({ repo: "owner/repo", instructions });
+  });
+
+  it("enforces the kernel's instruction bounds independently of the short command limit", () => {
+    for (const n of [10, 2000]) expect(parseCommand(`/change owner/repo ${"x".repeat(n)}`).kind).toBe("MISSION");
+    for (const text of ["/change", "/change owner/repo", "/change owner/repo short", `/change owner/repo ${"x".repeat(2001)}`,
+      "/change ../repo Add the function", "/change https://github.com/o/r Add the function", "/change o/.. Add the function"])
+      expect(parseCommand(text)).toEqual({ kind: "MALFORMED" });
+    expect(parseCommand(`/brief owner/repo ${"x".repeat(220)}`).kind).toBe("MALFORMED");
+    expect(parseCommand(`/remember ${"x".repeat(1001)}`).kind).toBe("MALFORMED");
+  });
+});
 
 describe("KJ-P4A command grammar", () => {
   it("parses exactly the four commands", () => {

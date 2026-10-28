@@ -59,6 +59,7 @@ export interface CodeChangeTaskRequest extends CodeChangeRepoRequest {
 export interface CodeChangeDispatchRequest extends CodeChangeTaskRequest {
   baseSha: string;
   instructions: string;
+  coderModel: string;
 }
 export interface CodeChangeRunRequest extends CodeChangeTaskRequest {
   kind: "code" | "test";
@@ -167,7 +168,8 @@ export function createCapabilityService(config: CapabilityServiceConfig) {
           },
           { maxRetryAttempts: 4, initialRetryInterval: 2_000 },
         ),
-      // code-change/v1. The two dispatches look for the task's run first, so a retried dispatch never starts a second one.
+      // code-change/v1. Reuse a visible task run before dispatch. Ambiguous POST failures are terminal:
+      // GitHub listings may lag, so absence in this lookup alone does not make retrying a write safe.
       codeChangeBase: async (ctx: restate.Context, req: CodeChangeRepoRequest) =>
         codeChange(ctx, "code-change.base", (r) => r.baseCommit({ repo: req.repo })),
       codeChangeDispatch: async (ctx: restate.Context, req: CodeChangeDispatchRequest) =>

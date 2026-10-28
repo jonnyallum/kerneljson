@@ -49,7 +49,7 @@ import {
  */
 export interface CodeChangeGithub {
   base(req: { repo: string }): Promise<{ defaultBranch: string; baseSha: string }>;
-  dispatch(req: { repo: string; taskId: string; baseSha: string; instructions: string }): Promise<unknown>;
+  dispatch(req: { repo: string; taskId: string; baseSha: string; instructions: string; coderModel: string }): Promise<unknown>;
   dispatchTest(req: { repo: string; taskId: string }): Promise<unknown>;
   run(req: { repo: string; taskId: string; kind: "code" | "test" }): Promise<unknown>;
   branchHead(req: { repo: string; taskId: string }): Promise<string | null>;
@@ -86,6 +86,8 @@ export interface CodeChangeDeps {
   allowedRepos: readonly string[];
   notify: (notice: CodeChangeNotice) => Promise<void>;
   polls?: { code: PollPlan; test: PollPlan };
+  /** True once the operator has cancelled the task. Checked at step boundaries and while polling. */
+  cancelled?: () => Promise<boolean>;
 }
 
 /** A terminal error from the capability service carries a code as its message; anything else is generic. */
@@ -126,6 +128,22 @@ export async function runCodeChangeMission(deps: CodeChangeDeps): Promise<Outcom
       }
     });
   };
+  // A cancel is honoured at each boundary before GitHub is asked to do more: a cancelled task dispatches nothing
+  // further, opens no PR and never reports COMPLETED. A coding run already under way finishes on its own branch.
+  const cancel = async (node: PlanStep): Promise<Outcome> => {
+    const outcome = Outcome.parse({
+      taskId: task.id,
+      status: "CANCELLED",
+      acceptanceResults: [],
+      evidenceRefs: [],
+      summary: `Cancelled at a step boundary or during polling: ${node.id}`,
+      completedAt: await deps.now(),
+    });
+    await emit("cancel", "TASK_CANCELLED", "CANCELLED", { outcome, step: step(node, { status: "CANCELLED", input: node.input }) });
+    return outcome;
+  };
+  const cancelledBefore = async (node: PlanStep): Promise<Outcome | null> =>
+    await deps.cancelled?.() ? cancel(node) : null;
   const failWith = async (reason: string, failures: string[]): Promise<Outcome> => {
     const at = await deps.now();
     const outcome = Outcome.parse({
@@ -153,20 +171,24 @@ export async function runCodeChangeMission(deps: CodeChangeDeps): Promise<Outcom
     return failWith(reason, [reason]);
   };
   /** Poll a run until it completes. Every wait is a durable timer; every read a journaled service call. */
-  const awaitRun = async (kind: "code" | "test", plan: PollPlan): Promise<RunFacts | string> => {
+  const awaitRun = async (kind: "code" | "test", plan: PollPlan): Promise<RunFacts | string | null> => {
     for (let i = 0; i < plan.maxPolls; i++) {
       await deps.sleep(plan.intervalMs);
+      if (await deps.cancelled?.()) return null;
       let raw: unknown;
       try {
         raw = await deps.github.run({ repo, taskId: task.id, kind });
       } catch (error) {
         return codeOf(error, "RUN_READ_FAILED");
       }
+      if (await deps.cancelled?.()) return null;
       if (raw === null) {
         if (i + 1 >= plan.appearWithin) return "RUN_NOT_FOUND";
         continue;
       }
-      const run = RunFacts.parse(raw);
+      const parsed = RunFacts.safeParse(raw);
+      if (!parsed.success) return "RUN_INVALID";
+      const run = parsed.data;
       if (run.status === "completed") return run;
     }
     return "RUN_TIMED_OUT";
@@ -193,13 +215,16 @@ export async function runCodeChangeMission(deps: CodeChangeDeps): Promise<Outcom
   await notify("started", { taskId: task.id, status: "STARTED", at: await deps.now(), text: codeChangeText.started(task.id, repo) });
 
   // 2. The coding run, dispatched from the default branch's own workflow file.
+  const cancelledAtCode = await cancelledBefore(codeNode);
+  if (cancelledAtCode) return cancelledAtCode;
   await begin(codeNode);
   try {
-    await deps.github.dispatch({ repo, taskId: task.id, baseSha: base.baseSha, instructions });
+    await deps.github.dispatch({ repo, taskId: task.id, baseSha: base.baseSha, instructions, coderModel: deps.coderModel });
   } catch (error) {
     return abort(codeNode, CODE_CHANGE_SOURCES.code, { error: codeOf(error, "DISPATCH_FAILED") }, `CODE_${codeOf(error, "DISPATCH_FAILED")}`);
   }
   const codeRun = await awaitRun("code", polls.code);
+  if (codeRun === null) return cancel(codeNode);
   if (typeof codeRun === "string") return abort(codeNode, CODE_CHANGE_SOURCES.code, { error: codeRun }, `CODE_${codeRun}`);
   if (codeRun.conclusion !== "success")
     return abort(codeNode, CODE_CHANGE_SOURCES.code, { run: codeRun }, `CODE_RUN_${(codeRun.conclusion ?? "unknown").toUpperCase()}`);
@@ -208,6 +233,8 @@ export async function runCodeChangeMission(deps: CodeChangeDeps): Promise<Outcom
   }));
 
   // 3. The test run on the task branch, then the change captured at exactly the commit it tested.
+  const cancelledAtTest = await cancelledBefore(testNode);
+  if (cancelledAtTest) return cancelledAtTest;
   await begin(testNode);
   let facts: ChangeFacts;
   let factsDigest: string;
@@ -216,6 +243,7 @@ export async function runCodeChangeMission(deps: CodeChangeDeps): Promise<Outcom
     if ((await deps.github.branchHead({ repo, taskId: task.id })) === null) throw new Error("BRANCH_NOT_FOUND");
     await deps.github.dispatchTest({ repo, taskId: task.id });
     const testRun = await awaitRun("test", polls.test);
+    if (testRun === null) return cancel(testNode);
     if (typeof testRun === "string") throw new Error(testRun);
     if (testRun.conclusion !== "success") throw new Error(`TESTS_${(testRun.conclusion ?? "unknown").toUpperCase()}`);
     const captured = await deps.github.capture({
@@ -234,6 +262,8 @@ export async function runCodeChangeMission(deps: CodeChangeDeps): Promise<Outcom
   }));
 
   // 4. The independent review, of exactly that diff.
+  const cancelledAtReview = await cancelledBefore(reviewNode);
+  if (cancelledAtReview) return cancelledAtReview;
   await begin(reviewNode);
   let request: ModelRequest;
   try {
@@ -280,6 +310,8 @@ export async function runCodeChangeMission(deps: CodeChangeDeps): Promise<Outcom
   }
 
   // 6. Only now, the draft PR, for exactly the reconciled head.
+  const cancelledAtPr = await cancelledBefore(prNode);
+  if (cancelledAtPr) return cancelledAtPr;
   await begin(prNode);
   let pr: CodeChangePr;
   try {

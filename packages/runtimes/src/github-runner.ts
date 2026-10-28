@@ -5,6 +5,7 @@ import {
   CODE_CHANGE_TEST_WORKFLOW,
   CODE_CHANGE_WORKFLOW,
   ChangeFacts,
+  CodeChangeCoderModel,
   RepoSlug,
   RunFacts,
   codeChangeBranch,
@@ -12,7 +13,7 @@ import {
   type ChangedFile,
 } from "../../contracts/src/index.js";
 import { capabilityDigest } from "../../capabilities/src/index.js";
-import { GithubReadError, createGithubGet, parseGithub } from "./github-read.js";
+import { GithubReadError, createGithubGet, parseGithub, readBoundedGithubText } from "./github-read.js";
 
 /**
  * Mission #2 - the worker's GitHub client for `code-change/v1`.
@@ -27,7 +28,7 @@ import { GithubReadError, createGithubGet, parseGithub } from "./github-read.js"
  * Reads go through the same bounded GET as the read-only GitHub capabilities. The token travels only in
  * the Authorization header and never appears in a result or an error; errors are classified by status.
  */
-export type GithubRunnerCode = "NOT_ALLOWED" | "HEAD_MOVED" | "NOT_DRAFT" | "BAD_INPUT";
+export type GithubRunnerCode = "NOT_ALLOWED" | "HEAD_MOVED" | "NOT_DRAFT" | "BAD_INPUT" | "WRITE_UNCERTAIN";
 
 export class GithubRunnerError extends Error {
   constructor(readonly code: GithubRunnerCode) {
@@ -140,7 +141,9 @@ export function createGithubRunner(config: GithubRunnerConfig) {
         body: JSON.stringify(body),
       });
     } catch {
-      throw new GithubReadError("NETWORK", true);
+      // The request may have reached GitHub. Its run/PR listing can lag, so a preflight lookup cannot make a
+      // retry safe. Fail terminally and leave the external outcome for inspection instead of writing twice.
+      throw new GithubRunnerError("WRITE_UNCERTAIN");
     }
     if (response.status !== expect) {
       await response.body?.cancel().catch(() => {});
@@ -150,7 +153,7 @@ export function createGithubRunner(config: GithubRunnerConfig) {
       if (status === 404) throw new GithubReadError("NOT_FOUND", false);
       if (status === 301 || status === 302 || status === 307 || status === 308) throw new GithubReadError("RENAMED", false);
       if (status === 401 || status === 403) throw new GithubReadError("AUTH", false);
-      if (status >= 500) throw new GithubReadError("UPSTREAM", true);
+      if (status >= 500) throw new GithubRunnerError("WRITE_UNCERTAIN");
       throw new GithubReadError("MALFORMED", false);
     }
     if (expect === 204) {
@@ -158,8 +161,9 @@ export function createGithubRunner(config: GithubRunnerConfig) {
       return null;
     }
     try {
-      return JSON.parse(await response.text()) as unknown;
-    } catch {
+      return JSON.parse(await readBoundedGithubText(response)) as unknown;
+    } catch (error) {
+      if (error instanceof GithubReadError) throw error;
       throw new GithubReadError("MALFORMED", false);
     }
   }
@@ -214,13 +218,17 @@ export function createGithubRunner(config: GithubRunnerConfig) {
     },
 
     /** Start the coding run from the default branch's own workflow file; the instructions travel as an input. */
-    async dispatchCode(input: { repo: string; taskId: string; baseSha: string; instructions: string }): Promise<void> {
+    async dispatchCode(input: { repo: string; taskId: string; baseSha: string; instructions: string; coderModel: string }): Promise<void> {
       codeChangeBranch(input.taskId);
       if (!/^[0-9a-f]{40}$/.test(input.baseSha)) throw new GithubRunnerError("BAD_INPUT");
+      if (!CodeChangeCoderModel.safeParse(input.coderModel).success) throw new GithubRunnerError("BAD_INPUT");
       if (input.instructions.length < CODE_CHANGE_LIMITS.minInstructionChars || input.instructions.length > CODE_CHANGE_LIMITS.maxInstructionChars)
         throw new GithubRunnerError("BAD_INPUT");
       const ref = await defaultBranch(input.repo);
-      await dispatch(input.repo, CODE_CHANGE_WORKFLOW, ref, { task_id: input.taskId, base_sha: input.baseSha, instructions: input.instructions });
+      await dispatch(input.repo, CODE_CHANGE_WORKFLOW, ref, {
+        task_id: input.taskId, base_sha: input.baseSha, instructions: input.instructions,
+        coder_model: input.coderModel,
+      });
     },
 
     /** Start the test run ON the task branch, so GitHub reports the exact commit it tested. */

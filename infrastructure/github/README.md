@@ -1,7 +1,8 @@
 # code-change/v1 pilot repository setup
 
-These two workflows are templates for the ONE allowlisted pilot repository. Nothing here is installed by
-this PR; installing them is PR C, with Jonny, against a repository he has chosen.
+These two workflows are templates for the ONE allowlisted pilot repository, `jonnyallum/kj-pilot`. Every
+`uses:` is pinned to a full commit (the tests refuse a tag). The installed copies must stay byte-identical to
+these files.
 
 | File | Installed as | Dispatched by the kernel on | Holds |
 |---|---|---|---|
@@ -20,12 +21,20 @@ reconciliation refuses CI paths again).
    be created only by Jonny (restrict creation, bypass for repository admins only).
 3. **Actions, Workflow permissions**: read repository contents by default; do NOT allow GitHub Actions to
    create or approve pull requests.
-4. **Actions variables**: `KJ_CLAUDE_CODE_VERSION` (an exact version), `KJ_CODER_MODEL`,
-   `KJ_TEST_COMMAND` (for example `npm ci && npm test`), optionally `KJ_NODE_VERSION`.
-5. **Actions secret** `KJ_CODER_ANTHROPIC_KEY`: a key from a dedicated Anthropic Console workspace with a
-   monthly spend limit set in the Console. It is the only secret in the repository and is visible only to
-   the `code` job. It has no access to anything but the model.
-6. Before PR C installs the files, pin every `uses:` to a full commit SHA.
+4. **Actions variables**: `KJ_CLAUDE_CODE_VERSION` (an exact version), `KJ_TEST_COMMAND` (for example
+   `npm ci && npm test`), optionally `KJ_NODE_VERSION`. The coder model comes from the kernel's required
+   `coder_model` dispatch input, derived from `KJ_CODE_CHANGE_CODER_MODEL`, so it cannot drift from the worker's
+   recorded setting. The old `KJ_CODER_MODEL` repository variable is ignored. Manual diagnostic dispatches must
+   supply an `anthropic/claude-...` OpenRouter model slug; they still require the dedicated model key to run.
+5. **Actions secret** `KJ_CODER_OPENROUTER_KEY`: a dedicated OpenRouter API key with a credit limit. It is the
+   only secret in the repository and is visible only to the `code` job. Claude Code uses OpenRouter's Anthropic
+   Messages endpoint (`ANTHROPIC_BASE_URL=https://openrouter.ai/api`) with the key in `ANTHROPIC_AUTH_TOKEN` and
+   `ANTHROPIC_API_KEY` explicitly empty. No direct Anthropic account or key is needed. See the
+   [OpenRouter Claude Code integration](https://openrouter.ai/docs/guides/coding-agents/claude-code-integration).
+   Use a Claude model for this pilot; compatibility with other model families is not qualified. OpenRouter
+   recommends the Anthropic first-party provider for Claude Code compatibility. Set this preference in the
+   dedicated OpenRouter account/key routing configuration before the live pilot.
+6. Every `uses:` is pinned to a full commit SHA (done in PR C; re-pin deliberately, never to a tag).
 
 ## The worker's token (kernel side)
 
@@ -43,9 +52,27 @@ is not a production credential for anything else, and the runner workflows never
 
 | Risk | Stopped by |
 |---|---|
-| Change merged or deployed | Contents read on the kernel token, the default-branch ruleset, no merge call in the client |
-| Model edits CI to escalate | `publish` refuses `.github/`; reconciliation refuses CI paths; workflows run from the default branch |
+| Change merged or deployed | Contents read on the kernel token (a merge needs Contents write), no merge call in the client, Actions cannot approve pull requests. No ruleset: GitHub refuses one on a private repository on the free plan |
+| Model edits CI to escalate | `publish` refuses any `.github/` path, including a rename into or out of it; GitHub refuses a `GITHUB_TOKEN` push that creates or changes a workflow; reconciliation refuses CI paths. This matters because `kj-test` runs the workflow file on the task branch, so the branch must never carry its own |
 | Model exfiltrates the key | No Bash or web tools in the `code` job; the key is spend-capped and model-only |
+| Model plants git config that runs code (`core.fsmonitor`, hooks) | `.git` is moved outside the tree before the model runs and restored only if its fingerprint is unchanged and the model created no `.git`; `publish` applies with `git apply`, which refuses `.git/` paths |
+| Repository agent settings start commands with the model key | The CLI loads no user/project/local settings, disables hooks and uses an explicit empty MCP configuration. `--tools` restricts built-ins to Read/Edit/Write/Glob/Grep; `--allowedTools` alone would only control approval prompts. Changes to `.claude/` and `.mcp.json` are refused before publication and by reconciliation |
 | Test pass for a different commit | Test run dispatched on the task branch; kernel requires `head_sha` equal to the proposed head |
-| Overspend | Workspace spend limit, `--max-turns`, job timeouts, one run per task |
+| Overspend | Dedicated OpenRouter key credit limit, `--max-turns`, job timeouts, task-scoped concurrency and no automatic retry after an ambiguous write failure. Dispatch is not an exactly-once API; a worker crash after GitHub accepts a request can still leave an external run to reconcile |
 | Work on another repository | Allowlist in the client (refused before any request) and in reconciliation; token scoped to one repository |
+
+The CLI isolation flags follow the [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference)
+and [hook-disable guidance](https://code.claude.com/docs/en/hooks#disable-or-remove-hooks). The pilot uses a fresh
+GitHub-hosted runner; these flags are not a claim to override administrator-managed hooks on a custom runner.
+
+## Offline CLI qualification
+
+Run `node scripts/check-code-change-cli.mjs /absolute/path/to/claude` with the pinned 2.1.296 executable
+(`claude.exe` on Windows). It uses a temporary profile and repository, an explicit environment allowlist,
+synthetic credentials and a loopback Messages API fixture. It checks the actual requested model, bearer auth,
+available tools, successful streamed response parsing, and absence of repository hook/MCP command execution.
+It leaves synthetic-only diagnostics in its reported temporary directory. No production credentials are loaded
+and no paid model call is needed. This passed on Windows on 28 October 2026; it does not replace the live
+OpenRouter pilot or GitHub Actions qualification on Linux.
+The `code-change-cli` qualification job runs the same offline check on Linux with the pinned executable,
+without access to a model key or production credentials.

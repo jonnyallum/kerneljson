@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MISSION_RECIPE, parseMissionObjective } from "../packages/contracts/src/index.js";
+import { CODE_CHANGE_RECIPE, MISSION_RECIPE, parseMissionObjective } from "../packages/contracts/src/index.js";
 import { capabilityDigest } from "../packages/capabilities/src/index.js";
 import { renderReply } from "../services/kernel/src/channel/telegram/replies.js";
 import { reconcileMission } from "../services/kernel/src/mission/reconcile.js";
@@ -7,6 +7,46 @@ import { analysisJson, makeFacts, reviewJson } from "./support/mission-fixture.j
 import { CHAT, DATE, STATUS, harness, msg, uuidFor } from "./support/telegram-fixture.js";
 
 const TASK = "d10442d5-f208-859d-af74-c4d16a9d379f";
+
+describe("Telegram code-change admission", () => {
+  const instructions = "Add a slugify helper. PRIVATE_INSTRUCTION_SENTINEL";
+  const command = `/change jonnyallum/kj-pilot ${instructions}`;
+
+  it("admits through the existing door once on replay and never echoes instructions", async () => {
+    const h = harness();
+    h.source.updates = [msg(500, command), msg(500, command)];
+    await h.poll();
+    await h.poll();
+    expect(h.door.admitCalls).toEqual([{ updateId: 500, recipe: CODE_CHANGE_RECIPE,
+      objective: `jonnyallum/kj-pilot ${instructions}`, key: "tg:upd:500" }]);
+    expect(h.inbox.rows.get(500)).toMatchObject({ state: "DONE", command: "MISSION", mission: true, disposition: "ADMITTED" });
+    expect(JSON.stringify(h.inbox.rows.get(500))).not.toContain("PRIVATE_INSTRUCTION_SENTINEL");
+    const replies = await h.replies();
+    expect(replies).toHaveLength(1);
+    expect(replies[0]).toContain("draft PR");
+    expect(replies[0]).not.toContain("PRIVATE_INSTRUCTION_SENTINEL");
+  });
+
+  it("shares the daily cap with analysis missions", async () => {
+    const h = harness({ dailyMissionCap: 1 });
+    h.source.updates = [msg(501, "/brief owner/repo"), msg(502, command)];
+    await h.poll();
+    expect(h.door.admitCalls).toHaveLength(1);
+    expect(h.inbox.rows.get(502)?.disposition).toBe("CAP_EXCEEDED");
+  });
+
+  it("refuses another sender and records door rejection without claiming a task started", async () => {
+    const h = harness();
+    h.source.updates = [msg(503, command, { fromId: 999 })];
+    expect((await h.poll()).unauthorised).toBe(1);
+    expect(h.door.admitCalls).toHaveLength(0);
+    h.door.admitResult = { ok: false, reason: "REJECTED" };
+    h.source.updates = [msg(504, command)];
+    expect((await h.poll()).admitted).toBe(0);
+    expect(h.inbox.rows.get(504)?.disposition).toBe("ADMISSION_FAILED");
+    expect((await h.replies())[0]).toContain("door refused");
+  });
+});
 
 describe("KJ-P4A authorised message becomes exactly one admission, through the door", () => {
   it("/review admits exactly one mission task with the mission recipe, and replies once", async () => {

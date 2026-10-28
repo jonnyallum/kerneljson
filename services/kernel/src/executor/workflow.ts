@@ -225,6 +225,7 @@ export function createKernelWorkflow(
             coderModel: wiring.coderModel,
             allowedRepos: wiring.allowedRepos,
             notify: wiring.notify,
+            cancelled: async () => (await ctx.promise<Signal>("decision").peek())?.action === "CANCEL",
           });
         }
         // KJ-P3 repository-analysis mission. Runtimes return text; only this workflow,

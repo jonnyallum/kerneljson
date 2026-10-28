@@ -3,6 +3,23 @@ on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
+  # Exercise the real, pinned coding CLI without any model or production credential.
+  code-change-cli:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Install pinned coding CLI
+        run: |
+          npm install --prefix "$RUNNER_TEMP/kj-cli" --ignore-scripts --no-audit --no-fund @anthropic-ai/claude-code@2.1.296
+          node "$RUNNER_TEMP/kj-cli/node_modules/@anthropic-ai/claude-code/install.cjs"
+      - name: Offline gateway and runner isolation smoke test
+        run: node scripts/check-code-change-cli.mjs "$RUNNER_TEMP/kj-cli/node_modules/@anthropic-ai/claude-code/bin/claude.exe"
   validate:
     runs-on: ubuntu-24.04
     timeout-minutes: 60

@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:http";
 import pg from "pg";
 import { DATABASE, compose, holdRuntime, migrate, until } from "./support/local.js";
 import { buildDoorHandler, loadDoorConfig } from "../apps/gateway/src/main.js";
-import { KernelSubmission, MISSION_RECIPE, TaskEvent, parseMissionObjective } from "../packages/contracts/src/index.js";
+import { CODE_CHANGE_RECIPE, KernelSubmission, MISSION_RECIPE, TaskEvent, parseCodeChangeObjective, parseMissionObjective } from "../packages/contracts/src/index.js";
 import { compileIntent } from "../services/kernel/src/compiler/index.js";
 import { Ledger } from "../services/kernel/src/ledger.js";
 import { deliverRows } from "../services/kernel/src/alerting/delivery-worker.js";
@@ -133,6 +133,35 @@ async function materialise(taskId: string): Promise<void> {
 }
 
 describe("KJ-P4A a Telegram message becomes exactly one IntentEnvelope, through the real door", () => {
+  it("persists a coding mission through the real door and recovers it after losing the adapter state", async () => {
+    const h = build();
+    const id = uid();
+    const instructions = "Add a slugify helper.\nKeep private-instruction-sentinel out of replies.";
+    const text = `/change jonnyallum/kj-pilot ${instructions}`;
+    h.source.updates = [msg(id, text)];
+    const before = await ledgerCounts();
+    expect(await h.poll()).toMatchObject({ result: "OK", admitted: 1 });
+    const row = (await inboxRow(id))!;
+    expect(row).toMatchObject({ disposition: "ADMITTED", mission: true, text_sha256: createHash("sha256").update(text).digest("hex") });
+    const [adm] = await q<{ payload: unknown }>("select payload from kernel_private.task_admissions where task_id = $1", [row.task_id]);
+    const submission = KernelSubmission.parse(adm!.payload);
+    expect(submission.recipe).toBe(CODE_CHANGE_RECIPE);
+    expect(submission.intent.principal.id).toBe(principalId);
+    expect(submission.intent.tenant.id).toBe(tenantId);
+    expect(parseCodeChangeObjective(submission.intent.objective)).toEqual({ repo: "jonnyallum/kj-pilot", instructions });
+    expect(h.notifier.sent.at(-1)!.message).toContain("draft PR");
+    expect(h.notifier.sent.at(-1)!.message).not.toContain("private-instruction-sentinel");
+
+    await pool.query("truncate kernel_private.telegram_inbox");
+    await pool.query("update kernel_private.telegram_operator_state set next_offset = 0");
+    expect(await h.poll()).toMatchObject({ admitted: 1 });
+    expect((await inboxRow(id))!.task_id).toBe(row.task_id);
+    const after = await ledgerCounts();
+    expect(after["kernel_private.task_admissions"]! - before["kernel_private.task_admissions"]!).toBe(1);
+    expect(after["kernel_private.execution_bindings"]! - before["kernel_private.execution_bindings"]!).toBe(1);
+    for (const table of ["public.tasks", "public.evidence", "public.outcomes"]) expect(after[table]).toBe(before[table]);
+  });
+
   it("persists the channel as source, the bearer's principal and tenant, and a deterministic trace", async () => {
     const h = build();
     const id = uid();
