@@ -19,7 +19,7 @@ SC="python -I C:\Users\jonny\Desktop\new-system\AgentHub\scripts\secretctl.py"
 | What | State |
 |---|---|
 | `jonnyallum/kj-pilot` | private, `node --test`, no deploy path |
-| Workflows | `kj-test.yml` on `main` is byte-identical to `infrastructure/github/`. `kj-code-change.yml` is one change behind (the git-metadata guard): jonnyallum/kj-pilot#1 brings it level (sha256 `6b7aad16b8ed…`). `code-change-config-check.ts` re-proves both in the window and fails until kj-pilot#1 is merged |
+| Workflows | `kj-test.yml` on `main` is byte-identical to `infrastructure/github/`. `kj-code-change.yml` needs the git-metadata guard and create-only task-branch publication: jonnyallum/kj-pilot#1 brings it level. `code-change-config-check.ts` re-proves both in the window and fails until kj-pilot#1 is merged |
 | Actions policy | GitHub-owned actions only, SHA pinning required, workflow token read-only by default, Actions cannot approve pull requests |
 | Variables | `KJ_CLAUDE_CODE_VERSION=2.1.296`, `KJ_CODER_MODEL=claude-sonnet-5-5`, `KJ_TEST_COMMAND=npm test`, `KJ_NODE_VERSION=22` |
 | Dry runs, no key | `kj-test` on `main` refused at "Validate the ref". `kj-code-change` validated, checked out, set up Node 22, installed and version-checked Claude Code, then stopped at "Make the change" with `is_error: true`, cost 0 |

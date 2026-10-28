@@ -46,6 +46,10 @@ run listings may not show it yet. Inspect the task's Actions run and `kj/<task>`
 one failed) before starting another mission. A FAILED task does not prove that no external workflow or PR exists.
 Successful PR responses use the same 2 MB response limit as GitHub reads.
 
+Publishing uses an explicit empty expected ref (`--force-with-lease=refs/heads/kj/<task>:`), so GitHub must still
+have no task branch when accepting the push. Despite the option's name, it cannot replace or advance an existing
+ref. This closes the fast-forward case that a plain push would allow if a duplicate run encounters a task branch.
+
 ## Worker configuration (all four or none)
 
 | Variable | Value |

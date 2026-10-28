@@ -4,7 +4,7 @@
 # Two jobs on two fresh runners, so no single job holds both the model key and a write token:
 #   code    - contents: read, the capped model key, no push credential. Produces a patch artifact.
 #   publish - contents: write, no secrets at all. Applies the patch to a clean checkout of base_sha and
-#             pushes it to kj/<task_id>, which must not already exist. It cannot merge and never force-pushes.
+#             pushes it to kj/<task_id>, which must not already exist. It cannot merge or rewrite an existing ref.
 #
 # Inputs reach shell steps only through env, never by ${{ }} interpolation inside a script.
 name: kj-code-change
@@ -177,6 +177,7 @@ jobs:
           git apply --index "$RUNNER_TEMP/kj/change.patch"
           git -c user.name="kerneljson[bot]" -c user.email="kerneljson-bot@users.noreply.github.com" \
             commit --quiet -m "kj: code change for task $TASK_ID"
-          # A plain push creates the branch; it fails rather than overwrite one that already exists.
-          git push origin "HEAD:refs/heads/kj/$TASK_ID"
+          # An empty expected value requires the remote ref to be absent. This cannot advance or replace an
+          # existing branch, even when a duplicate run produced a fast-forward of it.
+          git push --force-with-lease="refs/heads/kj/$TASK_ID:" origin "HEAD:refs/heads/kj/$TASK_ID"
           git rev-parse HEAD

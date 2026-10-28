@@ -260,10 +260,10 @@ describe("code-change/v1 workflow templates", () => {
     }
   });
 
-  it("publishes only to the task branch, refuses CI paths, never forces or merges", () => {
-    expect(publishJob).toContain('git push origin "HEAD:refs/heads/kj/$TASK_ID"');
+  it("publishes only to an absent task branch, refuses CI paths, never overwrites or merges", () => {
+    expect(publishJob).toContain('git push --force-with-lease="refs/heads/kj/$TASK_ID:" origin "HEAD:refs/heads/kj/$TASK_ID"');
     expect(publishJob).toContain("\\.github/");
-    expect(code).not.toMatch(/--force|push -f|\+HEAD|gh pr merge|\/merge/);
+    expect(code).not.toMatch(/--force(?:\s|$)|push -f|\+HEAD|gh pr merge|\/merge/);
     expect(test).toContain('[[ "$REF" == "refs/heads/kj/$TASK_ID" ]]');
   });
 });
@@ -284,6 +284,7 @@ describe("code-change/v1 coding job keeps git metadata away from the model", () 
   const wf = readFileSync("infrastructure/github/kj-code-change.yml", "utf8");
   const hide = stepScript(wf, "Hide git metadata from the model");
   const capture = stepScript(wf, "Capture the patch");
+  const publish = stepScript(wf, "Apply and push the task branch");
   const git = (cwd: string, ...args: string[]) => {
     const r = spawnSync("git", ["-c", "core.autocrlf=false", ...args], { cwd, encoding: "utf8" });
     if (r.status !== 0) throw new Error(r.stderr);
@@ -302,6 +303,32 @@ describe("code-change/v1 coding job keeps git metadata away from the model", () 
     return { repo, env: { ...process.env, RUNNER_TEMP: temp, BASE_SHA: git(repo, "rev-parse", "HEAD"), GIT_CONFIG_PARAMETERS: "'core.autocrlf'='false'" } };
   }
   const sh = (script: string, cwd: string, env: NodeJS.ProcessEnv) => spawnSync("bash", ["-c", script], { cwd, env, encoding: "utf8" });
+
+  for (const existing of [false, true]) {
+    it(existing ? "refuses to fast-forward an existing task branch" : "publishes a new task branch", () => {
+      const { repo, env } = checkout();
+      const remote = join(env["RUNNER_TEMP"]!, "remote.git");
+      git(repo, "init", "--bare", "-q", remote);
+      git(repo, "remote", "add", "origin", remote);
+      if (existing) git(repo, "push", "origin", `HEAD:refs/heads/${BRANCH}`);
+      mkdirSync(join(env["RUNNER_TEMP"]!, "kj"));
+      writeFileSync(join(repo, "src", "a.js"), "export const a = 2;\n");
+      writeFileSync(join(env["RUNNER_TEMP"]!, "kj", "change.patch"), git(repo, "diff", "--binary") + "\n");
+      writeFileSync(join(repo, "src", "a.js"), "export const a = 1;\n");
+      git(repo, "update-index", "--refresh");
+      const result = sh(publish, repo, { ...env, TASK_ID: TASK });
+      const remoteHead = git(repo, "ls-remote", "origin", `refs/heads/${BRANCH}`).split(/\s/)[0];
+      if (existing) {
+        expect(result.status, result.stdout + result.stderr).not.toBe(0);
+        expect(result.stderr).toContain("stale info");
+        expect(remoteHead).toBe(env["BASE_SHA"]);
+      } else {
+        expect(result.status, result.stdout + result.stderr).toBe(0);
+        expect(remoteHead).toBe(git(repo, "rev-parse", "HEAD"));
+        expect(remoteHead).not.toBe(env["BASE_SHA"]);
+      }
+    });
+  }
 
   it("an honest change: the model sees no .git, and the patch is captured against the base", () => {
     const { repo, env } = checkout();
