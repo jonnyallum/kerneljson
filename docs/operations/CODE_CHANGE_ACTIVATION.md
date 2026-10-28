@@ -28,10 +28,16 @@ SC="python -I C:\Users\jonny\Desktop\new-system\AgentHub\scripts\secretctl.py"
 
 | # | Do | Expect |
 |---|---|---|
-| J1 | Anthropic Console: a new workspace (for example `kj-pilot-coder`) with a monthly spend limit, and an API key in it. Then in a terminal: `gh secret set KJ_CODER_ANTHROPIC_KEY -R jonnyallum/kj-pilot` and paste the key at the hidden prompt | `gh secret list -R jonnyallum/kj-pilot` lists `KJ_CODER_ANTHROPIC_KEY`. The key exists only in that workspace and that secret |
+| J1 | OpenRouter: create a dedicated `kj-pilot-coder` API key with a credit limit. Prefer the Anthropic first-party provider for Claude Code compatibility. Then in a terminal: `gh secret set KJ_CODER_OPENROUTER_KEY -R jonnyallum/kj-pilot` and paste the key at the hidden prompt | `gh secret list -R jonnyallum/kj-pilot` lists `KJ_CODER_OPENROUTER_KEY`. No direct Anthropic key is required; the GitHub token remains separate |
 | J2 | GitHub, fine-grained token: owner `jonnyallum`, only `kj-pilot`; Actions read and write, Contents read, Pull requests read and write (Metadata read is automatic); 90-day expiry. Save it in jVault as `kerneljson/KJ_CODE_CHANGE_GITHUB_TOKEN` | `$SC check kerneljson/KJ_CODE_CHANGE_GITHUB_TOKEN` reports length 93 |
 | J3 | Main branch protection for `kj-pilot` (see "Rulesets" below) | Decided and recorded here |
 | J4 | Merge jonnyallum/kj-pilot#1. Then merge #62, then #63 (its base becomes `main`), then this PR. #61 and #65 are already in `main`, so the release keeps the Grok Bot MCP code | `gh run list --commit $SHA` shows `validate` succeeded |
+
+For the OpenRouter pilot, set `KJ_CODE_CHANGE_CODER_MODEL=anthropic/claude-sonnet-5.5` in the staged worker env.
+This exact slug was present in OpenRouter's public model catalogue on 28 October 2026; recheck it before the
+window. The direct-Anthropic name `claude-sonnet-5-5` is not the OpenRouter slug. The dispatch carries the full
+slug unchanged. Claude remains the coding model, billed through OpenRouter; the independent reviewer remains a
+different model family. No live OpenRouter coding run has yet been qualified.
 
 ## Rulesets
 

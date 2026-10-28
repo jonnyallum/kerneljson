@@ -25,10 +25,15 @@ reconciliation refuses CI paths again).
    `npm ci && npm test`), optionally `KJ_NODE_VERSION`. The coder model comes from the kernel's required
    `coder_model` dispatch input, derived from `KJ_CODE_CHANGE_CODER_MODEL`, so it cannot drift from the worker's
    recorded setting. The old `KJ_CODER_MODEL` repository variable is ignored. Manual diagnostic dispatches must
-   supply a bare `claude-...` model id; they still require the dedicated model key to run.
-5. **Actions secret** `KJ_CODER_ANTHROPIC_KEY`: a key from a dedicated Anthropic Console workspace with a
-   monthly spend limit set in the Console. It is the only secret in the repository and is visible only to
-   the `code` job. It has no access to anything but the model.
+   supply an `anthropic/claude-...` OpenRouter model slug; they still require the dedicated model key to run.
+5. **Actions secret** `KJ_CODER_OPENROUTER_KEY`: a dedicated OpenRouter API key with a credit limit. It is the
+   only secret in the repository and is visible only to the `code` job. Claude Code uses OpenRouter's Anthropic
+   Messages endpoint (`ANTHROPIC_BASE_URL=https://openrouter.ai/api`) with the key in `ANTHROPIC_AUTH_TOKEN` and
+   `ANTHROPIC_API_KEY` explicitly empty. No direct Anthropic account or key is needed. See the
+   [OpenRouter Claude Code integration](https://openrouter.ai/docs/guides/coding-agents/claude-code-integration).
+   Use a Claude model for this pilot; compatibility with other model families is not qualified. OpenRouter
+   recommends the Anthropic first-party provider for Claude Code compatibility. Set this preference in the
+   dedicated OpenRouter account/key routing configuration before the live pilot.
 6. Every `uses:` is pinned to a full commit SHA (done in PR C; re-pin deliberately, never to a tag).
 
 ## The worker's token (kernel side)
@@ -52,5 +57,5 @@ is not a production credential for anything else, and the runner workflows never
 | Model exfiltrates the key | No Bash or web tools in the `code` job; the key is spend-capped and model-only |
 | Model plants git config that runs code (`core.fsmonitor`, hooks) | `.git` is moved outside the tree before the model runs and restored only if its fingerprint is unchanged and the model created no `.git`; `publish` applies with `git apply`, which refuses `.git/` paths |
 | Test pass for a different commit | Test run dispatched on the task branch; kernel requires `head_sha` equal to the proposed head |
-| Overspend | Workspace spend limit, `--max-turns`, job timeouts, task-scoped concurrency and no automatic retry after an ambiguous write failure. Dispatch is not an exactly-once API; a worker crash after GitHub accepts a request can still leave an external run to reconcile |
+| Overspend | Dedicated OpenRouter key credit limit, `--max-turns`, job timeouts, task-scoped concurrency and no automatic retry after an ambiguous write failure. Dispatch is not an exactly-once API; a worker crash after GitHub accepts a request can still leave an external run to reconcile |
 | Work on another repository | Allowlist in the client (refused before any request) and in reconciliation; token scoped to one repository |

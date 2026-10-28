@@ -78,7 +78,7 @@ describe("code-change/v1 GitHub runner client", () => {
     });
     await gh.dispatchCode({ repo: REPO, taskId: TASK, baseSha: BASE, instructions: "Add a greet() helper.", coderModel: "anthropic/claude-sonnet-test" });
     const post = calls.find((c) => c.method === "POST")!;
-    expect(JSON.parse(post.init.body as string)).toEqual({ ref: "main", inputs: { task_id: TASK, base_sha: BASE, instructions: "Add a greet() helper.", coder_model: "claude-sonnet-test" } });
+    expect(JSON.parse(post.init.body as string)).toEqual({ ref: "main", inputs: { task_id: TASK, base_sha: BASE, instructions: "Add a greet() helper.", coder_model: "anthropic/claude-sonnet-test" } });
     expect(post.init.redirect).toBe("manual");
     expect((post.init.headers as Record<string, string>).authorization).toBe(`Bearer ${TOKEN}`);
     for (const c of calls) expect(c.url + String(c.init.body ?? "")).not.toContain(TOKEN);

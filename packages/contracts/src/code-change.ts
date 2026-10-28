@@ -22,7 +22,7 @@ export const CODE_CHANGE_CRITERION =
 export const CODE_CHANGE_WORKFLOW = "kj-code-change.yml" as const;
 export const CODE_CHANGE_TEST_WORKFLOW = "kj-test.yml" as const;
 
-/** This runner uses Claude Code with an Anthropic key; its model is supplied by the worker on dispatch. */
+/** This runner uses Claude Code through OpenRouter; its model is supplied by the worker on dispatch. */
 export const CodeChangeCoderModel = z.string().max(200).regex(/^anthropic\/claude-[a-z0-9][a-z0-9.-]*$/);
 
 /** Every run the kernel starts carries this exact title, so a run is found by task, never by timing. */

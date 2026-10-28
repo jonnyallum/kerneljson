@@ -239,7 +239,7 @@ describe("code-change/v1 workflow templates", () => {
     expect(publishJob).toMatch(/permissions:\n\s+contents: write\n/);
     expect(publishJob).not.toMatch(/secrets\./);
     expect(test).not.toMatch(/secrets\./);
-    expect(code.match(/secrets\.[A-Z_]+/g)).toEqual(["secrets.KJ_CODER_ANTHROPIC_KEY"]);
+    expect(code.match(/secrets\.[A-Z_]+/g)).toEqual(["secrets.KJ_CODER_OPENROUTER_KEY"]);
     expect(codeJob).toContain("persist-credentials: false");
     expect(test).toContain("persist-credentials: false");
   });
@@ -255,6 +255,14 @@ describe("code-change/v1 workflow templates", () => {
     expect(codeJob).toContain("CODER_MODEL: ${{ inputs.coder_model }}");
     expect(codeJob).not.toContain("vars.KJ_CODER_MODEL");
     expect(codeJob).toContain('--model "$CODER_MODEL"');
+  });
+
+  it("routes Claude Code through OpenRouter with bearer auth and disables direct Anthropic credentials", () => {
+    expect(codeJob).toContain("ANTHROPIC_BASE_URL: https://openrouter.ai/api");
+    expect(codeJob).toContain("ANTHROPIC_AUTH_TOKEN: ${{ secrets.KJ_CODER_OPENROUTER_KEY }}");
+    expect(codeJob).toContain('ANTHROPIC_API_KEY: ""');
+    expect(codeJob).not.toContain("KJ_CODER_ANTHROPIC_KEY");
+    expect(publishJob).not.toMatch(/ANTHROPIC_AUTH_TOKEN|KJ_CODER_OPENROUTER_KEY/);
   });
 
   it("pins every action to a full commit, not a movable tag", () => {
@@ -292,6 +300,7 @@ describe("code-change/v1 coding job keeps git metadata away from the model", () 
   const capture = stepScript(wf, "Capture the patch");
   const publish = stepScript(wf, "Apply and push the task branch");
   const validate = stepScript(wf, "Validate inputs");
+  const makeChange = stepScript(wf, "Make the change");
   const git = (cwd: string, ...args: string[]) => {
     const r = spawnSync("git", ["-c", "core.autocrlf=false", ...args], { cwd, encoding: "utf8" });
     if (r.status !== 0) throw new Error(r.stderr);
@@ -311,12 +320,22 @@ describe("code-change/v1 coding job keeps git metadata away from the model", () 
   }
   const sh = (script: string, cwd: string, env: NodeJS.ProcessEnv) => spawnSync("bash", ["-c", script], { cwd, env, encoding: "utf8" });
 
+  it.each(["", "sk-ant-synthetic-private-sentinel"])("refuses a missing or wrong-provider key before preparing a model call", (token) => {
+    const { repo, env } = checkout();
+    const result = sh(makeChange, repo, { ...env, ANTHROPIC_AUTH_TOKEN: token });
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain("KJ_CODER_OPENROUTER_KEY is missing or malformed");
+    expect(existsSync(join(env["RUNNER_TEMP"]!, "prompt.txt"))).toBe(false);
+    if (token) expect(result.stdout + result.stderr).not.toContain(token);
+  });
+
   it.each([
-    ["claude-sonnet-test", true],
-    ["claude-" + "x".repeat(183), true],
-    ["claude-" + "x".repeat(184), false],
+    ["anthropic/claude-sonnet-test", true],
+    ["anthropic/claude-" + "x".repeat(183), true],
+    ["anthropic/claude-" + "x".repeat(184), false],
     ["", false],
     ["grok-test", false],
+    ["claude-sonnet-test", false],
     ["claude-test; echo untrusted", false],
   ])("validates the dispatched coder model %s before installing or running it", (coderModel, accepted) => {
     const { repo, env } = checkout();

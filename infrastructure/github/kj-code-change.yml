@@ -26,7 +26,7 @@ on:
         required: true
         type: string
       coder_model:
-        description: Claude model id selected by the kernel
+        description: OpenRouter Claude model slug selected by the kernel
         required: true
         type: string
 
@@ -58,7 +58,7 @@ jobs:
           n=${#INSTRUCTIONS}
           (( n >= 10 && n <= 2000 )) || { echo "instructions out of bounds"; exit 1; }
           [[ "$CLAUDE_CODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "KJ_CLAUDE_CODE_VERSION must be an exact version"; exit 1; }
-          [[ "$CODER_MODEL" =~ ^claude-[a-z0-9][a-z0-9.-]*$ && ${#CODER_MODEL} -le 190 ]] || { echo "bad coder_model"; exit 1; }
+          [[ "$CODER_MODEL" =~ ^anthropic/claude-[a-z0-9][a-z0-9.-]*$ && ${#CODER_MODEL} -le 200 ]] || { echo "bad coder_model"; exit 1; }
 
       - name: Check out the base commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -91,12 +91,16 @@ jobs:
           claude --version | grep -F "$CLAUDE_CODE_VERSION"
 
       # File tools only: no Bash, no web fetch, so the agent cannot run code or reach the network itself.
-      # The key belongs to a workspace with its own monthly spend limit; --max-turns bounds a single run.
+      # A dedicated OpenRouter key has its own credit limit; --max-turns bounds a single run.
+      # Claude Code speaks the Anthropic Messages protocol to OpenRouter. No direct Anthropic key is used.
       - name: Make the change
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.KJ_CODER_ANTHROPIC_KEY }}
+          ANTHROPIC_BASE_URL: https://openrouter.ai/api
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.KJ_CODER_OPENROUTER_KEY }}
+          ANTHROPIC_API_KEY: ""
         run: |
           set -euo pipefail
+          [[ "$ANTHROPIC_AUTH_TOKEN" == sk-or-* ]] || { echo "KJ_CODER_OPENROUTER_KEY is missing or malformed"; exit 1; }
           {
             echo "You are making one bounded change to this repository for KernelJSON task $TASK_ID."
             echo "Change only what the instructions below ask for. Do not edit CI, infrastructure, secrets,"

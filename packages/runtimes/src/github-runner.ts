@@ -227,7 +227,7 @@ export function createGithubRunner(config: GithubRunnerConfig) {
       const ref = await defaultBranch(input.repo);
       await dispatch(input.repo, CODE_CHANGE_WORKFLOW, ref, {
         task_id: input.taskId, base_sha: input.baseSha, instructions: input.instructions,
-        coder_model: input.coderModel.slice("anthropic/".length),
+        coder_model: input.coderModel,
       });
     },
 
