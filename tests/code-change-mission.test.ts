@@ -72,6 +72,8 @@ interface GithubOpts {
   codeConclusion?: string;
   testConclusion?: string;
   runNeverAppears?: boolean;
+  malformedRun?: "code" | "test";
+  afterRunRead?: () => void;
   files?: ChangeFacts["files"];
   prError?: string;
 }
@@ -85,6 +87,9 @@ function fakeGithub(taskId: string, o: GithubOpts = {}) {
     dispatch: async (req) => (calls.push({ name: "dispatch", req }), { dispatched: true }),
     dispatchTest: async (req) => (calls.push({ name: "dispatchTest", req }), { dispatched: true }),
     run: async (req) => {
+      calls.push({ name: "run", req });
+      o.afterRunRead?.();
+      if (o.malformedRun === req.kind) return { status: "completed", untrusted: "private-response-sentinel" };
       const n = polls[req.kind]!++;
       if (o.runNeverAppears || n === 0) return null;
       if (n === 1) return runFor(taskId, req.kind, { status: "in_progress", conclusion: null });
@@ -137,7 +142,7 @@ interface Run {
 const verify = (r: Pick<Run, "task" | "plan" | "steps" | "evidence" | "outcome">, config: { allowedRepos: string[] } | null = CONFIG, evidence = r.evidence, outcome = r.outcome) =>
   verifyPlanCompletion({ ...r.task, status: "VERIFYING" }, outcome, r.plan, [...r.steps.values()], evidence.map((record) => ({ record, step: null })), undefined, config ?? undefined);
 
-async function run(o: GithubOpts & { deps?: Partial<CodeChangeDeps>; objective?: string } = {}): Promise<Run> {
+async function run(o: GithubOpts & { deps?: Partial<CodeChangeDeps>; objective?: string; cancelAfterStep?: string } = {}): Promise<Run> {
   const { task, plan } = newTask(o.objective);
   const steps = new Map<string, TaskStep>();
   const evidence: Evidence[] = [];
@@ -167,6 +172,7 @@ async function run(o: GithubOpts & { deps?: Partial<CodeChangeDeps>; objective?:
     reviewer: { generate: (req) => (reviewed++, reviewer.generate(req)) },
     coderModel: "anthropic/claude-sonnet-test", allowedRepos: [REPO],
     notify: async (n) => { notices.push(n); },
+    cancelled: async () => plan.steps.some((s) => s.operation === o.cancelAfterStep && steps.get(s.id)?.status === "COMPLETED"),
     ...o.deps,
   });
   return { outcome, task, plan, steps, evidence, notices, calls, reviewed, verifyError };
@@ -209,6 +215,8 @@ describe("code-change/v1 end to end against an in-memory ledger and the real com
     ["the repository is not allowlisted", { objective: `jonnyallum/kerneljson ${INSTRUCTIONS}` }, "REPOSITORY_NOT_ALLOWLISTED", { dispatched: false, started: false }],
     ["the coding run fails", { codeConclusion: "failure" }, "CODE_RUN_FAILURE", { reviewed: false }],
     ["the coding run never appears", { runNeverAppears: true }, "CODE_RUN_NOT_FOUND", { reviewed: false }],
+    ["the coding run response is malformed", { malformedRun: "code" }, "CODE_RUN_INVALID", { reviewed: false }],
+    ["the test run response is malformed", { malformedRun: "test" }, "RUN_INVALID", { reviewed: false }],
     ["the tests fail", { testConclusion: "failure" }, "TESTS_FAILURE", { reviewed: false }],
     ["the reviewer rejects", { deps: { reviewer: fakeReviewer({ verdict: "reject" }) } }, "review_verdict_acceptable", {}],
     ["the reviewer raises a blocking concern", { deps: { reviewer: fakeReviewer({ concerns: ["Breaks squash() for tabs."] }) } }, "review_verdict_acceptable", {}],
@@ -239,21 +247,22 @@ describe("code-change/v1 end to end against an in-memory ledger and the real com
     expect(r.outcome.summary).toContain("refused: dependencies");
   });
 
-  // [cancel after this many boundary checks, the step it stops before, GitHub calls that must not happen]
-  const cancels: Array<[number, string, string[]]> = [
-    [0, "code", ["dispatch", "dispatchTest", "capture", "openPr"]],
-    [1, "test", ["dispatchTest", "capture", "openPr"]],
-    [2, "pr", ["openPr"]],
+  // [cancel after this completed operation, the next step, GitHub calls that must not happen]
+  const cancels: Array<[string, string, string[]]> = [
+    ["GITHUB_EVIDENCE", "code", ["dispatch", "dispatchTest", "capture", "openPr"]],
+    ["CODE_RUN", "test", ["dispatchTest", "capture", "openPr"]],
+    ["CODE_TEST", "review", ["openPr"]],
+    ["RECONCILE", "pr", ["openPr"]],
   ];
   for (const [after, before, never] of cancels) {
     it(`a cancel before the ${before} step ends CANCELLED and asks GitHub for nothing more`, async () => {
-      let checks = 0;
-      const r = await run({ deps: { cancelled: async () => checks++ >= after } });
+      const r = await run({ cancelAfterStep: after });
       expect(r.outcome.status).toBe("CANCELLED");
       expect(r.outcome.summary).toContain("Cancelled at a step boundary");
       for (const name of never) expect(r.calls.some((c) => c.name === name), name).toBe(false);
       expect(r.notices.map((n) => n.status)).not.toContain("PR_OPENED");
       expect([...r.steps.values()].at(-1)!.status).toBe("CANCELLED");
+      if (before !== "pr") expect(r.reviewed).toBe(0);
     });
   }
 
@@ -261,8 +270,44 @@ describe("code-change/v1 end to end against an in-memory ledger and the real com
     let checks = 0;
     const r = await run({ deps: { cancelled: async () => (checks++, false) } });
     expect(r.outcome.status).toBe("COMPLETED");
-    expect(checks).toBe(3);
+    expect(checks).toBeGreaterThan(3);
   });
+
+  for (const [kind, tick] of [["code", 1], ["test", 4]] as const) {
+    it(`honours cancellation during the ${kind} polling timer without another GitHub read`, async () => {
+      let sleeps = 0;
+      const r = await run({ deps: {
+        sleep: async () => { sleeps++; },
+        cancelled: async () => sleeps >= tick,
+      } });
+      expect(r.outcome.status).toBe("CANCELLED");
+      expect(sleeps).toBe(tick);
+      expect(r.calls.filter((c) => c.name === "run")).toHaveLength(tick - 1);
+      expect(r.calls.some((c) => c.name === "capture" || c.name === "openPr")).toBe(false);
+      expect(r.reviewed).toBe(0);
+      expect(r.notices.some((n) => n.status === "FAILED" || n.status === "PR_OPENED")).toBe(false);
+    });
+  }
+
+  it("does not persist malformed upstream response content", async () => {
+    const r = await run({ malformedRun: "code" });
+    expect(JSON.stringify(r)).not.toContain("private-response-sentinel");
+  });
+
+  for (const [kind, reads] of [["code", 3], ["test", 6]] as const) {
+    it(`honours cancellation while the completed ${kind} run is being read`, async () => {
+      let count = 0;
+      const r = await run({
+        afterRunRead: () => { count++; },
+        deps: { cancelled: async () => count >= reads },
+      });
+      expect(r.outcome.status).toBe("CANCELLED");
+      expect(count).toBe(reads);
+      expect(r.reviewed).toBe(0);
+      expect(r.calls.some((c) => c.name === "capture" || c.name === "openPr")).toBe(false);
+      if (kind === "code") expect(r.calls.some((c) => c.name === "dispatchTest")).toBe(false);
+    });
+  }
 });
 
 describe("code-change/v1 completion verifier refuses tampered or unconfigured completions", () => {

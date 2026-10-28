@@ -9,7 +9,7 @@ import {
 } from "../../../../../packages/contracts/src/index.js";
 
 /**
- * KJ-P4A - the Telegram command grammar. Pure: text in, one of four commands or MALFORMED out.
+ * KJ-P4A - the Telegram command grammar. Pure: text in, a supported command or MALFORMED out.
  *
  * This is a COMMAND channel, not a conversation. Nothing here interprets free text, calls a
  * model, or decides anything: it maps a fixed, small vocabulary onto requests the existing
@@ -70,7 +70,7 @@ export function parseCommand(text: string): Command {
     }
   }
 
-  // KJ-P5: `/remember` is the one command that carries free text, and it carries it only as DATA for the memory
+  // KJ-P5: `/remember` carries free text only as DATA for the memory
   // policy to decide on. It is never interpreted here.
   if (name === "remember") {
     const body = trimmed.slice(head.length).trim();

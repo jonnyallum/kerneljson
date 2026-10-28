@@ -34,9 +34,11 @@ the mission can execute; admission is not a claim that a draft PR has been creat
 | 5 | `RECONCILE` | `kerneljson:code-change-reconcile/v1` |
 | 6 | `OPEN_DRAFT_PR` | `kerneljson:code-change-pr/v1` |
 
-A cancel (`kj_cancel_task`) is honoured before the coding run is dispatched, before the test run and before the
-PR is opened: the task ends CANCELLED and GitHub is asked for nothing more. A coding run already under way finishes
-on its own `kj/<task>` branch, and no PR is opened for it.
+A cancel (`kj_cancel_task`) is checked before dispatching either workflow, before the paid review, before opening
+the PR, and after each polling timer and run read. The task ends CANCELLED without further GitHub requests or a
+review call. An already running GitHub workflow finishes on its own `kj/<task>` branch; cancellation does not stop
+that external workflow. Polling normally observes a cancel within 30 seconds plus any in-flight service call.
+Malformed run responses end the mission FAILED with a bounded error code, without persisting their raw content.
 
 ## Worker configuration (all four or none)
 
