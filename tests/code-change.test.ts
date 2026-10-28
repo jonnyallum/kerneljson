@@ -126,7 +126,7 @@ describe("code-change/v1 reconciliation", () => {
     ["change_fully_listed", "file without patch", () => input((f) => { f.files[0]!.patchSha256 = null; })],
     ["change_within_size", "too many files", () => input((f) => { f.files = Array.from({ length: 21 }, (_, i) => ({ ...f.files[0]!, path: `src/f${i}.ts`, additions: 1, deletions: 0 })); })],
     ["change_within_size", "too many lines", () => input((f) => { f.files[0]!.additions = 801; })],
-    ["change_within_size", "patch too large", () => input((f) => { f.patchBytes = 200_001; })],
+    ["change_within_size", "patch too large", () => input((f) => { f.patchBytes = 100_001; })],
     ["change_avoids_refused_paths", "CI path", () => input((f) => { f.files[0]!.path = ".github/workflows/x.yml"; })],
     ["change_avoids_refused_paths", "rename away from a manifest", () => input((f) => { f.files[0] = { ...f.files[0]!, status: "renamed", previousPath: "package.json", path: "src/pkg.json" }; })],
     ["change_deletes_no_files", "deletion", () => input((f) => { f.files[0] = { ...f.files[0]!, status: "removed", blobSha: null, additions: 0, deletions: 4 }; })],

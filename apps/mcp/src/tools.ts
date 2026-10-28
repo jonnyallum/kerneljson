@@ -1,19 +1,23 @@
 import { z } from "zod";
 import {
   BRIEF_RECIPE,
+  CODE_CHANGE_LIMITS,
+  CODE_CHANGE_RECIPE,
   Id,
   MISSION_HARD_MAX_FINDINGS,
   MISSION_RECIPE,
   RepoSlug,
+  parseCodeChangeObjective,
   parseMissionObjective,
 } from "../../../packages/contracts/src/index.js";
 import type { DoorResult, OperatorDoor } from "./door.js";
 
 /**
  * ADR-0025 phase 1 tool set. This list IS the safety boundary: a chat model that has been steered by
- * something it read can, at worst, read the ledger, start a read-only analysis or a brief, or cancel a
- * task. Deliberately absent: approve, signal, identity-change/v1, the test and canary recipes, and
- * anything that is not a door route.
+ * something it read can, at worst, read the ledger, start a read-only analysis or a brief, ask for a code
+ * change that ends as a DRAFT pull request on an allowlisted repository, or cancel a task. Deliberately
+ * absent: approve, signal, identity-change/v1, the test and canary recipes, merging, and anything that is
+ * not a door route.
  */
 
 /** The caller's own idempotency token for an act tool, namespaced so it can never equal another channel's key. */
@@ -138,6 +142,31 @@ export const TOOLS: readonly ToolDefinition[] = [
     run: (door, args) => door.admit({ recipe: MISSION_RECIPE, objective: analysisObjective(args), idempotencyKey: idempotencyKeyFor(args.request_id) }),
   }),
   define({
+    name: "kj_run_code_change",
+    description:
+      "Ask KernelJSON to make a bounded code change to an allowlisted GitHub repository. A GitHub Actions runner writes it on a kj/<task> branch, tests run on that commit, a different model reviews the diff, and if KernelJSON's checks accept it a DRAFT pull request is opened for Jonny to review. It never merges or deploys; CI, infrastructure, secrets, billing and dependency files are refused. Jonny gets Telegram messages when it starts, fails or opens the PR. Returns the task id to follow with kj_get_task.",
+    input: z
+      .strictObject({
+        request_id: RequestId,
+        repo: RepoSlug.describe("owner/name of an allowlisted repository, for example jonnyallum/kj-pilot"),
+        instructions: z
+          .string()
+          .trim()
+          .min(CODE_CHANGE_LIMITS.minInstructionChars)
+          .max(CODE_CHANGE_LIMITS.maxInstructionChars)
+          .describe("The change to make, in plain words. Small and specific works best: one behaviour, with its tests."),
+      })
+      .superRefine((a, ctx) => {
+        try {
+          parseCodeChangeObjective(codeChangeObjective(a));
+        } catch (error) {
+          ctx.addIssue({ code: "custom", message: error instanceof Error ? error.message : "Invalid code-change request" });
+        }
+      }),
+    annotations: { title: "Run a code change (draft PR)", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    run: (door, args) => door.admit({ recipe: CODE_CHANGE_RECIPE, objective: codeChangeObjective(args), idempotencyKey: idempotencyKeyFor(args.request_id) }),
+  }),
+  define({
     name: "kj_cancel_task",
     description: "Ask KernelJSON to cancel a task started from ChatGPT that has not finished. Tasks started elsewhere (the scheduled brief, Telegram) cannot be cancelled from here. The kernel decides whether it can; cancelling never undoes work already done.",
     input: TaskRef,
@@ -149,6 +178,11 @@ export const TOOLS: readonly ToolDefinition[] = [
 /** In the grammar the door and the kernel enforce: `owner/repo [findings=N] [question]`. */
 export function analysisObjective(a: { repo: string; findings?: number | undefined; question?: string | undefined }): string {
   return [a.repo, a.findings === undefined ? null : `findings=${a.findings}`, a.question ?? null].filter((p) => p !== null).join(" ");
+}
+
+/** In the grammar the kernel enforces: `owner/repo instructions`. */
+export function codeChangeObjective(a: { repo: string; instructions: string }): string {
+  return `${a.repo} ${a.instructions.trim()}`;
 }
 
 export function toolList(): Array<{ name: string; title: string; description: string; inputSchema: unknown; annotations: ToolAnnotations }> {

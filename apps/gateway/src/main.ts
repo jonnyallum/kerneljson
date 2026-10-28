@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createHash, timingSafeEqual } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import pg from "pg";
-import { BRIEF_RECIPE, MISSION_RECIPE, TenantContext } from "../../../packages/contracts/src/index.js";
+import { BRIEF_RECIPE, CODE_CHANGE_RECIPE, MISSION_RECIPE, TenantContext } from "../../../packages/contracts/src/index.js";
 import {
   createGateway,
   createRestateDispatch,
@@ -201,7 +201,7 @@ function loadMcpIdentity(
 }
 
 /** What the MCP principal may start and control at the door. Reads are governed by membership alone. */
-export const MCP_RECIPES: readonly string[] = [BRIEF_RECIPE, MISSION_RECIPE];
+export const MCP_RECIPES: readonly string[] = [BRIEF_RECIPE, MISSION_RECIPE, CODE_CHANGE_RECIPE];
 export const MCP_CONTROLS: readonly string[] = ["cancel"];
 
 /**
