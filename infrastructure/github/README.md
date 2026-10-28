@@ -21,9 +21,11 @@ reconciliation refuses CI paths again).
    be created only by Jonny (restrict creation, bypass for repository admins only).
 3. **Actions, Workflow permissions**: read repository contents by default; do NOT allow GitHub Actions to
    create or approve pull requests.
-4. **Actions variables**: `KJ_CLAUDE_CODE_VERSION` (an exact version), `KJ_CODER_MODEL` (a bare Anthropic
-   model id; the worker's `KJ_CODE_CHANGE_CODER_MODEL` is the same id with `anthropic/` in front),
-   `KJ_TEST_COMMAND` (for example `npm ci && npm test`), optionally `KJ_NODE_VERSION`.
+4. **Actions variables**: `KJ_CLAUDE_CODE_VERSION` (an exact version), `KJ_TEST_COMMAND` (for example
+   `npm ci && npm test`), optionally `KJ_NODE_VERSION`. The coder model comes from the kernel's required
+   `coder_model` dispatch input, derived from `KJ_CODE_CHANGE_CODER_MODEL`, so it cannot drift from the worker's
+   recorded setting. The old `KJ_CODER_MODEL` repository variable is ignored. Manual diagnostic dispatches must
+   supply a bare `claude-...` model id; they still require the dedicated model key to run.
 5. **Actions secret** `KJ_CODER_ANTHROPIC_KEY`: a key from a dedicated Anthropic Console workspace with a
    monthly spend limit set in the Console. It is the only secret in the repository and is visible only to
    the `code` job. It has no access to anything but the model.

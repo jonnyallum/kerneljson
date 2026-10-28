@@ -200,7 +200,7 @@ describe("code-change/v1 end to end against an in-memory ledger and the real com
       "kerneljson:runtime/reviewer", "kerneljson:code-change-reconcile/v1", "kerneljson:code-change-pr/v1",
     ]);
     expect([...r.steps.values()].map((s) => s.status)).toEqual(Array(6).fill("COMPLETED"));
-    expect(r.calls.find((c) => c.name === "dispatch")!.req).toEqual({ repo: REPO, taskId: r.task.id, baseSha: BASE, instructions: INSTRUCTIONS });
+    expect(r.calls.find((c) => c.name === "dispatch")!.req).toEqual({ repo: REPO, taskId: r.task.id, baseSha: BASE, instructions: INSTRUCTIONS, coderModel: "anthropic/claude-sonnet-test" });
     const pr = r.calls.find((c) => c.name === "openPr")!.req as { expectedHeadSha: string; title: string; body: string };
     expect(pr.expectedHeadSha).toBe(HEAD);
     expect(pr.title).toBe(`kj: ${INSTRUCTIONS}`);
@@ -405,6 +405,9 @@ describe("code-change/v1 worker configuration", () => {
     ["half configured", { ...ok, KJ_CODE_CHANGE_REVIEWER_MODEL: "" }],
     ["a bare coder name", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "claude-sonnet-test" }],
     ["a coder outside the families", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "openai/gpt-test" }],
+    ["a non-Claude coder in a mission family", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "x-ai/grok-test" }],
+    ["an empty Anthropic model", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "anthropic/" }],
+    ["a coder model containing shell syntax", { ...ok, KJ_CODE_CHANGE_CODER_MODEL: "anthropic/claude-test;echo secret" }],
     ["a reviewer of the coder's family", { ...ok, KJ_CODE_CHANGE_REVIEWER_MODEL: "anthropic/claude-opus-test" }],
     ["a reviewer outside the families", { ...ok, KJ_CODE_CHANGE_REVIEWER_MODEL: "openai/gpt-test" }],
     ["a reviewer whose provider key is not set", { ...ok, MISSION_DEEPSEEK_API_KEY: "" }],

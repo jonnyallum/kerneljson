@@ -251,6 +251,12 @@ describe("code-change/v1 workflow templates", () => {
     expect(codeJob).toMatch(/timeout-minutes: \d+/);
   });
 
+  it("selects the coder from the kernel dispatch rather than a mutable repository variable", () => {
+    expect(codeJob).toContain("CODER_MODEL: ${{ inputs.coder_model }}");
+    expect(codeJob).not.toContain("vars.KJ_CODER_MODEL");
+    expect(codeJob).toContain('--model "$CODER_MODEL"');
+  });
+
   it("pins every action to a full commit, not a movable tag", () => {
     const unpinned = (wf: string) => [...wf.matchAll(/^\s*(?:- )?uses:\s*(\S+)/gm)].map((m) => m[1]!).filter((u) => !/^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/.test(u));
     expect(unpinned("steps:\n  - uses: actions/checkout@v4\n  - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020\n")).toEqual(["actions/checkout@v4"]);
@@ -285,6 +291,7 @@ describe("code-change/v1 coding job keeps git metadata away from the model", () 
   const hide = stepScript(wf, "Hide git metadata from the model");
   const capture = stepScript(wf, "Capture the patch");
   const publish = stepScript(wf, "Apply and push the task branch");
+  const validate = stepScript(wf, "Validate inputs");
   const git = (cwd: string, ...args: string[]) => {
     const r = spawnSync("git", ["-c", "core.autocrlf=false", ...args], { cwd, encoding: "utf8" });
     if (r.status !== 0) throw new Error(r.stderr);
@@ -303,6 +310,22 @@ describe("code-change/v1 coding job keeps git metadata away from the model", () 
     return { repo, env: { ...process.env, RUNNER_TEMP: temp, BASE_SHA: git(repo, "rev-parse", "HEAD"), GIT_CONFIG_PARAMETERS: "'core.autocrlf'='false'" } };
   }
   const sh = (script: string, cwd: string, env: NodeJS.ProcessEnv) => spawnSync("bash", ["-c", script], { cwd, env, encoding: "utf8" });
+
+  it.each([
+    ["claude-sonnet-test", true],
+    ["claude-" + "x".repeat(183), true],
+    ["claude-" + "x".repeat(184), false],
+    ["", false],
+    ["grok-test", false],
+    ["claude-test; echo untrusted", false],
+  ])("validates the dispatched coder model %s before installing or running it", (coderModel, accepted) => {
+    const { repo, env } = checkout();
+    const result = sh(validate, repo, {
+      ...env, TASK_ID: TASK, INSTRUCTIONS: "Add a small tested helper.", CLAUDE_CODE_VERSION: "1.2.3", CODER_MODEL: coderModel,
+    });
+    expect(result.status === 0, result.stdout + result.stderr).toBe(accepted);
+    if (!accepted) expect(result.stdout).toContain("bad coder_model");
+  });
 
   for (const existing of [false, true]) {
     it(existing ? "refuses to fast-forward an existing task branch" : "publishes a new task branch", () => {

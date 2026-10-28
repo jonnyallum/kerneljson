@@ -25,6 +25,10 @@ on:
         description: The bounded change to make
         required: true
         type: string
+      coder_model:
+        description: Claude model id selected by the kernel
+        required: true
+        type: string
 
 permissions: {}
 
@@ -43,7 +47,7 @@ jobs:
       BASE_SHA: ${{ inputs.base_sha }}
       INSTRUCTIONS: ${{ inputs.instructions }}
       CLAUDE_CODE_VERSION: ${{ vars.KJ_CLAUDE_CODE_VERSION }}
-      CODER_MODEL: ${{ vars.KJ_CODER_MODEL }}
+      CODER_MODEL: ${{ inputs.coder_model }}
       MAX_TURNS: "30"
     steps:
       - name: Validate inputs
@@ -54,7 +58,7 @@ jobs:
           n=${#INSTRUCTIONS}
           (( n >= 10 && n <= 2000 )) || { echo "instructions out of bounds"; exit 1; }
           [[ "$CLAUDE_CODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "KJ_CLAUDE_CODE_VERSION must be an exact version"; exit 1; }
-          [[ -n "$CODER_MODEL" ]] || { echo "KJ_CODER_MODEL is not set"; exit 1; }
+          [[ "$CODER_MODEL" =~ ^claude-[a-z0-9][a-z0-9.-]*$ && ${#CODER_MODEL} -le 190 ]] || { echo "bad coder_model"; exit 1; }
 
       - name: Check out the base commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

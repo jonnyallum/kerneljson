@@ -59,6 +59,7 @@ export interface CodeChangeTaskRequest extends CodeChangeRepoRequest {
 export interface CodeChangeDispatchRequest extends CodeChangeTaskRequest {
   baseSha: string;
   instructions: string;
+  coderModel: string;
 }
 export interface CodeChangeRunRequest extends CodeChangeTaskRequest {
   kind: "code" | "test";

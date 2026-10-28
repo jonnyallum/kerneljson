@@ -76,9 +76,9 @@ describe("code-change/v1 GitHub runner client", () => {
       [`GET ${R}`]: json({ full_name: REPO, default_branch: "main" }),
       [`POST ${R}/actions/workflows/kj-code-change.yml/dispatches`]: empty(204),
     });
-    await gh.dispatchCode({ repo: REPO, taskId: TASK, baseSha: BASE, instructions: "Add a greet() helper." });
+    await gh.dispatchCode({ repo: REPO, taskId: TASK, baseSha: BASE, instructions: "Add a greet() helper.", coderModel: "anthropic/claude-sonnet-test" });
     const post = calls.find((c) => c.method === "POST")!;
-    expect(JSON.parse(post.init.body as string)).toEqual({ ref: "main", inputs: { task_id: TASK, base_sha: BASE, instructions: "Add a greet() helper." } });
+    expect(JSON.parse(post.init.body as string)).toEqual({ ref: "main", inputs: { task_id: TASK, base_sha: BASE, instructions: "Add a greet() helper.", coder_model: "claude-sonnet-test" } });
     expect(post.init.redirect).toBe("manual");
     expect((post.init.headers as Record<string, string>).authorization).toBe(`Bearer ${TOKEN}`);
     for (const c of calls) expect(c.url + String(c.init.body ?? "")).not.toContain(TOKEN);
@@ -87,13 +87,21 @@ describe("code-change/v1 GitHub runner client", () => {
   it("refuses bad dispatch input without a request", async () => {
     const { gh, calls } = runner({});
     for (const p of [
-      gh.dispatchCode({ repo: REPO, taskId: TASK, baseSha: "main", instructions: "Add a greet() helper." }),
-      gh.dispatchCode({ repo: REPO, taskId: TASK, baseSha: BASE, instructions: "short" }),
-      gh.dispatchCode({ repo: REPO, taskId: "../main", baseSha: BASE, instructions: "Add a greet() helper." }),
+      gh.dispatchCode({ repo: REPO, taskId: TASK, baseSha: "main", instructions: "Add a greet() helper.", coderModel: "anthropic/claude-sonnet-test" }),
+      gh.dispatchCode({ repo: REPO, taskId: TASK, baseSha: BASE, instructions: "short", coderModel: "anthropic/claude-sonnet-test" }),
+      gh.dispatchCode({ repo: REPO, taskId: "../main", baseSha: BASE, instructions: "Add a greet() helper.", coderModel: "anthropic/claude-sonnet-test" }),
     ])
       await expect(p).rejects.toThrow();
     expect(calls).toHaveLength(0);
   });
+
+  it.each(["x-ai/grok-test", "anthropic/", "anthropic/claude-sonnet;echo secret", "claude-sonnet-test", "anthropic/claude-" + "x".repeat(200)])(
+    "refuses unsupported coder model %s before any request", async (coderModel) => {
+      const { gh, calls } = runner({});
+      await expect(gh.dispatchCode({ repo: REPO, taskId: TASK, baseSha: BASE, instructions: "Add a greet() helper.", coderModel })).rejects.toMatchObject({ code: "BAD_INPUT" });
+      expect(calls).toHaveLength(0);
+    },
+  );
 
   it("dispatches the test run on the task branch", async () => {
     const { gh, calls } = runner({ [`POST ${R}/actions/workflows/kj-test.yml/dispatches`]: empty(204) });

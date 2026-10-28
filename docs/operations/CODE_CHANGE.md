@@ -56,7 +56,7 @@ ref. This closes the fast-forward case that a plain push would allow if a duplic
 |---|---|
 | `KJ_CODE_CHANGE_GITHUB_TOKEN` | fine-grained token, pilot repository only: Actions read/write, Contents read, Pull requests read/write. jVault `kerneljson/KJ_CODE_CHANGE_GITHUB_TOKEN` |
 | `KJ_CODE_CHANGE_REPOS` | `jonnyallum/kj-pilot` |
-| `KJ_CODE_CHANGE_CODER_MODEL` | the runner's model, vendor-qualified: `anthropic/<id>` where `<id>` is the pilot repository's `KJ_CODER_MODEL` variable |
+| `KJ_CODE_CHANGE_CODER_MODEL` | the runner's model, vendor-qualified: `anthropic/claude-<id>`. Sent as the workflow's `coder_model` input (without the vendor prefix); the same configured value is recorded in base evidence |
 | `KJ_CODE_CHANGE_REVIEWER_MODEL` | the diff reviewer, a different family from the coder, for example `deepseek-v4-pro` (DeepSeek direct) or `x-ai/...` (OpenRouter) |
 
 The reviewer is its own setting, not `MISSION_REVIEWER_MODEL`: the brief's reviewer is an Anthropic model, the

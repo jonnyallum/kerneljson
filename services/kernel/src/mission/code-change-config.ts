@@ -1,5 +1,5 @@
 import {
-  MISSION_RUNTIME_FAMILIES,
+  CodeChangeCoderModel,
   RepoSlug,
   modelFamily,
 } from "../../../../packages/contracts/src/index.js";
@@ -31,8 +31,6 @@ export interface CodeChangeConfig {
   reviewer: ModelPort;
 }
 
-const FAMILIES = MISSION_RUNTIME_FAMILIES as readonly string[];
-
 export function loadCodeChangeConfig(env: NodeJS.ProcessEnv, fetchImpl?: typeof fetch): CodeChangeConfig | undefined {
   // Literal names on purpose: the compose/inventory guard finds every env read by scanning for them.
   const token = env["KJ_CODE_CHANGE_GITHUB_TOKEN"] || undefined;
@@ -49,8 +47,8 @@ export function loadCodeChangeConfig(env: NodeJS.ProcessEnv, fetchImpl?: typeof 
   const allowedRepos = repos.split(",").map((r) => r.trim()).filter(Boolean);
   if (allowedRepos.length === 0 || allowedRepos.length > 5 || allowedRepos.some((r) => !RepoSlug.safeParse(r).success))
     throw new Error("KJ_CODE_CHANGE_REPOS must list 1 to 5 owner/repo names - refusing to start");
-  if (!coderModel.includes("/") || !FAMILIES.includes(modelFamily(coderModel)))
-    throw new Error(`KJ_CODE_CHANGE_CODER_MODEL must be a vendor/model name from one of: ${FAMILIES.join(", ")}`);
+  if (!CodeChangeCoderModel.safeParse(coderModel).success)
+    throw new Error("KJ_CODE_CHANGE_CODER_MODEL must be an anthropic/claude- model id for the Claude Code runner");
   if (modelFamily(reviewerModel) === modelFamily(coderModel))
     throw new Error("KJ_CODE_CHANGE_REVIEWER_MODEL must be a different model family from KJ_CODE_CHANGE_CODER_MODEL");
   const { port, provider } = createMissionPort(env, "KJ_CODE_CHANGE_REVIEWER_MODEL", reviewerModel, fetchImpl);

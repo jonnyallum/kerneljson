@@ -49,7 +49,7 @@ import {
  */
 export interface CodeChangeGithub {
   base(req: { repo: string }): Promise<{ defaultBranch: string; baseSha: string }>;
-  dispatch(req: { repo: string; taskId: string; baseSha: string; instructions: string }): Promise<unknown>;
+  dispatch(req: { repo: string; taskId: string; baseSha: string; instructions: string; coderModel: string }): Promise<unknown>;
   dispatchTest(req: { repo: string; taskId: string }): Promise<unknown>;
   run(req: { repo: string; taskId: string; kind: "code" | "test" }): Promise<unknown>;
   branchHead(req: { repo: string; taskId: string }): Promise<string | null>;
@@ -219,7 +219,7 @@ export async function runCodeChangeMission(deps: CodeChangeDeps): Promise<Outcom
   if (cancelledAtCode) return cancelledAtCode;
   await begin(codeNode);
   try {
-    await deps.github.dispatch({ repo, taskId: task.id, baseSha: base.baseSha, instructions });
+    await deps.github.dispatch({ repo, taskId: task.id, baseSha: base.baseSha, instructions, coderModel: deps.coderModel });
   } catch (error) {
     return abort(codeNode, CODE_CHANGE_SOURCES.code, { error: codeOf(error, "DISPATCH_FAILED") }, `CODE_${codeOf(error, "DISPATCH_FAILED")}`);
   }

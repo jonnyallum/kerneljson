@@ -5,6 +5,7 @@ import {
   CODE_CHANGE_TEST_WORKFLOW,
   CODE_CHANGE_WORKFLOW,
   ChangeFacts,
+  CodeChangeCoderModel,
   RepoSlug,
   RunFacts,
   codeChangeBranch,
@@ -217,13 +218,17 @@ export function createGithubRunner(config: GithubRunnerConfig) {
     },
 
     /** Start the coding run from the default branch's own workflow file; the instructions travel as an input. */
-    async dispatchCode(input: { repo: string; taskId: string; baseSha: string; instructions: string }): Promise<void> {
+    async dispatchCode(input: { repo: string; taskId: string; baseSha: string; instructions: string; coderModel: string }): Promise<void> {
       codeChangeBranch(input.taskId);
       if (!/^[0-9a-f]{40}$/.test(input.baseSha)) throw new GithubRunnerError("BAD_INPUT");
+      if (!CodeChangeCoderModel.safeParse(input.coderModel).success) throw new GithubRunnerError("BAD_INPUT");
       if (input.instructions.length < CODE_CHANGE_LIMITS.minInstructionChars || input.instructions.length > CODE_CHANGE_LIMITS.maxInstructionChars)
         throw new GithubRunnerError("BAD_INPUT");
       const ref = await defaultBranch(input.repo);
-      await dispatch(input.repo, CODE_CHANGE_WORKFLOW, ref, { task_id: input.taskId, base_sha: input.baseSha, instructions: input.instructions });
+      await dispatch(input.repo, CODE_CHANGE_WORKFLOW, ref, {
+        task_id: input.taskId, base_sha: input.baseSha, instructions: input.instructions,
+        coder_model: input.coderModel.slice("anthropic/".length),
+      });
     },
 
     /** Start the test run ON the task branch, so GitHub reports the exact commit it tested. */
