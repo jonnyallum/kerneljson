@@ -4,7 +4,7 @@ Status: built (PR A core, PR B wiring, PR C activation prep), not deployed. Acti
 
 ## What it does
 
-Jonny asks, from ChatGPT (`kj_run_code_change`), for a bounded change to one allowlisted repository. KernelJSON:
+Jonny asks, from ChatGPT (`kj_run_code_change`) or Telegram (`/change owner/repo <instructions>`), for a bounded change to one allowlisted repository. KernelJSON:
 
 1. reads the default branch head of the repository (the base) and tells Jonny it has started;
 2. dispatches `kj-code-change.yml` in that repository: Claude Code makes the change with file tools only, and a
@@ -18,6 +18,12 @@ Completion is re-verified by the ledger from persisted evidence, against the wor
 failure ends the task FAILED and Telegram says why. Nothing merges or deploys: the merge is Jonny's, in GitHub.
 
 ## Plan and evidence
+
+Telegram accepts 10 to 2000 characters of instructions, including newlines. `/change` goes through the same
+authenticated admission door and update-derived idempotency key as `/brief` and `/review`, and shares their daily
+mission cap. The inbox records it as a mission and stores a digest of the command. The reply names the task and
+repository without echoing the instructions. Worker configuration and repository allowlisting still decide whether
+the mission can execute; admission is not a claim that a draft PR has been created.
 
 | Step | Operation | Evidence source |
 |---|---|---|

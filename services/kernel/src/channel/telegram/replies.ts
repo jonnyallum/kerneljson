@@ -15,7 +15,7 @@ export type ReplyInput =
   | { kind: "USAGE" }
   | { kind: "RATE_LIMITED"; perMinute: number }
   | { kind: "CAP_EXCEEDED"; used: number; cap: number }
-  | { kind: "ADMITTED"; command: "BRIEF" | "REVIEW"; repo: string; findings: number | null; taskId: string; used: number; cap: number }
+  | { kind: "ADMITTED"; command: "BRIEF" | "REVIEW" | "CHANGE"; repo: string; findings: number | null; taskId: string; used: number; cap: number }
   | { kind: "ADMISSION_FAILED"; reason: "UNAVAILABLE" | "REJECTED" | "CONFLICT" }
   | { kind: "STATUS"; status: SystemStatus; missionsToday: number; cap: number; asOf: string }
   | { kind: "TASK"; view: TaskView }
@@ -55,6 +55,7 @@ export const USAGE_LINES = [
   "/status",
   "/brief owner/repo [findings=N]",
   "/review owner/repo [findings=N]",
+  "/change owner/repo <instructions>",
   "/task <task id>",
   "/remember <text>",
   "/memories",
@@ -96,6 +97,13 @@ export function renderReply(input: ReplyInput): ReplyText {
         "Nothing was started. /status and /task still work.",
       ]);
     case "ADMITTED": {
+      if (input.command === "CHANGE") return mint([
+        `Code-change request admitted for ${q(input.repo, REPO)}.`,
+        `Task ${q(input.taskId, UUID)}`,
+        `Missions today: ${n(input.used)} of ${n(input.cap)}.`,
+        "If the checks pass, a draft PR will be opened for your review.",
+        "Check progress with /task <id>. A notice arrives when it finishes.",
+      ]);
       const what = input.command === "REVIEW" ? "review" : "brief";
       const count = input.findings === null ? (input.command === "REVIEW" ? "3 findings (default)" : "default contract") : `exactly ${n(input.findings)} findings`;
       return mint([

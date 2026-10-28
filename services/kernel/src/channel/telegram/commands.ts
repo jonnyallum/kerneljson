@@ -1,9 +1,11 @@
 import {
+  CODE_CHANGE_RECIPE,
   Id,
   MISSION_HARD_MAX_FINDINGS,
   MISSION_RECIPE,
   RepoSlug,
   parseMissionObjective,
+  parseCodeChangeObjective,
 } from "../../../../../packages/contracts/src/index.js";
 
 /**
@@ -17,6 +19,7 @@ import {
  *   /status
  *   /brief  owner/repo [findings=N]     repository brief (architecture summary), optional exact count
  *   /review owner/repo [findings=N]     N highest-value improvements (default 3), every finding cited
+ *   /change owner/repo <instructions>  bounded code-change mission, ending in a draft PR
  *   /task <task id>
  *   /remember <text>    KJ-P5: submit an explicit memory instruction (a candidate the kernel decides on)
  *   /memories           KJ-P5: list current memories
@@ -26,6 +29,7 @@ import {
 export type Command =
   | { kind: "STATUS" }
   | { kind: "MISSION"; command: "BRIEF" | "REVIEW"; repo: string; findings: number | null }
+  | { kind: "MISSION"; command: "CHANGE"; repo: string; findings: null; instructions: string }
   | { kind: "TASK"; taskId: string }
   | { kind: "REMEMBER"; text: string }
   | { kind: "MEMORIES" }
@@ -50,10 +54,21 @@ function parseFindings(token: string): number | null {
 
 export function parseCommand(text: string): Command {
   const trimmed = text.trim();
-  if (trimmed.length === 0 || trimmed.length > MAX_COMMAND_CHARS + MAX_REMEMBER_CHARS || !trimmed.startsWith("/")) return MALFORMED;
+  if (trimmed.length === 0 || trimmed.length > 4096 || !trimmed.startsWith("/")) return MALFORMED;
   const [head, ...args] = trimmed.split(/\s+/) as [string, ...string[]];
   // `/status@KernelJsonBot` is how Telegram addresses a bot in a group; accept and strip it.
   const name = head.slice(1).split("@")[0]!.toLowerCase();
+
+  // Preserve the instruction text, including newlines; the kernel's grammar owns its bounds.
+  // This remains a MISSION in the inbox and shares its cap and replay identity.
+  if (name === "change") {
+    try {
+      const { repo, instructions } = parseCodeChangeObjective(trimmed.slice(head.length));
+      return { kind: "MISSION", command: "CHANGE", repo, instructions, findings: null };
+    } catch {
+      return MALFORMED;
+    }
+  }
 
   // KJ-P5: `/remember` is the one command that carries free text, and it carries it only as DATA for the memory
   // policy to decide on. It is never interpreted here.
@@ -110,6 +125,7 @@ export function parseCommand(text: string): Command {
 
 /** The mission objective for a mission command, in the grammar the door and the kernel enforce. */
 export function missionObjective(cmd: Extract<Command, { kind: "MISSION" }>): string {
+  if (cmd.command === "CHANGE") return `${cmd.repo} ${cmd.instructions}`;
   if (cmd.command === "BRIEF") {
     // No question: the mission's own default (architecture, components, risks, gaps) applies.
     return cmd.findings === null ? cmd.repo : `${cmd.repo} findings=${cmd.findings}`;
@@ -121,7 +137,7 @@ export function missionObjective(cmd: Extract<Command, { kind: "MISSION" }>): st
   );
 }
 
-/** What is sent to the door. The recipe is the existing mission recipe: no new recipe, no new authority. */
-export function admissionRequest(cmd: Extract<Command, { kind: "MISSION" }>): { recipe: typeof MISSION_RECIPE; objective: string } {
-  return { recipe: MISSION_RECIPE, objective: missionObjective(cmd) };
+/** The existing door remains responsible for recipe admission and deployment policy. */
+export function admissionRequest(cmd: Extract<Command, { kind: "MISSION" }>): { recipe: typeof MISSION_RECIPE | typeof CODE_CHANGE_RECIPE; objective: string } {
+  return { recipe: cmd.command === "CHANGE" ? CODE_CHANGE_RECIPE : MISSION_RECIPE, objective: missionObjective(cmd) };
 }

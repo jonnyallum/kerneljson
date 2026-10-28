@@ -136,6 +136,7 @@ describe("code-change/v1 reconciliation", () => {
     ["code_run_bound_to_task", "other workflow", () => input((f) => { f.codeRun.workflowPath = ".github/workflows/ci.yml"; })],
     ["code_run_bound_to_task", "push event", () => input((f) => { f.codeRun.event = "push"; })],
     ["code_run_bound_to_task", "run from the task branch", () => input((f) => { f.codeRun.headBranch = BRANCH; })],
+    ["code_run_bound_to_task", "default branch advanced before dispatch", () => input((f) => { f.codeRun.headSha = HEAD; })],
     ["code_run_bound_to_task", "another task's run", () => input((f) => { f.codeRun.displayTitle = "kj:99999999-2222-4333-8444-555555555555 code"; })],
     ["code_run_bound_to_task", "coding run failed", () => input((f) => { f.codeRun.conclusion = "failure"; })],
     ["test_run_bound_to_head", "tested another commit", () => input((f) => { f.testRun.headSha = BASE; })],
