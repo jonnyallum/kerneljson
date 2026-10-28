@@ -64,3 +64,13 @@ is not a production credential for anything else, and the runner workflows never
 The CLI isolation flags follow the [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference)
 and [hook-disable guidance](https://code.claude.com/docs/en/hooks#disable-or-remove-hooks). The pilot uses a fresh
 GitHub-hosted runner; these flags are not a claim to override administrator-managed hooks on a custom runner.
+
+## Offline CLI qualification
+
+Run `node scripts/check-code-change-cli.mjs /absolute/path/to/claude` with the pinned 2.1.296 executable
+(`claude.exe` on Windows). It uses a temporary profile and repository, an explicit environment allowlist,
+synthetic credentials and a loopback Messages API fixture. It checks the actual requested model, bearer auth,
+available tools, successful streamed response parsing, and absence of repository hook/MCP command execution.
+It leaves synthetic-only diagnostics in its reported temporary directory. No production credentials are loaded
+and no paid model call is needed. This passed on Windows on 28 October 2026; it does not replace the live
+OpenRouter pilot or GitHub Actions qualification on Linux.
