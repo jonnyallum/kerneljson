@@ -111,8 +111,8 @@ export function reconcileCodeChange(input: CodeChangeReconcileInput): CodeChange
       codeRun.event === "workflow_dispatch" &&
       codeRun.headBranch === input.defaultBranch &&
       // The workflow is dispatched from the mutable default branch. Bind its execution commit to the
-      // previously captured base so a branch advance cannot silently swap in a different workflow.
-      codeRun.headSha === input.baseSha &&
+      // captured change base so a branch advance cannot silently swap in a different workflow.
+      codeRun.headSha === facts?.baseSha &&
       codeRun.displayTitle === codeChangeRunTitle(input.taskId, "code") &&
       codeRun.status === "completed" &&
       codeRun.conclusion === "success",
