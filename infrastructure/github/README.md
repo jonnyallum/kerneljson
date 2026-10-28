@@ -74,3 +74,5 @@ available tools, successful streamed response parsing, and absence of repository
 It leaves synthetic-only diagnostics in its reported temporary directory. No production credentials are loaded
 and no paid model call is needed. This passed on Windows on 28 October 2026; it does not replace the live
 OpenRouter pilot or GitHub Actions qualification on Linux.
+The `code-change-cli` qualification job runs the same offline check on Linux with the pinned executable,
+without access to a model key or production credentials.
