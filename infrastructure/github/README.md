@@ -52,5 +52,5 @@ is not a production credential for anything else, and the runner workflows never
 | Model exfiltrates the key | No Bash or web tools in the `code` job; the key is spend-capped and model-only |
 | Model plants git config that runs code (`core.fsmonitor`, hooks) | `.git` is moved outside the tree before the model runs and restored only if its fingerprint is unchanged and the model created no `.git`; `publish` applies with `git apply`, which refuses `.git/` paths |
 | Test pass for a different commit | Test run dispatched on the task branch; kernel requires `head_sha` equal to the proposed head |
-| Overspend | Workspace spend limit, `--max-turns`, job timeouts, one run per task |
+| Overspend | Workspace spend limit, `--max-turns`, job timeouts, task-scoped concurrency and no automatic retry after an ambiguous write failure. Dispatch is not an exactly-once API; a worker crash after GitHub accepts a request can still leave an external run to reconcile |
 | Work on another repository | Allowlist in the client (refused before any request) and in reconciliation; token scoped to one repository |
