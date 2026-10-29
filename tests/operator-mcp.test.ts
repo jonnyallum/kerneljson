@@ -247,3 +247,27 @@ describe("mcp.compose.yaml declares every variable the MCP server reads", () => 
     expect(declared(without, read(source))).toEqual(["MCP_REGISTRATION_PROFILES"]);
   });
 });
+
+describe("read-only callers (Grok Bot profile)", () => {
+  const READ_ONLY = { profile: "grokbot", readOnly: true, client: "Cursor" };
+  const asReadOnly = (name: string, args: unknown, door: OperatorDoor) =>
+    handleMessage({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, door, "test-release", () => {}, READ_ONLY);
+
+  it("is refused every tool that is not annotated read-only, kj_run_code_change included, and nothing reaches the door", async () => {
+    const acting = TOOLS.filter((t) => !t.annotations.readOnlyHint).map((t) => t.name);
+    expect(acting).toContain("kj_run_code_change");
+    for (const name of acting) {
+      const { door, calls } = fakeDoor();
+      const r = (await asReadOnly(name, { request_id: "grok-0001-abcd", repo: "jonnyallum/kj-pilot", instructions: "Add a slugify helper with tests.", task_id: "00000000-0000-4000-8000-000000000000" }, door)) as ToolCallResult;
+      expect(r.result.isError, name).toBe(true);
+      expect(r.result.structuredContent["error"], name).toBe("NOT_PERMITTED");
+      expect(calls, name).toEqual([]);
+    }
+  });
+
+  it("does not list kj_run_code_change to a read-only caller", async () => {
+    const { door } = fakeDoor();
+    const r = (await handleMessage({ jsonrpc: "2.0", id: 1, method: "tools/list" }, door, "test-release", () => {}, READ_ONLY)) as { result: { tools: Array<{ name: string }> } };
+    expect(r.result.tools.map((t) => t.name)).not.toContain("kj_run_code_change");
+  });
+});

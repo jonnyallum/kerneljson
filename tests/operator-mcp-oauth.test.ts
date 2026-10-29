@@ -569,6 +569,7 @@ describe("the Grok Bot read-only profile", () => {
       const attempts: Array<[string, Record<string, unknown>]> = [
         ["kj_run_brief", { request_id: "grokbot-attempt-0001" }],
         ["kj_run_analysis", { request_id: "grokbot-attempt-0002", repo: "jonnyallum/kerneljson" }],
+        ["kj_run_code_change", { request_id: "grokbot-attempt-0003", repo: "jonnyallum/kj-pilot", instructions: "Add a slugify helper with tests." }],
         ["kj_cancel_task", { task_id: randomUUID() }],
       ];
       for (const [name, args] of attempts) {
@@ -578,7 +579,7 @@ describe("the Grok Bot read-only profile", () => {
       }
       expect(doorSeen.length).toBe(admittedBefore);
       const calls = logs.filter((l) => l["tool"] !== undefined && l["profile"] === "grokbot");
-      expect(calls.map((l) => `${l["tool"]}:${l["outcome"]}`)).toEqual(["kj_health:OK", "kj_run_brief:NOT_PERMITTED", "kj_run_analysis:NOT_PERMITTED", "kj_cancel_task:NOT_PERMITTED"]);
+      expect(calls.map((l) => `${l["tool"]}:${l["outcome"]}`)).toEqual(["kj_health:OK", "kj_run_brief:NOT_PERMITTED", "kj_run_analysis:NOT_PERMITTED", "kj_run_code_change:NOT_PERMITTED", "kj_cancel_task:NOT_PERMITTED"]);
       expect(calls.every((l) => l["client"] === "Cursor")).toBe(true);
       expect(logs.some((l) => l["oauth"] === "client_registered" && l["profile"] === "grokbot")).toBe(true);
       expect(JSON.stringify(logs)).not.toContain(access_token);
