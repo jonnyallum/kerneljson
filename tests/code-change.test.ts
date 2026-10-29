@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -131,8 +131,8 @@ describe("code-change/v1 reconciliation", () => {
     ["change_within_size", "too many lines", () => input((f) => { f.files[0]!.additions = 801; })],
     ["change_within_size", "patch too large", () => input((f) => { f.patchBytes = 100_001; })],
     ["change_avoids_refused_paths", "CI path", () => input((f) => { f.files[0]!.path = ".github/workflows/x.yml"; })],
-    ["change_avoids_refused_paths", "rename away from a manifest", () => input((f) => { f.files[0] = { ...f.files[0]!, status: "renamed", previousPath: "package.json", path: "src/pkg.json" }; })],
     ["change_deletes_no_files", "deletion", () => input((f) => { f.files[0] = { ...f.files[0]!, status: "removed", blobSha: null, additions: 0, deletions: 4 }; })],
+    ["change_deletes_no_files", "rename", () => input((f) => { f.files[0] = { ...f.files[0]!, status: "renamed", additions: 0, deletions: 0 }; })],
     ["code_run_bound_to_task", "other workflow", () => input((f) => { f.codeRun.workflowPath = ".github/workflows/ci.yml"; })],
     ["code_run_bound_to_task", "push event", () => input((f) => { f.codeRun.event = "push"; })],
     ["code_run_bound_to_task", "run from the task branch", () => input((f) => { f.codeRun.headBranch = BRANCH; })],
@@ -405,6 +405,28 @@ describe("code-change/v1 coding job keeps git metadata away from the model", () 
     expect(readFileSync(join(env["RUNNER_TEMP"]!, "change.patch"), "utf8")).toContain("+export const a = 2;");
   });
 
+  it("refuses a patch that carries something shaped like the model key (negative case)", () => {
+    const { repo, env } = checkout();
+    expect(sh(hide, repo, env).status).toBe(0);
+    writeFileSync(join(repo, "src", "a.js"), 'export const a = "sk-or-v1-' + "0123456789abcdef" + '";\n');
+    const r = sh(capture, repo, env);
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain("something shaped like a secret");
+    expect(r.stdout + r.stderr).not.toContain("0123456789abcdef");
+  });
+
+  it("captures a delete-and-recreate as a deletion, not a rename (negative case for the rename bypass)", () => {
+    const { repo, env } = checkout();
+    expect(sh(hide, repo, env).status).toBe(0);
+    rmSync(join(repo, "src", "a.js"));
+    writeFileSync(join(repo, "src", "b.js"), "export const a = 1;\n");
+    const r = sh(capture, repo, env);
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const patch = readFileSync(join(env["RUNNER_TEMP"]!, "change.patch"), "utf8");
+    expect(patch).toContain("deleted file mode");
+    expect(patch).not.toContain("rename from");
+  });
+
   it("refuses a .git the model created in the tree (negative case: its config would run code)", () => {
     const { repo, env } = checkout();
     expect(sh(hide, repo, env).status).toBe(0);
@@ -433,5 +455,29 @@ describe("code-change/v1 coding job keeps git metadata away from the model", () 
     const order = ["Check out the base commit", "Hide git metadata from the model", "Make the change", "Capture the patch"].map((n) => wf.indexOf(`- name: ${n}`));
     expect(order.every((at) => at >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+});
+
+describe("kj-code-change.yml patch guards", () => {
+  const yml = readFileSync("infrastructure/github/kj-code-change.yml", "utf8");
+  it("captures the diff without rename detection, so a delete cannot hide as a rename", () => {
+    expect(yml).toContain("git diff --cached --binary --no-renames");
+  });
+  it("refuses a patch carrying anything shaped like a secret, before upload", () => {
+    const scan = yml.indexOf("something shaped like a secret");
+    expect(scan).toBeGreaterThan(yml.indexOf("git diff --cached --binary"));
+    expect(scan).toBeLessThan(yml.indexOf("Upload the patch"));
+    expect(yml).toMatch(/sk-or-\[A-Za-z0-9_-\]\{8,\}/);
+  });
+  it("lists publish paths unquoted and refuses any that still arrive quoted, so they cannot dodge the filter", () => {
+    expect(yml).toContain("git -c core.quotePath=false apply --numstat");
+  });
+});
+
+describe("a rename away from a manifest", () => {
+  it("fails both the refused-path and the no-deletion checks", () => {
+    const rec = reconcileCodeChange(input((x) => { x.files[0] = { ...x.files[0]!, status: "renamed", previousPath: "package.json", path: "src/pkg.json" }; }));
+    const failed = [...failedCodeChangeChecks(rec)].sort();
+    expect(failed).toEqual(["change_avoids_refused_paths", "change_deletes_no_files"]);
   });
 });

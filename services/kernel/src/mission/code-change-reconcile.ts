@@ -103,7 +103,8 @@ export function reconcileCodeChange(input: CodeChangeReconcileInput): CodeChange
       changedLines <= CODE_CHANGE_LIMITS.maxChangedLines &&
       facts.patchBytes <= CODE_CHANGE_LIMITS.maxPatchBytes,
     change_avoids_refused_paths: facts !== null && refused.size === 0,
-    change_deletes_no_files: facts !== null && files.every((f) => f.status !== "removed"),
+    // A rename is a delete plus an add that GitHub merged; the run forbids deleting, so it is refused too.
+    change_deletes_no_files: facts !== null && files.every((f) => f.status !== "removed" && f.status !== "renamed" && f.status !== "copied"),
     // The coding run was the kernel's: the fixed workflow, dispatched from the default branch, titled with this task.
     code_run_bound_to_task:
       codeRun !== undefined &&

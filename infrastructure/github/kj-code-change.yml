@@ -134,7 +134,12 @@ jobs:
             || { echo "git metadata changed while the model ran"; exit 1; }
           mv "$RUNNER_TEMP/kj-git" .git
           git add --all
-          git diff --cached --binary "$BASE_SHA" > "$RUNNER_TEMP/change.patch"
+          # --no-renames: a deleted file plus a new one stays a delete, which the publish job refuses.
+          git diff --cached --binary --no-renames "$BASE_SHA" > "$RUNNER_TEMP/change.patch"
+          # The model ran with the key in its process environment; no secret may travel into the pushed branch.
+          if grep -qE 'sk-or-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' "$RUNNER_TEMP/change.patch"; then
+            echo "patch contains something shaped like a secret"; exit 1
+          fi
           bytes=$(stat -c %s "$RUNNER_TEMP/change.patch")
           (( bytes > 0 )) || { echo "no change produced"; exit 1; }
           (( bytes <= 400000 )) || { echo "patch too large"; exit 1; }
@@ -176,7 +181,7 @@ jobs:
         run: |
           set -euo pipefail
           p="$RUNNER_TEMP/kj/change.patch"
-          if git apply --numstat "$p" | cut -f3- | grep -Ei '(^|/)\.(github|claude)/|(^|/)\.mcp\.json$|(^|/)\.\.(/|$)|^/' ; then
+          if git -c core.quotePath=false apply --numstat "$p" | cut -f3- | grep -Ei '(^|/)\.(github|claude)/|(^|/)\.mcp\.json$|(^|/)\.\.(/|$)|^/|^"' ; then
             echo "patch touches a refused path"; exit 1
           fi
           if grep -E '^(deleted file mode|new file mode 120000|old mode|new mode|rename from .*\.github|GIT binary patch)' "$p"; then
