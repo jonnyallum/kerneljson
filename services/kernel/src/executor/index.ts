@@ -10,9 +10,10 @@ import {
 import { planTask, orderedSteps, projectStep } from "../planner/index.js";
 import { digest } from "../deterministic.js";
 import { assertClaudeMdReceipt } from "../../../../packages/runtimes/src/index.js";
-import { BRIEF_RECIPE, MISSION_RECIPE } from "../../../../packages/contracts/src/index.js";
+import { BRIEF_RECIPE, CODE_CHANGE_RECIPE, MISSION_RECIPE } from "../../../../packages/contracts/src/index.js";
 import { verifyMissionCompletion } from "../mission/verify.js";
 import { verifyBriefCompletion } from "../mission/verify-brief.js";
+import { verifyCodeChangeCompletion, type CodeChangeVerifyConfig } from "../mission/verify-code-change.js";
 
 /** Approved-digest config threaded from the worker so the completion boundary can
  *  independently enforce the canary drift check over the persisted receipt. */
@@ -58,6 +59,7 @@ export function verifyPlanCompletion(
   storedSteps: readonly unknown[],
   records: readonly StoredResult[],
   canary?: CanaryVerifyConfig,
+  codeChange?: CodeChangeVerifyConfig,
 ): void {
   const plan = ExecutionPlan.parse(rawPlan),
     expected = planTask(task, plan.recipe);
@@ -74,6 +76,11 @@ export function verifyPlanCompletion(
   // The morning brief: the same discipline, its own citation checks.
   if (plan.recipe === BRIEF_RECIPE) {
     verifyBriefCompletion(task, outcome, plan, steps, records);
+    return;
+  }
+  // code-change/v1: re-derived from persisted evidence against the worker's own repository allowlist.
+  if (plan.recipe === CODE_CHANGE_RECIPE) {
+    verifyCodeChangeCompletion(task, outcome, plan, steps, records, codeChange);
     return;
   }
   // Capability recipe: the deterministic re-derivation below cannot reproduce a

@@ -4,9 +4,9 @@ import { createServer, type Server } from "node:http";
 import { HttpOperatorDoor, MCP_CHANNEL, type DoorResult, type OperatorDoor } from "../apps/mcp/src/door.js";
 import { LATEST_PROTOCOL_VERSION, handleMessage } from "../apps/mcp/src/protocol.js";
 import { createMcpServer, requestGuard } from "../apps/mcp/src/server.js";
-import { TOOLS, analysisObjective, toolList } from "../apps/mcp/src/tools.js";
+import { TOOLS, analysisObjective, codeChangeObjective, toolList } from "../apps/mcp/src/tools.js";
 import { loadConfig } from "../apps/mcp/src/main.js";
-import { parseMissionObjective } from "../packages/contracts/src/index.js";
+import { parseCodeChangeObjective, parseMissionObjective } from "../packages/contracts/src/index.js";
 
 const TASK = "1777e4b0-5e9f-8b57-ad97-8fca00c0aab1";
 const BEARER = "door-bearer-for-tests-0123456789";
@@ -35,7 +35,7 @@ describe("ADR-0025 tool set", () => {
   it("is exactly the phase 1 list: no approve, signal, identity, canary or test recipe", () => {
     expect(TOOLS.map((t) => t.name)).toEqual([
       "kj_list_tasks", "kj_get_task", "kj_task_evidence", "kj_task_history", "kj_memory", "kj_world", "kj_health",
-      "kj_run_brief", "kj_run_analysis", "kj_cancel_task",
+      "kj_run_brief", "kj_run_analysis", "kj_run_code_change", "kj_cancel_task",
     ]);
     const text = JSON.stringify(toolList());
     for (const banned of ["approve", "signal", "identity-change", "claude_md_check", "uppercase"]) expect(text).not.toContain(banned);
@@ -49,7 +49,7 @@ describe("ADR-0025 tool set", () => {
   });
 
   it("requires a request_id on both run tools", () => {
-    for (const name of ["kj_run_brief", "kj_run_analysis"]) {
+    for (const name of ["kj_run_brief", "kj_run_analysis", "kj_run_code_change"]) {
       const schema = toolList().find((t) => t.name === name)!.inputSchema as { required?: string[] };
       expect(schema.required).toContain("request_id");
     }
@@ -62,6 +62,18 @@ describe("tools/call", () => {
     const r = (await call("kj_run_brief", { request_id: "chat-0001-abcd" }, door)) as ToolCallResult;
     expect(r.result.isError).toBe(false);
     expect(calls).toEqual([{ method: "admit", args: [{ recipe: "morning-brief/v1", objective: "morning brief", idempotencyKey: "mcp:chat-0001-abcd" }] }]);
+  });
+
+  it("submits a code change in the kernel's grammar, and refuses one too short to act on", async () => {
+    const { door, calls } = fakeDoor();
+    const r = (await call("kj_run_code_change", { request_id: "chat-0003-abcd", repo: "jonnyallum/kj-pilot", instructions: "  Add a slugify(text) helper with tests.  " }, door)) as ToolCallResult;
+    expect(r.result.isError).toBe(false);
+    expect(calls).toEqual([{ method: "admit", args: [{ recipe: "code-change/v1", objective: "jonnyallum/kj-pilot Add a slugify(text) helper with tests.", idempotencyKey: "mcp:chat-0003-abcd" }] }]);
+    expect(parseCodeChangeObjective(codeChangeObjective({ repo: "a/b", instructions: "Rename the helper." }))).toEqual({ repo: "a/b", instructions: "Rename the helper." });
+    const { door: d2, calls: c2 } = fakeDoor();
+    const bad = (await call("kj_run_code_change", { request_id: "chat-0004-abcd", repo: "jonnyallum/kj-pilot", instructions: "fix" }, d2)) as ToolCallResult;
+    expect(bad.result.isError).toBe(true);
+    expect(c2).toEqual([]);
   });
 
   it("builds an analysis objective the kernel's own grammar accepts", async () => {
@@ -149,7 +161,7 @@ describe("HTTP transport", () => {
   it("serves tools/list to an authorised caller and accepts a notification with 202", async () => {
     const r = await rpc({ jsonrpc: "2.0", id: 7, method: "tools/list" }, { "mcp-protocol-version": "2025-06-18", origin: "https://chatgpt.com" });
     expect(r.status).toBe(200);
-    expect(((await r.json()) as { result: { tools: unknown[] } }).result.tools).toHaveLength(10);
+    expect(((await r.json()) as { result: { tools: unknown[] } }).result.tools).toHaveLength(11);
     expect((await rpc({ jsonrpc: "2.0", method: "notifications/initialized" })).status).toBe(202);
   });
 
@@ -233,5 +245,29 @@ describe("mcp.compose.yaml declares every variable the MCP server reads", () => 
   it("names a variable the compose file drops (negative case)", () => {
     const without = compose.replace(/^\s+MCP_REGISTRATION_PROFILES:.*\r?\n/m, "");
     expect(declared(without, read(source))).toEqual(["MCP_REGISTRATION_PROFILES"]);
+  });
+});
+
+describe("read-only callers (Grok Bot profile)", () => {
+  const READ_ONLY = { profile: "grokbot", readOnly: true, client: "Cursor" };
+  const asReadOnly = (name: string, args: unknown, door: OperatorDoor) =>
+    handleMessage({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, door, "test-release", () => {}, READ_ONLY);
+
+  it("is refused every tool that is not annotated read-only, kj_run_code_change included, and nothing reaches the door", async () => {
+    const acting = TOOLS.filter((t) => !t.annotations.readOnlyHint).map((t) => t.name);
+    expect(acting).toContain("kj_run_code_change");
+    for (const name of acting) {
+      const { door, calls } = fakeDoor();
+      const r = (await asReadOnly(name, { request_id: "grok-0001-abcd", repo: "jonnyallum/kj-pilot", instructions: "Add a slugify helper with tests.", task_id: "00000000-0000-4000-8000-000000000000" }, door)) as ToolCallResult;
+      expect(r.result.isError, name).toBe(true);
+      expect(r.result.structuredContent["error"], name).toBe("NOT_PERMITTED");
+      expect(calls, name).toEqual([]);
+    }
+  });
+
+  it("does not list kj_run_code_change to a read-only caller", async () => {
+    const { door } = fakeDoor();
+    const r = (await handleMessage({ jsonrpc: "2.0", id: 1, method: "tools/list" }, door, "test-release", () => {}, READ_ONLY)) as { result: { tools: Array<{ name: string }> } };
+    expect(r.result.tools.map((t) => t.name)).not.toContain("kj_run_code_change");
   });
 });

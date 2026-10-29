@@ -1,6 +1,7 @@
 import { decideNextOutboxState, recoverIfStaleSending } from "./outbox.js";
 import { isOperatorReplyCheckId } from "./operator-reply.js";
 import { isBriefCompletedCheckId } from "./brief-notice.js";
+import { isCodeChangeCheckId } from "./code-change-notice.js";
 import type { NotificationOutboxStore } from "./outbox-store.js";
 import {
   DEFAULT_DELIVERY_CONFIG,
@@ -129,6 +130,8 @@ function rowToPayload(row: NotificationOutboxRow): NotificationPayload {
   if (isOperatorReplyCheckId(row.checkId)) return payload;
   // A completed morning brief is its text too (see brief-notice.ts).
   if (isBriefCompletedCheckId(row.checkId)) return payload;
+  // A code-change notice is its text too (see code-change-notice.ts).
+  if (isCodeChangeCheckId(row.checkId)) return payload;
   return { ...payload, message: `${row.checkId}: ${row.kind} (${row.severity})` };
 }
 

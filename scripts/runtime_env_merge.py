@@ -53,6 +53,11 @@ PUBLIC_KEYS = {
     # ADR-0025 operator MCP: the door's second identity. The principal id and kind are not secret.
     "KJ_MCP_PRINCIPAL_ID": re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"),
     "KJ_MCP_PRINCIPAL_KIND": re.compile(r"^SERVICE$"),
+    # code-change/v1: the repository allowlist (1 to 5 owner/repo), the runner's model (vendor-qualified) and
+    # the diff reviewer (same naming rule as the mission models). None is secret.
+    "KJ_CODE_CHANGE_REPOS": re.compile(r"^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}(,[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}){0,4}$"),
+    "KJ_CODE_CHANGE_CODER_MODEL": re.compile(r"^(anthropic|x-ai|deepseek)/[A-Za-z0-9._:-]{1,80}$"),
+    "KJ_CODE_CHANGE_REVIEWER_MODEL": MISSION_MODEL,
 }
 SECRET_KEYS = {
     "TELEGRAM_BOT_TOKEN": re.compile(r"^\d{6,12}:[A-Za-z0-9_-]{35}$"),
@@ -65,6 +70,8 @@ SECRET_KEYS = {
     # ADR-0025: the operator MCP server's own door bearer (48 random bytes, base64url). Never the worker's.
     "KJ_MCP_BEARER": re.compile(r"^[A-Za-z0-9_-]{43,128}$"),
     "GITHUB_READ_TOKEN": re.compile(r"^(gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{50,255})$"),
+    # code-change/v1: fine-grained only, since only a fine-grained token can be limited to the pilot repository.
+    "KJ_CODE_CHANGE_GITHUB_TOKEN": re.compile(r"^github_pat_[A-Za-z0-9_]{50,255}$"),
 }
 
 

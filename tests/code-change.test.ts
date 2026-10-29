@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   CODE_CHANGE_CHECKS,
   CodeChangeReconciliation,
@@ -126,13 +129,14 @@ describe("code-change/v1 reconciliation", () => {
     ["change_fully_listed", "file without patch", () => input((f) => { f.files[0]!.patchSha256 = null; })],
     ["change_within_size", "too many files", () => input((f) => { f.files = Array.from({ length: 21 }, (_, i) => ({ ...f.files[0]!, path: `src/f${i}.ts`, additions: 1, deletions: 0 })); })],
     ["change_within_size", "too many lines", () => input((f) => { f.files[0]!.additions = 801; })],
-    ["change_within_size", "patch too large", () => input((f) => { f.patchBytes = 200_001; })],
+    ["change_within_size", "patch too large", () => input((f) => { f.patchBytes = 100_001; })],
     ["change_avoids_refused_paths", "CI path", () => input((f) => { f.files[0]!.path = ".github/workflows/x.yml"; })],
-    ["change_avoids_refused_paths", "rename away from a manifest", () => input((f) => { f.files[0] = { ...f.files[0]!, status: "renamed", previousPath: "package.json", path: "src/pkg.json" }; })],
     ["change_deletes_no_files", "deletion", () => input((f) => { f.files[0] = { ...f.files[0]!, status: "removed", blobSha: null, additions: 0, deletions: 4 }; })],
+    ["change_deletes_no_files", "rename", () => input((f) => { f.files[0] = { ...f.files[0]!, status: "renamed", additions: 0, deletions: 0 }; })],
     ["code_run_bound_to_task", "other workflow", () => input((f) => { f.codeRun.workflowPath = ".github/workflows/ci.yml"; })],
     ["code_run_bound_to_task", "push event", () => input((f) => { f.codeRun.event = "push"; })],
     ["code_run_bound_to_task", "run from the task branch", () => input((f) => { f.codeRun.headBranch = BRANCH; })],
+    ["code_run_bound_to_task", "default branch advanced before dispatch", () => input((f) => { f.codeRun.headSha = HEAD; })],
     ["code_run_bound_to_task", "another task's run", () => input((f) => { f.codeRun.displayTitle = "kj:99999999-2222-4333-8444-555555555555 code"; })],
     ["code_run_bound_to_task", "coding run failed", () => input((f) => { f.codeRun.conclusion = "failure"; })],
     ["test_run_bound_to_head", "tested another commit", () => input((f) => { f.testRun.headSha = BASE; })],
@@ -235,22 +239,245 @@ describe("code-change/v1 workflow templates", () => {
     expect(publishJob).toMatch(/permissions:\n\s+contents: write\n/);
     expect(publishJob).not.toMatch(/secrets\./);
     expect(test).not.toMatch(/secrets\./);
-    expect(code.match(/secrets\.[A-Z_]+/g)).toEqual(["secrets.KJ_CODER_ANTHROPIC_KEY"]);
+    expect(code.match(/secrets\.[A-Z_]+/g)).toEqual(["secrets.KJ_CODER_OPENROUTER_KEY"]);
     expect(codeJob).toContain("persist-credentials: false");
     expect(test).toContain("persist-credentials: false");
   });
 
   it("gives the coding agent file tools only and a turn cap", () => {
+    expect(codeJob).toContain('--tools "Read,Edit,Write,Glob,Grep"');
     expect(codeJob).toContain('--allowedTools "Read,Edit,Write,Glob,Grep"');
-    expect(codeJob).toContain('--disallowedTools "Bash,WebFetch,WebSearch"');
+    expect(codeJob).toContain('--disallowedTools "Bash,WebFetch,WebSearch,mcp__*"');
+    expect(codeJob).toContain('--setting-sources ""');
+    expect(codeJob).toContain('--settings \'{"disableAllHooks":true}\'');
+    expect(codeJob).toContain('--strict-mcp-config --mcp-config \'{"mcpServers":{}}\'');
     expect(codeJob).toMatch(/--max-turns "\$MAX_TURNS"/);
     expect(codeJob).toMatch(/timeout-minutes: \d+/);
   });
 
-  it("publishes only to the task branch, refuses CI paths, never forces or merges", () => {
-    expect(publishJob).toContain('git push origin "HEAD:refs/heads/kj/$TASK_ID"');
-    expect(publishJob).toContain("\\.github/");
-    expect(code).not.toMatch(/--force|push -f|\+HEAD|gh pr merge|\/merge/);
+  it("selects the coder from the kernel dispatch rather than a mutable repository variable", () => {
+    expect(codeJob).toContain("CODER_MODEL: ${{ inputs.coder_model }}");
+    expect(codeJob).not.toContain("vars.KJ_CODER_MODEL");
+    expect(codeJob).toContain('--model "$CODER_MODEL"');
+  });
+
+  it("routes Claude Code through OpenRouter with bearer auth and disables direct Anthropic credentials", () => {
+    expect(codeJob).toContain("ANTHROPIC_BASE_URL: https://openrouter.ai/api");
+    expect(codeJob).toContain("ANTHROPIC_AUTH_TOKEN: ${{ secrets.KJ_CODER_OPENROUTER_KEY }}");
+    expect(codeJob).toContain('ANTHROPIC_API_KEY: ""');
+    expect(codeJob).not.toContain("KJ_CODER_ANTHROPIC_KEY");
+    expect(publishJob).not.toMatch(/ANTHROPIC_AUTH_TOKEN|KJ_CODER_OPENROUTER_KEY/);
+  });
+
+  it("pins every action to a full commit, not a movable tag", () => {
+    const unpinned = (wf: string) => [...wf.matchAll(/^\s*(?:- )?uses:\s*(\S+)/gm)].map((m) => m[1]!).filter((u) => !/^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/.test(u));
+    expect(unpinned("steps:\n  - uses: actions/checkout@v4\n  - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020\n")).toEqual(["actions/checkout@v4"]);
+    for (const wf of [code, test]) {
+      expect(wf).toMatch(/uses:/);
+      expect(unpinned(wf)).toEqual([]);
+    }
+  });
+
+  it("publishes only to an absent task branch, refuses CI paths, never overwrites or merges", () => {
+    expect(publishJob).toContain('git push --force-with-lease="refs/heads/kj/$TASK_ID:" origin "HEAD:refs/heads/kj/$TASK_ID"');
+    expect(publishJob).toContain("\\.(github|claude)/");
+    expect(code).not.toMatch(/--force(?:\s|$)|push -f|\+HEAD|gh pr merge|\/merge/);
     expect(test).toContain('[[ "$REF" == "refs/heads/kj/$TASK_ID" ]]');
+  });
+});
+
+/** The shell of one named step, as the runner would execute it. */
+function stepScript(workflow: string, name: string): string {
+  const lines = workflow.split("\n");
+  const at = lines.findIndex((l) => l.trim() === `- name: ${name}`);
+  if (at < 0) throw new Error(`no step ${name}`);
+  const run = lines.findIndex((l, i) => i > at && /^\s+run: \|$/.test(l));
+  const indent = lines[run + 1]!.search(/\S/);
+  const body: string[] = [];
+  for (let i = run + 1; i < lines.length && (lines[i]!.trim() === "" || lines[i]!.search(/\S/) >= indent); i++) body.push(lines[i]!.slice(indent));
+  return body.join("\n");
+}
+
+describe("code-change/v1 coding job keeps git metadata away from the model", () => {
+  const wf = readFileSync("infrastructure/github/kj-code-change.yml", "utf8");
+  const hide = stepScript(wf, "Hide git metadata from the model");
+  const capture = stepScript(wf, "Capture the patch");
+  const publish = stepScript(wf, "Apply and push the task branch");
+  const validate = stepScript(wf, "Validate inputs");
+  const makeChange = stepScript(wf, "Make the change");
+  const refuse = stepScript(wf, "Refuse unsafe patches");
+  const git = (cwd: string, ...args: string[]) => {
+    const r = spawnSync("git", ["-c", "core.autocrlf=false", ...args], { cwd, encoding: "utf8" });
+    if (r.status !== 0) throw new Error(r.stderr);
+    return r.stdout.trim();
+  };
+  function checkout(): { repo: string; env: NodeJS.ProcessEnv } {
+    const root = mkdtempSync(join(tmpdir(), "kj-cc-"));
+    const repo = join(root, "repo");
+    const temp = join(root, "temp");
+    mkdirSync(join(repo, "src"), { recursive: true });
+    mkdirSync(temp);
+    git(repo, "init", "-q");
+    writeFileSync(join(repo, "src", "a.js"), "export const a = 1;\n");
+    git(repo, "add", "--all");
+    git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base");
+    return { repo, env: { ...process.env, RUNNER_TEMP: temp, BASE_SHA: git(repo, "rev-parse", "HEAD"), GIT_CONFIG_PARAMETERS: "'core.autocrlf'='false'" } };
+  }
+  const sh = (script: string, cwd: string, env: NodeJS.ProcessEnv) => spawnSync("bash", ["-c", script], { cwd, env, encoding: "utf8" });
+
+  it.each([".claude/settings.json", ".mcp.json", "nested/.claude/settings.json", ".CLAUDE/settings.json"])(
+    "refuses agent automation changes to %s before publishing and in reconciliation policy", (path) => {
+      const { repo, env } = checkout();
+      const parts = path.split("/");
+      if (parts.length > 1) mkdirSync(join(repo, ...parts.slice(0, -1)), { recursive: true });
+      writeFileSync(join(repo, path), '{"hooks":{"SessionStart":[]}}\n');
+      git(repo, "add", "--all");
+      mkdirSync(join(env["RUNNER_TEMP"]!, "kj"));
+      writeFileSync(join(env["RUNNER_TEMP"]!, "kj", "change.patch"), git(repo, "diff", "--cached", "--binary", env["BASE_SHA"]!) + "\n");
+      const result = sh(refuse, repo, env);
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).toContain("patch touches a refused path");
+      expect(refusedPathCategory(path)).toBe("ci_and_automation");
+    },
+  );
+
+  it.each(["", "sk-ant-synthetic-private-sentinel"])("refuses a missing or wrong-provider key before preparing a model call", (token) => {
+    const { repo, env } = checkout();
+    const result = sh(makeChange, repo, { ...env, ANTHROPIC_AUTH_TOKEN: token });
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain("KJ_CODER_OPENROUTER_KEY is missing or malformed");
+    expect(existsSync(join(env["RUNNER_TEMP"]!, "prompt.txt"))).toBe(false);
+    if (token) expect(result.stdout + result.stderr).not.toContain(token);
+  });
+
+  it.each([
+    ["anthropic/claude-sonnet-test", true],
+    ["anthropic/claude-" + "x".repeat(183), true],
+    ["anthropic/claude-" + "x".repeat(184), false],
+    ["", false],
+    ["grok-test", false],
+    ["claude-sonnet-test", false],
+    ["claude-test; echo untrusted", false],
+  ])("validates the dispatched coder model %s before installing or running it", (coderModel, accepted) => {
+    const { repo, env } = checkout();
+    const result = sh(validate, repo, {
+      ...env, TASK_ID: TASK, INSTRUCTIONS: "Add a small tested helper.", CLAUDE_CODE_VERSION: "1.2.3", CODER_MODEL: coderModel,
+    });
+    expect(result.status === 0, result.stdout + result.stderr).toBe(accepted);
+    if (!accepted) expect(result.stdout).toContain("bad coder_model");
+  });
+
+  for (const existing of [false, true]) {
+    it(existing ? "refuses to fast-forward an existing task branch" : "publishes a new task branch", () => {
+      const { repo, env } = checkout();
+      const remote = join(env["RUNNER_TEMP"]!, "remote.git");
+      git(repo, "init", "--bare", "-q", remote);
+      git(repo, "remote", "add", "origin", remote);
+      if (existing) git(repo, "push", "origin", `HEAD:refs/heads/${BRANCH}`);
+      mkdirSync(join(env["RUNNER_TEMP"]!, "kj"));
+      writeFileSync(join(repo, "src", "a.js"), "export const a = 2;\n");
+      writeFileSync(join(env["RUNNER_TEMP"]!, "kj", "change.patch"), git(repo, "diff", "--binary") + "\n");
+      writeFileSync(join(repo, "src", "a.js"), "export const a = 1;\n");
+      git(repo, "update-index", "--refresh");
+      const checked = sh(refuse, repo, env);
+      expect(checked.status, checked.stdout + checked.stderr).toBe(0);
+      const result = sh(publish, repo, { ...env, TASK_ID: TASK });
+      const remoteHead = git(repo, "ls-remote", "origin", `refs/heads/${BRANCH}`).split(/\s/)[0];
+      if (existing) {
+        expect(result.status, result.stdout + result.stderr).not.toBe(0);
+        expect(result.stderr).toContain("stale info");
+        expect(remoteHead).toBe(env["BASE_SHA"]);
+      } else {
+        expect(result.status, result.stdout + result.stderr).toBe(0);
+        expect(remoteHead).toBe(git(repo, "rev-parse", "HEAD"));
+        expect(remoteHead).not.toBe(env["BASE_SHA"]);
+      }
+    });
+  }
+
+  it("an honest change: the model sees no .git, and the patch is captured against the base", () => {
+    const { repo, env } = checkout();
+    expect(sh(hide, repo, env).status).toBe(0);
+    expect(existsSync(join(repo, ".git"))).toBe(false);
+    writeFileSync(join(repo, "src", "a.js"), "export const a = 2;\n"); // the model's edit
+    const r = sh(capture, repo, env);
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(readFileSync(join(env["RUNNER_TEMP"]!, "change.patch"), "utf8")).toContain("+export const a = 2;");
+  });
+
+  it("refuses a patch that carries something shaped like the model key (negative case)", () => {
+    const { repo, env } = checkout();
+    expect(sh(hide, repo, env).status).toBe(0);
+    writeFileSync(join(repo, "src", "a.js"), 'export const a = "sk-or-v1-' + "0123456789abcdef" + '";\n');
+    const r = sh(capture, repo, env);
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain("something shaped like a secret");
+    expect(r.stdout + r.stderr).not.toContain("0123456789abcdef");
+  });
+
+  it("captures a delete-and-recreate as a deletion, not a rename (negative case for the rename bypass)", () => {
+    const { repo, env } = checkout();
+    expect(sh(hide, repo, env).status).toBe(0);
+    rmSync(join(repo, "src", "a.js"));
+    writeFileSync(join(repo, "src", "b.js"), "export const a = 1;\n");
+    const r = sh(capture, repo, env);
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const patch = readFileSync(join(env["RUNNER_TEMP"]!, "change.patch"), "utf8");
+    expect(patch).toContain("deleted file mode");
+    expect(patch).not.toContain("rename from");
+  });
+
+  it("refuses a .git the model created in the tree (negative case: its config would run code)", () => {
+    const { repo, env } = checkout();
+    expect(sh(hide, repo, env).status).toBe(0);
+    mkdirSync(join(repo, ".git"));
+    writeFileSync(join(repo, ".git", "config"), '[core]\n\tfsmonitor = "touch PWNED; false"\n');
+    const r = sh(capture, repo, env);
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain("the model created .git");
+    expect(existsSync(join(repo, "PWNED"))).toBe(false);
+  });
+
+  it("refuses hidden metadata that changed while the model ran (negative case)", () => {
+    const { repo, env } = checkout();
+    expect(sh(hide, repo, env).status).toBe(0);
+    const hidden = join(env["RUNNER_TEMP"]!, "kj-git");
+    writeFileSync(join(hidden, "config"), readFileSync(join(hidden, "config"), "utf8") + '[core]\n\tfsmonitor = "touch PWNED; false"\n');
+    const r = sh(capture, repo, env);
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain("git metadata changed while the model ran");
+    expect(existsSync(join(repo, "PWNED"))).toBe(false);
+    writeFileSync(join(hidden, "hooks", "new-hook"), "x"); // an added file is caught too
+    expect(sh(capture, repo, env).stdout).toContain("git metadata changed while the model ran");
+  });
+
+  it("the hide step runs before the model and the capture step after it", () => {
+    const order = ["Check out the base commit", "Hide git metadata from the model", "Make the change", "Capture the patch"].map((n) => wf.indexOf(`- name: ${n}`));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+});
+
+describe("kj-code-change.yml patch guards", () => {
+  const yml = readFileSync("infrastructure/github/kj-code-change.yml", "utf8");
+  it("captures the diff without rename detection, so a delete cannot hide as a rename", () => {
+    expect(yml).toContain("git diff --cached --binary --no-renames");
+  });
+  it("refuses a patch carrying anything shaped like a secret, before upload", () => {
+    const scan = yml.indexOf("something shaped like a secret");
+    expect(scan).toBeGreaterThan(yml.indexOf("git diff --cached --binary"));
+    expect(scan).toBeLessThan(yml.indexOf("Upload the patch"));
+    expect(yml).toMatch(/sk-or-\[A-Za-z0-9_-\]\{8,\}/);
+  });
+  it("lists publish paths unquoted and refuses any that still arrive quoted, so they cannot dodge the filter", () => {
+    expect(yml).toContain("git -c core.quotePath=false apply --numstat");
+  });
+});
+
+describe("a rename away from a manifest", () => {
+  it("fails both the refused-path and the no-deletion checks", () => {
+    const rec = reconcileCodeChange(input((x) => { x.files[0] = { ...x.files[0]!, status: "renamed", previousPath: "package.json", path: "src/pkg.json" }; }));
+    const failed = [...failedCodeChangeChecks(rec)].sort();
+    expect(failed).toEqual(["change_avoids_refused_paths", "change_deletes_no_files"]);
   });
 });

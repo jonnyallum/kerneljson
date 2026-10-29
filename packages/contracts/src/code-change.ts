@@ -22,6 +22,9 @@ export const CODE_CHANGE_CRITERION =
 export const CODE_CHANGE_WORKFLOW = "kj-code-change.yml" as const;
 export const CODE_CHANGE_TEST_WORKFLOW = "kj-test.yml" as const;
 
+/** This runner uses Claude Code through OpenRouter; its model is supplied by the worker on dispatch. */
+export const CodeChangeCoderModel = z.string().max(200).regex(/^anthropic\/claude-[a-z0-9][a-z0-9.-]*$/);
+
 /** Every run the kernel starts carries this exact title, so a run is found by task, never by timing. */
 export const codeChangeRunTitle = (taskId: string, kind: "code" | "test"): string => `kj:${taskId} ${kind}`;
 
@@ -36,8 +39,8 @@ export const CODE_CHANGE_LIMITS = {
   maxFiles: 20,
   /** Additions plus deletions across the whole change. */
   maxChangedLines: 800,
-  /** The diff text the reviewer is shown, in bytes. */
-  maxPatchBytes: 200_000,
+  /** The diff text the reviewer is shown, in bytes. Kept under the 128k-character model message bound. */
+  maxPatchBytes: 100_000,
 } as const;
 
 /**
@@ -64,7 +67,7 @@ export const REFUSED_PATH_CATEGORIES = ["ci_and_automation", "infrastructure", "
 export type RefusedPathCategory = (typeof REFUSED_PATH_CATEGORIES)[number];
 
 const REFUSED: ReadonlyArray<readonly [RefusedPathCategory, RegExp]> = [
-  ["ci_and_automation", /^\.github\/|^\.gitlab-ci\.yml$|^\.circleci\/|(^|\/)\.husky\/|(^|\/)\.pre-commit-config\.yaml$|(^|\/)\.gitattributes$|(^|\/)CODEOWNERS$/i],
+  ["ci_and_automation", /^\.github\/|^\.gitlab-ci\.yml$|^\.circleci\/|(^|\/)\.(husky|claude)\/|(^|\/)\.mcp\.json$|(^|\/)\.pre-commit-config\.yaml$|(^|\/)\.gitattributes$|(^|\/)CODEOWNERS$/i],
   ["infrastructure", /(^|\/)(infra|infrastructure|deploy|deployment|terraform|k8s|kubernetes|helm|ansible|supabase\/migrations)\/|(^|\/)(Dockerfile[^/]*|docker-compose[^/]*\.ya?ml|compose\.ya?ml|Caddyfile|vercel\.json|netlify\.toml|fly\.toml|Procfile|app\.yaml|cloudbuild\.ya?ml)$|\.tf$|\.tfvars$/i],
   ["secrets", /(^|\/)\.env($|\.)|(^|\/)(secrets?|credentials?)(\/|\.|$)|\.(pem|key|p12|pfx|jks|keystore)$|(^|\/)id_(rsa|ed25519|ecdsa)(\.pub)?$|(^|\/)\.npmrc$|(^|\/)\.netrc$/i],
   ["billing", /(^|\/)[^/]*(billing|payment|invoice|stripe|subscription|checkout)[^/]*(\/|$)/i],
@@ -200,3 +203,11 @@ export const CodeChangeReconciliation = z
       ctx.addIssue({ code: "custom", message: "Decision does not follow the checks" });
   });
 export type CodeChangeReconciliation = z.infer<typeof CodeChangeReconciliation>;
+
+/** The draft pull request as GitHub returned it, re-checked by the kernel before it is evidence. */
+export const CodeChangePr = z.strictObject({
+  number: z.number().int().positive(),
+  url: z.string().regex(/^https:\/\/github\.com\/[A-Za-z0-9-]+\/[A-Za-z0-9._-]+\/pull\/\d+$/),
+  headSha: Sha40,
+});
+export type CodeChangePr = z.infer<typeof CodeChangePr>;
