@@ -97,7 +97,7 @@ const MUTATIONS = [
   ["C42", "a legacy task may carry cognition state", EV, [["    if (facts.latches.length || facts.pins.length || bindings.length) fail(\"legacy task carries cognition state\");", ""]], UNIT],
   // --- alerting and health ---
   ["C43", "a deliberately silent episode announces its recovery", RED, [["    const notify = policy.notify !== false && (policy.notifyFor === undefined || existing.lastNotifiedAt !== null);", "    const notify = policy.notify !== false;"]], UNIT],
-  ["C44", "per-status notification control is ignored", RED, [["  return policy.notifyFor ? policy.notifyFor(status, severity) : true;", "  return true;"]], UNIT],
+  ["C44", "per-status notification control is ignored", RED, [["  return policy.notifyFor ? policy.notifyFor(check.status, severity, check) : true;", "  return true;"]], UNIT],
   ["C45", "the identity.analystRunsBound policy row is missing (generic fallback)", POL, [["  identity(\n    \"identity.analystRunsBound\",", "  identity(\n    \"identity.analystRunsBound.removed\","]], UNIT],
   ...["completedTasksHaveActivation", "profilesHaveActivatedIdentity", "currentDigestParity", "singleCurrentPerTenant", "headEqualsCurrent", "verifierIsolated"].map((name, i) => [
     `C${49 + i}`, `the identity.${name} policy row is missing (generic fallback)`, POL,

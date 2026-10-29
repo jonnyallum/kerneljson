@@ -24,9 +24,9 @@ import { isWorse, type AlertDecision, type AlertPolicyEntry, type AlertSeverity,
  *                                   per policy ("recurrence after recovery alerts again").
  */
 /** Whether a decision for this status/severity notifies. `notify: false` always wins; `notifyFor` narrows further. */
-export function policyNotifies(policy: AlertPolicyEntry, status: CheckResult["status"], severity: AlertSeverity): boolean {
+export function policyNotifies(policy: AlertPolicyEntry, check: CheckResult, severity: AlertSeverity): boolean {
   if (policy.notify === false) return false;
-  return policy.notifyFor ? policy.notifyFor(status, severity) : true;
+  return policy.notifyFor ? policy.notifyFor(check.status, severity, check) : true;
 }
 
 export function reduceCheck(
@@ -81,7 +81,7 @@ export function reduceCheck(
   // fresh episode. This is exactly "first detection" AND "recurrence after
   // recovery" — both are "no currently-open episode", so both behave the same.
   if (!existing || existing.currentState === "RECOVERED") {
-    const notify = policyNotifies(policy, check.status, severity);
+    const notify = policyNotifies(policy, check, severity);
     const row: AlertStateRow = {
       fingerprint,
       checkId: check.id,
@@ -114,7 +114,7 @@ export function reduceCheck(
   // Still unhealthy, episode already OPEN.
   const kind: "ONGOING" | "ESCALATED" | "DEESCALATED" =
     severity === existing.severity ? "ONGOING" : isWorse(severity, existing.severity) ? "ESCALATED" : "DEESCALATED";
-  const notify = kind !== "ONGOING" && policyNotifies(policy, check.status, severity);
+  const notify = kind !== "ONGOING" && policyNotifies(policy, check, severity);
   const nextRow: AlertStateRow = {
     ...existing,
     severity,
