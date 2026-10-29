@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import { HttpOperatorDoor } from "./door.js";
 import { HttpGoogleSignIn, type GoogleSignIn } from "./oauth/google.js";
+import { CHATGPT_REDIRECT_URIS, CLIENT_PROFILES, PROFILE_NAMES, type ClientProfileName } from "./oauth/profiles.js";
 import { createOAuthServer } from "./oauth/server.js";
 import type { RateLimits } from "./oauth/rate-limit.js";
 import { TokenSigner } from "./oauth/tokens.js";
@@ -20,24 +21,41 @@ import { createMcpServer, requestGuard } from "./server.js";
  * OAuth:   MCP_PUBLIC_URL (https origin), MCP_ALLOWED_GOOGLE_SUB, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
  *          MCP_TOKEN_SIGNING_KEY (>= 32 bytes), MCP_ALLOWED_REDIRECT_URIS (comma list; default ChatGPT's
  *          connector callback), MCP_ALLOWED_ORIGINS (comma list; default ChatGPT's origins),
- *          MCP_REGISTRATION (open | closed; close it once ChatGPT is connected)
+ *          MCP_REGISTRATION (open | closed | open-until=<UTC time, at most 24 hours ahead>; close it once
+ *          the client is connected), MCP_REGISTRATION_PROFILES (optional comma list of client profiles that
+ *          may register while it is open, e.g. grokbot; default every profile)
  */
 const LOOPBACK = new Set(["127.0.0.1", "::1", "localhost"]);
-export const CHATGPT_REDIRECT_URIS = ["https://chatgpt.com/connector_platform_oauth_redirect"];
+export { CHATGPT_REDIRECT_URIS };
 export const CHATGPT_ORIGINS = ["https://chatgpt.com", "https://chat.openai.com"];
 
 const list = (value: string | undefined, fallback: readonly string[]): string[] =>
   value ? value.split(",").map((v) => v.trim()).filter(Boolean) : [...fallback];
 
-function registrationOpen(value: string | undefined): boolean {
-  if (value === "open") return true;
-  if (value === "closed") return false;
-  throw new Error("MCP_REGISTRATION must be open or closed");
+export const MAX_ENROLMENT_MS = 24 * 3600_000;
+
+/** `open-until=` bounds an enrolment: it closes by itself, and a window longer than a day refuses to start. */
+function registration(value: string | undefined, nowMs: number): { open: boolean; until?: number } {
+  if (value === "open") return { open: true };
+  if (value === "closed") return { open: false };
+  const m = /^open-until=(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?Z)$/.exec(value ?? "");
+  const until = m ? Date.parse(m[1]!) : NaN;
+  if (!Number.isFinite(until)) throw new Error("MCP_REGISTRATION must be open, closed or open-until=<UTC time>");
+  if (until - nowMs > MAX_ENROLMENT_MS) throw new Error("MCP_REGISTRATION open-until must be at most 24 hours ahead");
+  return { open: true, until };
+}
+
+function registrationProfiles(value: string | undefined): ClientProfileName[] | undefined {
+  if (!value) return undefined;
+  const names = value.split(",").map((v) => v.trim()).filter(Boolean);
+  if (names.length === 0 || names.some((n) => !(PROFILE_NAMES as string[]).includes(n)))
+    throw new Error(`MCP_REGISTRATION_PROFILES must list profiles from: ${PROFILE_NAMES.join(", ")}`);
+  return names as ClientProfileName[];
 }
 
 export type McpConfig = ReturnType<typeof loadConfig>;
 
-export function loadConfig(env: NodeJS.ProcessEnv) {
+export function loadConfig(env: NodeJS.ProcessEnv, nowMs: number = Date.now()) {
   const host = env["MCP_HOST"] || "127.0.0.1";
   const port = Number(env["MCP_PORT"] || 8090);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("MCP_PORT must be a port number");
@@ -76,7 +94,8 @@ export function loadConfig(env: NodeJS.ProcessEnv) {
       signingKey: required("MCP_TOKEN_SIGNING_KEY"),
       allowedRedirectUris: list(env["MCP_ALLOWED_REDIRECT_URIS"], CHATGPT_REDIRECT_URIS),
       allowedOrigins: list(env["MCP_ALLOWED_ORIGINS"], CHATGPT_ORIGINS),
-      registrationOpen: registrationOpen(env["MCP_REGISTRATION"]),
+      registration: registration(env["MCP_REGISTRATION"], nowMs),
+      registrationProfiles: registrationProfiles(env["MCP_REGISTRATION_PROFILES"]),
     },
   };
 }
@@ -89,14 +108,17 @@ export function buildHandler(
   const door = new HttpOperatorDoor(config.doorUrl, config.bearer, deps.fetchImpl);
   const log = (entry: object) => deps.log?.(JSON.stringify({ at: new Date().toISOString(), ...entry }));
   if (config.auth.kind === "local") {
-    return createMcpServer({ door, release: config.release, verify: async () => true, guard: requestGuard({ kind: "local" }), allowedOrigins: [], log });
+    const local = { profile: "local", readOnly: false, client: "local" };
+    return createMcpServer({ door, release: config.release, verify: async () => local, guard: requestGuard({ kind: "local" }), allowedOrigins: [], log });
   }
   const a = config.auth;
   const oauth = createOAuthServer({
     publicUrl: a.publicUrl,
     allowedGoogleSub: a.allowedGoogleSub,
     allowedRedirectUris: a.allowedRedirectUris,
-    registrationOpen: a.registrationOpen,
+    registrationOpen: a.registration.open,
+    ...(a.registration.until !== undefined ? { registrationUntil: a.registration.until } : {}),
+    ...(a.registrationProfiles ? { registrationProfiles: a.registrationProfiles } : {}),
     signer: new TokenSigner(a.signingKey),
     google: deps.google ?? new HttpGoogleSignIn({ clientId: a.googleClientId, clientSecret: a.googleClientSecret, redirectUri: `${a.publicUrl}/oauth/google/callback` }, deps.fetchImpl, deps.now),
     ...(deps.now ? { now: deps.now } : {}),
@@ -106,7 +128,10 @@ export function buildHandler(
   return createMcpServer({
     door,
     release: config.release,
-    verify: async (authorization) => oauth.verifyAccess(authorization) !== null,
+    verify: async (authorization) => {
+      const access = oauth.verifyAccess(authorization);
+      return access ? { profile: access.profile.name, readOnly: CLIENT_PROFILES[access.profile.name].readOnly, client: access.clientName } : null;
+    },
     guard: requestGuard({ kind: "oauth", publicHost: a.publicHost }),
     allowedOrigins: a.allowedOrigins,
     resourceMetadataUrl: oauth.resourceMetadataUrl,

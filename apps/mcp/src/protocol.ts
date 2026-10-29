@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { OperatorDoor } from "./door.js";
-import { TOOLS, toolList } from "./tools.js";
+import { TOOLS, toolList, type ToolDefinition } from "./tools.js";
 
 /**
  * A stateless MCP server over Streamable HTTP, JSON responses only (no SSE, no sessions): every POST
@@ -30,11 +30,26 @@ export type JsonRpcResponse =
   | { jsonrpc: "2.0"; id: string | number | null; result: unknown }
   | { jsonrpc: "2.0"; id: string | number | null; error: { code: number; message: string } };
 
+/** Who is calling: the OAuth client's profile (profiles.ts), so every call is attributable to a client. */
+export interface Caller {
+  profile: string;
+  readOnly: boolean;
+  client: string;
+}
+
 export interface CallLog {
   tool: string;
-  outcome: "OK" | "INVALID_ARGUMENTS" | string;
+  outcome: "OK" | "INVALID_ARGUMENTS" | "NOT_PERMITTED" | string;
   taskId: string | null;
+  profile: string;
+  client: string;
 }
+
+/** A read-only caller sees and may call only the tools annotated read-only. */
+const permitted = (caller: Caller, tool: ToolDefinition): boolean => !caller.readOnly || tool.annotations.readOnlyHint;
+
+const READ_ONLY_NOTE =
+  " This connection is read-only: it can read the ledger, evidence, memory and health, and cannot start, cancel or approve anything.";
 
 const error = (id: string | number | null, code: number, message: string): JsonRpcResponse => ({ jsonrpc: "2.0", id, error: { code, message } });
 
@@ -48,7 +63,13 @@ function taskIdOf(body: unknown): string | null {
 }
 
 /** Answers one JSON-RPC message; null for a notification (the HTTP layer replies 202 with no body). */
-export async function handleMessage(raw: unknown, door: OperatorDoor, release: string, log: (entry: CallLog) => void = () => {}): Promise<JsonRpcResponse | null> {
+export async function handleMessage(
+  raw: unknown,
+  door: OperatorDoor,
+  release: string,
+  log: (entry: CallLog) => void = () => {},
+  caller: Caller = { profile: "unknown", readOnly: true, client: "unknown" },
+): Promise<JsonRpcResponse | null> {
   if (Array.isArray(raw)) return error(null, -32600, "Batch requests are not supported");
   const parsed = Message.safeParse(raw);
   if (!parsed.success) return error(null, -32600, "Invalid JSON-RPC request");
@@ -66,26 +87,31 @@ export async function handleMessage(raw: unknown, door: OperatorDoor, release: s
           protocolVersion: version,
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "kerneljson-operator", title: "KernelJSON operator", version: release },
-          instructions: SERVER_INSTRUCTIONS,
+          instructions: caller.readOnly ? SERVER_INSTRUCTIONS + READ_ONLY_NOTE : SERVER_INSTRUCTIONS,
         },
       };
     }
     case "ping":
       return { jsonrpc: "2.0", id, result: {} };
     case "tools/list":
-      return { jsonrpc: "2.0", id, result: { tools: toolList() } };
+      return { jsonrpc: "2.0", id, result: { tools: toolList().filter((t) => !caller.readOnly || t.annotations.readOnlyHint) } };
     case "tools/call": {
       const name = params?.["name"];
       const tool = TOOLS.find((t) => t.name === name);
       if (!tool) return error(id, -32602, "Unknown tool");
+      const who = { profile: caller.profile, client: caller.client };
+      if (!permitted(caller, tool)) {
+        log({ tool: tool.name, outcome: "NOT_PERMITTED", taskId: null, ...who });
+        return { jsonrpc: "2.0", id, result: toolResult({ error: "NOT_PERMITTED", detail: "This connection is read-only" }, true) };
+      }
       const args = tool.input.safeParse(params?.["arguments"] ?? {});
       if (!args.success) {
-        log({ tool: tool.name, outcome: "INVALID_ARGUMENTS", taskId: null });
+        log({ tool: tool.name, outcome: "INVALID_ARGUMENTS", taskId: null, ...who });
         const issues = args.error.issues.map((i) => `${i.path.join(".") || "arguments"}: ${i.message}`);
         return { jsonrpc: "2.0", id, result: toolResult({ error: "INVALID_ARGUMENTS", issues }, true) };
       }
       const result = await tool.run(door, args.data);
-      log({ tool: tool.name, outcome: result.ok ? "OK" : result.failure, taskId: result.ok ? taskIdOf(result.body) : null });
+      log({ tool: tool.name, outcome: result.ok ? "OK" : result.failure, taskId: result.ok ? taskIdOf(result.body) : null, ...who });
       return {
         jsonrpc: "2.0",
         id,

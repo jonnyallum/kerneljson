@@ -30,8 +30,10 @@ services:
       MCP_TOKEN_SIGNING_KEY: ${MCP_TOKEN_SIGNING_KEY:?set from jVault; never commit}
       MCP_ALLOWED_REDIRECT_URIS: ${MCP_ALLOWED_REDIRECT_URIS:-}
       MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
-      # open for the first ChatGPT connection, then closed (runbook step 9).
-      MCP_REGISTRATION: ${MCP_REGISTRATION:?set open or closed}
+      # closed, except open-until=<UTC time> during a bounded enrolment (GROKBOT_MCP.md). Profiles that
+      # may register while it is open: empty means every profile.
+      MCP_REGISTRATION: ${MCP_REGISTRATION:?set open, closed or open-until=<UTC time>}
+      MCP_REGISTRATION_PROFILES: ${MCP_REGISTRATION_PROFILES:-}
       KJ_ADMISSION_URL: http://kerneljson-admission-door-gateway-1:8081
       KJ_MCP_BEARER: ${KJ_MCP_BEARER:?set from jVault; never commit}
       KERNELJSON_RELEASE_ID: ${KERNELJSON_RELEASE_ID:?set to the door release}
