@@ -10,7 +10,7 @@
  *  3. The offset advances only after a whole batch is handled, and never backwards.
  */
 export type Disposition = "ADMITTED" | "ANSWERED" | "MALFORMED" | "RATE_LIMITED" | "CAP_EXCEEDED" | "ADMISSION_FAILED";
-export type CommandKind = "STATUS" | "MISSION" | "TASK" | "MALFORMED" | "REMEMBER" | "MEMORIES" | "MEMORY" | "FORGET";
+export type CommandKind = "STATUS" | "MISSION" | "TASK" | "MALFORMED" | "REMEMBER" | "MEMORIES" | "MEMORY" | "FORGET" | "CHAT";
 
 export interface InboxRow {
   updateId: number;

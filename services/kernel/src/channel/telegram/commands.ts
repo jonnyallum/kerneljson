@@ -11,10 +11,8 @@ import {
 /**
  * KJ-P4A - the Telegram command grammar. Pure: text in, a supported command or MALFORMED out.
  *
- * This is a COMMAND channel, not a conversation. Nothing here interprets free text, calls a
- * model, or decides anything: it maps a fixed, small vocabulary onto requests the existing
- * admission door already understands. Anything else is MALFORMED and gets a fixed usage reply
- * that never echoes the input.
+ * Slash commands map to the existing admission door. Ordinary text is passed to a read-only
+ * answer port; it has no task authority or tools. Unknown slash commands get a usage reply.
  *
  *   /status
  *   /brief  owner/repo [findings=N]     repository brief (architecture summary), optional exact count
@@ -27,6 +25,7 @@ import {
  *   /forget <id>        KJ-P5: retract a memory (history is kept; nothing is erased)
  */
 export type Command =
+  | { kind: "CHAT"; text: string }
   | { kind: "STATUS" }
   | { kind: "MISSION"; command: "BRIEF" | "REVIEW"; repo: string; findings: number | null }
   | { kind: "MISSION"; command: "CHANGE"; repo: string; findings: null; instructions: string }
@@ -54,7 +53,8 @@ function parseFindings(token: string): number | null {
 
 export function parseCommand(text: string): Command {
   const trimmed = text.trim();
-  if (trimmed.length === 0 || trimmed.length > 4096 || !trimmed.startsWith("/")) return MALFORMED;
+  if (trimmed.length === 0 || trimmed.length > 4096) return MALFORMED;
+  if (!trimmed.startsWith("/")) return { kind: "CHAT", text: trimmed };
   const [head, ...args] = trimmed.split(/\s+/) as [string, ...string[]];
   // `/status@KernelJsonBot` is how Telegram addresses a bot in a group; accept and strip it.
   const name = head.slice(1).split("@")[0]!.toLowerCase();

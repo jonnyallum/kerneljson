@@ -18,10 +18,8 @@ import { summariseTask } from "./views.js";
  *     -> rate limit / daily cap -> the existing admission door, or a read-only query
  *     -> templated reply through the durable outbox -> close the update -> advance the offset
  *
- * The adapter is a CLIENT of KernelJSON, never an authority. It cannot create, complete or mutate a
- * task: a mission goes through the door (which authenticates, applies policy and builds the
- * IntentEnvelope); `/status` and `/task` only read. It has no scheduler, no second task store, and no
- * model in the loop. Replies are fixed templates over validated fields.
+ * The adapter is a CLIENT of KernelJSON, never a task authority. Missions go through the door.
+ * Ordinary text uses a model without tools and cannot mutate canonical task state.
  */
 export interface OperatorLimits {
   /** The one allow-listed private chat (also the allow-listed sender). */
@@ -57,6 +55,8 @@ export interface OperatorDeps {
    * policy decides, and nothing here can promote, approve or assemble.
    */
   memory?: MemoryPort;
+  /** Ordinary text receives a bounded, read-only model answer; it cannot admit or mutate tasks. */
+  conversation?: { answer(text: string): Promise<string> };
 }
 
 export interface PollSummary {
@@ -211,6 +211,15 @@ async function handleCommand(
   }
 
   switch (command.kind) {
+    case "CHAT": {
+      if (!deps.conversation) return finish({ kind: "CHAT_UNAVAILABLE" }, { disposition: "ANSWERED" });
+      try {
+        const answer = await deps.conversation.answer(command.text);
+        return finish({ kind: "CHAT", text: answer }, { disposition: "ANSWERED" });
+      } catch {
+        return finish({ kind: "CHAT_UNAVAILABLE" }, { disposition: "ANSWERED" });
+      }
+    }
     case "MALFORMED":
       return finish({ kind: "USAGE" }, { disposition: "MALFORMED" });
 
