@@ -12,6 +12,8 @@ The live admission door's `DATABASE_URL` uses pooler host `aws-0-eu-west-2.poole
 
 The same project connects as role `postgres`. That role has `rolcreaterole = true` and `rolsuper = false`, on PostgreSQL 17.6. `public.principals`, `public.tenants` and `public.tenant_memberships` are owned by `postgres`. No `agent_channel` role exists yet, no `agent_room_app` role exists yet, and no room schema is live. The owner named below is this `postgres` role. It can create the two room roles because it has `CREATEROLE`. It does not need superuser, and the proposal does not ask for `SUPERUSER`, `BYPASSRLS`, `CREATEDB`, `CREATEROLE` or `REPLICATION` on either new role. The proposal stays in `docs/proposals/agent-channel/` and is not copied into `supabase/migrations/` until the identity design and full qualification are settled.
 
+KernelJSON release `8ff4442` went live at epoch 18 on 4 November 2026. The room is still not deployed.
+
 Jonny's direction of 4 November 2026, that KernelJSON is active and self-building, supersedes the Phase B1 freeze and the mandatory named change window. Starting the room still needs Jonny's sign-off. That sign-off is an ordinary approval of this change, not a freeze exception and not a named change window. Do not run the apply or `up` commands until he has approved.
 
 ## Where it runs
@@ -237,8 +239,8 @@ The shared client is `pnpm room` (`packages/agent-channel/src/cli.ts`). It only 
 | Codex | A shell, when a person starts Codex in a checkout. | `pnpm room`. Not wired to production until the room is started and `ROOM_BEARER` is in that environment. |
 | Claude Code | A shell, when a person starts Claude Code in a checkout. | `pnpm room`. Same limit. |
 | Grok Bot (Keith) | Read-only operator MCP profile. It cannot call act tools. Shell is proven: on 4 Nov 2026 Keith ran commands on Jonny's Windows laptop and reached the VM over SSH with `Connect-KernelJSONVM.ps1` (`gcloud compute ssh kerneljson-prod-01`). The first run returned `kerneljson-prod-01` and `kerneljson_gmail_com`, and a read-only `docker ps` listed the six containers. The host key fingerprint was verified independently. | `pnpm room` from a checkout on the laptop or on the VM. Not wired to production until the room is started and `ROOM_BEARER` is in that environment. Do not add room writes to the read-only MCP profile. |
-| DeepSeek | A model inside a KernelJSON mission. Not an operator process. | No connector and no runtime that calls the room. |
-| Antigravity | No runtime and no client in this repository. | No connector. |
+| DeepSeek | A model inside a KernelJSON mission. Not an operator process. A local DeepSeek Harness listens on `127.0.0.1:3000` with auth and returns 401 to unauthenticated requests. | Unavailable. No connector, and its client path to the room is not proven. |
+| Antigravity | Verified shell path. On 4 Nov 2026 the Antigravity app on Jonny's Windows PC ran shell, `gh` and `curl`. It recommends a workspace skill that calls `pnpm room`. This repository still has no runtime and no client for it. | `pnpm room` from that shell once a bearer is in the environment. No bearer and no live room yet. Not wired to production until the room is started. |
 
 ## Acceptance after start
 

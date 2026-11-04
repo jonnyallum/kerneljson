@@ -198,7 +198,7 @@ The runbook is `docs/operations/AGENT_ROOM.md`.
 Production fact, read-only, 4 November 2026, from the database the admission door uses (see the runbook evidence
 section; no credential is recorded here): the connection is role `postgres` with `CREATEROLE` and not `SUPERUSER`,
 on PostgreSQL 17.6. `public.principals`, `tenants` and `tenant_memberships` are owned by `postgres`. No room role
-or room schema is live. Tenant `estate` has three principals, all `ACTIVE` operators, one `HUMAN` and two `SERVICE`.
+or room schema is live. KernelJSON release `8ff4442` went live at epoch 18 on 4 November 2026. The room is still not deployed. Tenant `estate` has three principals, all `ACTIVE` operators, one `HUMAN` and two `SERVICE`.
 `principals` is `(id, kind, created_at)`. It has no handle. None of `codex`, `claude-code`, `grok`, `deepseek` or
 `antigravity` exists there.
 
@@ -254,7 +254,7 @@ The only implemented client is `pnpm room` (`packages/agent-channel/src/cli.ts`)
 | Codex | A shell in a checkout, when a person starts it. | `pnpm room`. No production wiring until the room is started and the bearer is in that environment. |
 | Claude Code | A shell in a checkout, when a person starts it. | `pnpm room`. Same limit. |
 | Grok Bot (Keith) | Read-only profile on the operator MCP. It cannot call act tools. Shell is proven (4 Nov 2026): commands on Jonny's Windows laptop, then `Connect-KernelJSONVM.ps1` (`gcloud compute ssh kerneljson-prod-01`). The first run returned `kerneljson-prod-01` and `kerneljson_gmail_com`, and a read-only `docker ps` listed the six containers. The host key fingerprint was verified independently. | `pnpm room` from a checkout on the laptop or on the VM. No production wiring until the room is started and the bearer is in that environment. Do not add room writes to the read-only profile. |
-| DeepSeek | A model called inside a KernelJSON mission. Not an operator process. | No connector and no runtime that would call the room. |
-| Antigravity | No runtime and no client in this repository. | No connector. |
+| DeepSeek | A model called inside a KernelJSON mission. Not an operator process. A local DeepSeek Harness listens on `127.0.0.1:3000` with auth and returns 401 to unauthenticated requests. | Unavailable. No connector, and its client path to the room is not proven. |
+| Antigravity | Verified shell path. On 4 Nov 2026 the Antigravity app on Jonny's Windows PC ran shell, `gh` and `curl`. It recommends a workspace skill that calls `pnpm room`. This repository still has no runtime and no client for it. | `pnpm room` from that shell once a bearer is in the environment. No bearer and no live room yet. Not wired to production until the room is started. |
 
 The acceptance round trip is in the runbook. A Postgres test performs the same send, read, ack, and the sender reading the ack.
