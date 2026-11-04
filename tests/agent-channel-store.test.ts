@@ -11,8 +11,9 @@ import {
   type MessageDraft,
 } from "../packages/agent-channel/src/index.js";
 import type { TenantContext } from "../packages/contracts/src/index.js";
+import { DATABASE, compose, until } from "./support/local.js";
 
-const databaseUrl = process.env["AGENT_CHANNEL_TEST_URL"];
+const ROOM_DATABASE = "agent_room_test";
 
 function draft(author: MessageDraft["author"], handle: string, body: string, key: string, threadId: string): MessageDraft {
   return {
@@ -30,7 +31,8 @@ function draft(author: MessageDraft["author"], handle: string, body: string, key
 
 /**
  * Store-level checks. These call the store directly, with no route in front.
- * The same steps run against the in-memory store and, when AGENT_CHANNEL_TEST_URL is set, Postgres.
+ * The same steps run against the in-memory store and against the disposable Postgres
+ * at DATABASE (tests/support/local.ts), the same URL the other database suites use.
  */
 async function exerciseStore(store: ChannelStore) {
   const tenantA = randomUUID();
@@ -107,18 +109,17 @@ describe("in-memory store", () => {
   });
 });
 
-function withDatabase(url: string, name: string): string {
-  const queryAt = url.indexOf("?");
-  const base = queryAt === -1 ? url : url.slice(0, queryAt);
-  const query = queryAt === -1 ? "" : url.slice(queryAt);
-  const slash = base.lastIndexOf("/");
-  if (slash < 0) throw new Error("AGENT_CHANNEL_TEST_URL has no database name");
-  return `${base.slice(0, slash + 1)}${name}${query}`;
+function withDatabase(name: string): string {
+  const url = new URL(DATABASE);
+  url.pathname = `/${name}`;
+  return url.toString();
 }
 
-async function ensureDatabase(url: string, name: string) {
-  const admin = new pg.Pool({ connectionString: withDatabase(url, "postgres") });
+async function ensureDatabase(name: string) {
+  compose("up", "-d", "db");
+  const admin = new pg.Pool({ connectionString: withDatabase("postgres") });
   try {
+    await until(() => admin.query("select 1"), (result) => result.rowCount === 1);
     const exists = await admin.query("select 1 from pg_database where datname = $1", [name]);
     if ((exists.rowCount ?? 0) === 0) await admin.query(`create database ${quoteIdent(name)}`);
   } finally {
@@ -152,18 +153,11 @@ async function applyProposal(pool: pg.Pool) {
   await pool.query("grant agent_channel to current_user");
 }
 
-describe.skipIf(!databaseUrl)("postgres store", () => {
+describe("postgres store", () => {
   let pool: pg.Pool;
   beforeAll(async () => {
-    if (!databaseUrl) throw new Error("AGENT_CHANNEL_TEST_URL is required");
-    await ensureDatabase(databaseUrl, "agent_room_test");
-    const admin = new pg.Pool({ connectionString: withDatabase(databaseUrl, "postgres") });
-    try {
-      await admin.query("drop database if exists agent_room_rollback");
-    } finally {
-      await admin.end();
-    }
-    pool = new pg.Pool({ connectionString: withDatabase(databaseUrl, "agent_room_test") });
+    await ensureDatabase(ROOM_DATABASE);
+    pool = new pg.Pool({ connectionString: withDatabase(ROOM_DATABASE) });
     await applyProposal(pool);
   });
   afterAll(async () => {
@@ -320,12 +314,13 @@ describe.skipIf(!databaseUrl)("postgres store", () => {
     await pool.query("revoke all privileges on table tenant_memberships from public, agent_channel, agent_room_app");
     await pool.query("revoke all privileges on table principals from public, agent_channel, agent_room_app");
 
+    const door = new URL(DATABASE);
     const app = new pg.Pool({
-      host: "127.0.0.1",
-      port: Number(process.env["AGENT_CHANNEL_TEST_PORT"] ?? 5432),
+      host: door.hostname,
+      port: Number(door.port || 5432),
       user: "agent_room_app",
       password,
-      database: "agent_room_test",
+      database: ROOM_DATABASE,
     });
     try {
       const who = await app.query<{ current_user: string }>("select current_user");
