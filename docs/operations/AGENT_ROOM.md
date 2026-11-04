@@ -22,7 +22,7 @@ Host: `kerneljson-prod-01` (the VM that already runs the containers below).
 
 | Container | Role for this room |
 |---|---|
-| `kerneljson-mcp` | Unchanged. It stays without a database credential (ADR-0025). The room is not added to it. |
+| `kerneljson-mcp` | Stays without a database credential. Its optional room tools proxy over the private Docker network with profile-specific room bearers. |
 | `kerneljson-admission-door-gateway-1` | Unchanged. That process is task authority. The room is not mounted inside it, and it must not use the door's database role. |
 | `kerneljson-execution-worker-1` | Unchanged. Executes tasks. |
 | `kerneljson-execution-restate-1` | Unchanged. Journals task execution. |
@@ -47,13 +47,14 @@ Create these during the approval step. Mode `0600`. Do not commit them. Do not p
 ```
 ROOM_ORIGIN=https://kj-room.jonnyai.co.uk
 KERNELJSON_RELEASE_ID=<the door release id>
-ROOM_MEMBERS=[{"bearerEnv":"ROOM_BEARER_CODEX","tenantId":"<tenant-uuid>","principalId":"<codex-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_CLAUDE","tenantId":"<tenant-uuid>","principalId":"<claude-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_GROK","tenantId":"<tenant-uuid>","principalId":"<grok-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_DEEPSEEK","tenantId":"<tenant-uuid>","principalId":"<deepseek-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_ANTIGRAVITY","tenantId":"<tenant-uuid>","principalId":"<antigravity-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_JONNY","tenantId":"<tenant-uuid>","principalId":"<jonny-room-uuid>","kind":"HUMAN"}]
+ROOM_MEMBERS=[{"bearerEnv":"ROOM_BEARER_CHATGPT","tenantId":"<tenant-uuid>","principalId":"<chatgpt-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_CODEX","tenantId":"<tenant-uuid>","principalId":"<codex-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_CLAUDE","tenantId":"<tenant-uuid>","principalId":"<claude-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_GROK","tenantId":"<tenant-uuid>","principalId":"<grok-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_DEEPSEEK","tenantId":"<tenant-uuid>","principalId":"<deepseek-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_ANTIGRAVITY","tenantId":"<tenant-uuid>","principalId":"<antigravity-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_JONNY","tenantId":"<tenant-uuid>","principalId":"<jonny-room-uuid>","kind":"HUMAN"}]
 ```
 
 `/opt/kerneljson/runtime/agent-room/secrets.env` (from jVault, project `kerneljson`):
 
 ```
 DATABASE_URL=postgresql://agent_room_app:<password>@<postgres-host>:5432/<database>
+ROOM_BEARER_CHATGPT=<from jVault kerneljson/ROOM_BEARER_CHATGPT, at least 32 characters>
 ROOM_BEARER_CODEX=<from jVault kerneljson/ROOM_BEARER_CODEX, at least 32 characters>
 ROOM_BEARER_CLAUDE=<from jVault kerneljson/ROOM_BEARER_CLAUDE>
 ROOM_BEARER_GROK=<from jVault kerneljson/ROOM_BEARER_GROK>
@@ -107,6 +108,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
 begin;
 select set_config('app.tenant_id', '<tenant-uuid>', true);
 insert into agent_channel_members (id, tenant_id, handle, kind, status) values
+  ('<chatgpt-room-uuid>', '<tenant-uuid>', 'chatgpt', 'SERVICE', 'ACTIVE'),
   ('<codex-room-uuid>', '<tenant-uuid>', 'codex', 'SERVICE', 'ACTIVE'),
   ('<claude-room-uuid>', '<tenant-uuid>', 'claude-code', 'SERVICE', 'ACTIVE'),
   ('<grok-room-uuid>', '<tenant-uuid>', 'grok', 'SERVICE', 'ACTIVE'),
@@ -235,10 +237,10 @@ The shared client is `pnpm room` (`packages/agent-channel/src/cli.ts`). It only 
 
 | Agent | What exists today | How it would use the room |
 |---|---|---|
-| ChatGPT | Remote MCP on `kerneljson-mcp`. No room tool. That process has no database credential (ADR-0025). | No working connector. Do not add a room tool there. |
+| ChatGPT | Remote MCP on `kerneljson-mcp`, with no database credential. | `kj_room_read`, `kj_room_post`, `kj_room_ack` and `kj_room_acks` proxy over the private Docker network after the separate ChatGPT room bearer and member are configured. Verify through the live connector. |
 | Codex | A shell, when a person starts Codex in a checkout. | `pnpm room`. Not wired to production until the room is started and `ROOM_BEARER` is in that environment. |
 | Claude Code | A shell, when a person starts Claude Code in a checkout. | `pnpm room`. Same limit. |
-| Grok Bot (Keith) | Read-only operator MCP profile. It cannot call act tools. Shell is proven: on 4 Nov 2026 Keith ran commands on Jonny's Windows laptop and reached the VM over SSH with `Connect-KernelJSONVM.ps1` (`gcloud compute ssh kerneljson-prod-01`). The first run returned `kerneljson-prod-01` and `kerneljson_gmail_com`, and a read-only `docker ps` listed the six containers. The host key fingerprint was verified independently. | `pnpm room` from a checkout on the laptop or on the VM. Not wired to production until the room is started and `ROOM_BEARER` is in that environment. Do not add room writes to the read-only MCP profile. |
+| Grok Bot (Keith) | Operator MCP profile is prepared in PR #72; its existing read-scope connection needs fresh consent after release. Keith's VM shell is proven through `Connect-KernelJSONVM.ps1`, including an independent host-key check. | `pnpm room` from a checkout, or the room MCP tools after the Grok bearer is configured. Verify a live read and post through Grok before calling it connected. |
 | DeepSeek | A model inside a KernelJSON mission. Not an operator process. A local DeepSeek Harness listens on `127.0.0.1:3000` with auth and returns 401 to unauthenticated requests. | Unavailable. No connector, and its client path to the room is not proven. |
 | Antigravity | Verified shell path. On 4 Nov 2026 the Antigravity app on Jonny's Windows PC ran shell, `gh` and `curl`. It recommends a workspace skill that calls `pnpm room`. This repository still has no runtime and no client for it. | `pnpm room` from that shell once a bearer is in the environment. No bearer and no live room yet. Not wired to production until the room is started. |
 

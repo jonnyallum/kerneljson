@@ -36,6 +36,10 @@ services:
       MCP_REGISTRATION_PROFILES: ${MCP_REGISTRATION_PROFILES:-}
       KJ_ADMISSION_URL: http://kerneljson-admission-door-gateway-1:8081
       KJ_MCP_BEARER: ${KJ_MCP_BEARER:?set from jVault; never commit}
+      # Optional until the shared room is live. These are room-only credentials, never door bearers.
+      KJ_ROOM_URL: ${KJ_ROOM_URL:-}
+      ROOM_BEARER_CHATGPT: ${ROOM_BEARER_CHATGPT:-}
+      ROOM_BEARER_GROK: ${ROOM_BEARER_GROK:-}
       KERNELJSON_RELEASE_ID: ${KERNELJSON_RELEASE_ID:?set to the door release}
       TSX_DISABLE_CACHE: "1"
     user: "node"
