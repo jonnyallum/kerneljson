@@ -9,6 +9,7 @@ drop table if exists agent_channel_messages;
 drop table if exists agent_channel_members;
 drop table if exists agent_channel_counters;
 
+-- The current proposal does not create this function. Drop it only if an earlier draft did.
 drop function if exists agent_channel_member_active(uuid, uuid, text);
 drop function if exists agent_channel_deliveries_forward();
 drop function if exists agent_channel_acks_forward();

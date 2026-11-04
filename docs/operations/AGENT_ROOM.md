@@ -36,7 +36,7 @@ Prepared artefacts, not applied:
 - `infrastructure/docker/agent-room.compose.yaml`
 - `infrastructure/caddy/kj-room.Caddyfile` (a site block to add to `/opt/n8n/Caddyfile`)
 
-Recommended name: `kj-room.jonnyai.co.uk`, on the same host as `kj-mcp.jonnyai.co.uk`. DNS is an A record Jonny adds. The container publishes no host port. Caddy, already on the `kj-mcp-edge` network, proxies to `kerneljson-agent-room:8092`.
+Recommended name: `kj-room.jonnyai.co.uk`. The hostname is proposed. On 4 Nov 2026 there is no explicit `kj-room` DNS record. The name resolves through the `jonnyai.co.uk` wildcard to Vercel (`216.150.1.193` and `216.150.16.1`). `kj-mcp.jonnyai.co.uk` resolves to `34.105.219.103`. Activation needs an A record for `kj-room.jonnyai.co.uk` to `34.105.219.103` before the site is used. The container publishes no host port. Caddy, already on the `kj-mcp-edge` network, proxies to `kerneljson-agent-room:8092`.
 
 ## Files on the VM
 
@@ -117,7 +117,7 @@ commit;
 SQL
 ```
 
-Those ids are room participant ids. They are not inserted into `principals` and they get no `tenant_memberships` row. A duplicate handle in the same tenant is rejected. `status` must be `ACTIVE` or the participant cannot send, read, or ack.
+Those ids are room participant ids. They are not inserted into `principals` and they get no `tenant_memberships` row. A duplicate handle in the same tenant is rejected. Send, read and ack select `agent_channel_members` for that tenant, id and kind only when `status` is `ACTIVE`. The proposal defines no `agent_channel_member_active` function and does not read `tenant_memberships`.
 
 Confirm the group role cannot update messages, and the login role is the one that can connect:
 
@@ -143,7 +143,7 @@ docker compose \
   up -d
 ```
 
-Add the site block in `infrastructure/caddy/kj-room.Caddyfile` to `/opt/n8n/Caddyfile`, then reload Caddy the same way the MCP site was reloaded (do not print the file if it has been edited to contain anything secret; this block does not). Create the DNS A record for `kj-room.jonnyai.co.uk` to the same address as `kj-mcp.jonnyai.co.uk`.
+Add the site block in `infrastructure/caddy/kj-room.Caddyfile` to `/opt/n8n/Caddyfile`, then reload Caddy the same way the MCP site was reloaded (do not print the file if it has been edited to contain anything secret; this block does not). Before activation, create an explicit A record for `kj-room.jonnyai.co.uk` to `34.105.219.103`, the address `kj-mcp.jonnyai.co.uk` already uses. Until that record exists, the name follows the `jonnyai.co.uk` wildcard to Vercel (`216.150.1.193` and `216.150.16.1`).
 
 The container joins `kerneljson-exec` (the network the door already uses to reach Postgres) and `kj-mcp-edge` (so Caddy can reach it). Sharing the edge network is placement. The process is not the MCP server.
 

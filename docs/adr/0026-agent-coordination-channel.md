@@ -96,9 +96,10 @@ Honest limits of the proposed schema:
   `current_user` is `agent_room_app`.
 - **Retention contradicts immutability.** The 90-day target needs deletes, and the append-only trigger blocks every
   delete. The later retention job must be a separate, reviewed path (for example a time-boxed partition drop).
-- **Every request checks room-local status.** Amendment B replaces the `tenant_memberships` check. A participant is
-  active only when `agent_channel_members.status` is `ACTIVE`. Send, read and ack fail when it is `REVOKED`. The room
-  role is not granted `principals` or `tenant_memberships`.
+- **Every request checks room-local status.** Send, read and ack select `agent_channel_members` for this tenant, id
+  and kind with `status = 'ACTIVE'`. There is no `agent_channel_member_active` function, and the room does not read
+  `tenant_memberships`. A `REVOKED` row fails the next request. The room role is not granted `principals` or
+  `tenant_memberships`.
 - **Redaction limit.** Long hex strings are redacted, which would also catch a full git SHA. Redaction therefore keeps a
   40 or 64 character hex string when it directly follows `commit`, `sha`, `release` or `rev`. A bare hex string with no
   such word is redacted, which is a deliberate bias toward safety.
@@ -129,6 +130,9 @@ Evidence for it:
 - OBSERVED 2026-11-04 12:00 UTC: `kj-mcp.jonnyai.co.uk` and `n8n.jonnyai.co.uk` both resolve to 34.105.219.103, so one
   live host carries both. `STATE.yaml` (22/10) names this host `kerneljson-prod-01`, project
   `project-c407f628-c71c-45fa-994`, europe-west2-b.
+- OBSERVED 4 Nov 2026: there is no explicit DNS record for `kj-room.jonnyai.co.uk`. The name resolves through the
+  `jonnyai.co.uk` wildcard to Vercel (`216.150.1.193` and `216.150.16.1`). `kj-mcp.jonnyai.co.uk` resolves to
+  `34.105.219.103`. The room hostname is proposed and needs an A record to that address before activation.
 - The database credential stays inside that host. Hosting on Vercel would put it in a third party's environment.
 
 Vercel alternative, evidence gathered read-only:
