@@ -12,6 +12,8 @@
     "start:worker": "tsx services/kernel/src/index.ts",
     "start:gateway": "tsx apps/gateway/src/main.ts",
     "start:mcp": "tsx apps/mcp/src/main.ts",
+    "start:room": "tsx apps/mission-control/src/room-main.ts",
+    "room": "tsx packages/agent-channel/src/cli.ts",
     "health": "tsx services/kernel/src/health/cli.ts",
     "alerts": "tsx services/kernel/src/alerting/cli.ts",
     "mission": "tsx services/kernel/src/mission/mission-cli.ts",

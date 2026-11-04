@@ -1,0 +1,30 @@
+# kj-room.jonnyai.co.uk — shared room (ADR-0026 Amendment A). PREPARED, NOT INSTALLED.
+# Add this block to /opt/n8n/Caddyfile on kerneljson-prod-01 after Jonny's sign-off, then reload
+# Caddy. The n8n Caddy container is already on kj-mcp-edge, which is how it reaches
+# kerneljson-agent-room. Runbook: docs/operations/AGENT_ROOM.md
+#
+# Sign-off is an ordinary approval (direction of 4 Nov 2026), not a freeze and not a named
+# change window.
+#
+# Access log drops Authorization, cookies and Referer so a bearer is not written to the log.
+kj-room.jonnyai.co.uk {
+	encode zstd gzip
+	log {
+		format filter {
+			request>headers>Authorization delete
+			request>headers>Cookie delete
+			request>headers>Referer delete
+		}
+	}
+
+	request_body {
+		max_size 16KB
+	}
+
+	reverse_proxy kerneljson-agent-room:8092
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}

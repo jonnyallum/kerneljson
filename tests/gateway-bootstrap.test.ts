@@ -11,6 +11,7 @@ import {
   doorScope,
 } from "../apps/gateway/src/main.js";
 import { TenantContext } from "../packages/contracts/src/index.js";
+import { isRoomBearer } from "../packages/agent-channel/src/bearer.js";
 
 // Test-only literals. NOT real secrets; used to prove they never leak.
 const TENANT = "5f970749-7507-894b-a2e4-872ce20a94b7";
@@ -134,6 +135,23 @@ describe("admission door — bearer resolver (constant-time, deterministic, stab
     expect(await r("")).toBeNull();
   });
 
+  it("rejects a room bearer even when that exact token is configured as the door secret", async () => {
+    const room = "kjr1_" + "a".repeat(32);
+    expect(isRoomBearer(room)).toBe(true);
+    expect(configCode({ ...baseEnv(), KJ_ADMISSION_BEARER: room })).toBe("KJ_ADMISSION_BEARER_IS_ROOM_TOKEN");
+    expect(configCode({ ...baseEnv(), KJ_MCP_BEARER: room, KJ_MCP_PRINCIPAL_ID: "0b6c39d5-6d1b-4f43-9c43-0f7a6a3f2d11", KJ_MCP_PRINCIPAL_KIND: "SERVICE" })).toBe("KJ_MCP_BEARER_IS_ROOM_TOKEN");
+    expect(await createBearerResolver(room, ctx)(room)).toBeNull();
+    expect(await createBearerResolver(BEARER, ctx)(room)).toBeNull();
+    expect(await createBearerTable([{ bearer: room, context: ctx }])(room)).toBeNull();
+    let text = "";
+    try {
+      loadDoorConfig({ ...baseEnv(), KJ_ADMISSION_BEARER: room });
+    } catch (error) {
+      text = `${(error as DoorConfigError).code}|${(error as Error).message}`;
+    }
+    expect(text).not.toContain(room);
+  });
+
   it("is stable across repeated calls", async () => {
     const r = createBearerResolver(BEARER, ctx);
     expect(await r(BEARER)).toEqual(await r(BEARER));
@@ -238,5 +256,19 @@ describe("admission door — HTTP surface without a DB (healthz + auth rejection
 
   it("POST /v1/tasks with a wrong bearer is 401 (before any DB access)", async () => {
     expect((await submit({ authorization: "Bearer wrong-token-1234567890" })).status).toBe(401);
+  });
+
+  it("POST /v1/tasks with a room bearer is 401 and does not open the database", async () => {
+    let connects = 0;
+    const original = pool.connect.bind(pool);
+    pool.connect = ((...args: Parameters<pg.Pool["connect"]>) => {
+      connects += 1;
+      return original(...args);
+    }) as pg.Pool["connect"];
+    const room = "kjr1_" + "b".repeat(32);
+    const response = await submit({ authorization: `Bearer ${room}` });
+    expect(response.status).toBe(401);
+    expect(await response.text()).not.toContain(room);
+    expect(connects).toBe(0);
   });
 });
