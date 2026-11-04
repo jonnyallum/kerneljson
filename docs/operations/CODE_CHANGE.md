@@ -1,6 +1,6 @@
 # code-change/v1 (Mission #2)
 
-Status: built (PR A core, PR B wiring, PR C activation prep), not deployed. Activation is a change window: [CODE_CHANGE_ACTIVATION.md](CODE_CHANGE_ACTIVATION.md).
+Status: deployed in release `a47a50b` (epoch 17, observed 04/11/2026) with the worker configured for `jonnyallum/kj-pilot`. Pilot task `a638530b-2758-8756-ab70-1ffc95894a25` completed after the missing Restate handlers were registered: its coding and test workflows passed and it opened draft [kj-pilot PR #2](https://github.com/jonnyallum/kj-pilot/pull/2), changing only `src/text.js` and `test/text.test.js`. Activation and the Restate handler registration check are documented in [CODE_CHANGE_ACTIVATION.md](CODE_CHANGE_ACTIVATION.md). The currently connected KernelJSON MCP client may still omit `kj_run_code_change`; admission through the existing door and Telegram `/change` are separate routes.
 
 ## What it does
 
