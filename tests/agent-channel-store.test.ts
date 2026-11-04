@@ -190,7 +190,7 @@ describe("postgres store", () => {
       /append-only/,
     );
     await expect(
-      pool.query("update agent_channel_deliveries set state = 'pending' where tenant_id = $1 and recipient_principal_id = $2", [
+      pool.query("update agent_channel_deliveries set state = 'pending' where tenant_id = $1 and recipient_id = $2", [
         tenantA,
         shared,
       ]),
