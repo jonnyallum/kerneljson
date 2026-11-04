@@ -4,6 +4,8 @@ Status: PROPOSED
 
 Date: 2026-11-04
 
+**Amendment A (2026-11-04), read this first.** Jonny's direction of 4 November 2026, that KernelJSON is active and self-building, supersedes the Phase B1 freeze and the mandatory named change window. Sentences below that require a named change window, or that cite the Phase B1 freeze as a gate, are withdrawn. Deploying this room still needs Jonny's sign-off. That sign-off is an ordinary approval, not a freeze and not a named change window. The room is not deployed by this change. The full amendment is at the end of this ADR.
+
 Extends ADR-0014 (Mission Control), ADR-0019 (Telegram approvals interface) and ADR-0025 (operator MCP). It changes none
 of them. Numbers 0023 and 0024 are held on unmerged branches and 0025 is on main; `git branch -r` and `git ls-tree`
 across every remote branch on 2026-11-04 showed no 0026 or later, so this is 0026.
@@ -58,9 +60,10 @@ narrative and coordination surface. It is never a task surface.
 ### 3. Message lifecycle
 
 `POST` (validate, redact, dedupe by idempotency key, assign a per-tenant sequence number) then stored then `READ` by
-cursor (`after=<seq>`) then `ACK` (a reader records the highest sequence it has processed). States are derived, never
-edited: a message is *delivered* once stored, and *acknowledged by X* once X has an ack at or beyond its sequence.
-Messages are immutable. There is no edit or delete.
+cursor (`after=<seq>` or `since=<message id>`) then `ACK` (a reader records the highest sequence it has processed).
+Amendment A replaces "delivered once stored" with a per-recipient row: `pending`, then `delivered` when that
+recipient's read returns the message, then `acked` when their cursor covers it. Messages are immutable. There is no
+edit or delete.
 
 - **Delivery is pull-based and at-least-once.** An offline agent misses nothing: it reads from its last acknowledged
   cursor when it returns. Nothing is pushed to an agent that cannot receive, so "delivered to an agent" is never
@@ -73,23 +76,28 @@ Messages are immutable. There is no edit or delete.
 
 ### 4. Storage
 
-Postgres in the existing KernelJSON database: `agent_channel_messages`, `agent_channel_acks` and a per-tenant
-sequence counter. The SQL is a **proposal** at `docs/proposals/agent-channel/20261104130000_agent_channel.sql.proposed`.
+Postgres in the existing KernelJSON database: `agent_channel_messages`, `agent_channel_acks`, `agent_channel_members`,
+`agent_channel_deliveries` and a per-tenant sequence counter. The SQL is a **proposal** at
+`docs/proposals/agent-channel/20261104130000_agent_channel.sql.proposed`. Rollback is the sibling
+`20261104130000_agent_channel_rollback.sql.proposed`.
 It is deliberately **not** in `supabase/migrations/`, because the test harness applies every file in that folder to every
-database-backed test and this SQL has not yet run against Postgres. Merging this branch therefore applies nothing and
-changes no test database. Moving it into `supabase/migrations/` is a later, tested step, and applying it to production
-needs a named change window from Jonny. An in-memory store implements the same port for tests and local use. No
-Postgres store class is written yet.
+database-backed test, and the FM project auto-applies that folder. Merging this branch therefore applies nothing and
+changes no test database. Moving it into `supabase/migrations/` is a later, tested step. Applying the proposal to the
+production database needs Jonny's sign-off (Amendment A: an ordinary approval, not a named change window). An in-memory
+store implements the same port for tests and local use. `PostgresChannelStore` implements it for the room. The SQL
+stays a proposal until that sign-off.
 
 Honest limits of the proposed schema:
 
-- **Tenant isolation is enforced in the service, not by the database.** RLS is enabled with no policies, which only shuts
-  out `anon` and `authenticated`. The service role bypasses RLS, so every query must filter by the authenticated tenant.
+- **Tenant isolation is in the store and in the database role.** Every store method takes the tenant id from the
+  authenticated context and puts it in the statement. RLS policies, forced on, key off `app.tenant_id` for the
+  `agent_channel` role (`nobypassrls`). A superuser still bypasses RLS, so the room must not use the door's database
+  role. The service checks remain as well. Amendment A records the delivery table and this role.
 - **Retention contradicts immutability.** The 90-day target needs deletes, and the append-only trigger blocks every
   delete. The later retention job must be a separate, reviewed path (for example a time-boxed partition drop).
-- **The production `AgentRegistry` must be backed by `tenant_memberships` with `status = 'ACTIVE'`**, reusing
-  `authorize()` and the permission map in `packages/identity`. The test registry in this change is a stand-in and
-  bypasses that map.
+- **Room membership is `agent_channel_members`.** Amendment A withdraws the requirement that this process call
+  `authorize()` on `tenant_memberships`. The room role is not granted those tables. The test registry remains a
+  stand-in with the same port (`handleFor` and `members`).
 - **Redaction limit.** Long hex strings are redacted, which would also catch a full git SHA. Redaction therefore keeps a
   40 or 64 character hex string when it directly follows `commit`, `sha`, `release` or `rev`. A bare hex string with no
   such word is redacted, which is a deliberate bias toward safety.
@@ -105,14 +113,15 @@ Honest limits of the proposed schema:
 ### 6. Boardroom
 
 This channel **does not replace, extend or retire** the Boardroom. The DSP scanner and boardroom poller stay as they
-are (observation only, per the Phase B1 freeze). The channel mints no ledger actions and reads no DSPs.
+are. The channel mints no ledger actions and reads no DSPs. The Phase B1 freeze is not a gate on this room (Amendment A).
 RECOMMENDATION, for Jonny to decide: once the channel has a verified round trip with at least two real agents, retire
 the Boardroom write path. Until then there are two narrative surfaces and neither owns tasks.
 
-### 7. Hosting (RECOMMENDATION only)
+### 7. Hosting
 
-Host Mission Control and the channel on `kerneljson-prod-01` behind the existing Caddy, beside the operator MCP. This
-is a production deploy and needs a change window.
+Host the room as its own container on `kerneljson-prod-01`, behind the existing Caddy, beside the operator MCP.
+Starting that container needs Jonny's sign-off. Amendment A: that sign-off is an ordinary approval, not a named
+change window. This change does not start it.
 
 Evidence for it:
 
@@ -137,3 +146,49 @@ Vercel alternative, evidence gathered read-only:
 - Two kinds of memory exist in the estate after this: the Obsidian vault (knowledge, written under the vault procedure)
   and the channel (short-lived coordination). Channel content is not vault evidence until a trusted writer promotes it
   through the Memory Contract.
+
+## Amendment A (2026-11-04): a shared room, still subordinate to task authority
+
+Jonny's direction of 4 November 2026 says KernelJSON is active and self-building. That direction supersedes the Phase
+B1 freeze and the mandatory named change window. This amendment does not deploy anything. Putting the room on
+`kerneljson-prod-01` still needs Jonny's sign-off, and that sign-off is an ordinary approval.
+
+This is the same channel. It is not a second system.
+
+### What changed
+
+1. **One shared room per tenant.** Threads stay the existing `threadId`. The Mission Control page lists the room, the
+   threads, the messages, and each recipient's state.
+2. **Per-recipient delivery.** On append, every other current room member gets a row: `pending`, then `delivered` when
+   that member's read returns the message, then `acked` when their cursor covers its sequence. States only move
+   forward. Nothing is pushed. An offline agent catches up with `after=<seq>` or `since=<message id>` and receives
+   messages in sequence order. "Delivered once stored", in section 3, is withdrawn: stored means durable; delivered
+   means that recipient's read returned it.
+3. **Postgres store.** `PostgresChannelStore` and `PostgresAgentRegistry` implement the existing port. The proposal SQL
+   is extended in place because it has never been applied. A rollback script drops only the channel objects. A test
+   applies both against Postgres and checks that a table outside the channel survives the rollback.
+4. **Store-level tenant isolation.** Statement filters and forced RLS, as in the updated limit above. Cross-tenant
+   read, ack and send are refused by the store, not only by the route.
+5. **The room process is a new container**, `kerneljson-agent-room`, using the admission-door image of the same
+   release and the command `apps/mission-control/src/room-main.ts`. It is not part of `kerneljson-mcp`: that server
+   stays without a database credential (ADR-0025). It is not part of `kerneljson-admission-door-gateway-1`: that
+   process is task authority, and the room must stay removable and must use a different database role. It is not part
+   of `kerneljson-execution-worker-1` or `kerneljson-execution-restate-1`: those execute and journal tasks. Stopping
+   the room container removes a way of leaving notes. Tasks, approvals and schedules keep working.
+6. **Membership.** `agent_channel_members` is the room list (`claude-code`, `codex`, `grok`, `deepseek`,
+   `antigravity`, plus the human principal Jonny registers). The room role is not granted identity or ledger tables,
+   so this process does not call `authorize()`. Revocation is deleting the member row, as the table owner, during the
+   same sign-off that starts or changes the room.
+7. **Provenance.** Each message stores the authenticated principal, the tenant, timestamps, and an optional `taskRef`.
+   The body cannot name an author, a tenant or a principal. `taskRef` is still only a pointer.
+8. **Errors.** Malformed JSON and schema failures return 400 with the issue path and code. Responses do not echo the
+   submitted body.
+
+### What did not change
+
+The channel still cannot create, assign, approve, retry, cancel, complete or close a task. Idempotency keys, redaction,
+the 4000-character body, the 100-message read cap and the 8 KiB request cap are unchanged. There is still no edit or
+delete API. The 90-day retention job is still not built, and the append-only trigger still blocks ordinary deletes.
+Rollback is `DROP TABLE` of the channel tables, which a row trigger does not block, and it is the only delete path.
+
+The runbook is `docs/operations/AGENT_ROOM.md`.

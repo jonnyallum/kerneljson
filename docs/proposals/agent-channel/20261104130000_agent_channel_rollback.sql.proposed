@@ -1,0 +1,36 @@
+-- ADR-0026 Amendment A. Rollback for the agent coordination channel only.
+-- Proposal, deliberately NOT in supabase/migrations/. Run after Jonny's sign-off
+-- if the room must be removed. Dropping these tables deletes the room log.
+-- It does not drop tenants, principals, or any other table.
+
+drop table if exists agent_channel_deliveries;
+drop table if exists agent_channel_acks;
+drop table if exists agent_channel_messages;
+drop table if exists agent_channel_members;
+drop table if exists agent_channel_counters;
+
+drop function if exists agent_channel_deliveries_forward();
+drop function if exists agent_channel_acks_forward();
+drop function if exists agent_channel_messages_immutable();
+drop function if exists agent_channel_current_tenant();
+
+do $$
+declare member_name text;
+begin
+  if exists (select 1 from pg_roles where rolname = 'agent_channel') then
+    for member_name in
+      select m.rolname
+      from pg_auth_members am
+      join pg_roles m on m.oid = am.member
+      where am.roleid = 'agent_channel'::regrole
+    loop
+      execute format('revoke agent_channel from %I', member_name);
+    end loop;
+    execute 'revoke all privileges on all tables in schema public from agent_channel';
+    execute 'revoke all privileges on all sequences in schema public from agent_channel';
+    execute 'revoke all privileges on all functions in schema public from agent_channel';
+    execute 'revoke all on schema public from agent_channel';
+    execute 'drop owned by agent_channel';
+    execute 'drop role agent_channel';
+  end if;
+end $$;

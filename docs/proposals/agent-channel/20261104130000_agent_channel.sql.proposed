@@ -1,7 +1,9 @@
--- ADR-0026: agent coordination channel storage. PROPOSAL ONLY, deliberately NOT in supabase/migrations/.
--- tests/support/local.ts migrate() applies every file in that folder to every database-backed test, and this
--- SQL has not been run against Postgres (Docker Desktop was unavailable on 2026-11-04). Move it into
--- supabase/migrations/ only after it has been tested, and apply it to production only in a named change window.
+-- ADR-0026 Amendment A. Proposal, deliberately NOT in supabase/migrations/.
+-- tests/support/local.ts migrate() applies every file in that folder to every database-backed
+-- test, and the FM project auto-applies that folder. This script stays here so merging the
+-- branch applies nothing. Apply it with the room runbook after Jonny's sign-off.
+-- That sign-off is an ordinary approval (direction of 4 Nov 2026), not a named change window
+-- and not a freeze exception.
 -- The channel is narrative. task_ref is a bare pointer with no foreign key: a message cannot
 -- change, and does not depend on, any task row.
 
@@ -40,6 +42,28 @@ create table if not exists agent_channel_acks (
   primary key (tenant_id, principal_id)
 );
 
+-- Room membership. The app role may read it. The operator inserts rows as the table owner.
+create table if not exists agent_channel_members (
+  tenant_id uuid not null references tenants(id),
+  principal_id uuid not null references principals(id),
+  handle text not null check (handle ~ '^[a-z][a-z0-9-]{1,31}$'),
+  primary key (tenant_id, principal_id),
+  unique (tenant_id, handle)
+);
+
+-- Per-recipient delivery. State moves only forward: pending, delivered, acked.
+create table if not exists agent_channel_deliveries (
+  tenant_id uuid not null references tenants(id),
+  message_id uuid not null references agent_channel_messages(id),
+  recipient_principal_id uuid not null references principals(id),
+  handle text not null check (handle ~ '^[a-z][a-z0-9-]{1,31}$'),
+  state text not null check (state in ('pending','delivered','acked')),
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, message_id, recipient_principal_id)
+);
+create index if not exists agent_channel_deliveries_recipient
+  on agent_channel_deliveries (tenant_id, recipient_principal_id, state);
+
 -- Messages are immutable: no update, no delete (retention is a later, separate job).
 create or replace function agent_channel_messages_immutable() returns trigger language plpgsql as $$
 begin
@@ -50,9 +74,83 @@ create trigger agent_channel_messages_no_change
   before update or delete on agent_channel_messages
   for each row execute function agent_channel_messages_immutable();
 
--- Row-level security on tenant_id. No policy is created for anon or authenticated, so they see nothing;
--- the service role used by the gateway bypasses RLS and must always filter by the authenticated tenant.
-alter table agent_channel_counters enable row level security;
-alter table agent_channel_messages enable row level security;
-alter table agent_channel_acks enable row level security;
-revoke all on agent_channel_counters, agent_channel_messages, agent_channel_acks from public, anon, authenticated;
+create or replace function agent_channel_acks_forward() returns trigger language plpgsql as $$
+begin
+  if new.up_to_seq < old.up_to_seq then
+    raise exception 'agent_channel_acks cannot move backwards';
+  end if;
+  if new.tenant_id <> old.tenant_id or new.principal_id <> old.principal_id then
+    raise exception 'agent_channel_acks identity is immutable';
+  end if;
+  return new;
+end $$;
+drop trigger if exists agent_channel_acks_no_rewind on agent_channel_acks;
+create trigger agent_channel_acks_no_rewind
+  before update on agent_channel_acks
+  for each row execute function agent_channel_acks_forward();
+
+create or replace function agent_channel_deliveries_forward() returns trigger language plpgsql as $$
+begin
+  if old.state = 'acked' and new.state <> 'acked' then
+    raise exception 'agent_channel_deliveries cannot move backwards from acked';
+  end if;
+  if old.state = 'delivered' and new.state = 'pending' then
+    raise exception 'agent_channel_deliveries cannot move backwards from delivered';
+  end if;
+  if new.tenant_id <> old.tenant_id or new.message_id <> old.message_id
+     or new.recipient_principal_id <> old.recipient_principal_id then
+    raise exception 'agent_channel_deliveries identity is immutable';
+  end if;
+  return new;
+end $$;
+drop trigger if exists agent_channel_deliveries_no_rewind on agent_channel_deliveries;
+create trigger agent_channel_deliveries_no_rewind
+  before update on agent_channel_deliveries
+  for each row execute function agent_channel_deliveries_forward();
+
+-- Null or an unparseable setting matches no row. The store sets this inside each transaction.
+create or replace function agent_channel_current_tenant() returns uuid language plpgsql stable as $$
+declare raw text;
+begin
+  raw := current_setting('app.tenant_id', true);
+  if raw is null or raw = '' then
+    return null;
+  end if;
+  return raw::uuid;
+exception when invalid_text_representation then
+  return null;
+end $$;
+
+-- Row-level security. FORCE applies to the table owner. A superuser still bypasses it,
+-- which is why the room connects as agent_channel (nologin, nobypassrls) and not as the
+-- door's database role. No policy is created for anon or authenticated.
+do $$ declare t text; begin
+  foreach t in array array[
+    'agent_channel_counters','agent_channel_messages','agent_channel_acks',
+    'agent_channel_members','agent_channel_deliveries'
+  ] loop
+    execute format('alter table %I enable row level security', t);
+    execute format('alter table %I force row level security', t);
+    execute format('drop policy if exists %I on %I', t || '_tenant', t);
+    execute format(
+      'create policy %I on %I using (tenant_id = agent_channel_current_tenant()) with check (tenant_id = agent_channel_current_tenant())',
+      t || '_tenant', t
+    );
+  end loop;
+end $$;
+
+revoke all on agent_channel_counters, agent_channel_messages, agent_channel_acks,
+  agent_channel_members, agent_channel_deliveries from public, anon, authenticated;
+
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname = 'agent_channel') then
+    create role agent_channel nologin nobypassrls;
+  end if;
+end $$;
+alter role agent_channel nologin nobypassrls;
+grant usage on schema public to agent_channel;
+grant select, insert on agent_channel_messages to agent_channel;
+grant select, insert, update on agent_channel_counters to agent_channel;
+grant select, insert, update on agent_channel_acks to agent_channel;
+grant select, insert, update on agent_channel_deliveries to agent_channel;
+grant select on agent_channel_members to agent_channel;

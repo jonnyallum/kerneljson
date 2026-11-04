@@ -1,0 +1,56 @@
+# Shared room (ADR-0026 Amendment A). PREPARED, NOT STARTED.
+# Runbook: docs/operations/AGENT_ROOM.md
+# Jonny's sign-off is an ordinary approval (direction of 4 Nov 2026), not a freeze and not a
+# named change window. Do not run this file until he has approved.
+#
+# Image: the admission-door image of the SAME release, different command. KJ_ROOM_IMAGE must be
+# set explicitly, e.g. kerneljson-admission-door:<short-sha>. This is not kerneljson-mcp (that
+# server has no database credential) and not the admission door (task authority, different role).
+# Secrets: mode-600 env files. Never commit them. Never run `docker compose config` against the
+# secrets file; it prints resolved values.
+# Public:  ROOM_ORIGIN, ROOM_MEMBERS (bearer env NAMES, not bearer values), KERNELJSON_RELEASE_ID
+# Secret:  DATABASE_URL for role agent_channel, and ROOM_BEARER_* values.
+# Networks: kerneljson-exec (Postgres, same path the door uses) and kj-mcp-edge (Caddy).
+# No host port. The only way in is Caddy.
+name: kerneljson-agent-room
+services:
+  room:
+    image: ${KJ_ROOM_IMAGE:?set KJ_ROOM_IMAGE to the door image of the same release}
+    container_name: kerneljson-agent-room
+    command: ["node", "--import", "tsx", "apps/mission-control/src/room-main.ts"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL for the agent_channel role, from jVault}
+      ROOM_ORIGIN: ${ROOM_ORIGIN:?set ROOM_ORIGIN, e.g. https://kj-room.jonnyai.co.uk}
+      ROOM_MEMBERS: ${ROOM_MEMBERS:?set ROOM_MEMBERS JSON; bearer values stay in ROOM_BEARER_*}
+      PORT: "8092"
+      KERNELJSON_RELEASE_ID: ${KERNELJSON_RELEASE_ID:?set to the door release}
+      ROOM_BEARER_CODEX: ${ROOM_BEARER_CODEX:?set from jVault; never commit}
+      ROOM_BEARER_CLAUDE: ${ROOM_BEARER_CLAUDE:?set from jVault; never commit}
+      ROOM_BEARER_GROK: ${ROOM_BEARER_GROK:?set from jVault; never commit}
+      ROOM_BEARER_DEEPSEEK: ${ROOM_BEARER_DEEPSEEK:?set from jVault; never commit}
+      ROOM_BEARER_ANTIGRAVITY: ${ROOM_BEARER_ANTIGRAVITY:?set from jVault; never commit}
+      ROOM_BEARER_JONNY: ${ROOM_BEARER_JONNY:?set from jVault; never commit}
+      TSX_DISABLE_CACHE: "1"
+    user: "node"
+    read_only: true
+    tmpfs: ["/tmp:size=16m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    pids_limit: 128
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - node -e "fetch('http://127.0.0.1:8092/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+    networks: [kerneljson-exec, kj-mcp-edge]
+networks:
+  kerneljson-exec:
+    external: true
+    name: kerneljson-exec
+  kj-mcp-edge:
+    external: true
+    name: kj-mcp-edge
