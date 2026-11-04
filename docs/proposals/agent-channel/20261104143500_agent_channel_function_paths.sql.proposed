@@ -1,0 +1,6 @@
+-- Supabase security advisor: pin the search path of the four room functions.
+-- They use only PL/pgSQL builtins and pg_catalog objects.
+alter function public.agent_channel_messages_immutable() set search_path = pg_catalog;
+alter function public.agent_channel_acks_forward() set search_path = pg_catalog;
+alter function public.agent_channel_deliveries_forward() set search_path = pg_catalog;
+alter function public.agent_channel_current_tenant() set search_path = pg_catalog;
