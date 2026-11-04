@@ -1,0 +1,200 @@
+# KernelJSON code-change/v1 - the coding runner. Installed as .github/workflows/kj-code-change.yml in the
+# pilot repository ONLY (see README.md beside this file). Dispatched by the kernel from the default branch.
+#
+# Two jobs on two fresh runners, so no single job holds both the model key and a write token:
+#   code    - contents: read, the capped model key, no push credential. Produces a patch artifact.
+#   publish - contents: write, no secrets at all. Applies the patch to a clean checkout of base_sha and
+#             pushes it to kj/<task_id>, which must not already exist. It cannot merge or rewrite an existing ref.
+#
+# Inputs reach shell steps only through env, never by ${{ }} interpolation inside a script.
+name: kj-code-change
+run-name: kj:${{ inputs.task_id }} code
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: KernelJSON task id (uuid)
+        required: true
+        type: string
+      base_sha:
+        description: Commit of the default branch the change is made on
+        required: true
+        type: string
+      instructions:
+        description: The bounded change to make
+        required: true
+        type: string
+      coder_model:
+        description: OpenRouter Claude model slug selected by the kernel
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: kj-code-change-${{ inputs.task_id }}
+  cancel-in-progress: false
+
+jobs:
+  code:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      TASK_ID: ${{ inputs.task_id }}
+      BASE_SHA: ${{ inputs.base_sha }}
+      INSTRUCTIONS: ${{ inputs.instructions }}
+      CLAUDE_CODE_VERSION: ${{ vars.KJ_CLAUDE_CODE_VERSION }}
+      CODER_MODEL: ${{ inputs.coder_model }}
+      MAX_TURNS: "30"
+    steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          [[ "$TASK_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || { echo "bad task_id"; exit 1; }
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "bad base_sha"; exit 1; }
+          n=${#INSTRUCTIONS}
+          (( n >= 10 && n <= 2000 )) || { echo "instructions out of bounds"; exit 1; }
+          [[ "$CLAUDE_CODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "KJ_CLAUDE_CODE_VERSION must be an exact version"; exit 1; }
+          [[ "$CODER_MODEL" =~ ^anthropic/claude-[a-z0-9][a-z0-9.-]*$ && ${#CODER_MODEL} -le 200 ]] || { echo "bad coder_model"; exit 1; }
+
+      - name: Check out the base commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.base_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      # The model may write any file under the working directory, and a written .git/config or hook makes the
+      # next git command run code (core.fsmonitor, hooks) - while Claude Code runs, with the model key in reach.
+      # So the git metadata is moved outside the tree, where Claude Code cannot write, and fingerprinted; it is
+      # put back only after the model has exited and only if the fingerprint still matches.
+      - name: Hide git metadata from the model
+        run: |
+          set -euo pipefail
+          mv .git "$RUNNER_TEMP/kj-git"
+          (cd "$RUNNER_TEMP/kj-git" && find . -type f -print0 | sort -z | xargs -0 sha256sum) > "$RUNNER_TEMP/kj-git.sha256"
+
+      # No dependency's install script runs, except Claude Code's own, which fetches its native binary.
+      - name: Install Claude Code
+        run: |
+          set -euo pipefail
+          npm install --global --ignore-scripts "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+          node "$(npm root --global)/@anthropic-ai/claude-code/install.cjs"
+          claude --version | grep -F "$CLAUDE_CODE_VERSION"
+
+      # File tools only: no Bash, no web fetch, so the agent cannot run code or reach the network itself.
+      # A dedicated OpenRouter key has its own credit limit; --max-turns bounds a single run.
+      # Claude Code speaks the Anthropic Messages protocol to OpenRouter. No direct Anthropic key is used.
+      - name: Make the change
+        env:
+          ANTHROPIC_BASE_URL: https://openrouter.ai/api
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.KJ_CODER_OPENROUTER_KEY }}
+          ANTHROPIC_API_KEY: ""
+        run: |
+          set -euo pipefail
+          [[ "$ANTHROPIC_AUTH_TOKEN" == sk-or-* ]] || { echo "KJ_CODER_OPENROUTER_KEY is missing or malformed"; exit 1; }
+          {
+            echo "You are making one bounded change to this repository for KernelJSON task $TASK_ID."
+            echo "Change only what the instructions below ask for. Do not edit CI, infrastructure, secrets,"
+            echo "billing code or dependency manifests; such a change will be refused. Do not delete files."
+            echo "When finished, stop. Do not commit."
+            echo
+            echo "Instructions:"
+            printf '%s\n' "$INSTRUCTIONS"
+          } > "$RUNNER_TEMP/prompt.txt"
+          status=0
+          claude -p "$(cat "$RUNNER_TEMP/prompt.txt")" \
+            --model "$CODER_MODEL" \
+            --max-turns "$MAX_TURNS" \
+            --setting-sources "" \
+            --settings '{"disableAllHooks":true}' \
+            --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
+            --tools "Read,Edit,Write,Glob,Grep" \
+            --allowedTools "Read,Edit,Write,Glob,Grep" \
+            --disallowedTools "Bash,WebFetch,WebSearch,mcp__*" \
+            --output-format json > "$RUNNER_TEMP/claude-result.json" || status=$?
+          # The summary only (never the transcript), on failure too.
+          jq '{subtype, is_error, num_turns, total_cost_usd}' "$RUNNER_TEMP/claude-result.json" || echo "no result summary"
+          [ "$status" = 0 ] || { echo "claude exited $status"; exit 1; }
+          jq -e '.is_error == false' "$RUNNER_TEMP/claude-result.json" > /dev/null
+
+      - name: Capture the patch
+        run: |
+          set -euo pipefail
+          [ ! -e .git ] || { echo "the model created .git"; exit 1; }
+          (cd "$RUNNER_TEMP/kj-git" && find . -type f -print0 | sort -z | xargs -0 sha256sum) | cmp -s - "$RUNNER_TEMP/kj-git.sha256" \
+            || { echo "git metadata changed while the model ran"; exit 1; }
+          mv "$RUNNER_TEMP/kj-git" .git
+          git add --all
+          # --no-renames: a deleted file plus a new one stays a delete, which the publish job refuses.
+          git diff --cached --binary --no-renames "$BASE_SHA" > "$RUNNER_TEMP/change.patch"
+          # The model ran with the key in its process environment; no secret may travel into the pushed branch.
+          if grep -qE 'sk-or-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' "$RUNNER_TEMP/change.patch"; then
+            echo "patch contains something shaped like a secret"; exit 1
+          fi
+          bytes=$(stat -c %s "$RUNNER_TEMP/change.patch")
+          (( bytes > 0 )) || { echo "no change produced"; exit 1; }
+          (( bytes <= 400000 )) || { echo "patch too large"; exit 1; }
+          git diff --cached --stat "$BASE_SHA"
+
+      - name: Upload the patch
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kj-change-${{ inputs.task_id }}
+          path: ${{ runner.temp }}/change.patch
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    needs: code
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      TASK_ID: ${{ inputs.task_id }}
+      BASE_SHA: ${{ inputs.base_sha }}
+    steps:
+      - name: Check out the base commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.base_sha }}
+          fetch-depth: 1
+
+      - name: Download the patch
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kj-change-${{ inputs.task_id }}
+          path: ${{ runner.temp }}/kj
+
+      # The model's output is untrusted. Refuse anything that could change automation or escape the tree
+      # before it is applied; the kernel's reconciliation checks the pushed result again from GitHub.
+      - name: Refuse unsafe patches
+        run: |
+          set -euo pipefail
+          p="$RUNNER_TEMP/kj/change.patch"
+          if git -c core.quotePath=false apply --numstat "$p" | cut -f3- | grep -Ei '(^|/)\.(github|claude)/|(^|/)\.mcp\.json$|(^|/)\.\.(/|$)|^/|^"' ; then
+            echo "patch touches a refused path"; exit 1
+          fi
+          if grep -E '^(deleted file mode|new file mode 120000|old mode|new mode|rename from .*\.github|GIT binary patch)' "$p"; then
+            echo "patch deletes files, changes modes, adds symlinks or carries binaries"; exit 1
+          fi
+
+      - name: Apply and push the task branch
+        run: |
+          set -euo pipefail
+          git apply --index "$RUNNER_TEMP/kj/change.patch"
+          git -c user.name="kerneljson[bot]" -c user.email="kerneljson-bot@users.noreply.github.com" \
+            commit --quiet -m "kj: code change for task $TASK_ID"
+          # An empty expected value requires the remote ref to be absent. This cannot advance or replace an
+          # existing branch, even when a duplicate run produced a fast-forward of it.
+          git push --force-with-lease="refs/heads/kj/$TASK_ID:" origin "HEAD:refs/heads/kj/$TASK_ID"
+          git rev-parse HEAD
