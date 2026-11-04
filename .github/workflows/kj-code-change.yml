@@ -1,5 +1,5 @@
-# KernelJSON code-change/v1 - the coding runner. Installed as .github/workflows/kj-code-change.yml in the
-# pilot repository ONLY (see README.md beside this file). Dispatched by the kernel from the default branch.
+# KernelJSON code-change/v1 - the coding runner for this repository. Dispatched by the kernel
+# from the default branch after the worker's repository allowlist and credential are configured.
 #
 # Two jobs on two fresh runners, so no single job holds both the model key and a write token:
 #   code    - contents: read, the capped model key, no push credential. Produces a patch artifact.
