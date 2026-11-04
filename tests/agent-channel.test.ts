@@ -400,7 +400,7 @@ describe("malformed messages, duplicate sends, tenants, identity, catch-up and a
 
 /* ADR-0026 section 1: the channel has no path to task authority. */
 const ALLOWED_IMPORT = /^(zod|node:[a-z:/]+|\.\/[a-z-]+\.js|\.\.\/\.\.\/contracts\/src\/(common|identity|index)\.js)$/;
-const PG_STORE = /(?:^|\/)postgres-store\.ts$/;
+const PG_STORE = /(?:^|[\\/])postgres-store\.ts$/;
 const FORBIDDEN = /\b(tasks|approvals|control_events|task_events|evidence|kernel_private|admit|signal)\b/;
 const stripComments = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 export function findAuthorityViolations(path: string, text: string): string[] {
