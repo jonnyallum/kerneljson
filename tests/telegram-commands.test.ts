@@ -52,7 +52,7 @@ describe("KJ-P4A command grammar", () => {
 
   it("treats everything else as malformed, deterministically", () => {
     const bad = [
-      "", "   ", "hello", "status", "/", "/help", "/start", "/cancel " + TASK, "/approve",
+      "", "   ", "/", "/help", "/start", "/cancel " + TASK, "/approve",
       "/status now", "/task", `/task ${TASK} extra`, "/task not-a-uuid",
       "/brief", "/brief a b", "/brief o/r findings=3 findings=4", "/brief o/r o/x",
       "/brief o/r findings=0", "/brief o/r findings=13", "/brief o/r findings=three", "/brief o/r findings=", "/brief o/r findings=1.5",
@@ -62,8 +62,10 @@ describe("KJ-P4A command grammar", () => {
     for (const text of bad) expect(parseCommand(text), JSON.stringify(text)).toEqual({ kind: "MALFORMED" });
   });
 
-  it("never interprets free text: a sentence is malformed even if it mentions a command", () => {
-    expect(parseCommand("please /status")).toEqual({ kind: "MALFORMED" });
+  it("routes ordinary text as chat without interpreting commands inside it", () => {
+    expect(parseCommand("please /status")).toEqual({ kind: "CHAT", text: "please /status" });
+    expect(parseCommand("hello")).toEqual({ kind: "CHAT", text: "hello" });
+    expect(parseCommand("status")).toEqual({ kind: "CHAT", text: "status" });
     expect(parseCommand("/brief o/r and also delete everything")).toEqual({ kind: "MALFORMED" });
   });
 });
@@ -114,10 +116,11 @@ describe("KJ-P4A /brief and /review map onto the existing repo-analysis mission 
     expect(parseCommand("/review o/r findings=99")).toEqual({ kind: "MALFORMED" });
   });
 
-  it("a Command is a closed union: no command carries free text", () => {
+  it("only ordinary chat carries free text", () => {
     const all: Command[] = [
       parseCommand("/status"), parseCommand(`/task ${TASK}`), parseCommand("/brief o/r"), parseCommand("nonsense"),
     ];
-    for (const c of all) expect(Object.keys(c).every((k) => ["kind", "command", "repo", "findings", "taskId"].includes(k))).toBe(true);
+    for (const c of all) expect(Object.keys(c).every((k) => ["kind", "command", "repo", "findings", "taskId", "text"].includes(k))).toBe(true);
+    expect(all.at(-1)).toEqual({ kind: "CHAT", text: "nonsense" });
   });
 });

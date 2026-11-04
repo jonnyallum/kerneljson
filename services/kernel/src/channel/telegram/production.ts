@@ -6,6 +6,8 @@ import { selectNotifier } from "../../alerting/select-notifier.js";
 import { loadTransportConfig } from "../../alerting/transport-config.js";
 import { loadApprovalBoundaryConfig } from "../../approval-boundary.js";
 import { createConfiguredMemory, loadMemoryConfig } from "../../../../memory/src/canonical/config.js";
+import { loadMissionConfig } from "../../mission/config.js";
+import { createConversationPort } from "./conversation.js";
 import { createMemoryPort } from "./memory-port.js";
 import { createApprovalsPort } from "./approvals.js";
 import { HttpBotApi } from "./bot-api.js";
@@ -55,9 +57,11 @@ export function productionTelegramOperator(env: NodeJS.ProcessEnv) {
   // KJ-P5: the memory commands, only when memory is configured. The channel carries instructions and answers.
   const memoryConfig = loadMemoryConfig(env);
   const configured = memoryConfig ? createConfiguredMemory(pool, memoryConfig) : undefined;
+  const mission = loadMissionConfig(env);
   const deps = {
     limits: config.limits,
     ...(configured ? { memory: createMemoryPort(configured.memory, configured.context) } : {}),
+    ...(mission ? { conversation: createConversationPort(mission.analyst) } : {}),
     source: new HttpUpdateSource({ botToken: config.botToken, callbackQueries: approvals !== undefined }),
     inbox: new PgInboxStore(pool),
     door,

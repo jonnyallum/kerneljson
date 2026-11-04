@@ -2,16 +2,17 @@ import type { SystemStatus, TaskView } from "./views.js";
 import type { ForgetOutcome, MemoryDetail, MemoryLine, RememberOutcome, ShowOutcome } from "./memory-port.js";
 
 /**
- * KJ-P4A - every word KernelJSON says back over Telegram, from fixed templates.
+ * KJ-P4A templates, plus bounded plain-language answers to the authenticated operator.
  *
  * A reply is a `ReplyText`, a branded string that ONLY this module can mint. The outbox path that
- * forwards reply text to the transport accepts nothing else, so there is no route by which text from
- * a Telegram message, a repository or a model reaches the chat. Inputs are closed-vocabulary
- * fields (validated repo slug, task id, counts, statuses); anything that fails its guard prints "?".
+ * forwards reply text to the transport accepts nothing else. The CHAT case deliberately allows
+ * model text after control stripping and length limiting; it has no execution authority.
  */
 export type ReplyText = string & { readonly __brand: "OperatorReplyText" };
 
 export type ReplyInput =
+  | { kind: "CHAT"; text: string }
+  | { kind: "CHAT_UNAVAILABLE" }
   | { kind: "USAGE" }
   | { kind: "RATE_LIMITED"; perMinute: number }
   | { kind: "CAP_EXCEEDED"; used: number; cap: number }
@@ -87,6 +88,10 @@ function memoryDetail(d: MemoryDetail): string[] {
 
 export function renderReply(input: ReplyInput): ReplyText {
   switch (input.kind) {
+    case "CHAT":
+      return mint([input.text]);
+    case "CHAT_UNAVAILABLE":
+      return mint(["I could not answer that just now. Try again shortly. /status and /task still work."]);
     case "USAGE":
       return mint(["That is not a command I act on.", ...USAGE_LINES]);
     case "RATE_LIMITED":
