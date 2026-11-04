@@ -29,7 +29,7 @@ interface MessageRow {
   tenant_id: string;
   thread_id: string;
   kind: ChannelMessage["kind"];
-  author_principal_id: string;
+  author_id: string;
   author_kind: ChannelMessage["author"]["kind"];
   handle: string;
   body: string;
@@ -41,7 +41,7 @@ interface MessageRow {
   created_at: Date;
 }
 
-const MESSAGE_COLUMNS = `id, seq, tenant_id, thread_id, kind, author_principal_id, author_kind, handle,
+const MESSAGE_COLUMNS = `id, seq, tenant_id, thread_id, kind, author_id, author_kind, handle,
   body, redacted, in_reply_to, task_ref, idempotency_key, content_hash, created_at`;
 
 function asSeq(value: string | number): number {
@@ -57,7 +57,7 @@ function toMessage(row: MessageRow): ChannelMessage {
     tenantId: row.tenant_id,
     threadId: row.thread_id,
     kind: row.kind,
-    author: { id: row.author_principal_id, kind: row.author_kind },
+    author: { id: row.author_id, kind: row.author_kind },
     handle: row.handle,
     body: row.body,
     redacted: row.redacted,
@@ -129,7 +129,7 @@ export class PostgresChannelStore implements ChannelStore {
         const createdAt = this.now();
         await db.query(
           `insert into agent_channel_messages (
-             id, tenant_id, seq, thread_id, kind, author_principal_id, author_kind, handle,
+             id, tenant_id, seq, thread_id, kind, author_id, author_kind, handle,
              body, redacted, in_reply_to, task_ref, idempotency_key, content_hash, created_at
            ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
           [
@@ -153,11 +153,11 @@ export class PostgresChannelStore implements ChannelStore {
         if (people.length > 0) {
           await db.query(
             `insert into agent_channel_deliveries
-               (tenant_id, message_id, recipient_principal_id, handle, state, updated_at)
-             select $1, $2, x.principal_id, x.handle, 'pending', $3
-             from jsonb_to_recordset($4::jsonb) as x(principal_id uuid, handle text)
-             where x.principal_id <> $5`,
-            [tenant, id, createdAt, JSON.stringify(people.map((person) => ({ principal_id: person.principalId, handle: person.handle }))), draft.author.id],
+               (tenant_id, message_id, recipient_id, handle, state, updated_at)
+             select $1, $2, x.recipient_id, x.handle, 'pending', $3
+             from jsonb_to_recordset($4::jsonb) as x(recipient_id uuid, handle text)
+             where x.recipient_id <> $5`,
+            [tenant, id, createdAt, JSON.stringify(people.map((person) => ({ recipient_id: person.principalId, handle: person.handle }))), draft.author.id],
           );
         }
       } catch (error) {
@@ -215,14 +215,14 @@ export class PostgresChannelStore implements ChannelStore {
     const tenant = requireTenant(tenantId);
     const at = this.now();
     return withChannelTenant(this.pool, tenant, async (db) => {
-      const rows = await db.query<{ principal_id: string; handle: string; up_to_seq: string | number; acked_at: Date }>(
-        `insert into agent_channel_acks (tenant_id, principal_id, handle, up_to_seq, acked_at)
+      const rows = await db.query<{ participant_id: string; handle: string; up_to_seq: string | number; acked_at: Date }>(
+        `insert into agent_channel_acks (tenant_id, participant_id, handle, up_to_seq, acked_at)
          values ($1, $2, $3, $4, $5)
-         on conflict (tenant_id, principal_id) do update
+         on conflict (tenant_id, participant_id) do update
            set up_to_seq = greatest(agent_channel_acks.up_to_seq, excluded.up_to_seq),
                handle = excluded.handle,
                acked_at = excluded.acked_at
-         returning principal_id, handle, up_to_seq, acked_at`,
+         returning participant_id, handle, up_to_seq, acked_at`,
         [tenant, rec.principalId, rec.handle, rec.upToSeq, at],
       );
       const row = rows.rows[0];
@@ -232,25 +232,25 @@ export class PostgresChannelStore implements ChannelStore {
         `update agent_channel_deliveries d
          set state = 'acked', updated_at = $3
          from agent_channel_messages m
-         where d.tenant_id = $1 and d.recipient_principal_id = $2
+         where d.tenant_id = $1 and d.recipient_id = $2
            and m.id = d.message_id and m.tenant_id = d.tenant_id
            and m.seq <= $4 and d.state <> 'acked'`,
         [tenant, rec.principalId, at, upToSeq],
       );
-      return { principalId: row.principal_id, handle: row.handle, upToSeq, at: row.acked_at.toISOString() };
+      return { principalId: row.participant_id, handle: row.handle, upToSeq, at: row.acked_at.toISOString() };
     });
   }
 
   async acks(tenantId: string) {
     const tenant = requireTenant(tenantId);
     return withChannelTenant(this.pool, tenant, async (db) => {
-      const rows = await db.query<{ principal_id: string; handle: string; up_to_seq: string | number; acked_at: Date }>(
-        `select principal_id, handle, up_to_seq, acked_at from agent_channel_acks
+      const rows = await db.query<{ participant_id: string; handle: string; up_to_seq: string | number; acked_at: Date }>(
+        `select participant_id, handle, up_to_seq, acked_at from agent_channel_acks
          where tenant_id = $1 order by handle`,
         [tenant],
       );
       return rows.rows.map((row) => ({
-        principalId: row.principal_id,
+        principalId: row.participant_id,
         handle: row.handle,
         upToSeq: asSeq(row.up_to_seq),
         at: row.acked_at.toISOString(),
@@ -265,7 +265,7 @@ export class PostgresChannelStore implements ChannelStore {
       await db.query(
         `update agent_channel_deliveries
          set state = 'delivered', updated_at = $4
-         where tenant_id = $1 and recipient_principal_id = $2
+         where tenant_id = $1 and recipient_id = $2
            and message_id = any($3::uuid[]) and state = 'pending'`,
         [tenant, recipientId, messageIds, this.now()],
       );
@@ -279,12 +279,12 @@ export class PostgresChannelStore implements ChannelStore {
       const rows = await db.query<{
         message_id: string;
         seq: string | number;
-        recipient_principal_id: string;
+        recipient_id: string;
         handle: string;
         state: DeliveryState;
         updated_at: Date;
       }>(
-        `select d.message_id, m.seq, d.recipient_principal_id, d.handle, d.state, d.updated_at
+        `select d.message_id, m.seq, d.recipient_id, d.handle, d.state, d.updated_at
          from agent_channel_deliveries d
          join agent_channel_messages m on m.id = d.message_id and m.tenant_id = d.tenant_id
          where d.tenant_id = $1 and ($2::uuid[] is null or d.message_id = any($2::uuid[]))
@@ -294,7 +294,7 @@ export class PostgresChannelStore implements ChannelStore {
       return rows.rows.map((row) => ({
         messageId: row.message_id,
         seq: asSeq(row.seq),
-        recipientId: row.recipient_principal_id,
+        recipientId: row.recipient_id,
         handle: row.handle,
         state: DeliveryState.parse(row.state),
         updatedAt: row.updated_at.toISOString(),
@@ -327,7 +327,7 @@ export class PostgresChannelStore implements ChannelStore {
   private async lookup(db: pg.PoolClient, tenantId: string, principalId: string, key: string) {
     const rows = await db.query<MessageRow>(
       `select ${MESSAGE_COLUMNS} from agent_channel_messages
-       where tenant_id = $1 and author_principal_id = $2 and idempotency_key = $3`,
+       where tenant_id = $1 and author_id = $2 and idempotency_key = $3`,
       [tenantId, principalId, key],
     );
     const row = rows.rows[0];
@@ -335,24 +335,17 @@ export class PostgresChannelStore implements ChannelStore {
   }
 }
 
-/**
- * Room handles from agent_channel_members, and ACTIVE tenant membership from
- * agent_channel_member_active. That function returns a boolean only.
- */
+/** Amendment B. Active room participants only. No core principal or membership read. */
 export class PostgresAgentRegistry implements AgentRegistry {
   constructor(private readonly pool: pg.Pool) {}
 
   async handleFor(context: TenantContext): Promise<string | null> {
     const parsed = TenantContext.parse(context);
     return withChannelTenant(this.pool, parsed.tenantId, async (db) => {
-      const active = await db.query<{ active: boolean }>(
-        "select agent_channel_member_active($1, $2, $3) as active",
-        [parsed.tenantId, parsed.principal.id, parsed.principal.kind],
-      );
-      if (active.rows[0]?.active !== true) return null;
       const rows = await db.query<{ handle: string }>(
-        `select handle from agent_channel_members where tenant_id = $1 and principal_id = $2`,
-        [parsed.tenantId, parsed.principal.id],
+        `select handle from agent_channel_members
+         where tenant_id = $1 and id = $2 and kind = $3 and status = 'ACTIVE'`,
+        [parsed.tenantId, parsed.principal.id, parsed.principal.kind],
       );
       return rows.rows[0]?.handle ?? null;
     });
@@ -361,18 +354,12 @@ export class PostgresAgentRegistry implements AgentRegistry {
   async members(tenantId: string): Promise<RoomMember[]> {
     const tenant = requireTenant(tenantId);
     return withChannelTenant(this.pool, tenant, async (db) => {
-      const rows = await db.query<{ principal_id: string; handle: string }>(
-        `select m.principal_id, m.handle
-         from agent_channel_members m
-         where m.tenant_id = $1
-           and (
-             agent_channel_member_active(m.tenant_id, m.principal_id, 'HUMAN')
-             or agent_channel_member_active(m.tenant_id, m.principal_id, 'SERVICE')
-           )
-         order by m.handle`,
+      const rows = await db.query<{ id: string; handle: string }>(
+        `select id, handle from agent_channel_members
+         where tenant_id = $1 and status = 'ACTIVE' order by handle`,
         [tenant],
       );
-      return rows.rows.map((row) => ({ principalId: row.principal_id, handle: row.handle }));
+      return rows.rows.map((row) => ({ principalId: row.id, handle: row.handle }));
     });
   }
 }

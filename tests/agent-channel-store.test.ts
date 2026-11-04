@@ -228,7 +228,7 @@ describe("postgres store", () => {
       await expect(
         client.query(
           `insert into agent_channel_messages (
-             id, tenant_id, seq, thread_id, kind, author_principal_id, author_kind, handle,
+             id, tenant_id, seq, thread_id, kind, author_id, author_kind, handle,
              body, redacted, idempotency_key, content_hash
            ) values ($1,$2,1,$3,'NOTE',$4,'SERVICE','alpha','no',false,'store-key-9',$5)`,
           [randomUUID(), tenantB, randomUUID(), shared, "a".repeat(64)],
@@ -249,21 +249,31 @@ describe("postgres store", () => {
       tenants: [tenantA, tenantB],
       principals: [{ id: principal, kind: "SERVICE" }],
     });
-    await pool.query("insert into agent_channel_members (tenant_id, principal_id, handle) values ($1,$2,'codex'),($3,$2,'grok')", [
-      tenantA,
-      principal,
-      tenantB,
-    ]);
+    const other = randomUUID();
     await pool.query(
-      `insert into tenant_memberships (tenant_id, principal_id, role, status) values
-         ($1, $2, 'member', 'ACTIVE'), ($3, $2, 'member', 'ACTIVE')`,
-      [tenantA, principal, tenantB],
+      `insert into agent_channel_members (id, tenant_id, handle, kind, status) values
+         ($1,$2,'codex','SERVICE','ACTIVE'), ($3,$4,'grok','SERVICE','ACTIVE')`,
+      [principal, tenantA, other, tenantB],
+    );
+    await expect(
+      pool.query(
+        `insert into agent_channel_members (id, tenant_id, handle, kind, status) values ($1,$2,'codex','SERVICE','ACTIVE')`,
+        [randomUUID(), tenantA],
+      ),
+    ).rejects.toMatchObject({ code: "23505" });
+    await pool.query(
+      `insert into agent_channel_members (id, tenant_id, handle, kind, status) values ($1,$2,'codex','SERVICE','ACTIVE')`,
+      [randomUUID(), tenantB],
     );
     const registry = new PostgresAgentRegistry(pool);
     const contextA: TenantContext = { tenantId: tenantA, principal: { id: principal, kind: "SERVICE" } };
     expect(await registry.handleFor(contextA)).toBe("codex");
     expect(await registry.members(tenantA)).toEqual([{ principalId: principal, handle: "codex" }]);
-    expect(await registry.members(tenantB)).toEqual([{ principalId: principal, handle: "grok" }]);
+    expect(await registry.handleFor({ tenantId: tenantB, principal: { id: principal, kind: "SERVICE" } })).toBeNull();
+    expect(await registry.members(tenantB)).toEqual([
+      { principalId: expect.any(String), handle: "codex" },
+      { principalId: other, handle: "grok" },
+    ]);
     const store = new PostgresChannelStore(pool);
     const service = new ChannelService(store, registry);
     const posted = await service.post(contextA, { kind: "NOTE", body: "from codex", idempotencyKey: "registry-key-1" });
@@ -271,7 +281,10 @@ describe("postgres store", () => {
     await expect(service.read({ tenantId: tenantB, principal: { id: randomUUID(), kind: "SERVICE" } }, {})).rejects.toMatchObject({
       code: "DENIED",
     });
-    expect((await service.read({ tenantId: tenantB, principal: { id: principal, kind: "SERVICE" } }, {})).messages).toEqual([]);
+    await expect(service.read({ tenantId: tenantB, principal: { id: principal, kind: "SERVICE" } }, {})).rejects.toMatchObject({ code: "DENIED" });
+    await expect(service.post({ tenantId: tenantB, principal: { id: principal, kind: "SERVICE" } }, { kind: "NOTE", body: "cross", idempotencyKey: "cross-tenant-key" })).rejects.toMatchObject({ code: "DENIED" });
+    await expect(service.ack({ tenantId: tenantB, principal: { id: principal, kind: "SERVICE" } }, { upToSeq: 1 })).rejects.toMatchObject({ code: "DENIED" });
+    expect((await service.read({ tenantId: tenantB, principal: { id: other, kind: "SERVICE" } }, {})).messages).toEqual([]);
   });
 
   it("logs in as agent_room_app, serves the channel, and refuses a revoked member", async () => {
@@ -289,24 +302,14 @@ describe("postgres store", () => {
     }
     const tenantId = randomUUID();
     const principalId = randomUUID();
-    const outsider = randomUUID();
     await pool.query(
       "truncate agent_channel_deliveries, agent_channel_acks, agent_channel_messages, agent_channel_members, agent_channel_counters",
     );
     await pool.query("insert into tenants (id, name) values ($1, 'room') on conflict (id) do nothing", [tenantId]);
-    await pool.query("insert into principals (id, kind) values ($1, 'SERVICE'), ($2, 'SERVICE') on conflict (id) do nothing", [
-      principalId,
-      outsider,
-    ]);
     await pool.query(
-      `insert into tenant_memberships (tenant_id, principal_id, role, status) values ($1, $2, 'member', 'ACTIVE')
-       on conflict (tenant_id, principal_id) do update set status = 'ACTIVE'`,
-      [tenantId, principalId],
+      `insert into agent_channel_members (id, tenant_id, handle, kind, status) values ($1,$2,'codex','SERVICE','ACTIVE')`,
+      [principalId, tenantId],
     );
-    await pool.query("insert into agent_channel_members (tenant_id, principal_id, handle) values ($1, $2, 'codex')", [
-      tenantId,
-      principalId,
-    ]);
     await pool.query("create table if not exists tasks (id int primary key)");
     await pool.query("create table if not exists task_events (id int primary key)");
     await pool.query("revoke all privileges on table tasks from public, agent_channel, agent_room_app");
@@ -338,24 +341,47 @@ describe("postgres store", () => {
       await expect(app.query("select 1 from task_events")).rejects.toMatchObject({ code: "42501" });
       await expect(app.query("insert into task_events (id) values (1)")).rejects.toMatchObject({ code: "42501" });
       await expect(app.query("select * from tenant_memberships")).rejects.toMatchObject({ code: "42501" });
-      const flag = await app.query<{ active: boolean }>("select agent_channel_member_active($1, $2, 'SERVICE') as active", [
-        tenantId,
-        principalId,
-      ]);
-      expect(flag.rows[0]?.active).toBe(true);
+      await expect(app.query("select id from principals")).rejects.toMatchObject({ code: "42501" });
 
-      await pool.query("update tenant_memberships set status = 'REVOKED' where tenant_id = $1 and principal_id = $2", [
-        tenantId,
-        principalId,
-      ]);
+      await pool.query("update agent_channel_members set status = 'REVOKED' where id = $1", [principalId]);
       const note = { kind: "NOTE", body: "after revoke", idempotencyKey: "app-role-key-2" };
       await expect(service.post(context, note)).rejects.toMatchObject({ code: "DENIED" });
       await expect(service.read(context, {})).rejects.toMatchObject({ code: "DENIED" });
       await expect(service.ack(context, { upToSeq: posted.message.seq })).rejects.toMatchObject({ code: "DENIED" });
-      expect(outsider).not.toBe(principalId);
     } finally {
       await app.end();
     }
+  });
+
+  it("runs a two-agent round trip and records delivery and ack", async () => {
+    const tenantId = randomUUID();
+    const agentA = randomUUID();
+    const agentB = randomUUID();
+    await pool.query("insert into tenants (id, name) values ($1, 'room') on conflict (id) do nothing", [tenantId]);
+    await pool.query(
+      `insert into agent_channel_members (id, tenant_id, handle, kind, status) values
+         ($1,$3,'codex','SERVICE','ACTIVE'), ($2,$3,'claude-code','SERVICE','ACTIVE')`,
+      [agentA, agentB, tenantId],
+    );
+    const registry = new PostgresAgentRegistry(pool);
+    const store = new PostgresChannelStore(pool);
+    const service = new ChannelService(store, registry);
+    const a: TenantContext = { tenantId, principal: { id: agentA, kind: "SERVICE" } };
+    const b: TenantContext = { tenantId, principal: { id: agentB, kind: "SERVICE" } };
+    const sent = await service.post(a, { kind: "NOTE", body: "from codex", idempotencyKey: "round-trip-key-1" });
+    const seen = await service.read(b, { after: 0 });
+    expect(seen.messages.map((message) => message.id)).toEqual([sent.message.id]);
+    expect((await store.deliveries(tenantId, [sent.message.id])).find((row) => row.recipientId === agentB)?.state).toBe("delivered");
+    const acked = await service.ack(b, { upToSeq: sent.message.seq });
+    const cursors = await service.cursors(a);
+    expect(cursors.find((cursor) => cursor.principalId === agentB)?.upToSeq).toBe(acked.upToSeq);
+    const row = await pool.query<{ state: string; updated_at: Date; message_id: string }>(
+      `select state, updated_at, message_id from agent_channel_deliveries where tenant_id = $1 and recipient_id = $2`,
+      [tenantId, agentB],
+    );
+    expect(row.rows[0]?.message_id).toBe(sent.message.id);
+    expect(row.rows[0]?.state).toBe("acked");
+    expect(row.rows[0]?.updated_at).toBeInstanceOf(Date);
   });
 
   it("drops only the channel objects", async () => {
@@ -382,11 +408,21 @@ async function exercisePrepared(pool: pg.Pool, store: ChannelStore) {
   for (const tenant of [tenantA, tenantB]) {
     await pool.query("insert into tenants (id, name) values ($1, 'room') on conflict (id) do nothing", [tenant]);
   }
-  for (const principal of [authorA, authorB, { id: shared, kind: "SERVICE" as const }, { id: otherA, kind: "SERVICE" as const }]) {
-    await pool.query("insert into principals (id, kind) values ($1, $2) on conflict (id) do nothing", [principal.id, principal.kind]);
+  const sharedB = randomUUID();
+  const people = [
+    [authorA.id, tenantA, "alpha"],
+    [otherA, tenantA, "other-a"],
+    [shared, tenantA, "shared"],
+    [authorB.id, tenantB, "beta"],
+    [sharedB, tenantB, "shared-b"],
+  ] as const;
+  for (const [id, tenant, handle] of people) {
+    await pool.query(
+      `insert into agent_channel_members (id, tenant_id, handle, kind, status) values ($1,$2,$3,'SERVICE','ACTIVE')`,
+      [id, tenant, handle],
+    );
   }
-  // Re-run the shared assertions against this prepared database by inlining ids via a bound store.
-  const bound = new TenantBoundStore(store, { tenantA, tenantB, authorA, authorB, shared, otherA });
+  const bound = new TenantBoundStore(store, { tenantA, tenantB, authorA, authorB, shared, sharedB, otherA });
   await bound.run();
   return { tenantA, tenantB, shared, firstId: bound.firstId };
 }
@@ -401,18 +437,19 @@ class TenantBoundStore {
       authorA: { id: string; kind: "SERVICE" };
       authorB: { id: string; kind: "SERVICE" };
       shared: string;
+      sharedB: string;
       otherA: string;
     },
   ) {}
   async run() {
-    const { tenantA, tenantB, authorA, authorB, shared, otherA } = this.ids;
+    const { tenantA, tenantB, authorA, authorB, shared, sharedB, otherA } = this.ids;
     const threadA = randomUUID();
     const threadB = randomUUID();
     const recipientsA = [
       { principalId: shared, handle: "shared" },
       { principalId: otherA, handle: "other-a" },
     ];
-    const recipientsB = [{ principalId: shared, handle: "shared-b" }];
+    const recipientsB = [{ principalId: sharedB, handle: "shared-b" }];
     const first = await this.store.append(tenantA, draft(authorA, "alpha", "only-a", "store-key-1", threadA), recipientsA);
     this.firstId = first.message.id;
     expect(first.duplicate).toBe(false);
@@ -426,8 +463,8 @@ class TenantBoundStore {
     const second = await this.store.append(tenantB, draft(authorB, "beta", "only-b", "store-key-b", threadB), recipientsB);
     expect((await this.store.list(tenantA, { after: 0, limit: 20 })).map((m) => m.body)).toEqual(["only-a"]);
     expect((await this.store.list(tenantB, { after: 0, limit: 20 })).map((m) => m.body)).toEqual(["only-b"]);
-    await this.store.markDelivered(tenantB, shared, [first.message.id]);
-    await this.store.ack(tenantB, { principalId: shared, handle: "shared-b", upToSeq: second.message.seq });
+    await this.store.markDelivered(tenantB, sharedB, [first.message.id]);
+    await this.store.ack(tenantB, { principalId: sharedB, handle: "shared-b", upToSeq: second.message.seq });
     expect(await this.store.acks(tenantA)).toEqual([]);
     expect((await this.store.deliveries(tenantA)).every((row) => row.state === "pending")).toBe(true);
     const third = await this.store.append(tenantA, draft(authorA, "alpha", "later", "store-key-2", threadA), recipientsA);

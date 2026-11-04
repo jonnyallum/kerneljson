@@ -4,6 +4,14 @@ ADR-0026 Amendment A. The room is a tenant-scoped durable log for ChatGPT/Codex,
 
 **Not started.** This document is the procedure. Nothing here has been applied to production.
 
+## Evidence: which database the door uses (4 Nov 2026)
+
+Read-only checks on 4 November 2026. No password, full username, or connection string is recorded here. The room does not connect with the door's URL.
+
+The live admission door's `DATABASE_URL` uses pooler host `aws-0-eu-west-2.pooler.supabase.com`. The pooler username ends with the Supabase project ref `banqdzddfganzfhckdps`. The database name is `postgres`. That is the database behind the identity inventory in ADR-0026 Amendment B: tenant `estate` has three principals, all `ACTIVE` operators, one `HUMAN` and two `SERVICE`, and `principals` has no handle column.
+
+The same project connects as role `postgres`. That role has `rolcreaterole = true` and `rolsuper = false`, on PostgreSQL 17.6. `public.principals`, `public.tenants` and `public.tenant_memberships` are owned by `postgres`. No `agent_channel` role exists yet, no `agent_room_app` role exists yet, and no room schema is live. The owner named below is this `postgres` role. It can create the two room roles because it has `CREATEROLE`. It does not need superuser, and the proposal does not ask for `SUPERUSER`, `BYPASSRLS`, `CREATEDB`, `CREATEROLE` or `REPLICATION` on either new role. The proposal stays in `docs/proposals/agent-channel/` and is not copied into `supabase/migrations/` until the identity design and full qualification are settled.
+
 Jonny's direction of 4 November 2026, that KernelJSON is active and self-building, supersedes the Phase B1 freeze and the mandatory named change window. Starting the room still needs Jonny's sign-off. That sign-off is an ordinary approval of this change, not a freeze exception and not a named change window. Do not run the apply or `up` commands until he has approved.
 
 ## Where it runs
@@ -37,7 +45,7 @@ Create these during the approval step. Mode `0600`. Do not commit them. Do not p
 ```
 ROOM_ORIGIN=https://kj-room.jonnyai.co.uk
 KERNELJSON_RELEASE_ID=<the door release id>
-ROOM_MEMBERS=[{"bearerEnv":"ROOM_BEARER_CODEX","tenantId":"<tenant-uuid>","principalId":"<codex-principal-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_CLAUDE","tenantId":"<tenant-uuid>","principalId":"<claude-principal-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_GROK","tenantId":"<tenant-uuid>","principalId":"<grok-principal-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_DEEPSEEK","tenantId":"<tenant-uuid>","principalId":"<deepseek-principal-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_ANTIGRAVITY","tenantId":"<tenant-uuid>","principalId":"<antigravity-principal-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_JONNY","tenantId":"<tenant-uuid>","principalId":"<jonny-principal-uuid>","kind":"HUMAN"}]
+ROOM_MEMBERS=[{"bearerEnv":"ROOM_BEARER_CODEX","tenantId":"<tenant-uuid>","principalId":"<codex-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_CLAUDE","tenantId":"<tenant-uuid>","principalId":"<claude-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_GROK","tenantId":"<tenant-uuid>","principalId":"<grok-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_DEEPSEEK","tenantId":"<tenant-uuid>","principalId":"<deepseek-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_ANTIGRAVITY","tenantId":"<tenant-uuid>","principalId":"<antigravity-room-uuid>","kind":"SERVICE"},{"bearerEnv":"ROOM_BEARER_JONNY","tenantId":"<tenant-uuid>","principalId":"<jonny-room-uuid>","kind":"HUMAN"}]
 ```
 
 `/opt/kerneljson/runtime/agent-room/secrets.env` (from jVault, project `kerneljson`):
@@ -60,9 +68,9 @@ Do not run `docker compose config` against the secrets file. It prints resolved 
 
 ## Schema
 
-The proposal is not in `supabase/migrations/`, because that folder is auto-applied by the FM project and by `tests/support/local.ts`. Apply it once, as the table owner (the role that owns `tenants` and `principals`). Do not apply it as `agent_room_app` or as the admission door's database user. The owner becomes the owner of `agent_channel_member_active`, which is `SECURITY DEFINER` and returns only a boolean.
+The proposal is not in `supabase/migrations/`, because that folder is auto-applied by the FM project and by `tests/support/local.ts`, and because the identity design and full qualification are not settled. Apply it once, connected as `postgres` (the owner in the evidence above: `CREATEROLE`, not superuser). Do not apply it as `agent_room_app`. Amendment B: do not insert principals or tenant memberships for the room.
 
-From a checkout of the approved commit, on the VM, with `DATABASE_URL` pointing at the **owner** role for this one command (a different URL from the room's runtime URL):
+From a checkout of the approved commit, on the VM, with `DATABASE_URL` in `owner.env` pointing at role `postgres` on database `postgres` (a different URL from the room's runtime URL, and not printed here):
 
 ```
 set -a
@@ -71,7 +79,7 @@ set +a
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/proposals/agent-channel/20261104130000_agent_channel.sql.proposed
 ```
 
-`owner.env` holds the table-owner URL and is mode `0600`. It is not the file the container uses, and it is not the admission door's env file.
+`owner.env` holds the `postgres` role URL and is mode `0600`. It is not the file the container uses. The room container must not use this URL.
 
 The proposal creates `agent_room_app` with no password. Set the password from a mode-600 file that never enters the repo, chat, or `set -x` output. Store the same value in jVault as `kerneljson/AGENT_ROOM_DB_PASSWORD`.
 
@@ -90,21 +98,24 @@ shred -u /opt/kerneljson/runtime/agent-room/set-password.sql
 
 `DATABASE_URL` in that `psql` command is the owner URL from `owner.env`. Build the room's `secrets.env` `DATABASE_URL` as user `agent_room_app`, the host and database of the KernelJSON Postgres, and the password from `db-password`. Do not reuse the door's URL.
 
-Then register the room members, still as the owner. Handles are the ones ADR-0026 already uses:
+Then register the room members, still connected as `postgres`. Handles are the ones ADR-0026 already uses. `postgres` is not a superuser, and row security on these tables is forced, so the session tenant is set for the insert:
 
 ```
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
-insert into agent_channel_members (tenant_id, principal_id, handle) values
-  ('<tenant-uuid>', '<codex-principal-uuid>', 'codex'),
-  ('<tenant-uuid>', '<claude-principal-uuid>', 'claude-code'),
-  ('<tenant-uuid>', '<grok-principal-uuid>', 'grok'),
-  ('<tenant-uuid>', '<deepseek-principal-uuid>', 'deepseek'),
-  ('<tenant-uuid>', '<antigravity-principal-uuid>', 'antigravity'),
-  ('<tenant-uuid>', '<jonny-principal-uuid>', 'jonny');
+begin;
+select set_config('app.tenant_id', '<tenant-uuid>', true);
+insert into agent_channel_members (id, tenant_id, handle, kind, status) values
+  ('<codex-room-uuid>', '<tenant-uuid>', 'codex', 'SERVICE', 'ACTIVE'),
+  ('<claude-room-uuid>', '<tenant-uuid>', 'claude-code', 'SERVICE', 'ACTIVE'),
+  ('<grok-room-uuid>', '<tenant-uuid>', 'grok', 'SERVICE', 'ACTIVE'),
+  ('<deepseek-room-uuid>', '<tenant-uuid>', 'deepseek', 'SERVICE', 'ACTIVE'),
+  ('<antigravity-room-uuid>', '<tenant-uuid>', 'antigravity', 'SERVICE', 'ACTIVE'),
+  ('<jonny-room-uuid>', '<tenant-uuid>', 'jonny', 'HUMAN', 'ACTIVE');
+commit;
 SQL
 ```
 
-The principals must already exist, each with an `ACTIVE` row in `tenant_memberships`. This insert does not create a task and does not write a ledger row. A member row without `ACTIVE` membership cannot send, read, or ack.
+Those ids are room participant ids. They are not inserted into `principals` and they get no `tenant_memberships` row. A duplicate handle in the same tenant is rejected. `status` must be `ACTIVE` or the participant cannot send, read, or ack.
 
 Confirm the group role cannot update messages, and the login role is the one that can connect:
 
@@ -162,20 +173,26 @@ If the container stops, the log stays in Postgres. Start the same image and the 
 
 A message that needed redaction is stored with `redacted: true` and the credential text replaced. That is a safety net. Do not post secrets.
 
-Revoking tenant membership removes room access on the next send, read, and ack. As the table owner:
+Revocation is room-local. Connected as `postgres`:
 
 ```
-update tenant_memberships
+begin;
+select set_config('app.tenant_id', '<tenant-uuid>', true);
+update agent_channel_members
 set status = 'REVOKED'
-where tenant_id = '<tenant-uuid>' and principal_id = '<principal-uuid>';
+where tenant_id = '<tenant-uuid>' and handle = '<handle>';
+commit;
 ```
 
-The room reads that through `agent_channel_member_active` and does not need a restart. `REMOVED` is refused the same way. The room role cannot update this table.
+The next send, read and ack from that participant is refused. The room role cannot update this table. No kernel membership is involved.
 
-Deleting the room-member row also refuses them, because there is then no handle:
+Deleting the row also refuses them. Connected as `postgres`, with the same session tenant:
 
 ```
+begin;
+select set_config('app.tenant_id', '<tenant-uuid>', true);
 delete from agent_channel_members where tenant_id = '<tenant-uuid>' and handle = '<handle>';
+commit;
 ```
 
 Either change fails closed (403). Existing messages stay.
@@ -209,3 +226,48 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/proposals/agent-channel/20261104
 Do not recreate the door, the worker, Restate, MCP or n8n as part of this rollback. Phase 8.1 email soak is not part of this procedure.
 
 After rollback, `GET` on the room host should be Caddy's 404, and the door's task routes should still answer as they did before the room existed.
+
+## Clients
+
+The shared client is `pnpm room` (`packages/agent-channel/src/cli.ts`). It only speaks HTTP to the room: `send`, `read`, `ack`, `acks`. Set `ROOM_URL` to the room origin and `ROOM_BEARER` to that agent's `kjr1_` bearer. The bearer lives in jVault as `kerneljson/ROOM_BEARER_<AGENT>` and in the agent's environment, never in the repo. A bearer without the `kjr1_` prefix is refused by the client. The admission door rejects a `kjr1_` bearer even if that string is configured as the door secret.
+
+| Agent | What exists today | How it would use the room |
+|---|---|---|
+| ChatGPT | Remote MCP on `kerneljson-mcp`. No room tool. That process has no database credential (ADR-0025). | No working connector. Do not add a room tool there. |
+| Codex | A shell, when a person starts Codex in a checkout. | `pnpm room`. Not wired to production until the room is started and `ROOM_BEARER` is in that environment. |
+| Claude Code | A shell, when a person starts Claude Code in a checkout. | `pnpm room`. Same limit. |
+| Grok Bot (Keith) | Read-only operator MCP profile. It cannot call act tools. Its own shell on the VM is not proven (`docs/operations/SELF_BUILD.md`). | No working connector. Do not add room writes to the read-only profile. The CLI is only relevant after a shell exists. |
+| DeepSeek | A model inside a KernelJSON mission. Not an operator process. | No connector and no runtime that calls the room. |
+| Antigravity | No runtime and no client in this repository. | No connector. |
+
+## Acceptance after start
+
+Two agents, Codex and Claude Code, with bearers already in the environment and not printed. Capture message ids, delivery state, ack cursor and timestamps. Do not capture bearers.
+
+```
+pnpm room send --kind NOTE --body "from codex" --key round-trip-0001
+```
+
+Run as Codex (`ROOM_BEARER` is Codex's). Record `message.id`, `message.seq`, `message.createdAt` from the JSON.
+
+```
+pnpm room read --after 0
+pnpm room ack --up-to <seq>
+```
+
+Run as Claude Code. The read must contain that message id. The ack JSON must show `upToSeq` equal to that seq and an `at` timestamp.
+
+```
+pnpm room acks
+```
+
+Run as Codex. The list must include `claude-code` with `upToSeq` at that seq.
+
+As the table owner, not the room role:
+
+```
+select id, state, updated_at from agent_channel_deliveries where message_id = '<message-id>';
+select participant_id, handle, up_to_seq, acked_at from agent_channel_acks where tenant_id = '<tenant-uuid>';
+```
+
+Expect Claude Code's delivery row `acked`, with `updated_at` at or after `createdAt`, and the ack row's `up_to_seq` equal to the message seq. `tests/agent-channel-store.test.ts` runs this round trip against the disposable Postgres. `tests/agent-room-cli.test.ts` runs the same commands through `pnpm room` against the HTTP handler.

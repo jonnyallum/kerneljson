@@ -13,6 +13,7 @@ import {
 } from "../../../packages/agent-channel/src/index.js";
 import { createChannelHandler } from "../../../packages/agent-channel/src/http.js";
 import { ChannelService } from "../../../packages/agent-channel/src/service.js";
+import { isRoomBearer } from "../../../packages/agent-channel/src/bearer.js";
 import { createMissionControl } from "./server.js";
 import { MissionControlStore } from "./store.js";
 
@@ -108,6 +109,7 @@ export function loadRoomConfig(env: Record<string, string | undefined>): RoomCon
     const bearer = env[spec.bearerEnv];
     if (bearer === undefined || bearer === "") throw new RoomConfigError(`${spec.bearerEnv}_MISSING`);
     if (bearer.length < MIN_ROOM_BEARER_LENGTH) throw new RoomConfigError(`${spec.bearerEnv}_TOO_SHORT`);
+    if (!isRoomBearer(bearer)) throw new RoomConfigError(`${spec.bearerEnv}_FORMAT`);
     const digest = createHash("sha256").update(bearer, "utf8").digest("hex");
     if (digests.has(digest)) throw new RoomConfigError("ROOM_BEARER_DUPLICATE");
     digests.add(digest);

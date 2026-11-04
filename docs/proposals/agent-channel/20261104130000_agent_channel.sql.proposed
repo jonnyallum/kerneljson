@@ -12,13 +12,26 @@ create table if not exists agent_channel_counters (
   last_seq bigint not null default 0
 );
 
+-- Amendment B. Room-local participants. id is not a core principal.
+-- This table does not reference principals or tenant_memberships.
+-- status ACTIVE or REVOKED is checked on every request.
+create table if not exists agent_channel_members (
+  id uuid primary key,
+  tenant_id uuid not null references tenants(id),
+  handle text not null check (handle ~ '^[a-z][a-z0-9-]{1,31}$'),
+  kind text not null check (kind in ('HUMAN','SERVICE')),
+  status text not null default 'ACTIVE' check (status in ('ACTIVE','REVOKED')),
+  unique (tenant_id, id),
+  unique (tenant_id, handle)
+);
+
 create table if not exists agent_channel_messages (
   id uuid primary key,
   tenant_id uuid not null references tenants(id),
   seq bigint not null,
   thread_id uuid not null,
   kind text not null check (kind in ('NOTE','QUESTION','REPLY','HANDOFF','STATUS')),
-  author_principal_id uuid not null references principals(id),
+  author_id uuid not null,
   author_kind text not null check (author_kind in ('HUMAN','SERVICE')),
   handle text not null check (handle ~ '^[a-z][a-z0-9-]{1,31}$'),
   body text not null check (char_length(body) between 1 and 4000),
@@ -29,40 +42,34 @@ create table if not exists agent_channel_messages (
   content_hash text not null check (char_length(content_hash) = 64),
   created_at timestamptz not null default now(),
   unique (tenant_id, seq),
-  unique (tenant_id, author_principal_id, idempotency_key)
+  unique (tenant_id, author_id, idempotency_key),
+  foreign key (tenant_id, author_id) references agent_channel_members (tenant_id, id)
 );
 create index if not exists agent_channel_messages_thread on agent_channel_messages (tenant_id, thread_id, seq);
 
 create table if not exists agent_channel_acks (
   tenant_id uuid not null references tenants(id),
-  principal_id uuid not null references principals(id),
+  participant_id uuid not null,
   handle text not null,
   up_to_seq bigint not null check (up_to_seq > 0),
   acked_at timestamptz not null default now(),
-  primary key (tenant_id, principal_id)
-);
-
--- Room membership. The app role may read it. The operator inserts rows as the table owner.
-create table if not exists agent_channel_members (
-  tenant_id uuid not null references tenants(id),
-  principal_id uuid not null references principals(id),
-  handle text not null check (handle ~ '^[a-z][a-z0-9-]{1,31}$'),
-  primary key (tenant_id, principal_id),
-  unique (tenant_id, handle)
+  primary key (tenant_id, participant_id),
+  foreign key (tenant_id, participant_id) references agent_channel_members (tenant_id, id)
 );
 
 -- Per-recipient delivery. State moves only forward: pending, delivered, acked.
 create table if not exists agent_channel_deliveries (
   tenant_id uuid not null references tenants(id),
   message_id uuid not null references agent_channel_messages(id),
-  recipient_principal_id uuid not null references principals(id),
+  recipient_id uuid not null,
   handle text not null check (handle ~ '^[a-z][a-z0-9-]{1,31}$'),
   state text not null check (state in ('pending','delivered','acked')),
   updated_at timestamptz not null default now(),
-  primary key (tenant_id, message_id, recipient_principal_id)
+  primary key (tenant_id, message_id, recipient_id),
+  foreign key (tenant_id, recipient_id) references agent_channel_members (tenant_id, id)
 );
 create index if not exists agent_channel_deliveries_recipient
-  on agent_channel_deliveries (tenant_id, recipient_principal_id, state);
+  on agent_channel_deliveries (tenant_id, recipient_id, state);
 
 -- Messages are immutable: no update, no delete (retention is a later, separate job).
 create or replace function agent_channel_messages_immutable() returns trigger language plpgsql as $$
@@ -79,7 +86,7 @@ begin
   if new.up_to_seq < old.up_to_seq then
     raise exception 'agent_channel_acks cannot move backwards';
   end if;
-  if new.tenant_id <> old.tenant_id or new.principal_id <> old.principal_id then
+  if new.tenant_id <> old.tenant_id or new.participant_id <> old.participant_id then
     raise exception 'agent_channel_acks identity is immutable';
   end if;
   return new;
@@ -98,7 +105,7 @@ begin
     raise exception 'agent_channel_deliveries cannot move backwards from delivered';
   end if;
   if new.tenant_id <> old.tenant_id or new.message_id <> old.message_id
-     or new.recipient_principal_id <> old.recipient_principal_id then
+     or new.recipient_id <> old.recipient_id then
     raise exception 'agent_channel_deliveries identity is immutable';
   end if;
   return new;
@@ -120,27 +127,6 @@ begin
 exception when invalid_text_representation then
   return null;
 end $$;
-
--- Answers only "is this principal an ACTIVE member of this tenant, with this kind?"
--- SECURITY DEFINER so the room login role is not granted the membership tables.
--- Apply this script as the table owner. The owner can read those tables; the room role cannot.
-create or replace function agent_channel_member_active(p_tenant uuid, p_principal uuid, p_kind text)
-returns boolean
-language sql
-stable
-security definer
-set search_path = pg_catalog, public
-as $$
-  select exists (
-    select 1
-    from public.tenant_memberships m
-    join public.principals p on p.id = m.principal_id
-    where m.tenant_id = p_tenant
-      and m.principal_id = p_principal
-      and p.kind = p_kind
-      and m.status = 'ACTIVE'
-  );
-$$;
 
 -- Row-level security. FORCE applies to the table owner. A superuser still bypasses it.
 -- The room connects as agent_room_app (LOGIN, member of agent_channel), never as the
@@ -164,17 +150,20 @@ end $$;
 revoke all on agent_channel_counters, agent_channel_messages, agent_channel_acks,
   agent_channel_members, agent_channel_deliveries from public, anon, authenticated;
 
+-- The live door role is postgres: CREATEROLE, not SUPERUSER (PostgreSQL 17.6, 4 Nov 2026).
+-- These attributes are ones that role may set. Do not add SUPERUSER, BYPASSRLS,
+-- CREATEDB, CREATEROLE or REPLICATION.
 do $$ begin
   if not exists (select 1 from pg_roles where rolname = 'agent_channel') then
-    create role agent_channel nologin nobypassrls;
+    create role agent_channel nologin nosuperuser nocreatedb nocreaterole nobypassrls;
   end if;
   if not exists (select 1 from pg_roles where rolname = 'agent_room_app') then
-    create role agent_room_app login inherit nobypassrls;
+    create role agent_room_app login inherit nosuperuser nocreatedb nocreaterole nobypassrls;
   end if;
 end $$;
-alter role agent_channel nologin nobypassrls;
+alter role agent_channel nologin nosuperuser nocreatedb nocreaterole nobypassrls;
 -- LOGIN, but no password is set in this script. The operator sets it out of band.
-alter role agent_room_app login inherit nobypassrls nosuperuser nocreatedb nocreaterole;
+alter role agent_room_app login inherit nosuperuser nocreatedb nocreaterole nobypassrls;
 grant agent_channel to agent_room_app;
 grant usage on schema public to agent_channel;
 grant select, insert on agent_channel_messages to agent_channel;
@@ -182,5 +171,3 @@ grant select, insert, update on agent_channel_counters to agent_channel;
 grant select, insert, update on agent_channel_acks to agent_channel;
 grant select, insert, update on agent_channel_deliveries to agent_channel;
 grant select on agent_channel_members to agent_channel;
-revoke all on function agent_channel_member_active(uuid, uuid, text) from public;
-grant execute on function agent_channel_member_active(uuid, uuid, text) to agent_channel;

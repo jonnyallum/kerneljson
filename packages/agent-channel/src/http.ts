@@ -53,6 +53,9 @@ export function createChannelHandler(options: {
       if (url.pathname === "/messages" && req.method === "GET") {
         return send(res, 200, await options.service.read(context, Object.fromEntries(url.searchParams)));
       }
+      if (url.pathname === "/acks" && req.method === "GET") {
+        return send(res, 200, { acks: await options.service.cursors(context) });
+      }
       const known = url.pathname === "/messages" || url.pathname === "/acks";
       if (!known) throw new HttpError(404);
       if (req.method !== "POST") throw new HttpError(405);

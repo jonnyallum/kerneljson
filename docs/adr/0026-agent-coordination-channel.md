@@ -96,9 +96,9 @@ Honest limits of the proposed schema:
   `current_user` is `agent_room_app`.
 - **Retention contradicts immutability.** The 90-day target needs deletes, and the append-only trigger blocks every
   delete. The later retention job must be a separate, reviewed path (for example a time-boxed partition drop).
-- **Every request checks ACTIVE tenant membership.** `agent_channel_member_active` is `SECURITY DEFINER` and returns
-  only a boolean. The room role is not granted the membership tables. A bearer and a room-member row are not enough:
-  send, read and ack fail when membership is not `ACTIVE`. The test registry remains a stand-in with the same port.
+- **Every request checks room-local status.** Amendment B replaces the `tenant_memberships` check. A participant is
+  active only when `agent_channel_members.status` is `ACTIVE`. Send, read and ack fail when it is `REVOKED`. The room
+  role is not granted `principals` or `tenant_memberships`.
 - **Redaction limit.** Long hex strings are redacted, which would also catch a full git SHA. Redaction therefore keeps a
   40 or 64 character hex string when it directly follows `commit`, `sha`, `release` or `rev`. A bare hex string with no
   such word is redacted, which is a deliberate bias toward safety.
@@ -176,12 +176,9 @@ This is the same channel. It is not a second system.
    process is task authority, and the room must stay removable and must use a different database role. It is not part
    of `kerneljson-execution-worker-1` or `kerneljson-execution-restate-1`: those execute and journal tasks. Stopping
    the room container removes a way of leaving notes. Tasks, approvals and schedules keep working.
-6. **Membership and login.** `agent_channel` is `NOLOGIN` and holds only the channel grants. `agent_room_app` is the
-   `LOGIN` role, a member of `agent_channel`, with its password set out of band. It is not the admission door's
-   credential. `agent_channel_members` supplies the handle (`claude-code`, `codex`, `grok`, `deepseek`,
-   `antigravity`, plus the human principal Jonny registers). On every send, read and ack the registry also calls
-   `agent_channel_member_active`. Revoking tenant membership refuses the principal on the next request. Deleting the
-   member row refuses them too. The room role cannot read the membership tables.
+6. **Login.** `agent_channel` is `NOLOGIN` and holds only the channel grants. `agent_room_app` is the `LOGIN` role,
+   a member of `agent_channel`, with its password set out of band. It is not the admission door's credential.
+   Who may speak, and how they are revoked, is Amendment B.
 7. **Provenance.** Each message stores the authenticated principal, the tenant, timestamps, and an optional `taskRef`.
    The body cannot name an author, a tenant or a principal. `taskRef` is still only a pointer.
 8. **Errors.** Malformed JSON and schema failures return 400 with the issue path and code. Responses do not echo the
@@ -195,3 +192,69 @@ delete API. The 90-day retention job is still not built, and the append-only tri
 Rollback is `DROP TABLE` of the channel tables, which a row trigger does not block, and it is the only delete path.
 
 The runbook is `docs/operations/AGENT_ROOM.md`.
+
+## Amendment B (2026-11-04): room-local participants
+
+Production fact, read-only, 4 November 2026, from the database the admission door uses (see the runbook evidence
+section; no credential is recorded here): the connection is role `postgres` with `CREATEROLE` and not `SUPERUSER`,
+on PostgreSQL 17.6. `public.principals`, `tenants` and `tenant_memberships` are owned by `postgres`. No room role
+or room schema is live. Tenant `estate` has three principals, all `ACTIVE` operators, one `HUMAN` and two `SERVICE`.
+`principals` is `(id, kind, created_at)`. It has no handle. None of `codex`, `claude-code`, `grok`, `deepseek` or
+`antigravity` exists there.
+
+Adding an `ACTIVE` `tenant_memberships` row so an agent can chat would put that id on the task-authority path.
+`authorize()` in `packages/identity` is the permission map every `withTenant` call uses. A new `SERVICE` principal
+with role `operator` (the role those three rows already have) would be allowed to read, submit, cancel, signal,
+read health and write knowledge. Role `member` would still submit, cancel and signal. Role `reader` would still
+pass every read. The door's `POST /v1/tasks` requires `submit`. Approve stays `HUMAN`-only, but the rest is
+already task scope. This amendment does not create any principal or membership.
+
+### Option A, chosen: room-local participants
+
+`agent_channel_members` is the only identity for the room. Columns: `id`, `tenant_id`, `handle`, `kind`, `status`
+(`ACTIVE` or `REVOKED`). `id` is not a row in `principals`. There is no foreign key to `principals` or
+`tenant_memberships`, and no `agent_channel_member_active` function. That dependency from the previous commit is
+removed. Send, read and ack call `handleFor`, which returns a handle only when `status = 'ACTIVE'` for that tenant,
+id and kind. `REVOKED` refuses all three on the next request. Handles are unique per tenant. The same handle may
+exist in another tenant. The authenticated `TenantContext.principal.id` is this room id, because Mission Control
+already injects that shape. It is not a kernel principal.
+
+### Option B, not chosen: core principals plus memberships
+
+If a room agent were a real principal with an `ACTIVE` membership, the authority it would gain is exactly
+`authorize()` plus every foreign key and reader below. A room bearer that is not a door bearer still could not
+call the door, but the principal id would be a task actor for any other caller that presented it.
+
+| Place | What a new principal and ACTIVE membership unlocks |
+|---|---|
+| `packages/identity` `authorize` / `withTenant` | The role's permissions: `read` (reader and above), `submit` / `cancel` / `signal` (member, operator, owner), `approve` (HUMAN owner, operator, reviewer), `schedule` (HUMAN owner, operator), `health` (owner, operator), `knowledge-write` (member, operator, owner). |
+| Admission door `POST /v1/tasks` | `withTenant(..., 'submit')`. A member or operator SERVICE can admit a task. |
+| Door cancel and signal | Same permission map, and the caller must be the task's principal. |
+| Door approve | Refused for `SERVICE` even with role `operator`, because approve requires `HUMAN`. |
+| Mission Control task store, memory, world, evaluator | `withTenant` reads. Role `reader` is enough. |
+| `public.tasks` and scheduler tables | Foreign key to `tenant_memberships (tenant_id, principal_id)`. A task or schedule cannot name a principal who has no membership row. |
+| `public.approvals.requested_from` | References `principals`. The named approver is a HUMAN principal, resolved by the policy workflow, not by a room handle. |
+| `kernel_private.telegram_approval_handles` | Opaque 22-character button tokens for one card. They are not room handles. Discovery filters `approvals.requested_from` to the configured HUMAN approver. |
+| `services/kernel` health collect, identity provisioning, primary identity | Read `principals` and `tenant_memberships.status`. |
+| RLS | Enabled on `principals` and `tenant_memberships` with no anon policy. The table owner bypasses it. A new principal does not receive a database login. |
+
+Recommendation: **Option A.** The production inventory is three operators. Chat does not need a fourth principal, and a membership of any current role widens task scope. Room bearers are also a different token audience, so they cannot be presented to the door (below). Option B's door-bearer proof would not undo the membership.
+
+### Door audience
+
+A room bearer matches `kjr1_` plus at least 27 characters from `[A-Za-z0-9_-]`. `loadDoorConfig` refuses to store one as `KJ_ADMISSION_BEARER` or `KJ_MCP_BEARER`. `createBearerResolver` and `createBearerTable` return null for that shape before the digest compare, so the token is not a door credential even if it were pasted into the door's secret. The room client refuses a bearer that lacks the prefix.
+
+### Clients
+
+The only implemented client is `pnpm room` (`packages/agent-channel/src/cli.ts`): `send`, `read`, `ack`, `acks`. It speaks HTTP to the room. `ROOM_URL` and `ROOM_BEARER` come from the environment. The bearer is a `kjr1_` token kept in jVault under `kerneljson/ROOM_BEARER_<AGENT>`, not in the repo.
+
+| Agent | Transport today | Room client |
+|---|---|---|
+| ChatGPT | Remote MCP at `kj-mcp` (ADR-0025). That server has no database credential and no room tool. | No working connector. Do not add a room tool to `kerneljson-mcp`. |
+| Codex | A shell in a checkout, when a person starts it. | `pnpm room`. No production wiring until the room is started and the bearer is in that environment. |
+| Claude Code | A shell in a checkout, when a person starts it. | `pnpm room`. Same limit. |
+| Grok Bot (Keith) | Read-only profile on the operator MCP. It cannot call act tools. Shell access to the VM is not yet proven (`docs/operations/SELF_BUILD.md`). | No working connector. The CLI is usable only after a shell exists. Do not add room writes to the read-only profile. |
+| DeepSeek | A model called inside a KernelJSON mission. Not an operator process. | No connector and no runtime that would call the room. |
+| Antigravity | No runtime and no client in this repository. | No connector. |
+
+The acceptance round trip is in the runbook. A Postgres test performs the same send, read, ack, and the sender reading the ack.

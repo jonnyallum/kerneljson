@@ -192,7 +192,7 @@ describe("HTTP transport", () => {
     expect((await fetch(`${url}/messages`, json("claude", post("NOTE", "x".repeat(9000))))).status).toBe(413);
     expect((await fetch(`${url}/messages`, json("claude", post("SHOUT", "hi")))).status).toBe(400);
     expect((await fetch(`${url}/nothing`, { headers: { authorization: "Bearer claude" } })).status).toBe(404);
-    expect((await fetch(`${url}/acks`, { headers: { authorization: "Bearer claude" } })).status).toBe(405);
+    expect((await fetch(`${url}/acks`, { headers: { authorization: "Bearer claude" } })).status).toBe(200);
   });
   it("LOCAL LOOPBACK round trip between two simulated agents: post, read, reply, acknowledge", async () => {
     // Simulation only: both 'agents' are this test process with different registered principals.

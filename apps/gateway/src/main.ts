@@ -13,6 +13,7 @@ import {
 } from "./server.js";
 import { createRestateControls } from "./index.js";
 import { createControlSigner, isKeyId, MIN_SIGNING_KEY_LENGTH, type ControlSigner } from "../../../services/kernel/src/control-signing.js";
+import { isRoomBearer } from "../../../packages/agent-channel/src/bearer.js";
 import type { ControlPort } from "../../mission-control/src/server.js";
 
 /**
@@ -121,6 +122,8 @@ export function loadDoorConfig(env: Record<string, string | undefined>): DoorCon
   const bearer = required(env, "KJ_ADMISSION_BEARER");
   if (bearer.length < 16)
     throw new DoorConfigError("KJ_ADMISSION_BEARER_TOO_SHORT", "KJ_ADMISSION_BEARER is too short");
+  if (isRoomBearer(bearer))
+    throw new DoorConfigError("KJ_ADMISSION_BEARER_IS_ROOM_TOKEN", "KJ_ADMISSION_BEARER must not be a room bearer");
 
   const tenantId = required(env, "KJ_ADMISSION_TENANT_ID");
   const principalId = required(env, "KJ_ADMISSION_PRINCIPAL_ID");
@@ -185,6 +188,8 @@ function loadMcpIdentity(
   const bearer = env["KJ_MCP_BEARER"]!;
   if (bearer.length < MIN_MCP_BEARER_LENGTH)
     throw new DoorConfigError("KJ_MCP_BEARER_TOO_SHORT", "KJ_MCP_BEARER is too short");
+  if (isRoomBearer(bearer))
+    throw new DoorConfigError("KJ_MCP_BEARER_IS_ROOM_TOKEN", "KJ_MCP_BEARER must not be a room bearer");
   if (bearer === mainBearer)
     throw new DoorConfigError("KJ_MCP_BEARER_REUSED", "KJ_MCP_BEARER must differ from KJ_ADMISSION_BEARER");
   if (env["KJ_MCP_PRINCIPAL_KIND"] !== "SERVICE")
@@ -226,7 +231,7 @@ export function createBearerTable(
   const table = entries.map((e) => ({ digest: createHash("sha256").update(e.bearer, "utf8").digest(), context: TenantContext.parse(e.context) }));
   if (new Set(table.map((t) => t.digest.toString("hex"))).size !== table.length) throw new Error("Duplicate bearer");
   return async (token: string): Promise<TenantContext | null> => {
-    if (typeof token !== "string" || token.length === 0) return null;
+    if (typeof token !== "string" || token.length === 0 || isRoomBearer(token)) return null;
     const got = createHash("sha256").update(token, "utf8").digest();
     let found: TenantContext | null = null;
     for (const t of table) if (timingSafeEqual(got, t.digest)) found = t.context;
@@ -249,7 +254,7 @@ export function createBearerResolver(
   const expected = createHash("sha256").update(bearer, "utf8").digest();
   const frozen = TenantContext.parse(context); // validate once at construction
   return async (token: string): Promise<TenantContext | null> => {
-    if (typeof token !== "string" || token.length === 0) return null;
+    if (typeof token !== "string" || token.length === 0 || isRoomBearer(token)) return null;
     const got = createHash("sha256").update(token, "utf8").digest();
     if (got.length !== expected.length || !timingSafeEqual(got, expected)) return null;
     return frozen;

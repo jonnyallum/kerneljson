@@ -30,7 +30,7 @@ const registry: AgentRegistry = {
 
 describe("room configuration", () => {
   const secret = "super-secret-value";
-  const bearer = "room-test-bearer-value-000000000001";
+  const bearer = "kjr1_room-test-bearer-value-0000000001";
   const base = {
     DATABASE_URL: `postgresql://role:${secret}@db.internal:5432/kerneljson`,
     ROOM_ORIGIN: "https://kj-room.example",
