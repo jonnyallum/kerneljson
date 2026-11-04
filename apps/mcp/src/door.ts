@@ -28,7 +28,7 @@ export interface OperatorDoor {
   memory(query: Record<string, string>): Promise<DoorResult>;
   world(query: Record<string, string>): Promise<DoorResult>;
   health(): Promise<DoorResult>;
-  admit(input: { recipe: string; objective: string; idempotencyKey: string }): Promise<DoorResult>;
+  admit(input: { recipe: string; objective: string; idempotencyKey: string; channel?: string }): Promise<DoorResult>;
   cancel(taskId: string): Promise<DoorResult>;
 }
 
@@ -96,9 +96,11 @@ export class HttpOperatorDoor implements OperatorDoor {
     return this.#call("GET", "/v1/health");
   }
 
-  admit(input: { recipe: string; objective: string; idempotencyKey: string }): Promise<DoorResult> {
+  admit(input: { recipe: string; objective: string; idempotencyKey: string; channel?: string }): Promise<DoorResult> {
+    const channel = input.channel ?? MCP_CHANNEL;
+    if (channel !== MCP_CHANNEL && channel !== "grokbot-mcp/v1") return Promise.resolve({ ok: false, failure: "REJECTED", status: null });
     return this.#call("POST", "/v1/tasks", {
-      headers: { "idempotency-key": input.idempotencyKey, "x-kj-channel": MCP_CHANNEL },
+      headers: { "idempotency-key": input.idempotencyKey, "x-kj-channel": channel },
       body: { recipe: input.recipe, objective: input.objective },
     });
   }

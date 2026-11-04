@@ -100,9 +100,11 @@ it('serves ledger-side health to an owner only, naming the door and active relea
  expect((await fetch(url+'/v1/health',{headers:headers('reader')})).status).toBe(403);
  expect((await fetch(url+'/v1/health',{headers:headers('unknown')})).status).toBe(401);
 });
-it('attributes chatgpt-mcp/v1 admissions to their channel and still refuses unknown channels',async()=>{
+it('attributes ChatGPT and Grok Bot MCP admissions separately and still refuses unknown channels',async()=>{
  const send=(channel:string)=>fetch(url+'/v1/tasks',{method:'POST',headers:{...headers(),'idempotency-key':randomUUID(),'x-kj-channel':channel},body:JSON.stringify(input)});
  const accepted=await send('chatgpt-mcp/v1');expect(accepted.status).toBe(202);const {taskId}=await accepted.json();
  expect((await fixture.pool.query("select payload->'intent'->>'source' as source from kernel_private.task_admissions where task_id=$1",[taskId])).rows[0].source).toBe('kerneljson:channel/chatgpt-mcp/v1');
+ const grok=await send('grokbot-mcp/v1');expect(grok.status).toBe(202);const grokTask=(await grok.json()).taskId;
+ expect((await fixture.pool.query("select payload->'intent'->>'source' as source from kernel_private.task_admissions where task_id=$1",[grokTask])).rows[0].source).toBe('kerneljson:channel/grokbot-mcp/v1');
  for(const channel of ['chatgpt-mcp','CHATGPT-MCP/V1','kerneljson:channel/chatgpt-mcp/v1','chatgpt-mcp/v2'])expect((await send(channel)).status).toBe(400);
 });

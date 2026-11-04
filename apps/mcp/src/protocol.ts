@@ -110,7 +110,7 @@ export async function handleMessage(
         const issues = args.error.issues.map((i) => `${i.path.join(".") || "arguments"}: ${i.message}`);
         return { jsonrpc: "2.0", id, result: toolResult({ error: "INVALID_ARGUMENTS", issues }, true) };
       }
-      const result = await tool.run(door, args.data);
+      const result = await tool.run(door, args.data, caller);
       log({ tool: tool.name, outcome: result.ok ? "OK" : result.failure, taskId: result.ok ? taskIdOf(result.body) : null, ...who });
       return {
         jsonrpc: "2.0",

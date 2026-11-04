@@ -20,7 +20,7 @@ import {
  *
  *   discovery     RFC 9728 protected-resource metadata, RFC 8414 authorisation-server metadata
  *   registration  RFC 7591 dynamic client registration, redirect URIs limited to an exact allow-list; the
- *                 URIs decide the client's profile (profiles.ts: ChatGPT operator, Grok Bot read-only)
+ *                 URIs decide the client's profile (profiles.ts: ChatGPT and Grok Bot operator)
  *   authorise     authorisation code + PKCE S256 only; sign-in delegated to Google; the Google subject
  *                 must equal MCP_ALLOWED_GOOGLE_SUB; then an explicit consent page (the defence against
  *                 a confused deputy: a client someone else registered cannot get a code silently)
@@ -236,7 +236,7 @@ export function createOAuthServer(config: OAuthConfig) {
 
   /**
    * Bearer verifier for /mcp. Re-checks the permitted subject on every request, and that the token's scope is
-   * exactly its client's profile scope, so a read-only client's token can never carry the operator scope.
+   * exactly its client's profile scope, so a token issued under an older scope cannot silently gain authority.
    */
   function verifyAccess(authorization: string | undefined): (Access & { profile: ClientProfile; clientName: string }) | null {
     if (typeof authorization !== "string" || !authorization.startsWith("Bearer ")) return null;

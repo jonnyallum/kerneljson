@@ -11,6 +11,7 @@ import {
   parseMissionObjective,
 } from "../../../packages/contracts/src/index.js";
 import type { DoorResult, OperatorDoor } from "./door.js";
+import type { Caller } from "./protocol.js";
 
 /**
  * ADR-0025 phase 1 tool set. This list IS the safety boundary: a chat model that has been steered by
@@ -26,7 +27,7 @@ const RequestId = z
   .regex(/^[A-Za-z0-9._:-]{8,124}$/, "8 to 124 characters: letters, digits, '.', '_', ':' or '-'")
   .describe("A unique id for this request, such as a fresh UUID. Retrying with the same id returns the same task; never reuse one for a different request.");
 
-export const idempotencyKeyFor = (requestId: string): string => `mcp:${requestId}`;
+export const idempotencyKeyFor = (requestId: string, profile = "chatgpt"): string => profile === "grokbot" ? `grokbot-mcp:${requestId}` : `mcp:${requestId}`;
 
 export interface ToolAnnotations {
   title: string;
@@ -41,7 +42,7 @@ export interface ToolDefinition<S extends z.ZodType = z.ZodType> {
   description: string;
   input: S;
   annotations: ToolAnnotations;
-  run(door: OperatorDoor, args: z.infer<S>): Promise<DoorResult>;
+  run(door: OperatorDoor, args: z.infer<S>, caller: Caller): Promise<DoorResult>;
 }
 
 const read = (title: string): ToolAnnotations => ({ title, readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
@@ -111,7 +112,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     description: "Start a morning brief now: GitHub activity for the last 24 hours, written by one model, reviewed by another, delivered to Telegram. Returns the task id to follow with kj_get_task.",
     input: z.strictObject({ request_id: RequestId }),
     annotations: { title: "Run a morning brief", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    run: (door, args) => door.admit({ recipe: BRIEF_RECIPE, objective: "morning brief", idempotencyKey: idempotencyKeyFor(args.request_id) }),
+    run: (door, args, caller) => door.admit({ recipe: BRIEF_RECIPE, objective: "morning brief", idempotencyKey: idempotencyKeyFor(args.request_id, caller.profile), ...(caller.profile === "grokbot" ? { channel: "grokbot-mcp/v1" } : {}) }),
   }),
   define({
     name: "kj_run_analysis",
@@ -139,7 +140,7 @@ export const TOOLS: readonly ToolDefinition[] = [
         }
       }),
     annotations: { title: "Run a repository analysis", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    run: (door, args) => door.admit({ recipe: MISSION_RECIPE, objective: analysisObjective(args), idempotencyKey: idempotencyKeyFor(args.request_id) }),
+    run: (door, args, caller) => door.admit({ recipe: MISSION_RECIPE, objective: analysisObjective(args), idempotencyKey: idempotencyKeyFor(args.request_id, caller.profile), ...(caller.profile === "grokbot" ? { channel: "grokbot-mcp/v1" } : {}) }),
   }),
   define({
     name: "kj_run_code_change",
@@ -164,7 +165,7 @@ export const TOOLS: readonly ToolDefinition[] = [
         }
       }),
     annotations: { title: "Run a code change (draft PR)", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    run: (door, args) => door.admit({ recipe: CODE_CHANGE_RECIPE, objective: codeChangeObjective(args), idempotencyKey: idempotencyKeyFor(args.request_id) }),
+    run: (door, args, caller) => door.admit({ recipe: CODE_CHANGE_RECIPE, objective: codeChangeObjective(args), idempotencyKey: idempotencyKeyFor(args.request_id, caller.profile), ...(caller.profile === "grokbot" ? { channel: "grokbot-mcp/v1" } : {}) }),
   }),
   define({
     name: "kj_cancel_task",
