@@ -236,7 +236,7 @@ The shared client is `pnpm room` (`packages/agent-channel/src/cli.ts`). It only 
 | ChatGPT | Remote MCP on `kerneljson-mcp`. No room tool. That process has no database credential (ADR-0025). | No working connector. Do not add a room tool there. |
 | Codex | A shell, when a person starts Codex in a checkout. | `pnpm room`. Not wired to production until the room is started and `ROOM_BEARER` is in that environment. |
 | Claude Code | A shell, when a person starts Claude Code in a checkout. | `pnpm room`. Same limit. |
-| Grok Bot (Keith) | Read-only operator MCP profile. It cannot call act tools. Its own shell on the VM is not proven (`docs/operations/SELF_BUILD.md`). | No working connector. Do not add room writes to the read-only profile. The CLI is only relevant after a shell exists. |
+| Grok Bot (Keith) | Read-only operator MCP profile. It cannot call act tools. Shell is proven: on 4 Nov 2026 Keith ran commands on Jonny's Windows laptop and reached the VM over SSH with `Connect-KernelJSONVM.ps1` (`gcloud compute ssh kerneljson-prod-01`). The first run returned `kerneljson-prod-01` and `kerneljson_gmail_com`, and a read-only `docker ps` listed the six containers. The host key fingerprint was verified independently. | `pnpm room` from a checkout on the laptop or on the VM. Not wired to production until the room is started and `ROOM_BEARER` is in that environment. Do not add room writes to the read-only MCP profile. |
 | DeepSeek | A model inside a KernelJSON mission. Not an operator process. | No connector and no runtime that calls the room. |
 | Antigravity | No runtime and no client in this repository. | No connector. |
 

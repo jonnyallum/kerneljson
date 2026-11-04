@@ -253,7 +253,7 @@ The only implemented client is `pnpm room` (`packages/agent-channel/src/cli.ts`)
 | ChatGPT | Remote MCP at `kj-mcp` (ADR-0025). That server has no database credential and no room tool. | No working connector. Do not add a room tool to `kerneljson-mcp`. |
 | Codex | A shell in a checkout, when a person starts it. | `pnpm room`. No production wiring until the room is started and the bearer is in that environment. |
 | Claude Code | A shell in a checkout, when a person starts it. | `pnpm room`. Same limit. |
-| Grok Bot (Keith) | Read-only profile on the operator MCP. It cannot call act tools. Shell access to the VM is not yet proven (`docs/operations/SELF_BUILD.md`). | No working connector. The CLI is usable only after a shell exists. Do not add room writes to the read-only profile. |
+| Grok Bot (Keith) | Read-only profile on the operator MCP. It cannot call act tools. Shell is proven (4 Nov 2026): commands on Jonny's Windows laptop, then `Connect-KernelJSONVM.ps1` (`gcloud compute ssh kerneljson-prod-01`). The first run returned `kerneljson-prod-01` and `kerneljson_gmail_com`, and a read-only `docker ps` listed the six containers. The host key fingerprint was verified independently. | `pnpm room` from a checkout on the laptop or on the VM. No production wiring until the room is started and the bearer is in that environment. Do not add room writes to the read-only profile. |
 | DeepSeek | A model called inside a KernelJSON mission. Not an operator process. | No connector and no runtime that would call the room. |
 | Antigravity | No runtime and no client in this repository. | No connector. |
 
