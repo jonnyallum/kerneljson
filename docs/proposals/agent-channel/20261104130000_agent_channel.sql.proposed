@@ -1,6 +1,7 @@
--- ADR-0026: agent coordination channel storage. REPOSITORY ONLY.
--- NOT APPLIED to any database. NOT TESTED against Postgres (Docker Desktop was unavailable on 2026-11-04).
--- Applying it is a production database change that needs a named change window from Jonny.
+-- ADR-0026: agent coordination channel storage. PROPOSAL ONLY, deliberately NOT in supabase/migrations/.
+-- tests/support/local.ts migrate() applies every file in that folder to every database-backed test, and this
+-- SQL has not been run against Postgres (Docker Desktop was unavailable on 2026-11-04). Move it into
+-- supabase/migrations/ only after it has been tested, and apply it to production only in a named change window.
 -- The channel is narrative. task_ref is a bare pointer with no foreign key: a message cannot
 -- change, and does not depend on, any task row.
 

@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-  ChannelError,
   ChannelService,
   InMemoryChannelStore,
   createChannelHandler,
@@ -114,7 +113,11 @@ describe("offline agents and acknowledgement", () => {
     const taskRef = randomUUID();
     const { message } = await s.post(people.claude, post("HANDOFF", "please look at this", undefined, { taskRef }));
     expect(message.taskRef).toBe(taskRef);
-    expect(Object.keys(s)).not.toContain("createTask");
+    // The service surface is an allow-list of channel verbs. Any new method must be added here deliberately.
+    const surface = (o: object) => Object.getOwnPropertyNames(Object.getPrototypeOf(o)).filter((n) => n !== "constructor").sort();
+    expect(surface(s)).toEqual(["ack", "cursorEnd", "cursors", "post", "read", "who"]);
+    class Planted extends ChannelService { createTask() { return 1; } }
+    expect(Object.getOwnPropertyNames(Planted.prototype)).toContain("createTask"); // negative: the check can see a planted verb
   });
 });
 
@@ -133,6 +136,13 @@ describe("secret redaction", () => {
     expect(message.redacted).toBe(true);
     for (const v of ["a".repeat(40), "Z".repeat(30), "q".repeat(30), "hunter2hunter2"]) expect(message.body).not.toContain(v);
     expect(redactSecrets("plain text, nothing to hide").redacted).toBe(false);
+  });
+  it("keeps a git SHA or release id after a naming word, but redacts a bare hex string", () => {
+    const sha = "93f42f3" + "a".repeat(33);
+    expect(redactSecrets(`merged commit ${sha}`)).toEqual({ text: `merged commit ${sha}`, redacted: false });
+    expect(redactSecrets(`release: ${sha}`).redacted).toBe(false);
+    expect(redactSecrets(`key is ${sha}`).redacted).toBe(true); // negative: no naming word, so it is treated as a key
+    expect(redactSecrets(`commit ${sha}${"b"}`).redacted).toBe(true); // 41 characters is not a SHA
   });
   it("does not echo secrets or internals in error responses", async () => {
     const s = new ChannelService(new InMemoryChannelStore(), { handleFor: async () => { throw new Error(`boom ${fake.openrouter}`); } });
@@ -241,6 +251,12 @@ describe("Mission Control channel surface", () => {
     expect(last.handle).toBe("jonny");
     expect(last.taskRef).toBeNull();
   });
+  it("shows the newest 100 messages, not the oldest, once the log is longer", async () => {
+    for (let i = 1; i <= 105; i++) await service.post(people.claude, post("NOTE", `tail-marker-${String(i).padStart(3, "0")}`, `tail-key-${String(i).padStart(4, "0")}`));
+    const html = await (await fetch(`${url}/channel`, { headers: { authorization: "Bearer jonny" } })).text();
+    expect(html).toContain("tail-marker-105");
+    expect(html).not.toContain("tail-marker-001");
+  });
 });
 
 /* ADR-0026 section 1: the channel has no path to task authority. */
@@ -255,6 +271,7 @@ export function findAuthorityViolations(path: string, text: string): string[] {
   code.split(/\r?\n/).forEach((line, i) => { if (FORBIDDEN.test(line)) hits.push(`${path}:${i + 1}: forbidden identifier`); });
   return hits;
 }
+export const findSqlViolations = (sql: string) => (sql.match(/\b(tasks|approvals|control_events|task_events|evidence|kernel_private)\b/g) ?? []);
 const files = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(join(dir, e.name)) : e.name.endsWith(".ts") ? [join(dir, e.name)] : []));
 
@@ -270,14 +287,14 @@ describe("authority boundary", () => {
     expect(findAuthorityViolations("x.ts", 'import pg from "pg";')).not.toEqual([]);
     expect(findAuthorityViolations("x.ts", 'import { z } from "zod";\n// updates tasks in comments are fine\n')).toEqual([]);
   });
-  it("the migration only names channel tables plus read-only membership lookups", () => {
-    const dir = "supabase/migrations";
-    const f = readdirSync(dir).find((n) => n.endsWith("_agent_channel.sql"));
-    if (!f) return; // added with the Postgres store
-    const sql = stripComments(readFileSync(join(dir, f), "utf8")).replace(/--.*$/gm, "");
-    expect(sql).not.toMatch(/\b(tasks|approvals|control_events|task_events|evidence|kernel_private)\b/);
-  });
-  it("ChannelError is the only failure type that carries an authority-free code", () => {
-    expect(new ChannelError("DENIED", "x").code).toBe("DENIED");
+  it("the proposed SQL names only channel tables, and is kept out of supabase/migrations", () => {
+    const f = "docs/proposals/agent-channel/20261104130000_agent_channel.sql.proposed";
+    const sql = readFileSync(f, "utf8").replace(/--.*$/gm, "");
+    expect(findSqlViolations(sql)).toEqual([]);
+    expect(readdirSync("supabase/migrations").filter((n) => n.includes("agent_channel"))).toEqual([]);
+    // negative cases: the SQL check fails on planted violations
+    expect(findSqlViolations("alter table tasks add column x int;")).not.toEqual([]);
+    expect(findSqlViolations("insert into control_events values (1);")).not.toEqual([]);
+    expect(findSqlViolations("create table agent_channel_messages (task_ref uuid references tasks(id));")).not.toEqual([]);
   });
 });

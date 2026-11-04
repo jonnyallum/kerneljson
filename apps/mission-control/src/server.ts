@@ -61,7 +61,9 @@ export function createMissionControl(options: {
       }
       // ADR-0026: the channel is narrative. These routes read and append messages and nothing else.
       if (options.channel && url.pathname === "/channel" && req.method === "GET") {
-        const { messages } = await options.channel.read(context, { limit: "100" });
+        // Show the newest 100: find the end of the log first, then read from 100 before it.
+        const last = await options.channel.cursorEnd(context);
+        const { messages } = await options.channel.read(context, { after: String(Math.max(0, last - 100)), limit: "100" });
         res.end(renderChannel(messages, await options.channel.cursors(context), context.principal.kind === "HUMAN", randomUUID()));
         return;
       }
