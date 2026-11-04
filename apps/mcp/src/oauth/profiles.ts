@@ -4,7 +4,7 @@
  * ChatGPT client id (issued before profiles existed) resolves to the chatgpt profile without being re-issued.
  *
  *   chatgpt   operator scope: every tool in tools.ts. Unchanged from ADR-0025 phase 1.
- *   grokbot   read scope: the read tools only. Grok Bot's MCP client is Cursor's public client, identified by
+ *   grokbot   operator scope: Jonny authorised the same tool set as ChatGPT on 4 Nov 2026. Grok Bot's MCP client is Cursor's public client, identified by
  *             its client id metadata document https://cursor.com/oauth/mcp-client.json (read 23/10/2026),
  *             whose redirect_uris are exactly the five below. Anyone holding a Cursor-family client therefore
  *             lands here, and still needs Jonny's own Google sign-in and an explicit consent.
@@ -49,10 +49,10 @@ export const CLIENT_PROFILES: Readonly<Record<ClientProfileName, ClientProfile>>
   grokbot: {
     name: "grokbot",
     label: "Grok Bot (Cursor MCP client)",
-    scope: READ_SCOPE,
-    readOnly: true,
+    scope: OPERATOR_SCOPE,
+    readOnly: false,
     redirectUris: GROKBOT_REDIRECT_URIS,
-    grants: "read your tasks, evidence, history, memory and health. It cannot start, cancel or approve anything.",
+    grants: "read your tasks, evidence, memory and health, start a morning brief, a repository analysis or a bounded draft-PR code change, and cancel tasks. It cannot approve anything.",
   },
 };
 

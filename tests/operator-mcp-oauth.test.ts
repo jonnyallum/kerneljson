@@ -494,8 +494,8 @@ describe("Google ID token checks", () => {
   });
 });
 
-// ---- Grok Bot: a second, read-only client, enrolled in a bounded window ---------------------
-describe("the Grok Bot read-only profile", () => {
+// ---- Grok Bot: Jonny's second operator client, enrolled in a bounded window -----------------
+describe("the Grok Bot operator profile", () => {
   const CURSOR_BOT = "https://www.cursor.com/bot/mcp/oauth/callback";
   // Exactly the redirect_uris of https://cursor.com/oauth/mcp-client.json, as Cursor's client would register them.
   const GROKBOT_ALL = [CURSOR_BOT, "https://www.cursor.com/agents/mcp/oauth/callback", "https://grok.com/connectors-oauth-exchange-code/", "http://localhost:8787/callback", "http://127.0.0.1:8787/callback"];
@@ -518,7 +518,7 @@ describe("the Grok Bot read-only profile", () => {
     const reg = await register(GROKBOT_ALL);
     expect(reg.status).toBe(201);
     const { client_id, scope } = (await reg.json()) as { client_id: string; scope: string };
-    expect(scope).toBe("kerneljson.read");
+    expect(scope).toBe("kerneljson.operator");
     const verifier = randomBytes(48).toString("base64url");
     const q = new URLSearchParams({
       response_type: "code", client_id, redirect_uri: CURSOR_BOT, code_challenge: createHash("sha256").update(verifier).digest("base64url"),
@@ -552,34 +552,26 @@ describe("the Grok Bot read-only profile", () => {
     expect(await r.json()).toMatchObject({ error: "invalid_redirect_uri" });
   });
 
-  it("connects read-only: a read scope even when it asks for more, read tools only, act tools refused, nothing admitted", async () => {
+  it("connects with Jonny's operator scope and can admit a bounded task through the door", async () => {
     await withHandler(enrolmentEnv(), async () => {
       const { access_token, consentPage, scope } = await connectGrokBot();
-      expect(scope).toBe("kerneljson.read");
+      expect(scope).toBe("kerneljson.operator");
       expect(consentPage).toContain("Grok Bot (Cursor MCP client)");
-      expect(consentPage).toContain("cannot start, cancel or approve anything");
+      expect(consentPage).toContain("bounded draft-PR code change");
       const init = await call(access_token, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "grok", version: "1" } });
-      expect(String(init.body!.result["instructions"])).toContain("This connection is read-only");
+      expect(String(init.body!.result["instructions"])).not.toContain("This connection is read-only");
       const tools = (await call(access_token, "tools/list")).body!.result["tools"] as Array<{ name: string }>;
-      expect(tools.map((t) => t.name).sort()).toEqual([...READ_TOOLS].sort());
+      expect(tools.map((t) => t.name).sort()).toEqual(TOOLS.map((t) => t.name).sort());
       expect(TOOLS.filter((t) => t.annotations.readOnlyHint).map((t) => t.name).sort()).toEqual([...READ_TOOLS].sort());
       const health = (await call(access_token, "tools/call", { name: "kj_health", arguments: {} })).body!.result as { isError: boolean };
       expect(health.isError).toBe(false);
       const admittedBefore = doorSeen.length;
-      const attempts: Array<[string, Record<string, unknown>]> = [
-        ["kj_run_brief", { request_id: "grokbot-attempt-0001" }],
-        ["kj_run_analysis", { request_id: "grokbot-attempt-0002", repo: "jonnyallum/kerneljson" }],
-        ["kj_run_code_change", { request_id: "grokbot-attempt-0003", repo: "jonnyallum/kj-pilot", instructions: "Add a slugify helper with tests." }],
-        ["kj_cancel_task", { task_id: randomUUID() }],
-      ];
-      for (const [name, args] of attempts) {
-        const r = (await call(access_token, "tools/call", { name, arguments: args })).body!.result as { isError: boolean; structuredContent: { error: string } };
-        expect(r.isError, name).toBe(true);
-        expect(r.structuredContent.error, name).toBe("NOT_PERMITTED");
-      }
-      expect(doorSeen.length).toBe(admittedBefore);
+      const brief = (await call(access_token, "tools/call", { name: "kj_run_brief", arguments: { request_id: "grokbot-authorised-0001" } })).body!.result as { isError: boolean };
+      expect(brief.isError).toBe(false);
+      expect(doorSeen.length).toBe(admittedBefore + 1);
+      expect(doorSeen.at(-1)).toMatchObject({ key: "grokbot-mcp:grokbot-authorised-0001", channel: "grokbot-mcp/v1" });
       const calls = logs.filter((l) => l["tool"] !== undefined && l["profile"] === "grokbot");
-      expect(calls.map((l) => `${l["tool"]}:${l["outcome"]}`)).toEqual(["kj_health:OK", "kj_run_brief:NOT_PERMITTED", "kj_run_analysis:NOT_PERMITTED", "kj_run_code_change:NOT_PERMITTED", "kj_cancel_task:NOT_PERMITTED"]);
+      expect(calls.map((l) => `${l["tool"]}:${l["outcome"]}`)).toEqual(["kj_health:OK", "kj_run_brief:OK"]);
       expect(calls.every((l) => l["client"] === "Cursor")).toBe(true);
       expect(logs.some((l) => l["oauth"] === "client_registered" && l["profile"] === "grokbot")).toBe(true);
       expect(JSON.stringify(logs)).not.toContain(access_token);
@@ -606,15 +598,18 @@ describe("the Grok Bot read-only profile", () => {
     });
   });
 
-  it("refuses a registration that mixes profiles or names an unknown callback, and a token whose scope exceeds its client", async () => {
+  it("refuses a registration that mixes profiles or names an unknown callback, and an old read-scope token", async () => {
     await withHandler(enrolmentEnv(), async () => {
       expect((await register([CHATGPT, CURSOR_BOT])).status).toBe(400);
       expect((await register([CURSOR_BOT, "grokbot://mcp/oauth/callback"])).status).toBe(400);
-      const { access_token } = await connectGrokBot();
+      const { access_token, refresh_token, client_id } = await connectGrokBot();
       const claims = JSON.parse(Buffer.from(access_token.split(".")[1]!, "base64url").toString());
-      // Even signed with the real key: a read-only client's token carrying the operator scope is refused.
-      const escalated = new TokenSigner(SIGNING_KEY).sign({ ...claims, scope: "kerneljson.operator" });
-      expect((await call(escalated, "ping")).status).toBe(401);
+      // A previously issued read-scope token cannot silently gain operator authority.
+      const oldReadToken = new TokenSigner(SIGNING_KEY).sign({ ...claims, scope: "kerneljson.read" });
+      expect((await call(oldReadToken, "ping")).status).toBe(401);
+      const refreshClaims = JSON.parse(Buffer.from(refresh_token.split(".")[1]!, "base64url").toString());
+      const oldReadRefresh = new TokenSigner(SIGNING_KEY).sign({ ...refreshClaims, scope: "kerneljson.read" });
+      expect((await exchange({ grant_type: "refresh_token", refresh_token: oldReadRefresh, client_id })).status).toBe(400);
       expect((await call(access_token, "ping")).status).toBe(200);
     });
   });

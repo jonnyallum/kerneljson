@@ -1,5 +1,7 @@
 # Grok Bot on the operator MCP server (read-only)
 
+> Historical 23 October read-only enrolment record. Jonny authorised an operator-scope upgrade on 4 November 2026; see `GROKBOT_OPERATOR_SCOPE.md` for the current change and reauthorisation steps. The old epoch 16 commands below are not a current deployment procedure.
+
 Status: built on `feat/mcp-grokbot-readonly` (stacked on PR #61), not deployed. Enrolment is a short window that
 changes only the `kerneljson-mcp` container and one Caddy header; the door, worker, schedules, brief and canary
 stay on release `c5de3f5`, epoch 16.

@@ -248,8 +248,8 @@ describe("mcp.compose.yaml declares every variable the MCP server reads", () => 
   });
 });
 
-describe("read-only callers (Grok Bot profile)", () => {
-  const READ_ONLY = { profile: "grokbot", readOnly: true, client: "Cursor" };
+describe("read-only callers", () => {
+  const READ_ONLY = { profile: "limited-client", readOnly: true, client: "Limited" };
   const asReadOnly = (name: string, args: unknown, door: OperatorDoor) =>
     handleMessage({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, door, "test-release", () => {}, READ_ONLY);
 
