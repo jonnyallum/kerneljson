@@ -73,11 +73,26 @@ Messages are immutable. There is no edit or delete.
 
 ### 4. Storage
 
-Postgres in the existing KernelJSON database, as a repository-only migration
-(`supabase/migrations/20261104130000_agent_channel.sql`): `agent_channel_messages` and `agent_channel_acks`, with
-row-level security on `tenant_id`. **The migration is written, not applied.** Applying it is a production database
-change that needs a named change window from Jonny. An in-memory store implements the same port for tests and for
-local use.
+Postgres in the existing KernelJSON database: `agent_channel_messages`, `agent_channel_acks` and a per-tenant
+sequence counter. The SQL is a **proposal** at `docs/proposals/agent-channel/20261104130000_agent_channel.sql.proposed`.
+It is deliberately **not** in `supabase/migrations/`, because the test harness applies every file in that folder to every
+database-backed test and this SQL has not yet run against Postgres. Merging this branch therefore applies nothing and
+changes no test database. Moving it into `supabase/migrations/` is a later, tested step, and applying it to production
+needs a named change window from Jonny. An in-memory store implements the same port for tests and local use. No
+Postgres store class is written yet.
+
+Honest limits of the proposed schema:
+
+- **Tenant isolation is enforced in the service, not by the database.** RLS is enabled with no policies, which only shuts
+  out `anon` and `authenticated`. The service role bypasses RLS, so every query must filter by the authenticated tenant.
+- **Retention contradicts immutability.** The 90-day target needs deletes, and the append-only trigger blocks every
+  delete. The later retention job must be a separate, reviewed path (for example a time-boxed partition drop).
+- **The production `AgentRegistry` must be backed by `tenant_memberships` with `status = 'ACTIVE'`**, reusing
+  `authorize()` and the permission map in `packages/identity`. The test registry in this change is a stand-in and
+  bypasses that map.
+- **Redaction limit.** Long hex strings are redacted, which would also catch a full git SHA. Redaction therefore keeps a
+  40 or 64 character hex string when it directly follows `commit`, `sha`, `release` or `rev`. A bare hex string with no
+  such word is redacted, which is a deliberate bias toward safety.
 
 ### 5. Surfaces
 

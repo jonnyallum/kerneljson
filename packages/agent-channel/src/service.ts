@@ -76,6 +76,12 @@ export class ChannelService {
     });
   }
 
+  /** Highest sequence number in the tenant's log, for tail reads. */
+  async cursorEnd(raw: unknown) {
+    const { context } = await this.who(raw);
+    return this.store.maxSeq(context.tenantId);
+  }
+
   /** Per-reader cursors. "Acknowledged" means the reader itself said so; stored is not read. */
   async cursors(raw: unknown) {
     const { context } = await this.who(raw);
