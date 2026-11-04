@@ -9,6 +9,7 @@ This is a stateless answer to each message. It does not yet remember conversatio
 ## Release
 
 1. Apply `20261104122321_telegram_plain_text.sql` to the exact production database used by the Telegram worker. Verify the resulting `telegram_inbox_command_check` includes `CHAT` before starting new code.
+   The 4 November read-only Supabase inventory showed that the live `kerneljson` project has this table and its pre-CHAT constraint, while its recorded migration history omits several already-present Telegram migrations. Reconcile that history before using a blanket CLI `db push`; otherwise it may try to replay old migrations. Do not repair the history by guessing.
 2. Deploy the worker image containing this change, register the worker deployment with Restate, and verify `TelegramOperator` remains present. The existing `MISSION_ANALYST_MODEL` provider configuration supplies the answer model; if absent, ordinary text receives a fixed unavailable response.
 3. From the configured private chat, send a harmless ordinary message. Confirm one `CHAT`/`ANSWERED` inbox row, one delivered reply, and no task admission. Then send `/status` to verify the command route. Re-send the same update only in a test environment to check deduplication.
 4. If the new worker fails, restore the prior image. The new `CHAT` constraint value can remain; it does not affect old workers.
