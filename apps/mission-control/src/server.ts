@@ -15,7 +15,7 @@ import { randomUUID } from "node:crypto";
 import { ChannelError, type ChannelService } from "../../../packages/agent-channel/src/index.js";
 import { renderChannel } from "./channel-view.js";
 import { MissionControlStore } from "./store.js";
-import { layout, renderList, renderTask } from "./view.js";
+import { escapeHtml, layout, renderList, renderTask } from "./view.js";
 export interface ControlPort {
   approve(
     context: TenantContext,
@@ -61,10 +61,31 @@ export function createMissionControl(options: {
       }
       // ADR-0026: the channel is narrative. These routes read and append messages and nothing else.
       if (options.channel && url.pathname === "/channel" && req.method === "GET") {
-        // Show the newest 100: find the end of the log first, then read from 100 before it.
+        const threadRaw = url.searchParams.get("thread");
+        if (threadRaw !== null && !Id.safeParse(threadRaw).success) throw new HttpError(400);
+        const threadId = threadRaw ?? undefined;
+        // Show the newest 100, or one thread from the start of that thread.
         const last = await options.channel.cursorEnd(context);
-        const { messages } = await options.channel.read(context, { after: String(Math.max(0, last - 100)), limit: "100" });
-        res.end(renderChannel(messages, await options.channel.cursors(context), context.principal.kind === "HUMAN", randomUUID()));
+        const query = threadId
+          ? { after: "0", limit: "100", threadId }
+          : { after: String(Math.max(0, last - 100)), limit: "100" };
+        const { messages } = await options.channel.read(context, query);
+        const [cursors, threads, deliveries] = await Promise.all([
+          options.channel.cursors(context),
+          options.channel.threads(context),
+          options.channel.deliveries(context, messages.map((message) => message.id)),
+        ]);
+        res.end(
+          renderChannel({
+            messages,
+            cursors,
+            threads,
+            deliveries,
+            canPost: context.principal.kind === "HUMAN",
+            idempotencyKey: randomUUID(),
+            activeThreadId: threadId ?? null,
+          }),
+        );
         return;
       }
       if (options.channel && url.pathname === "/channel/post") {
@@ -159,10 +180,16 @@ export function createMissionControl(options: {
               ? 403
               : 500;
       res.statusCode = status;
+      const detail =
+        error instanceof ChannelError
+          ? escapeHtml(error.message)
+          : error instanceof z.ZodError
+            ? escapeHtml(error.issues.map((issue) => issue.path.join(".") || "request").join(", "))
+            : "";
       res.end(
         layout(
           String(status),
-          `<h1>${status === 401 ? "Sign in required" : status === 404 ? "Task not found" : "Request could not be completed"}</h1><p>Request status: ${status}</p>`,
+          `<h1>${status === 401 ? "Sign in required" : status === 404 ? "Task not found" : "Request could not be completed"}</h1><p>Request status: ${status}</p>${detail ? `<p>${detail}</p>` : ""}`,
         ),
       );
     }

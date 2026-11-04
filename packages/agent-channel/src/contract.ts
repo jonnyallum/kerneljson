@@ -41,7 +41,10 @@ export const ChannelMessage = z.strictObject({
 export type ChannelMessage = z.infer<typeof ChannelMessage>;
 
 export const ReadQuery = z.strictObject({
+  /** Exclusive sequence cursor. Zero reads from the start of the log. */
   after: z.coerce.number().int().min(0).default(0),
+  /** Exclusive message id. Resolved inside the caller's tenant, then treated as `after` that seq. */
+  since: Id.optional(),
   limit: z.coerce.number().int().min(1).max(MAX_READ).default(50),
   threadId: Id.optional(),
 });

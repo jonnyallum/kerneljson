@@ -10,6 +10,24 @@ class HttpError extends Error {
     super("rejected");
   }
 }
+function httpMessage(status: number): string {
+  switch (status) {
+    case 400:
+      return "Body is not JSON";
+    case 401:
+      return "Sign in required";
+    case 404:
+      return "Not found";
+    case 405:
+      return "Method not allowed";
+    case 413:
+      return "Request exceeds 8192 bytes";
+    case 415:
+      return "Content-Type must be application/json";
+    default:
+      return "Request rejected";
+  }
+}
 
 /** JSON transport for agents. Authentication is injected, as in Mission Control (ADR-0014). */
 export function createChannelHandler(options: {
@@ -58,11 +76,20 @@ export function createChannelHandler(options: {
       const out = await options.service.post(context, body);
       return send(res, out.duplicate ? 200 : 201, out);
     } catch (error) {
-      if (error instanceof HttpError) return send(res, error.status, { error: "rejected" });
-      if (error instanceof z.ZodError) return send(res, 400, { error: "invalid request" });
+      if (error instanceof HttpError) return send(res, error.status, { error: "rejected", message: httpMessage(error.status) });
+      if (error instanceof z.ZodError)
+        return send(res, 400, {
+          error: "invalid request",
+          issues: error.issues.map((issue) => ({
+            path: issue.path.map(String).join(".") || "(root)",
+            code: issue.code,
+            message: issue.message,
+          })),
+        });
       if (error instanceof ChannelError)
         return send(res, { DENIED: 403, CONFLICT: 409, NOT_FOUND: 404 }[error.code], {
           error: error.code,
+          message: error.message,
         });
       return send(res, 500, { error: "internal" }); // never echo internals
     }

@@ -1,12 +1,21 @@
 import { createHash } from "node:crypto";
 import { TenantContext } from "../../contracts/src/index.js";
+import { Id } from "../../contracts/src/common.js";
 import { AckInput, ChannelError, PostInput, ReadQuery, type ChannelMessage } from "./contract.js";
 import { redactSecrets } from "./redact.js";
-import type { AckRecord, ChannelStore } from "./store.js";
+import type { AckRecord, ChannelStore, DeliveryRecord, RoomRecipient, ThreadSummary } from "./store.js";
+
+/** A principal allowed to use this tenant's room, and the handle readers see. */
+export interface RoomMember {
+  principalId: string;
+  handle: string;
+}
 
 /** Tenant-scoped registry of principals allowed to use the channel, and their handles. */
 export interface AgentRegistry {
   handleFor(context: TenantContext): Promise<string | null>;
+  /** Every current member of the tenant's room, including the caller when they are a member. */
+  members(tenantId: string): Promise<RoomMember[]>;
 }
 
 /** A new thread id is derived from the idempotency key, so a replayed post lands in the same thread. */
@@ -44,24 +53,47 @@ export class ChannelService {
       threadId = parent.threadId;
     }
     const { text, redacted } = redactSecrets(input.body);
-    return this.store.append(context.tenantId, {
-      kind: input.kind,
-      author: context.principal,
-      handle,
-      body: text,
-      redacted,
-      threadId: threadId ?? deriveThreadId(context.tenantId, context.principal.id, input.idempotencyKey),
-      inReplyTo: input.inReplyTo ?? null,
-      taskRef: input.taskRef ?? null,
-      idempotencyKey: input.idempotencyKey,
-    });
+    const members = await this.registry.members(context.tenantId);
+    const recipients: RoomRecipient[] = members
+      .filter((member) => member.principalId !== context.principal.id)
+      .map((member) => ({ principalId: member.principalId, handle: member.handle }));
+    return this.store.append(
+      context.tenantId,
+      {
+        kind: input.kind,
+        author: context.principal,
+        handle,
+        body: text,
+        redacted,
+        threadId: threadId ?? deriveThreadId(context.tenantId, context.principal.id, input.idempotencyKey),
+        inReplyTo: input.inReplyTo ?? null,
+        taskRef: input.taskRef ?? null,
+        idempotencyKey: input.idempotencyKey,
+      },
+      recipients,
+    );
   }
 
   async read(raw: unknown, rawQuery: unknown) {
     const { context } = await this.who(raw);
     const q = ReadQuery.parse(rawQuery);
-    const messages = await this.store.list(context.tenantId, q);
-    return { messages, next: messages.at(-1)?.seq ?? q.after };
+    let after = q.after;
+    if (q.since) {
+      const prior = await this.store.get(context.tenantId, q.since);
+      if (!prior) throw new ChannelError("NOT_FOUND", "Cursor message not found");
+      if (prior.seq > after) after = prior.seq;
+    }
+    const query: { after: number; limit: number; threadId?: string } = { after, limit: q.limit };
+    if (q.threadId) query.threadId = q.threadId;
+    const messages = await this.store.list(context.tenantId, query);
+    if (messages.length > 0) {
+      await this.store.markDelivered(
+        context.tenantId,
+        context.principal.id,
+        messages.map((message) => message.id),
+      );
+    }
+    return { messages, next: messages.at(-1)?.seq ?? after };
   }
 
   async ack(raw: unknown, rawInput: unknown): Promise<AckRecord> {
@@ -86,5 +118,19 @@ export class ChannelService {
   async cursors(raw: unknown) {
     const { context } = await this.who(raw);
     return this.store.acks(context.tenantId);
+  }
+
+  /** Delivery rows for this tenant. Pass message ids to limit the page. */
+  async deliveries(raw: unknown, messageIds?: readonly string[]): Promise<DeliveryRecord[]> {
+    const { context } = await this.who(raw);
+    if (!messageIds) return this.store.deliveries(context.tenantId);
+    for (const id of messageIds) Id.parse(id);
+    return this.store.deliveries(context.tenantId, messageIds);
+  }
+
+  /** Thread index for the tenant's one shared room. Summaries carry no message body. */
+  async threads(raw: unknown): Promise<ThreadSummary[]> {
+    const { context } = await this.who(raw);
+    return this.store.threads(context.tenantId);
   }
 }

@@ -1,0 +1,356 @@
+import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import pg from "pg";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  ChannelService,
+  InMemoryChannelStore,
+  PostgresAgentRegistry,
+  PostgresChannelStore,
+  type ChannelStore,
+  type MessageDraft,
+} from "../packages/agent-channel/src/index.js";
+import type { TenantContext } from "../packages/contracts/src/index.js";
+
+const databaseUrl = process.env["AGENT_CHANNEL_TEST_URL"];
+
+function draft(author: MessageDraft["author"], handle: string, body: string, key: string, threadId: string): MessageDraft {
+  return {
+    kind: "NOTE",
+    author,
+    handle,
+    body,
+    redacted: false,
+    threadId,
+    inReplyTo: null,
+    taskRef: null,
+    idempotencyKey: key,
+  };
+}
+
+/**
+ * Store-level checks. These call the store directly, with no route in front.
+ * The same steps run against the in-memory store and, when AGENT_CHANNEL_TEST_URL is set, Postgres.
+ */
+async function exerciseStore(store: ChannelStore) {
+  const tenantA = randomUUID();
+  const tenantB = randomUUID();
+  const authorA = { id: randomUUID(), kind: "SERVICE" as const };
+  const authorB = { id: randomUUID(), kind: "SERVICE" as const };
+  const shared = randomUUID();
+  const otherA = randomUUID();
+  const threadA = randomUUID();
+  const threadB = randomUUID();
+  const recipientsA = [
+    { principalId: shared, handle: "shared" },
+    { principalId: otherA, handle: "other-a" },
+  ];
+  const recipientsB = [{ principalId: shared, handle: "shared-b" }];
+
+  const first = await store.append(tenantA, draft(authorA, "alpha", "only-a", "store-key-1", threadA), recipientsA);
+  expect(first.duplicate).toBe(false);
+  expect(first.message.tenantId).toBe(tenantA);
+  expect(first.message.author).toEqual(authorA);
+  expect((await store.list(tenantB, { after: 0, limit: 20 })).map((m) => m.body)).toEqual([]);
+  expect(await store.get(tenantB, first.message.id)).toBeNull();
+
+  const replay = await store.append(tenantA, draft(authorA, "alpha", "only-a", "store-key-1", threadA), recipientsA);
+  expect(replay.duplicate).toBe(true);
+  expect(replay.message.id).toBe(first.message.id);
+  expect(await store.deliveries(tenantA, [first.message.id])).toHaveLength(2);
+  await expect(
+    store.append(tenantA, draft(authorA, "alpha", "changed", "store-key-1", threadA), recipientsA),
+  ).rejects.toMatchObject({ code: "CONFLICT" });
+  expect(await store.deliveries(tenantA, [first.message.id])).toHaveLength(2);
+
+  const second = await store.append(tenantB, draft(authorB, "beta", "only-b", "store-key-b", threadB), recipientsB);
+  expect((await store.list(tenantA, { after: 0, limit: 20 })).map((m) => m.body)).toEqual(["only-a"]);
+  expect((await store.list(tenantB, { after: 0, limit: 20 })).map((m) => m.id)).toEqual([second.message.id]);
+
+  await store.markDelivered(tenantB, shared, [first.message.id]);
+  expect((await store.deliveries(tenantA, [first.message.id])).every((row) => row.state === "pending")).toBe(true);
+  await store.ack(tenantB, { principalId: shared, handle: "shared-b", upToSeq: 1 });
+  expect(await store.acks(tenantA)).toEqual([]);
+  expect((await store.deliveries(tenantA, [first.message.id])).every((row) => row.state === "pending")).toBe(true);
+  expect((await store.deliveries(tenantB, [second.message.id])).every((row) => row.state === "acked")).toBe(true);
+
+  const third = await store.append(tenantA, draft(authorA, "alpha", "later", "store-key-2", threadA), recipientsA);
+  const page = await store.list(tenantA, { after: first.message.seq, limit: 20 });
+  expect(page.map((m) => [m.seq, m.body])).toEqual([[third.message.seq, "later"]]);
+  expect(page.map((m) => m.seq)).toEqual([...page.map((m) => m.seq)].sort((a, b) => a - b));
+
+  await store.markDelivered(tenantA, shared, [first.message.id, third.message.id]);
+  expect((await store.deliveries(tenantA)).filter((row) => row.recipientId === shared).map((row) => row.state)).toEqual([
+    "delivered",
+    "delivered",
+  ]);
+  const acked = await store.ack(tenantA, { principalId: shared, handle: "shared", upToSeq: third.message.seq });
+  const again = await store.ack(tenantA, { principalId: shared, handle: "shared", upToSeq: third.message.seq });
+  const rewind = await store.ack(tenantA, { principalId: shared, handle: "shared", upToSeq: first.message.seq });
+  expect(acked.upToSeq).toBe(third.message.seq);
+  expect(again.upToSeq).toBe(third.message.seq);
+  expect(rewind.upToSeq).toBe(third.message.seq);
+  await store.markDelivered(tenantA, shared, [first.message.id, third.message.id]);
+  expect((await store.deliveries(tenantA)).filter((row) => row.recipientId === shared).every((row) => row.state === "acked")).toBe(true);
+  expect((await store.deliveries(tenantA)).filter((row) => row.recipientId === otherA).every((row) => row.state === "pending")).toBe(true);
+
+  const threads = await store.threads(tenantA);
+  expect(threads.map((thread) => thread.threadId)).toContain(threadA);
+  expect(threads.some((thread) => thread.threadId === threadB)).toBe(false);
+  await expect(store.list("not-a-tenant", { after: 0, limit: 1 })).rejects.toThrow();
+  return { tenantA, tenantB, authorA, authorB, shared, otherA, firstId: first.message.id };
+}
+
+describe("in-memory store", () => {
+  it("keeps tenants, idempotency, catch-up order and acks inside the store", async () => {
+    await exerciseStore(new InMemoryChannelStore());
+  });
+});
+
+function withDatabase(url: string, name: string): string {
+  const queryAt = url.indexOf("?");
+  const base = queryAt === -1 ? url : url.slice(0, queryAt);
+  const query = queryAt === -1 ? "" : url.slice(queryAt);
+  const slash = base.lastIndexOf("/");
+  if (slash < 0) throw new Error("AGENT_CHANNEL_TEST_URL has no database name");
+  return `${base.slice(0, slash + 1)}${name}${query}`;
+}
+
+async function ensureDatabase(url: string, name: string) {
+  const admin = new pg.Pool({ connectionString: withDatabase(url, "postgres") });
+  try {
+    const exists = await admin.query("select 1 from pg_database where datname = $1", [name]);
+    if ((exists.rowCount ?? 0) === 0) await admin.query(`create database ${quoteIdent(name)}`);
+  } finally {
+    await admin.end();
+  }
+}
+
+function quoteIdent(name: string): string {
+  if (!/^[a-z_]+$/.test(name)) throw new Error("unsafe database name");
+  return name;
+}
+
+async function applyProposal(pool: pg.Pool) {
+  await pool.query(`do $$ begin
+    if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon nologin; end if;
+    if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if;
+  end $$`);
+  await pool.query(`create table if not exists principals (
+    id uuid primary key,
+    kind text not null check (kind in ('HUMAN','SERVICE'))
+  )`);
+  await pool.query("create table if not exists tenants (id uuid primary key, name text not null)");
+  await pool.query(readFileSync("docs/proposals/agent-channel/20261104130000_agent_channel.sql.proposed", "utf8"));
+  await pool.query("grant agent_channel to current_user");
+}
+
+describe.skipIf(!databaseUrl)("postgres store", () => {
+  let pool: pg.Pool;
+  beforeAll(async () => {
+    if (!databaseUrl) throw new Error("AGENT_CHANNEL_TEST_URL is required");
+    await ensureDatabase(databaseUrl, "agent_room_test");
+    const admin = new pg.Pool({ connectionString: withDatabase(databaseUrl, "postgres") });
+    try {
+      await admin.query("drop database if exists agent_room_rollback");
+    } finally {
+      await admin.end();
+    }
+    pool = new pg.Pool({ connectionString: withDatabase(databaseUrl, "agent_room_test") });
+    await applyProposal(pool);
+  });
+  afterAll(async () => {
+    await pool?.end();
+  });
+
+  async function reset(ids: { tenants: string[]; principals: { id: string; kind: "HUMAN" | "SERVICE" }[] }) {
+    await pool.query(
+      "truncate agent_channel_deliveries, agent_channel_acks, agent_channel_messages, agent_channel_members, agent_channel_counters",
+    );
+    for (const tenant of ids.tenants) {
+      await pool.query("insert into tenants (id, name) values ($1, 'room') on conflict (id) do nothing", [tenant]);
+    }
+    for (const principal of ids.principals) {
+      await pool.query("insert into principals (id, kind) values ($1, $2) on conflict (id) do nothing", [
+        principal.id,
+        principal.kind,
+      ]);
+    }
+  }
+
+  it("keeps tenants, idempotency, catch-up order and acks inside the database", async () => {
+    const result = await exercisePrepared(pool, new PostgresChannelStore(pool));
+    expect(result.firstId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("refuses a backwards delivery update and an update of a stored message", async () => {
+    const { tenantA, shared, firstId } = await exercisePrepared(pool, new PostgresChannelStore(pool));
+    await expect(pool.query("update agent_channel_messages set body = 'rewritten' where id = $1", [firstId])).rejects.toThrow(
+      /append-only/,
+    );
+    await expect(
+      pool.query("update agent_channel_deliveries set state = 'pending' where tenant_id = $1 and recipient_principal_id = $2", [
+        tenantA,
+        shared,
+      ]),
+    ).rejects.toThrow(/cannot move backwards/);
+  });
+
+  it("isolates rows with the agent_channel role and does not grant ledger tables", async () => {
+    const { tenantA, tenantB, shared } = await exercisePrepared(pool, new PostgresChannelStore(pool));
+    await pool.query("create table if not exists tasks (id int primary key)");
+    await pool.query("insert into tasks (id) values (1) on conflict do nothing");
+    const grantedByProposal = await pool.query(
+      "select privilege_type from information_schema.role_table_grants where grantee = 'agent_channel' and table_name = 'tasks'",
+    );
+    expect(grantedByProposal.rows).toEqual([]);
+    const messageUpdate = await pool.query(
+      "select privilege_type from information_schema.role_table_grants where grantee = 'agent_channel' and table_name = 'agent_channel_messages' and privilege_type = 'update'",
+    );
+    expect(messageUpdate.rows).toEqual([]);
+    await pool.query("grant select, insert on tasks to agent_channel");
+    await pool.query("alter table tasks enable row level security");
+    await pool.query("alter table tasks force row level security");
+
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      await client.query("set local role agent_channel");
+      await client.query("select set_config('app.tenant_id', $1, true)", [tenantA]);
+      const messages = await client.query<{ tenant_id: string }>("select tenant_id from agent_channel_messages");
+      expect(messages.rows.length).toBeGreaterThan(0);
+      expect(messages.rows.every((row) => row.tenant_id === tenantA)).toBe(true);
+      expect(messages.rows.some((row) => row.tenant_id === tenantB)).toBe(false);
+      const ledger = await client.query("select id from tasks");
+      expect(ledger.rows).toEqual([]);
+      await client.query("savepoint bad_tenant");
+      await expect(
+        client.query(
+          `insert into agent_channel_messages (
+             id, tenant_id, seq, thread_id, kind, author_principal_id, author_kind, handle,
+             body, redacted, idempotency_key, content_hash
+           ) values ($1,$2,1,$3,'NOTE',$4,'SERVICE','alpha','no',false,'store-key-9',$5)`,
+          [randomUUID(), tenantB, randomUUID(), shared, "a".repeat(64)],
+        ),
+      ).rejects.toThrow(/row-level security|violates/);
+      await client.query("rollback to savepoint bad_tenant");
+      await client.query("rollback");
+    } finally {
+      client.release();
+    }
+  });
+
+  it("resolves handles only inside the tenant on the registry", async () => {
+    const tenantA = randomUUID();
+    const tenantB = randomUUID();
+    const principal = randomUUID();
+    await reset({
+      tenants: [tenantA, tenantB],
+      principals: [{ id: principal, kind: "SERVICE" }],
+    });
+    await pool.query("insert into agent_channel_members (tenant_id, principal_id, handle) values ($1,$2,'codex'),($3,$2,'grok')", [
+      tenantA,
+      principal,
+      tenantB,
+    ]);
+    const registry = new PostgresAgentRegistry(pool);
+    const contextA: TenantContext = { tenantId: tenantA, principal: { id: principal, kind: "SERVICE" } };
+    expect(await registry.handleFor(contextA)).toBe("codex");
+    expect(await registry.members(tenantA)).toEqual([{ principalId: principal, handle: "codex" }]);
+    expect(await registry.members(tenantB)).toEqual([{ principalId: principal, handle: "grok" }]);
+    const store = new PostgresChannelStore(pool);
+    const service = new ChannelService(store, registry);
+    const posted = await service.post(contextA, { kind: "NOTE", body: "from codex", idempotencyKey: "registry-key-1" });
+    expect(posted.message.handle).toBe("codex");
+    await expect(service.read({ tenantId: tenantB, principal: { id: randomUUID(), kind: "SERVICE" } }, {})).rejects.toMatchObject({
+      code: "DENIED",
+    });
+    expect((await service.read({ tenantId: tenantB, principal: { id: principal, kind: "SERVICE" } }, {})).messages).toEqual([]);
+  });
+
+  it("drops only the channel objects", async () => {
+    await pool.query("create table if not exists tasks (id int primary key)");
+    await pool.query("insert into tasks (id) values (7) on conflict (id) do update set id = excluded.id");
+    await pool.query(readFileSync("docs/proposals/agent-channel/20261104130000_agent_channel_rollback.sql.proposed", "utf8"));
+    await expect(pool.query("select 1 from agent_channel_messages")).rejects.toThrow(/does not exist|agent_channel_messages/);
+    expect((await pool.query("select id from tasks where id = 7")).rows).toEqual([{ id: 7 }]);
+    expect((await pool.query("select 1 from pg_roles where rolname = 'agent_channel'")).rowCount).toBe(0);
+  });
+});
+
+async function exercisePrepared(pool: pg.Pool, store: ChannelStore) {
+  const tenantA = randomUUID();
+  const tenantB = randomUUID();
+  const authorA = { id: randomUUID(), kind: "SERVICE" as const };
+  const authorB = { id: randomUUID(), kind: "SERVICE" as const };
+  const shared = randomUUID();
+  const otherA = randomUUID();
+  await pool.query(
+    "truncate agent_channel_deliveries, agent_channel_acks, agent_channel_messages, agent_channel_members, agent_channel_counters",
+  );
+  for (const tenant of [tenantA, tenantB]) {
+    await pool.query("insert into tenants (id, name) values ($1, 'room') on conflict (id) do nothing", [tenant]);
+  }
+  for (const principal of [authorA, authorB, { id: shared, kind: "SERVICE" as const }, { id: otherA, kind: "SERVICE" as const }]) {
+    await pool.query("insert into principals (id, kind) values ($1, $2) on conflict (id) do nothing", [principal.id, principal.kind]);
+  }
+  // Re-run the shared assertions against this prepared database by inlining ids via a bound store.
+  const bound = new TenantBoundStore(store, { tenantA, tenantB, authorA, authorB, shared, otherA });
+  await bound.run();
+  return { tenantA, tenantB, shared, firstId: bound.firstId };
+}
+
+class TenantBoundStore {
+  firstId = "";
+  constructor(
+    private readonly store: ChannelStore,
+    private readonly ids: {
+      tenantA: string;
+      tenantB: string;
+      authorA: { id: string; kind: "SERVICE" };
+      authorB: { id: string; kind: "SERVICE" };
+      shared: string;
+      otherA: string;
+    },
+  ) {}
+  async run() {
+    const { tenantA, tenantB, authorA, authorB, shared, otherA } = this.ids;
+    const threadA = randomUUID();
+    const threadB = randomUUID();
+    const recipientsA = [
+      { principalId: shared, handle: "shared" },
+      { principalId: otherA, handle: "other-a" },
+    ];
+    const recipientsB = [{ principalId: shared, handle: "shared-b" }];
+    const first = await this.store.append(tenantA, draft(authorA, "alpha", "only-a", "store-key-1", threadA), recipientsA);
+    this.firstId = first.message.id;
+    expect(first.duplicate).toBe(false);
+    expect(await this.store.get(tenantB, first.message.id)).toBeNull();
+    const replay = await this.store.append(tenantA, draft(authorA, "alpha", "only-a", "store-key-1", threadA), recipientsA);
+    expect(replay).toMatchObject({ duplicate: true, message: { id: first.message.id } });
+    expect(await this.store.deliveries(tenantA, [first.message.id])).toHaveLength(2);
+    await expect(this.store.append(tenantA, draft(authorA, "alpha", "changed", "store-key-1", threadA), recipientsA)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    const second = await this.store.append(tenantB, draft(authorB, "beta", "only-b", "store-key-b", threadB), recipientsB);
+    expect((await this.store.list(tenantA, { after: 0, limit: 20 })).map((m) => m.body)).toEqual(["only-a"]);
+    expect((await this.store.list(tenantB, { after: 0, limit: 20 })).map((m) => m.body)).toEqual(["only-b"]);
+    await this.store.markDelivered(tenantB, shared, [first.message.id]);
+    await this.store.ack(tenantB, { principalId: shared, handle: "shared-b", upToSeq: second.message.seq });
+    expect(await this.store.acks(tenantA)).toEqual([]);
+    expect((await this.store.deliveries(tenantA)).every((row) => row.state === "pending")).toBe(true);
+    const third = await this.store.append(tenantA, draft(authorA, "alpha", "later", "store-key-2", threadA), recipientsA);
+    const page = await this.store.list(tenantA, { after: first.message.seq, limit: 20 });
+    expect(page.map((m) => m.body)).toEqual(["later"]);
+    expect(page[0]?.seq).toBeGreaterThan(first.message.seq);
+    expect(third.message.seq).toBe(page[0]?.seq);
+    await this.store.ack(tenantA, { principalId: shared, handle: "shared", upToSeq: third.message.seq });
+    const again = await this.store.ack(tenantA, { principalId: shared, handle: "shared", upToSeq: 1 });
+    expect(again.upToSeq).toBe(third.message.seq);
+    await this.store.markDelivered(tenantA, shared, [first.message.id, third.message.id]);
+    expect((await this.store.deliveries(tenantA)).filter((row) => row.recipientId === shared).every((row) => row.state === "acked")).toBe(
+      true,
+    );
+  }
+}
+

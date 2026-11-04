@@ -22,13 +22,16 @@ const people = {
   outsider: { tenantId: tenantB, principal: { id: randomUUID(), kind: "SERVICE" } } as TenantContext,
   stranger: { tenantId: tenantA, principal: { id: randomUUID(), kind: "SERVICE" } } as TenantContext,
 };
-const handles = new Map<string, string>([
-  [`${tenantA}:${people.claude.principal.id}`, "claude-code"],
-  [`${tenantA}:${people.codex.principal.id}`, "codex"],
-  [`${tenantA}:${people.jonny.principal.id}`, "jonny"],
-  [`${tenantB}:${people.outsider.principal.id}`, "grok"],
-]);
-const registry: AgentRegistry = { handleFor: async (c) => handles.get(`${c.tenantId}:${c.principal.id}`) ?? null };
+const memberRows = [
+  { tenantId: tenantA, principalId: people.claude.principal.id, handle: "claude-code" },
+  { tenantId: tenantA, principalId: people.codex.principal.id, handle: "codex" },
+  { tenantId: tenantA, principalId: people.jonny.principal.id, handle: "jonny" },
+  { tenantId: tenantB, principalId: people.outsider.principal.id, handle: "grok" },
+];
+const registry: AgentRegistry = {
+  handleFor: async (c) => memberRows.find((m) => m.tenantId === c.tenantId && m.principalId === c.principal.id)?.handle ?? null,
+  members: async (tenantId) => memberRows.filter((m) => m.tenantId === tenantId).map(({ principalId, handle }) => ({ principalId, handle })),
+};
 const fresh = () => new ChannelService(new InMemoryChannelStore(), registry);
 const post = (kind: string, body: string, key = `k-${randomUUID()}`, extra: object = {}) => ({ kind, body, idempotencyKey: key, ...extra });
 
@@ -115,7 +118,7 @@ describe("offline agents and acknowledgement", () => {
     expect(message.taskRef).toBe(taskRef);
     // The service surface is an allow-list of channel verbs. Any new method must be added here deliberately.
     const surface = (o: object) => Object.getOwnPropertyNames(Object.getPrototypeOf(o)).filter((n) => n !== "constructor").sort();
-    expect(surface(s)).toEqual(["ack", "cursorEnd", "cursors", "post", "read", "who"]);
+    expect(surface(s)).toEqual(["ack", "cursorEnd", "cursors", "deliveries", "post", "read", "threads", "who"]);
     class Planted extends ChannelService { createTask() { return 1; } }
     expect(Object.getOwnPropertyNames(Planted.prototype)).toContain("createTask"); // negative: the check can see a planted verb
   });
@@ -145,7 +148,10 @@ describe("secret redaction", () => {
     expect(redactSecrets(`commit ${sha}${"b"}`).redacted).toBe(true); // 41 characters is not a SHA
   });
   it("does not echo secrets or internals in error responses", async () => {
-    const s = new ChannelService(new InMemoryChannelStore(), { handleFor: async () => { throw new Error(`boom ${fake.openrouter}`); } });
+    const s = new ChannelService(new InMemoryChannelStore(), {
+      handleFor: async () => { throw new Error(`boom ${fake.openrouter}`); },
+      members: async () => [],
+    });
     const h = createChannelHandler({ service: s, authenticate: async () => people.claude });
     const { url, close } = await listen(h);
     const r = await fetch(`${url}/messages`);
@@ -234,6 +240,9 @@ describe("Mission Control channel surface", () => {
     expect(page.headers.get("content-security-policy")).toContain("default-src 'none'");
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt; &amp; done");
     expect(html).not.toContain("<script>alert");
+    expect(html).toContain("Shared room");
+    expect(html).toContain("pending");
+    expect(html).toContain("codex");
     const ok = await fetch(`${url}/channel/post`, form("jonny", { kind: "NOTE", body: "from Jonny", idempotencyKey: "form-key-0001" }, url));
     expect(ok.status).toBe(303);
     expect(JSON.stringify((await service.read(people.jonny, {})).messages.map((m) => m.handle))).toContain("jonny");
@@ -259,15 +268,149 @@ describe("Mission Control channel surface", () => {
   });
 });
 
+describe("malformed messages, duplicate sends, tenants, identity, catch-up and ack", () => {
+  it("rejects malformed messages with field errors and does not echo the body", async () => {
+    const sentinel = `not-a-real-token-${"z".repeat(24)}`;
+    const s = fresh();
+    await expect(s.post(people.claude, { kind: "NOTE", body: sentinel, idempotencyKey: "no" })).rejects.toThrow();
+    const { url, close } = await listen(createChannelHandler({ service: fresh(), authenticate }));
+    const response = await fetch(`${url}/messages`, json("claude", { kind: "SHOUT", body: sentinel, idempotencyKey: "key-12345678", tenantId: tenantB }));
+    const text = await response.text();
+    await close();
+    expect(response.status).toBe(400);
+    const body = JSON.parse(text) as { error: string; issues: { path: string; code: string }[] };
+    expect(body.error).toBe("invalid request");
+    expect(body.issues.map((issue) => issue.path)).toContain("kind");
+    expect(body.issues.map((issue) => issue.code)).toContain("unrecognized_keys");
+    expect(text).not.toContain(sentinel);
+    expect(text).not.toContain(tenantB);
+  });
+
+  it("duplicate sends with the same idempotency key return the original message", async () => {
+    const s = fresh();
+    const first = await s.post(people.claude, post("NOTE", "same body", "same-key-01"));
+    const again = await s.post(people.claude, post("NOTE", "same body", "same-key-01"));
+    expect(first.duplicate).toBe(false);
+    expect(again.duplicate).toBe(true);
+    expect(again.message.id).toBe(first.message.id);
+    expect(again.message.author).toEqual(people.claude.principal);
+    expect(again.message.tenantId).toBe(tenantA);
+    expect(again.message.createdAt).toBe(first.message.createdAt);
+    const rows = await s.deliveries(people.claude, [first.message.id]);
+    expect(rows.map((row) => row.handle).sort()).toEqual(["codex", "jonny"]);
+    expect(rows.every((row) => row.state === "pending")).toBe(true);
+    expect((await s.read(people.codex, {})).messages).toHaveLength(1);
+    await expect(s.post(people.claude, post("NOTE", "different body", "same-key-01"))).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(await s.deliveries(people.claude, [first.message.id])).toHaveLength(2);
+  });
+
+  it("cross-tenant read, ack and send attempts stay inside the caller's tenant", async () => {
+    const s = fresh();
+    const sent = await s.post(people.claude, post("NOTE", "only-a"));
+    await s.post(people.outsider, post("NOTE", "only-b"));
+    expect((await s.read(people.claude, {})).messages.map((m) => m.body)).toEqual(["only-a"]);
+    expect((await s.read(people.outsider, {})).messages.map((m) => m.body)).toEqual(["only-b"]);
+    await expect(s.post(people.outsider, post("REPLY", "crossing", undefined, { inReplyTo: sent.message.id }))).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(s.read(people.outsider, { since: sent.message.id })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await s.ack(people.outsider, { upToSeq: 1 });
+    expect(await s.cursors(people.claude)).toEqual([]);
+    expect((await s.deliveries(people.claude, [sent.message.id])).every((row) => row.state === "pending")).toBe(true);
+    await expect(s.post(people.claude, post("NOTE", "forged", undefined, { tenantId: tenantB }))).rejects.toThrow();
+    await expect(s.read({ tenantId: tenantB, principal: people.claude.principal }, {})).rejects.toMatchObject({ code: "DENIED" });
+  });
+
+  it("rejects unauthenticated and wrong-identity requests", async () => {
+    const s = fresh();
+    const localTokens: Record<string, TenantContext> = {
+      ...tokens,
+      stranger: people.stranger,
+      crossed: { tenantId: tenantB, principal: people.claude.principal },
+    };
+    const auth = async (h: { authorization?: string | undefined }) => {
+      const who = localTokens[(h.authorization ?? "").replace("Bearer ", "")];
+      if (!who) throw new Error("not signed in");
+      return who;
+    };
+    const { url, close } = await listen(createChannelHandler({ service: s, authenticate: auth }));
+    expect((await fetch(`${url}/messages`)).status).toBe(401);
+    expect((await fetch(`${url}/messages`, { headers: { authorization: "Bearer nobody" } })).status).toBe(401);
+    expect((await fetch(`${url}/acks`, { method: "POST", headers: { authorization: "Bearer nobody", "content-type": "application/json" }, body: "{}" })).status).toBe(401);
+    const stranger = await fetch(`${url}/messages`, { method: "POST", headers: { authorization: "Bearer stranger", "content-type": "application/json" }, body: JSON.stringify(post("NOTE", "nope")) });
+    expect(stranger.status).toBe(403);
+    expect(await stranger.json()).toMatchObject({ error: "DENIED" });
+    const crossed = await fetch(`${url}/messages`, { headers: { authorization: "Bearer crossed" } });
+    expect(crossed.status).toBe(403);
+    await s.post(people.claude, post("NOTE", "secret-to-a"));
+    const outsider = await fetch(`${url}/messages`, { headers: { authorization: "Bearer outsider" } });
+    const seen = (await outsider.json()) as { messages: { body: string }[] };
+    expect(outsider.status).toBe(200);
+    expect(seen.messages.map((m) => m.body)).not.toContain("secret-to-a");
+    await close();
+  });
+
+  it("offline catch-up returns missed messages in sequence order", async () => {
+    const s = fresh();
+    const ids: string[] = [];
+    for (const body of ["one", "two", "three"]) {
+      ids.push((await s.post(people.claude, post("NOTE", body))).message.id);
+    }
+    const codexRows = () => s.deliveries(people.codex).then((rows) => rows.filter((row) => row.recipientId === people.codex.principal.id));
+    expect((await codexRows()).map((row) => row.state)).toEqual(["pending", "pending", "pending"]);
+    const firstPage = await s.read(people.codex, { limit: 1 });
+    expect(firstPage.messages.map((m) => m.body)).toEqual(["one"]);
+    expect((await codexRows()).map((row) => [row.seq, row.state])).toEqual([
+      [1, "delivered"],
+      [2, "pending"],
+      [3, "pending"],
+    ]);
+    const rest = await s.read(people.codex, { after: firstPage.next });
+    expect(rest.messages.map((m) => [m.seq, m.body])).toEqual([[2, "two"], [3, "three"]]);
+    const since = await s.read(people.jonny, { since: ids[0] });
+    expect(since.messages.map((m) => m.body)).toEqual(["two", "three"]);
+    expect((await s.deliveries(people.jonny)).find((row) => row.seq === 1 && row.recipientId === people.jonny.principal.id)?.state).toBe("pending");
+    await s.post(people.claude, post("NOTE", "four"));
+    const caughtUp = await s.read(people.codex, { since: ids[2] });
+    expect(caughtUp.messages.map((m) => m.body)).toEqual(["four"]);
+    expect(caughtUp.messages.map((m) => m.seq)).toEqual([4]);
+  });
+
+  it("ack is idempotent and does not rewind delivery", async () => {
+    const s = fresh();
+    await s.post(people.claude, post("NOTE", "a"));
+    await s.post(people.claude, post("NOTE", "b"));
+    const first = await s.ack(people.codex, { upToSeq: 2 });
+    const second = await s.ack(people.codex, { upToSeq: 2 });
+    const late = await s.ack(people.codex, { upToSeq: 1 });
+    expect(first.upToSeq).toBe(2);
+    expect(second.upToSeq).toBe(2);
+    expect(late.upToSeq).toBe(2);
+    const codexOnly = (rows: { recipientId: string; state: string }[]) =>
+      rows.filter((row) => row.recipientId === people.codex.principal.id).map((row) => row.state);
+    expect(codexOnly(await s.deliveries(people.codex))).toEqual(["acked", "acked"]);
+    await s.read(people.codex, {});
+    expect(codexOnly(await s.deliveries(people.codex))).toEqual(["acked", "acked"]);
+    expect(
+      (await s.deliveries(people.jonny))
+        .filter((row) => row.recipientId === people.jonny.principal.id)
+        .every((row) => row.state === "pending"),
+    ).toBe(true);
+    await expect(s.ack(people.codex, { upToSeq: 3 })).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+});
+
 /* ADR-0026 section 1: the channel has no path to task authority. */
 const ALLOWED_IMPORT = /^(zod|node:[a-z:/]+|\.\/[a-z-]+\.js|\.\.\/\.\.\/contracts\/src\/(common|identity|index)\.js)$/;
+const PG_STORE = /(?:^|\/)postgres-store\.ts$/;
 const FORBIDDEN = /\b(tasks|approvals|control_events|task_events|evidence|kernel_private|admit|signal)\b/;
 const stripComments = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 export function findAuthorityViolations(path: string, text: string): string[] {
   const hits: string[] = [];
   const code = stripComments(text);
-  for (const m of code.matchAll(/(?:from|import)\s*\(?\s*["']([^"']+)["']/g))
-    if (!ALLOWED_IMPORT.test(m[1]!)) hits.push(`${path}: import of ${m[1]}`);
+  for (const m of code.matchAll(/(?:from|import)\s*\(?\s*["']([^"']+)["']/g)) {
+    const spec = m[1]!;
+    if (spec === "pg" && PG_STORE.test(path)) continue;
+    if (!ALLOWED_IMPORT.test(spec)) hits.push(`${path}: import of ${spec}`);
+  }
   code.split(/\r?\n/).forEach((line, i) => { if (FORBIDDEN.test(line)) hits.push(`${path}:${i + 1}: forbidden identifier`); });
   return hits;
 }
@@ -285,12 +428,18 @@ describe("authority boundary", () => {
     expect(findAuthorityViolations("x.ts", 'const q = "update tasks set status=1";')).not.toEqual([]);
     expect(findAuthorityViolations("x.ts", 'const q = "insert into control_events values (1)";')).not.toEqual([]);
     expect(findAuthorityViolations("x.ts", 'import pg from "pg";')).not.toEqual([]);
+    expect(findAuthorityViolations("packages/agent-channel/src/postgres-store.ts", 'import pg from "pg";\nexport const q = "select 1";')).toEqual([]);
+    expect(findAuthorityViolations("packages/agent-channel/src/postgres-store.ts", 'import pg from "pg";\nconst q = "insert into tasks values (1)";')).not.toEqual([]);
     expect(findAuthorityViolations("x.ts", 'import { z } from "zod";\n// updates tasks in comments are fine\n')).toEqual([]);
   });
   it("the proposed SQL names only channel tables, and is kept out of supabase/migrations", () => {
-    const f = "docs/proposals/agent-channel/20261104130000_agent_channel.sql.proposed";
-    const sql = readFileSync(f, "utf8").replace(/--.*$/gm, "");
-    expect(findSqlViolations(sql)).toEqual([]);
+    const proposed = readdirSync("docs/proposals/agent-channel").filter((name) => name.endsWith(".sql.proposed"));
+    expect(proposed).toContain("20261104130000_agent_channel.sql.proposed");
+    expect(proposed).toContain("20261104130000_agent_channel_rollback.sql.proposed");
+    for (const name of proposed) {
+      const sql = readFileSync(`docs/proposals/agent-channel/${name}`, "utf8").replace(/--.*$/gm, "");
+      expect(findSqlViolations(sql)).toEqual([]);
+    }
     expect(readdirSync("supabase/migrations").filter((n) => n.includes("agent_channel"))).toEqual([]);
     // negative cases: the SQL check fails on planted violations
     expect(findSqlViolations("alter table tasks add column x int;")).not.toEqual([]);
