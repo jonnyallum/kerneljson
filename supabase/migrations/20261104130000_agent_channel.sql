@@ -1,0 +1,57 @@
+-- ADR-0026: agent coordination channel storage. REPOSITORY ONLY.
+-- NOT APPLIED to any database. NOT TESTED against Postgres (Docker Desktop was unavailable on 2026-11-04).
+-- Applying it is a production database change that needs a named change window from Jonny.
+-- The channel is narrative. task_ref is a bare pointer with no foreign key: a message cannot
+-- change, and does not depend on, any task row.
+
+create table if not exists agent_channel_counters (
+  tenant_id uuid primary key references tenants(id),
+  last_seq bigint not null default 0
+);
+
+create table if not exists agent_channel_messages (
+  id uuid primary key,
+  tenant_id uuid not null references tenants(id),
+  seq bigint not null,
+  thread_id uuid not null,
+  kind text not null check (kind in ('NOTE','QUESTION','REPLY','HANDOFF','STATUS')),
+  author_principal_id uuid not null references principals(id),
+  author_kind text not null check (author_kind in ('HUMAN','SERVICE')),
+  handle text not null check (handle ~ '^[a-z][a-z0-9-]{1,31}$'),
+  body text not null check (char_length(body) between 1 and 4000),
+  redacted boolean not null default false,
+  in_reply_to uuid,
+  task_ref uuid,
+  idempotency_key text not null check (char_length(idempotency_key) between 8 and 128),
+  content_hash text not null check (char_length(content_hash) = 64),
+  created_at timestamptz not null default now(),
+  unique (tenant_id, seq),
+  unique (tenant_id, author_principal_id, idempotency_key)
+);
+create index if not exists agent_channel_messages_thread on agent_channel_messages (tenant_id, thread_id, seq);
+
+create table if not exists agent_channel_acks (
+  tenant_id uuid not null references tenants(id),
+  principal_id uuid not null references principals(id),
+  handle text not null,
+  up_to_seq bigint not null check (up_to_seq > 0),
+  acked_at timestamptz not null default now(),
+  primary key (tenant_id, principal_id)
+);
+
+-- Messages are immutable: no update, no delete (retention is a later, separate job).
+create or replace function agent_channel_messages_immutable() returns trigger language plpgsql as $$
+begin
+  raise exception 'agent_channel_messages is append-only';
+end $$;
+drop trigger if exists agent_channel_messages_no_change on agent_channel_messages;
+create trigger agent_channel_messages_no_change
+  before update or delete on agent_channel_messages
+  for each row execute function agent_channel_messages_immutable();
+
+-- Row-level security on tenant_id. No policy is created for anon or authenticated, so they see nothing;
+-- the service role used by the gateway bypasses RLS and must always filter by the authenticated tenant.
+alter table agent_channel_counters enable row level security;
+alter table agent_channel_messages enable row level security;
+alter table agent_channel_acks enable row level security;
+revoke all on agent_channel_counters, agent_channel_messages, agent_channel_acks from public, anon, authenticated;

@@ -11,6 +11,9 @@ import {
   Id,
   TenantContext,
 } from "../../../packages/contracts/src/index.js";
+import { randomUUID } from "node:crypto";
+import { ChannelError, type ChannelService } from "../../../packages/agent-channel/src/index.js";
+import { renderChannel } from "./channel-view.js";
 import { MissionControlStore } from "./store.js";
 import { layout, renderList, renderTask } from "./view.js";
 export interface ControlPort {
@@ -32,6 +35,7 @@ export function createMissionControl(options: {
   origin: string;
   authenticate: (headers: IncomingHttpHeaders) => Promise<TenantContext>;
   controls?: ControlPort;
+  channel?: ChannelService;
 }) {
   const origin = new URL(options.origin).origin;
   return async (req: IncomingMessage, res: ServerResponse) => {
@@ -53,6 +57,38 @@ export function createMissionControl(options: {
       const url = new URL(req.url ?? "/", origin);
       if (req.method === "GET" && url.pathname === "/") {
         res.end(renderList(await options.store.list(context)));
+        return;
+      }
+      // ADR-0026: the channel is narrative. These routes read and append messages and nothing else.
+      if (options.channel && url.pathname === "/channel" && req.method === "GET") {
+        const { messages } = await options.channel.read(context, { limit: "100" });
+        res.end(renderChannel(messages, await options.channel.cursors(context), context.principal.kind === "HUMAN", randomUUID()));
+        return;
+      }
+      if (options.channel && url.pathname === "/channel/post") {
+        if (req.method !== "POST") throw new HttpError(405);
+        if (req.headers.origin !== origin) throw new HttpError(403);
+        if (context.principal.kind !== "HUMAN") throw new HttpError(403);
+        if (!req.headers["content-type"]?.startsWith("application/x-www-form-urlencoded")) throw new HttpError(415);
+        if (Number(req.headers["content-length"] ?? 0) > 4096) {
+          req.resume();
+          throw new HttpError(413);
+        }
+        let raw = "";
+        for await (const chunk of req) {
+          raw += String(chunk);
+          if (Buffer.byteLength(raw) > 4096) throw new HttpError(413);
+        }
+        const form = new URLSearchParams(raw);
+        if (new Set(form.keys()).size !== Array.from(form.keys()).length) throw new HttpError(400);
+        // Only these fields are read. A form cannot supply an author, a tenant or a task reference.
+        await options.channel.post(context, {
+          kind: form.get("kind"),
+          body: form.get("body"),
+          idempotencyKey: form.get("idempotencyKey"),
+        });
+        res.writeHead(303, { location: "/channel" });
+        res.end();
         return;
       }
       const match = /^\/tasks\/([^/]+)(?:\/(approve|cancel|signal))?$/.exec(
@@ -115,6 +151,8 @@ export function createMissionControl(options: {
           ? error.status
           : error instanceof z.ZodError
             ? 400
+            : error instanceof ChannelError
+              ? { DENIED: 403, CONFLICT: 409, NOT_FOUND: 404 }[error.code]
             : error instanceof Error && error.message === "Tenant access denied"
               ? 403
               : 500;
