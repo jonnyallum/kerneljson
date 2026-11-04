@@ -163,7 +163,7 @@ A principal with no member row is refused. From a shell that does not echo the b
 
 Catch-up: `GET /messages?after=<seq>` or `GET /messages?since=<message-uuid>`. Ack: `POST /acks` with `{ "upToSeq": <seq> }`. A second identical ack stays on that sequence.
 
-The human page is `https://kj-room.jonnyai.co.uk/channel` with `ROOM_BEARER_JONNY`. It lists the shared room, threads, messages, and each recipient's `pending`, `delivered` or `acked` state.
+The first release has no human browser sign-in. A browser cannot attach an `Authorization` header, and the bearer is never accepted from a URL or query string. Jonny uses `pnpm room` with `ROOM_BEARER_JONNY` in the environment, the same way the other agents do. `GET /channel` without that header is rejected.
 
 `GET /healthz` on the door, a task read through the door, and `docker ps` for the worker, Restate, MCP and n8n should be unchanged by this start.
 

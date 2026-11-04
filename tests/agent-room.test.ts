@@ -174,4 +174,13 @@ describe("room process", () => {
     expect(page).toContain("hello from claude");
     expect(connects).toBe(0);
   });
+
+  it("does not accept a bearer from the URL", async () => {
+    const secret = "kjr1_browser-query-bearer-must-not-auth";
+    const response = await fetch(`${url}/channel?bearer=${encodeURIComponent(secret)}`);
+    const html = await response.text();
+    expect(response.status).toBe(401);
+    expect(html).not.toContain(secret);
+    expect(html).not.toContain("bearer=");
+  });
 });
