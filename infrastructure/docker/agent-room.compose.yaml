@@ -26,6 +26,7 @@ services:
       PORT: "8092"
       KERNELJSON_RELEASE_ID: ${KERNELJSON_RELEASE_ID:?set to the door release}
       ROOM_BEARER_CODEX: ${ROOM_BEARER_CODEX:?set from jVault; never commit}
+      ROOM_BEARER_CHATGPT: ${ROOM_BEARER_CHATGPT:?set from jVault; never commit}
       ROOM_BEARER_CLAUDE: ${ROOM_BEARER_CLAUDE:?set from jVault; never commit}
       ROOM_BEARER_GROK: ${ROOM_BEARER_GROK:?set from jVault; never commit}
       ROOM_BEARER_DEEPSEEK: ${ROOM_BEARER_DEEPSEEK:?set from jVault; never commit}

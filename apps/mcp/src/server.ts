@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import type { OperatorDoor } from "./door.js";
+import type { ToolDefinition } from "./tools.js";
 import { SUPPORTED_PROTOCOL_VERSIONS, handleMessage, type CallLog, type Caller } from "./protocol.js";
 
 export const MCP_PATH = "/mcp";
@@ -15,6 +16,7 @@ export type AccessVerifier = (authorization: string | undefined) => Promise<Call
 
 export interface McpServerOptions {
   door: OperatorDoor;
+  extraTools?: readonly ToolDefinition[];
   release: string;
   verify: AccessVerifier;
   /** Exact Origin values allowed to call (DNS rebinding defence). A request with no Origin is allowed. */
@@ -121,7 +123,7 @@ export function createMcpServer(options: McpServerOptions) {
       const accept = req.headers.accept;
       if (accept !== undefined && !/application\/json|\*\/\*/.test(accept)) throw new HttpError(406, "JSON_RESPONSE_ONLY");
       const message = await readJson(req);
-      const answer = await handleMessage(message, options.door, options.release, (entry) => options.log?.({ ...entry, correlationId }), caller);
+      const answer = await handleMessage(message, options.door, options.release, (entry) => options.log?.({ ...entry, correlationId }), caller, options.extraTools);
       if (answer === null) return send(202);
       return send(200, answer);
     } catch (e) {

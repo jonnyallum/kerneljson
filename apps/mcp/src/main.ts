@@ -7,6 +7,7 @@ import { createOAuthServer } from "./oauth/server.js";
 import type { RateLimits } from "./oauth/rate-limit.js";
 import { TokenSigner } from "./oauth/tokens.js";
 import { createMcpServer, requestGuard } from "./server.js";
+import { HttpAgentRoom, roomTools } from "./room.js";
 
 /**
  * ADR-0025 operator MCP server.
@@ -63,12 +64,19 @@ export function loadConfig(env: NodeJS.ProcessEnv, nowMs: number = Date.now()) {
   const bearer = env["KJ_MCP_BEARER"];
   if (!doorUrl || !bearer) throw new Error("KJ_ADMISSION_URL and KJ_MCP_BEARER are required");
   const common = { host, port, doorUrl, bearer, release: env["KERNELJSON_RELEASE_ID"] || "unreleased-development" };
+  const roomParts = [env["KJ_ROOM_URL"], env["ROOM_BEARER_CHATGPT"], env["ROOM_BEARER_GROK"]];
+  if (roomParts.some(Boolean) && !roomParts.every(Boolean)) throw new Error("KJ_ROOM_URL and both room bearers must be set together");
+  const room = roomParts.every(Boolean)
+    ? { url: roomParts[0]!, bearers: { chatgpt: roomParts[1]!, grokbot: roomParts[2]! } }
+    : null;
   const mode = env["MCP_AUTH"];
   if (mode === "local-unauthenticated") {
     if (!LOOPBACK.has(host)) throw new Error("Local unauthenticated mode binds only to a loopback address");
-    return { ...common, auth: { kind: "local" as const } };
+    return { ...common, room, auth: { kind: "local" as const } };
   }
   if (mode !== "oauth") throw new Error("MCP_AUTH must be oauth or local-unauthenticated");
+  if (room && room.url !== "http://kerneljson-agent-room:8092")
+    throw new Error("OAuth mode room URL must be the private agent-room service");
   const publicUrl = env["MCP_PUBLIC_URL"] ?? "";
   let parsed: URL;
   try {
@@ -84,6 +92,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, nowMs: number = Date.now()) {
   };
   return {
     ...common,
+    room,
     auth: {
       kind: "oauth" as const,
       publicUrl: parsed.origin,
@@ -106,10 +115,11 @@ export function buildHandler(
   deps: { fetchImpl?: typeof fetch; now?: () => number; log?: (line: string) => void; google?: GoogleSignIn; rateLimits?: RateLimits } = {},
 ) {
   const door = new HttpOperatorDoor(config.doorUrl, config.bearer, deps.fetchImpl);
+  const extraTools = config.room ? roomTools(new HttpAgentRoom(config.room.url, config.room.bearers, deps.fetchImpl)) : [];
   const log = (entry: object) => deps.log?.(JSON.stringify({ at: new Date().toISOString(), ...entry }));
   if (config.auth.kind === "local") {
     const local = { profile: "local", readOnly: false, client: "local" };
-    return createMcpServer({ door, release: config.release, verify: async () => local, guard: requestGuard({ kind: "local" }), allowedOrigins: [], log });
+    return createMcpServer({ door, extraTools, release: config.release, verify: async () => local, guard: requestGuard({ kind: "local" }), allowedOrigins: [], log });
   }
   const a = config.auth;
   const oauth = createOAuthServer({
@@ -127,6 +137,7 @@ export function buildHandler(
   });
   return createMcpServer({
     door,
+    extraTools,
     release: config.release,
     verify: async (authorization) => {
       const access = oauth.verifyAccess(authorization);

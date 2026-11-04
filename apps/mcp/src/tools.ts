@@ -186,8 +186,8 @@ export function codeChangeObjective(a: { repo: string; instructions: string }): 
   return `${a.repo} ${a.instructions.trim()}`;
 }
 
-export function toolList(): Array<{ name: string; title: string; description: string; inputSchema: unknown; annotations: ToolAnnotations }> {
-  return TOOLS.map((t) => ({
+export function toolList(tools: readonly ToolDefinition[] = TOOLS): Array<{ name: string; title: string; description: string; inputSchema: unknown; annotations: ToolAnnotations }> {
+  return tools.map((t) => ({
     name: t.name,
     title: t.annotations.title,
     description: t.description,

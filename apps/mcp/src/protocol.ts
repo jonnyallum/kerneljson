@@ -69,12 +69,14 @@ export async function handleMessage(
   release: string,
   log: (entry: CallLog) => void = () => {},
   caller: Caller = { profile: "unknown", readOnly: true, client: "unknown" },
+  extraTools: readonly ToolDefinition[] = [],
 ): Promise<JsonRpcResponse | null> {
   if (Array.isArray(raw)) return error(null, -32600, "Batch requests are not supported");
   const parsed = Message.safeParse(raw);
   if (!parsed.success) return error(null, -32600, "Invalid JSON-RPC request");
   const { id, method, params } = parsed.data;
   if (id === undefined) return null;
+  const availableTools = [...TOOLS, ...extraTools];
 
   switch (method) {
     case "initialize": {
@@ -94,10 +96,10 @@ export async function handleMessage(
     case "ping":
       return { jsonrpc: "2.0", id, result: {} };
     case "tools/list":
-      return { jsonrpc: "2.0", id, result: { tools: toolList().filter((t) => !caller.readOnly || t.annotations.readOnlyHint) } };
+      return { jsonrpc: "2.0", id, result: { tools: toolList(availableTools).filter((t) => !caller.readOnly || t.annotations.readOnlyHint) } };
     case "tools/call": {
       const name = params?.["name"];
-      const tool = TOOLS.find((t) => t.name === name);
+      const tool = availableTools.find((t) => t.name === name);
       if (!tool) return error(id, -32602, "Unknown tool");
       const who = { profile: caller.profile, client: caller.client };
       if (!permitted(caller, tool)) {
