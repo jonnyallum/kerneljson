@@ -161,9 +161,19 @@ do $$ begin
     create role agent_room_app login inherit nosuperuser nocreatedb nocreaterole nobypassrls;
   end if;
 end $$;
-alter role agent_channel nologin nosuperuser nocreatedb nocreaterole nobypassrls;
+-- Supabase's postgres role has CREATEROLE but is not SUPERUSER. Postgres rejects
+-- ALTER ROLE ... NOSUPERUSER from that role even when the target is not superuser.
+-- The CREATE ROLE statements above establish the attributes for new roles;
+-- check existing roles rather than silently accepting broader attributes.
+do $$ begin
+  if exists (select 1 from pg_roles where rolname = 'agent_channel'
+      and (rolcanlogin or rolsuper or rolcreatedb or rolcreaterole or rolbypassrls))
+    or exists (select 1 from pg_roles where rolname = 'agent_room_app'
+      and (not rolcanlogin or not rolinherit or rolsuper or rolcreatedb or rolcreaterole or rolbypassrls)) then
+    raise exception 'agent room role attributes are broader than expected';
+  end if;
+end $$;
 -- LOGIN, but no password is set in this script. The operator sets it out of band.
-alter role agent_room_app login inherit nosuperuser nocreatedb nocreaterole nobypassrls;
 grant agent_channel to agent_room_app;
 grant usage on schema public to agent_channel;
 grant select, insert on agent_channel_messages to agent_channel;
