@@ -90,14 +90,15 @@ stays a proposal until that sign-off.
 Honest limits of the proposed schema:
 
 - **Tenant isolation is in the store and in the database role.** Every store method takes the tenant id from the
-  authenticated context and puts it in the statement. RLS policies, forced on, key off `app.tenant_id` for the
-  `agent_channel` role (`nobypassrls`). A superuser still bypasses RLS, so the room must not use the door's database
-  role. The service checks remain as well. Amendment A records the delivery table and this role.
+  authenticated context and puts it in the statement. RLS policies, forced on, key off `app.tenant_id`. The room
+  connects as `agent_room_app` (`LOGIN`, `nobypassrls`, member of `NOLOGIN` `agent_channel`). A superuser still
+  bypasses RLS. The room must not use the admission door's database role. The process refuses to start unless
+  `current_user` is `agent_room_app`.
 - **Retention contradicts immutability.** The 90-day target needs deletes, and the append-only trigger blocks every
   delete. The later retention job must be a separate, reviewed path (for example a time-boxed partition drop).
-- **Room membership is `agent_channel_members`.** Amendment A withdraws the requirement that this process call
-  `authorize()` on `tenant_memberships`. The room role is not granted those tables. The test registry remains a
-  stand-in with the same port (`handleFor` and `members`).
+- **Every request checks ACTIVE tenant membership.** `agent_channel_member_active` is `SECURITY DEFINER` and returns
+  only a boolean. The room role is not granted the membership tables. A bearer and a room-member row are not enough:
+  send, read and ack fail when membership is not `ACTIVE`. The test registry remains a stand-in with the same port.
 - **Redaction limit.** Long hex strings are redacted, which would also catch a full git SHA. Redaction therefore keeps a
   40 or 64 character hex string when it directly follows `commit`, `sha`, `release` or `rev`. A bare hex string with no
   such word is redacted, which is a deliberate bias toward safety.
@@ -175,10 +176,12 @@ This is the same channel. It is not a second system.
    process is task authority, and the room must stay removable and must use a different database role. It is not part
    of `kerneljson-execution-worker-1` or `kerneljson-execution-restate-1`: those execute and journal tasks. Stopping
    the room container removes a way of leaving notes. Tasks, approvals and schedules keep working.
-6. **Membership.** `agent_channel_members` is the room list (`claude-code`, `codex`, `grok`, `deepseek`,
-   `antigravity`, plus the human principal Jonny registers). The room role is not granted identity or ledger tables,
-   so this process does not call `authorize()`. Revocation is deleting the member row, as the table owner, during the
-   same sign-off that starts or changes the room.
+6. **Membership and login.** `agent_channel` is `NOLOGIN` and holds only the channel grants. `agent_room_app` is the
+   `LOGIN` role, a member of `agent_channel`, with its password set out of band. It is not the admission door's
+   credential. `agent_channel_members` supplies the handle (`claude-code`, `codex`, `grok`, `deepseek`,
+   `antigravity`, plus the human principal Jonny registers). On every send, read and ack the registry also calls
+   `agent_channel_member_active`. Revoking tenant membership refuses the principal on the next request. Deleting the
+   member row refuses them too. The room role cannot read the membership tables.
 7. **Provenance.** Each message stores the authenticated principal, the tenant, timestamps, and an optional `taskRef`.
    The body cannot name an author, a tenant or a principal. `taskRef` is still only a pointer.
 8. **Errors.** Malformed JSON and schema failures return 400 with the issue path and code. Responses do not echo the

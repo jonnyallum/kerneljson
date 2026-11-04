@@ -24,6 +24,12 @@ import { MissionControlStore } from "./store.js";
 
 const RELEASE_ID_RE = /^[A-Za-z0-9._:-]{1,160}$/;
 export const MIN_ROOM_BEARER_LENGTH = 32;
+/** The only database role this process may use. The admission door's role is refused. */
+export const ROOM_DATABASE_ROLE = "agent_room_app";
+
+export function assertRoomDatabaseRole(currentUser: string): void {
+  if (currentUser !== ROOM_DATABASE_ROLE) throw new RoomConfigError("DATABASE_ROLE_INVALID");
+}
 
 export class RoomConfigError extends Error {
   constructor(readonly code: string) {
@@ -190,9 +196,15 @@ export async function startRoom(config: RoomConfig): Promise<{ server: Server; p
   const pool = new pg.Pool({ connectionString: config.databaseUrl });
   try {
     const client = await pool.connect();
-    client.release();
-  } catch {
+    try {
+      const who = await client.query<{ current_user: string }>("select current_user");
+      assertRoomDatabaseRole(who.rows[0]?.current_user ?? "");
+    } finally {
+      client.release();
+    }
+  } catch (error) {
     await pool.end();
+    if (error instanceof RoomConfigError) throw error;
     throw new RoomConfigError("DATABASE_UNREACHABLE");
   }
   const handler = buildRoomHandler({

@@ -19,7 +19,7 @@ Host: `kerneljson-prod-01` (the VM that already runs the containers below).
 | `n8n` | Unchanged. Its Caddy is the TLS front, as it already is for `kj-mcp.jonnyai.co.uk`. |
 | `kerneljson-agent-room` | **New.** The room. |
 
-The new container uses the admission-door image of the **same release** (`kerneljson-admission-door:<short-sha>`), with a different command: `node --import tsx apps/mission-control/src/room-main.ts`. One image, two processes. The room process holds only the `agent_channel` database role. Deleting the container removes a way of leaving notes. Tasks keep their existing path.
+The new container uses the admission-door image of the **same release** (`kerneljson-admission-door:<short-sha>`), with a different command: `node --import tsx apps/mission-control/src/room-main.ts`. One image, two processes. The room process logs in only as `agent_room_app`. That role is a member of `agent_channel`, which cannot log in and holds only the channel grants. It is not the admission door's database user, not the door's `DATABASE_URL`, and not the database superuser. The process refuses to start if `current_user` is anything else. Deleting the container removes a way of leaving notes. Tasks keep their existing path.
 
 Prepared artefacts, not applied:
 
@@ -43,7 +43,7 @@ ROOM_MEMBERS=[{"bearerEnv":"ROOM_BEARER_CODEX","tenantId":"<tenant-uuid>","princ
 `/opt/kerneljson/runtime/agent-room/secrets.env` (from jVault, project `kerneljson`):
 
 ```
-DATABASE_URL=<connection string for role agent_channel, not the door role>
+DATABASE_URL=postgresql://agent_room_app:<password>@<postgres-host>:5432/<database>
 ROOM_BEARER_CODEX=<from jVault kerneljson/ROOM_BEARER_CODEX, at least 32 characters>
 ROOM_BEARER_CLAUDE=<from jVault kerneljson/ROOM_BEARER_CLAUDE>
 ROOM_BEARER_GROK=<from jVault kerneljson/ROOM_BEARER_GROK>
@@ -54,11 +54,13 @@ ROOM_BEARER_JONNY=<from jVault kerneljson/ROOM_BEARER_JONNY>
 
 Mint each bearer on the VM and store it in jVault without printing it. The room compares SHA-256 digests. The bearers are not the admission-door bearer and not `KJ_MCP_BEARER`.
 
+`DATABASE_URL` is a new connection string for `agent_room_app` only. Do not copy the admission door's `DATABASE_URL`. Do not use the door's database user, `KJ_ADMISSION_BEARER`, or the database superuser. `agent_channel` is `NOLOGIN` and cannot be that URL. The password is set in the next section and is not written in this repository.
+
 Do not run `docker compose config` against the secrets file. It prints resolved values.
 
 ## Schema
 
-The proposal is not in `supabase/migrations/`, because that folder is auto-applied by the FM project and by `tests/support/local.ts`. Apply it once, as the table owner (the role that owns `tenants` and `principals`), not as `agent_channel`.
+The proposal is not in `supabase/migrations/`, because that folder is auto-applied by the FM project and by `tests/support/local.ts`. Apply it once, as the table owner (the role that owns `tenants` and `principals`). Do not apply it as `agent_room_app` or as the admission door's database user. The owner becomes the owner of `agent_channel_member_active`, which is `SECURITY DEFINER` and returns only a boolean.
 
 From a checkout of the approved commit, on the VM, with `DATABASE_URL` pointing at the **owner** role for this one command (a different URL from the room's runtime URL):
 
@@ -69,7 +71,24 @@ set +a
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/proposals/agent-channel/20261104130000_agent_channel.sql.proposed
 ```
 
-`owner.env` holds that owner URL and is mode `0600`. It is not the file the container uses.
+`owner.env` holds the table-owner URL and is mode `0600`. It is not the file the container uses, and it is not the admission door's env file.
+
+The proposal creates `agent_room_app` with no password. Set the password from a mode-600 file that never enters the repo, chat, or `set -x` output. Store the same value in jVault as `kerneljson/AGENT_ROOM_DB_PASSWORD`.
+
+```
+umask 077
+python -c "import os,secrets;fd=os.open('room-db.tmp',os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.write(fd,secrets.token_urlsafe(32).encode());os.close(fd)"
+# put room-db.tmp into jVault as kerneljson/AGENT_ROOM_DB_PASSWORD, then:
+cp room-db.tmp /opt/kerneljson/runtime/agent-room/db-password
+shred -u room-db.tmp
+# token_urlsafe has no quotes. The SQL file is mode 600 and is shredded after psql.
+python -c "import pathlib;pw=pathlib.Path('/opt/kerneljson/runtime/agent-room/db-password').read_text().strip();pathlib.Path('/opt/kerneljson/runtime/agent-room/set-password.sql').write_text('ALTER ROLE agent_room_app WITH LOGIN PASSWORD '+chr(39)+pw+chr(39)+';\n')"
+chmod 600 /opt/kerneljson/runtime/agent-room/set-password.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /opt/kerneljson/runtime/agent-room/set-password.sql
+shred -u /opt/kerneljson/runtime/agent-room/set-password.sql
+```
+
+`DATABASE_URL` in that `psql` command is the owner URL from `owner.env`. Build the room's `secrets.env` `DATABASE_URL` as user `agent_room_app`, the host and database of the KernelJSON Postgres, and the password from `db-password`. Do not reuse the door's URL.
 
 Then register the room members, still as the owner. Handles are the ones ADR-0026 already uses:
 
@@ -85,15 +104,18 @@ insert into agent_channel_members (tenant_id, principal_id, handle) values
 SQL
 ```
 
-The principals must already exist. This insert does not create a task and does not write a ledger row.
+The principals must already exist, each with an `ACTIVE` row in `tenant_memberships`. This insert does not create a task and does not write a ledger row. A member row without `ACTIVE` membership cannot send, read, or ack.
 
-Confirm the app role cannot update messages:
+Confirm the group role cannot update messages, and the login role is the one that can connect:
 
 ```
+psql "$DATABASE_URL" -c "select rolcanlogin from pg_roles where rolname = 'agent_channel'"
+psql "$DATABASE_URL" -c "select rolcanlogin from pg_roles where rolname = 'agent_room_app'"
 psql "$DATABASE_URL" -c "select has_table_privilege('agent_channel', 'agent_channel_messages', 'update')"
+psql "$DATABASE_URL" -c "select has_table_privilege('agent_room_app', 'agent_channel_messages', 'select')"
 ```
 
-Expect `f`.
+Expect `f`, `t`, `f`, `t`. `agent_room_app` inherits the channel grants and no others.
 
 ## Deploy
 
@@ -140,13 +162,23 @@ If the container stops, the log stays in Postgres. Start the same image and the 
 
 A message that needed redaction is stored with `redacted: true` and the credential text replaced. That is a safety net. Do not post secrets.
 
-To drop a member, as the owner role:
+Revoking tenant membership removes room access on the next send, read, and ack. As the table owner:
+
+```
+update tenant_memberships
+set status = 'REVOKED'
+where tenant_id = '<tenant-uuid>' and principal_id = '<principal-uuid>';
+```
+
+The room reads that through `agent_channel_member_active` and does not need a restart. `REMOVED` is refused the same way. The room role cannot update this table.
+
+Deleting the room-member row also refuses them, because there is then no handle:
 
 ```
 delete from agent_channel_members where tenant_id = '<tenant-uuid>' and handle = '<handle>';
 ```
 
-Their bearer then fails closed (403). Existing messages stay.
+Either change fails closed (403). Existing messages stay.
 
 ## Rollback
 

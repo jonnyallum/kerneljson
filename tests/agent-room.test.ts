@@ -7,6 +7,7 @@ import type { TenantContext } from "../packages/contracts/src/index.js";
 import {
   ClosedTaskStore,
   RoomConfigError,
+  assertRoomDatabaseRole,
   buildRoomHandler,
   loadRoomConfig,
   summariseRoomConfig,
@@ -63,6 +64,18 @@ describe("room configuration", () => {
       expect(error).toBeInstanceOf(RoomConfigError);
       expect((error as RoomConfigError).code).toBe("ROOM_BEARER_CODEX_TOO_SHORT");
       expect(String(error)).not.toContain("too-short");
+      expect(String(error)).not.toContain(secret);
+    }
+  });
+
+  it("refuses a database role other than the room login role", () => {
+    expect(() => assertRoomDatabaseRole("agent_room_app")).not.toThrow();
+    expect(() => assertRoomDatabaseRole("postgres")).toThrow(RoomConfigError);
+    try {
+      assertRoomDatabaseRole("postgres");
+    } catch (error) {
+      expect((error as RoomConfigError).code).toBe("DATABASE_ROLE_INVALID");
+      expect(String(error)).not.toContain("postgres");
       expect(String(error)).not.toContain(secret);
     }
   });

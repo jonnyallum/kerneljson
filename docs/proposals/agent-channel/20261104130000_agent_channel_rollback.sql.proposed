@@ -9,6 +9,7 @@ drop table if exists agent_channel_messages;
 drop table if exists agent_channel_members;
 drop table if exists agent_channel_counters;
 
+drop function if exists agent_channel_member_active(uuid, uuid, text);
 drop function if exists agent_channel_deliveries_forward();
 drop function if exists agent_channel_acks_forward();
 drop function if exists agent_channel_messages_immutable();
@@ -17,6 +18,22 @@ drop function if exists agent_channel_current_tenant();
 do $$
 declare member_name text;
 begin
+  if exists (select 1 from pg_roles where rolname = 'agent_room_app') then
+    if exists (select 1 from pg_roles where rolname = 'agent_channel')
+       and exists (
+         select 1 from pg_auth_members
+         where roleid = (select oid from pg_roles where rolname = 'agent_channel')
+           and member = (select oid from pg_roles where rolname = 'agent_room_app')
+       ) then
+      execute 'revoke agent_channel from agent_room_app';
+    end if;
+    execute 'revoke all privileges on all tables in schema public from agent_room_app';
+    execute 'revoke all privileges on all sequences in schema public from agent_room_app';
+    execute 'revoke all privileges on all functions in schema public from agent_room_app';
+    execute 'revoke all on schema public from agent_room_app';
+    execute 'drop owned by agent_room_app';
+    execute 'drop role agent_room_app';
+  end if;
   if exists (select 1 from pg_roles where rolname = 'agent_channel') then
     for member_name in
       select m.rolname

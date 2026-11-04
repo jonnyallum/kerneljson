@@ -9,7 +9,8 @@
 # Secrets: mode-600 env files. Never commit them. Never run `docker compose config` against the
 # secrets file; it prints resolved values.
 # Public:  ROOM_ORIGIN, ROOM_MEMBERS (bearer env NAMES, not bearer values), KERNELJSON_RELEASE_ID
-# Secret:  DATABASE_URL for role agent_channel, and ROOM_BEARER_* values.
+# Secret:  DATABASE_URL for LOGIN role agent_room_app only (never the admission door's
+#          DATABASE_URL, never the superuser), and ROOM_BEARER_* values.
 # Networks: kerneljson-exec (Postgres, same path the door uses) and kj-mcp-edge (Caddy).
 # No host port. The only way in is Caddy.
 name: kerneljson-agent-room
@@ -19,7 +20,7 @@ services:
     container_name: kerneljson-agent-room
     command: ["node", "--import", "tsx", "apps/mission-control/src/room-main.ts"]
     environment:
-      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL for the agent_channel role, from jVault}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL for agent_room_app, never the admission door URL}
       ROOM_ORIGIN: ${ROOM_ORIGIN:?set ROOM_ORIGIN, e.g. https://kj-room.jonnyai.co.uk}
       ROOM_MEMBERS: ${ROOM_MEMBERS:?set ROOM_MEMBERS JSON; bearer values stay in ROOM_BEARER_*}
       PORT: "8092"

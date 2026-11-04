@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -141,6 +141,13 @@ async function applyProposal(pool: pg.Pool) {
     kind text not null check (kind in ('HUMAN','SERVICE'))
   )`);
   await pool.query("create table if not exists tenants (id uuid primary key, name text not null)");
+  await pool.query(`create table if not exists tenant_memberships (
+    tenant_id uuid not null references tenants(id),
+    principal_id uuid not null references principals(id),
+    role text not null,
+    status text not null default 'ACTIVE' check (status in ('ACTIVE','REVOKED','REMOVED')),
+    primary key (tenant_id, principal_id)
+  )`);
   await pool.query(readFileSync("docs/proposals/agent-channel/20261104130000_agent_channel.sql.proposed", "utf8"));
   await pool.query("grant agent_channel to current_user");
 }
@@ -253,6 +260,11 @@ describe.skipIf(!databaseUrl)("postgres store", () => {
       principal,
       tenantB,
     ]);
+    await pool.query(
+      `insert into tenant_memberships (tenant_id, principal_id, role, status) values
+         ($1, $2, 'member', 'ACTIVE'), ($3, $2, 'member', 'ACTIVE')`,
+      [tenantA, principal, tenantB],
+    );
     const registry = new PostgresAgentRegistry(pool);
     const contextA: TenantContext = { tenantId: tenantA, principal: { id: principal, kind: "SERVICE" } };
     expect(await registry.handleFor(contextA)).toBe("codex");
@@ -268,6 +280,89 @@ describe.skipIf(!databaseUrl)("postgres store", () => {
     expect((await service.read({ tenantId: tenantB, principal: { id: principal, kind: "SERVICE" } }, {})).messages).toEqual([]);
   });
 
+  it("logs in as agent_room_app, serves the channel, and refuses a revoked member", async () => {
+    const password = randomBytes(24).toString("base64url");
+    const built = await pool.query<{ sql: string }>(
+      "select format('alter role agent_room_app with login password %L', $1::text) as sql",
+      [password],
+    );
+    const statement = built.rows[0]?.sql;
+    if (!statement) throw new Error("could not build the test role statement");
+    try {
+      await pool.query(statement);
+    } catch {
+      throw new Error("could not set the test role password");
+    }
+    const tenantId = randomUUID();
+    const principalId = randomUUID();
+    const outsider = randomUUID();
+    await pool.query(
+      "truncate agent_channel_deliveries, agent_channel_acks, agent_channel_messages, agent_channel_members, agent_channel_counters",
+    );
+    await pool.query("insert into tenants (id, name) values ($1, 'room') on conflict (id) do nothing", [tenantId]);
+    await pool.query("insert into principals (id, kind) values ($1, 'SERVICE'), ($2, 'SERVICE') on conflict (id) do nothing", [
+      principalId,
+      outsider,
+    ]);
+    await pool.query(
+      `insert into tenant_memberships (tenant_id, principal_id, role, status) values ($1, $2, 'member', 'ACTIVE')
+       on conflict (tenant_id, principal_id) do update set status = 'ACTIVE'`,
+      [tenantId, principalId],
+    );
+    await pool.query("insert into agent_channel_members (tenant_id, principal_id, handle) values ($1, $2, 'codex')", [
+      tenantId,
+      principalId,
+    ]);
+    await pool.query("create table if not exists tasks (id int primary key)");
+    await pool.query("create table if not exists task_events (id int primary key)");
+    await pool.query("revoke all privileges on table tasks from public, agent_channel, agent_room_app");
+    await pool.query("revoke all privileges on table task_events from public, agent_channel, agent_room_app");
+    await pool.query("revoke all privileges on table tenant_memberships from public, agent_channel, agent_room_app");
+    await pool.query("revoke all privileges on table principals from public, agent_channel, agent_room_app");
+
+    const app = new pg.Pool({
+      host: "127.0.0.1",
+      port: Number(process.env["AGENT_CHANNEL_TEST_PORT"] ?? 5432),
+      user: "agent_room_app",
+      password,
+      database: "agent_room_test",
+    });
+    try {
+      const who = await app.query<{ current_user: string }>("select current_user");
+      expect(who.rows[0]?.current_user).toBe("agent_room_app");
+      const context: TenantContext = { tenantId, principal: { id: principalId, kind: "SERVICE" } };
+      const service = new ChannelService(new PostgresChannelStore(app), new PostgresAgentRegistry(app));
+      const posted = await service.post(context, { kind: "NOTE", body: "from the room role", idempotencyKey: "app-role-key-1" });
+      expect(posted.duplicate).toBe(false);
+      const seen = await service.read(context, { after: 0 });
+      expect(seen.messages.map((message) => message.id)).toEqual([posted.message.id]);
+      const acked = await service.ack(context, { upToSeq: posted.message.seq });
+      expect(acked.upToSeq).toBe(posted.message.seq);
+      await expect(app.query("select 1 from tasks")).rejects.toMatchObject({ code: "42501" });
+      await expect(app.query("insert into tasks (id) values (1)")).rejects.toMatchObject({ code: "42501" });
+      await expect(app.query("select 1 from task_events")).rejects.toMatchObject({ code: "42501" });
+      await expect(app.query("insert into task_events (id) values (1)")).rejects.toMatchObject({ code: "42501" });
+      await expect(app.query("select * from tenant_memberships")).rejects.toMatchObject({ code: "42501" });
+      const flag = await app.query<{ active: boolean }>("select agent_channel_member_active($1, $2, 'SERVICE') as active", [
+        tenantId,
+        principalId,
+      ]);
+      expect(flag.rows[0]?.active).toBe(true);
+
+      await pool.query("update tenant_memberships set status = 'REVOKED' where tenant_id = $1 and principal_id = $2", [
+        tenantId,
+        principalId,
+      ]);
+      const note = { kind: "NOTE", body: "after revoke", idempotencyKey: "app-role-key-2" };
+      await expect(service.post(context, note)).rejects.toMatchObject({ code: "DENIED" });
+      await expect(service.read(context, {})).rejects.toMatchObject({ code: "DENIED" });
+      await expect(service.ack(context, { upToSeq: posted.message.seq })).rejects.toMatchObject({ code: "DENIED" });
+      expect(outsider).not.toBe(principalId);
+    } finally {
+      await app.end();
+    }
+  });
+
   it("drops only the channel objects", async () => {
     await pool.query("create table if not exists tasks (id int primary key)");
     await pool.query("insert into tasks (id) values (7) on conflict (id) do update set id = excluded.id");
@@ -275,6 +370,7 @@ describe.skipIf(!databaseUrl)("postgres store", () => {
     await expect(pool.query("select 1 from agent_channel_messages")).rejects.toThrow(/does not exist|agent_channel_messages/);
     expect((await pool.query("select id from tasks where id = 7")).rows).toEqual([{ id: 7 }]);
     expect((await pool.query("select 1 from pg_roles where rolname = 'agent_channel'")).rowCount).toBe(0);
+    expect((await pool.query("select 1 from pg_roles where rolname = 'agent_room_app'")).rowCount).toBe(0);
   });
 });
 

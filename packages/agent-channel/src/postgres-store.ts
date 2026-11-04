@@ -335,13 +335,21 @@ export class PostgresChannelStore implements ChannelStore {
   }
 }
 
-/** Room membership from agent_channel_members. The role is not granted any other schema. */
+/**
+ * Room handles from agent_channel_members, and ACTIVE tenant membership from
+ * agent_channel_member_active. That function returns a boolean only.
+ */
 export class PostgresAgentRegistry implements AgentRegistry {
   constructor(private readonly pool: pg.Pool) {}
 
   async handleFor(context: TenantContext): Promise<string | null> {
     const parsed = TenantContext.parse(context);
     return withChannelTenant(this.pool, parsed.tenantId, async (db) => {
+      const active = await db.query<{ active: boolean }>(
+        "select agent_channel_member_active($1, $2, $3) as active",
+        [parsed.tenantId, parsed.principal.id, parsed.principal.kind],
+      );
+      if (active.rows[0]?.active !== true) return null;
       const rows = await db.query<{ handle: string }>(
         `select handle from agent_channel_members where tenant_id = $1 and principal_id = $2`,
         [parsed.tenantId, parsed.principal.id],
@@ -354,7 +362,14 @@ export class PostgresAgentRegistry implements AgentRegistry {
     const tenant = requireTenant(tenantId);
     return withChannelTenant(this.pool, tenant, async (db) => {
       const rows = await db.query<{ principal_id: string; handle: string }>(
-        `select principal_id, handle from agent_channel_members where tenant_id = $1 order by handle`,
+        `select m.principal_id, m.handle
+         from agent_channel_members m
+         where m.tenant_id = $1
+           and (
+             agent_channel_member_active(m.tenant_id, m.principal_id, 'HUMAN')
+             or agent_channel_member_active(m.tenant_id, m.principal_id, 'SERVICE')
+           )
+         order by m.handle`,
         [tenant],
       );
       return rows.rows.map((row) => ({ principalId: row.principal_id, handle: row.handle }));
