@@ -248,7 +248,7 @@ describe("KJ-P4A a Telegram message becomes exactly one IntentEnvelope, through 
 });
 
 describe("KJ-P4A refusals create nothing", () => {
-  it("unauthorised and malformed messages admit nothing and leave the ledger untouched", async () => {
+  it("unauthorised, malformed and ordinary text messages admit nothing and leave the ledger untouched", async () => {
     const h = build();
     const id = uid();
     h.source.updates = [
@@ -260,11 +260,14 @@ describe("KJ-P4A refusals create nothing", () => {
     ];
     const before = await ledgerCounts();
     const s = await h.poll();
-    expect(s).toMatchObject({ unauthorised: 3, commands: 2, refused: 2, admitted: 0 });
+    expect(s).toMatchObject({ unauthorised: 3, commands: 2, refused: 1, answered: 1, admitted: 0 });
     expect(await ledgerCounts()).toEqual(before);
     expect(await n("select unauthorised_total::text n from kernel_private.telegram_operator_state")).toBe(3);
-    // Nobody unauthorised was recorded or answered; the two malformed ones got the fixed usage reply.
+    // Nobody unauthorised was recorded or answered; the malformed command got usage,
+    // and ordinary text got a bounded answer without admission.
     expect(await n("select count(*)::text n from kernel_private.telegram_inbox")).toBe(2);
+    expect(await inboxRow(id + 4)).toMatchObject({ disposition: "ANSWERED", mission: false, task_id: null });
+    expect(h.notifier.sent.some((p) => p.checkId === `OPERATOR.reply.${id + 4}`)).toBe(true);
     expect(await n("select count(*)::text n from kernel_private.notification_outbox where check_id like 'OPERATOR.reply.%' and check_id in ($1,$2,$3)", [`OPERATOR.reply.${id}`, `OPERATOR.reply.${id + 1}`, `OPERATOR.reply.${id + 2}`])).toBe(0);
   });
 
@@ -322,7 +325,8 @@ describe("KJ-P4A /status and /task are read-only", () => {
     h.source.updates = [msg(id, "/status"), msg(id + 1, "/brief a/b"), msg(id + 2, "hello"), msg(id + 3, "/status"), msg(id + 4, "/review c/d findings=2")];
     const before = await ledgerCounts();
     const s = await h.poll();
-    expect(s).toMatchObject({ commands: 5, answered: 2, refused: 1, admitted: 2 });
+    expect(s).toMatchObject({ commands: 5, answered: 3, refused: 0, admitted: 2 });
+    expect(await inboxRow(id + 2)).toMatchObject({ disposition: "ANSWERED", mission: false, task_id: null });
     const after = await ledgerCounts();
     expect(after["public.tasks"]).toBe(before["public.tasks"]);
     // Only missions the door admitted left anything in the admission tables.
