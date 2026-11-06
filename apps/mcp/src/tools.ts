@@ -27,7 +27,29 @@ const RequestId = z
   .regex(/^[A-Za-z0-9._:-]{8,124}$/, "8 to 124 characters: letters, digits, '.', '_', ':' or '-'")
   .describe("A unique id for this request, such as a fresh UUID. Retrying with the same id returns the same task; never reuse one for a different request.");
 
-export const idempotencyKeyFor = (requestId: string, profile = "chatgpt"): string => profile === "grokbot" ? `grokbot-mcp:${requestId}` : `mcp:${requestId}`;
+/** Each client attributes its admissions to its own channel. ChatGPT (and the local mode) keep the original default channel and key format. */
+const OWN_CHANNEL: Readonly<Record<string, string>> = { grokbot: "grokbot-mcp/v1", claudecode: "claudecode-mcp/v1" };
+const channelFor = (profile: string): { channel?: string } => (OWN_CHANNEL[profile] === undefined ? {} : { channel: OWN_CHANNEL[profile]! });
+/** The task source the gateway records for a channel (apps/gateway CHANNEL_SOURCES). */
+const sourceOf = (channel: string): string => `kerneljson:channel/${channel}`;
+
+export const idempotencyKeyFor = (requestId: string, profile = "chatgpt"): string =>
+  OWN_CHANNEL[profile] === undefined ? `mcp:${requestId}` : `${OWN_CHANNEL[profile]!.replace("/v1", "")}:${requestId}`;
+
+/**
+ * Cancel is scoped to the caller's own tasks for Claude Code: the task must be in the recent list with the source
+ * its own channel records. Anything else, including a task that is not in the latest 50, is refused before the
+ * door is asked. ChatGPT and Grok Bot keep the behaviour they already had.
+ */
+async function cancelFor(door: OperatorDoor, taskId: string, caller: Caller): Promise<DoorResult> {
+  const own = OWN_CHANNEL[caller.profile];
+  if (own === undefined || caller.profile !== "claudecode") return door.cancel(taskId);
+  const listed = await door.listTasks(50);
+  if (!listed.ok) return listed;
+  const items: unknown[] = Array.isArray(listed.body) ? listed.body : [];
+  const mine = items.some((t) => typeof t === "object" && t !== null && (t as { taskId?: unknown }).taskId === taskId && (t as { source?: unknown }).source === sourceOf(own));
+  return mine ? door.cancel(taskId) : { ok: false, failure: "FORBIDDEN", status: null };
+}
 
 export interface ToolAnnotations {
   title: string;
@@ -112,7 +134,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     description: "Start a morning brief now: GitHub activity for the last 24 hours, written by one model, reviewed by another, delivered to Telegram. Returns the task id to follow with kj_get_task.",
     input: z.strictObject({ request_id: RequestId }),
     annotations: { title: "Run a morning brief", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    run: (door, args, caller) => door.admit({ recipe: BRIEF_RECIPE, objective: "morning brief", idempotencyKey: idempotencyKeyFor(args.request_id, caller.profile), ...(caller.profile === "grokbot" ? { channel: "grokbot-mcp/v1" } : {}) }),
+    run: (door, args, caller) => door.admit({ recipe: BRIEF_RECIPE, objective: "morning brief", idempotencyKey: idempotencyKeyFor(args.request_id, caller.profile), ...channelFor(caller.profile) }),
   }),
   define({
     name: "kj_run_analysis",
@@ -140,7 +162,7 @@ export const TOOLS: readonly ToolDefinition[] = [
         }
       }),
     annotations: { title: "Run a repository analysis", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    run: (door, args, caller) => door.admit({ recipe: MISSION_RECIPE, objective: analysisObjective(args), idempotencyKey: idempotencyKeyFor(args.request_id, caller.profile), ...(caller.profile === "grokbot" ? { channel: "grokbot-mcp/v1" } : {}) }),
+    run: (door, args, caller) => door.admit({ recipe: MISSION_RECIPE, objective: analysisObjective(args), idempotencyKey: idempotencyKeyFor(args.request_id, caller.profile), ...channelFor(caller.profile) }),
   }),
   define({
     name: "kj_run_code_change",
@@ -165,14 +187,14 @@ export const TOOLS: readonly ToolDefinition[] = [
         }
       }),
     annotations: { title: "Run a code change (draft PR)", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    run: (door, args, caller) => door.admit({ recipe: CODE_CHANGE_RECIPE, objective: codeChangeObjective(args), idempotencyKey: idempotencyKeyFor(args.request_id, caller.profile), ...(caller.profile === "grokbot" ? { channel: "grokbot-mcp/v1" } : {}) }),
+    run: (door, args, caller) => door.admit({ recipe: CODE_CHANGE_RECIPE, objective: codeChangeObjective(args), idempotencyKey: idempotencyKeyFor(args.request_id, caller.profile), ...channelFor(caller.profile) }),
   }),
   define({
     name: "kj_cancel_task",
-    description: "Ask KernelJSON to cancel a task started from ChatGPT that has not finished. Tasks started elsewhere (the scheduled brief, Telegram) cannot be cancelled from here. The kernel decides whether it can; cancelling never undoes work already done.",
+    description: "Ask KernelJSON to cancel a task started from ChatGPT that has not finished. Tasks started elsewhere (the scheduled brief, Telegram) cannot be cancelled from here. The kernel decides whether it can; cancelling never undoes work already done. Claude Code can cancel only tasks it started itself.",
     input: TaskRef,
     annotations: { title: "Cancel a task", readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-    run: (door, args) => door.cancel(args.task_id),
+    run: (door, args, caller) => cancelFor(door, args.task_id, caller),
   }),
 ];
 

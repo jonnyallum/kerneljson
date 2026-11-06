@@ -24,7 +24,22 @@ export const GROKBOT_REDIRECT_URIS = [
   "http://127.0.0.1:8787/callback",
 ] as const;
 
-export type ClientProfileName = "chatgpt" | "grokbot";
+/**
+ * Claude Code's MCP client signs in with OAuth and a loopback callback `http://localhost:PORT/callback`
+ * (Claude Code docs, read 06/11/2026: it picks a random free port unless `--callback-port` fixes one;
+ * v2.1.229 sent `127.0.0.1` instead of `localhost`, v2.1.231 restored `localhost`). A random port could never
+ * match an exact-match allow-list, so the connection is made with `--callback-port 53682`, and both loopback
+ * spellings of that one port are accepted. The port is not used by the Grok Bot profile (8787), so a registration
+ * can never resolve to two profiles. Anyone able to open that port on this machine still needs Jonny's own
+ * Google sign-in and an explicit consent.
+ */
+export const CLAUDECODE_CALLBACK_PORT = 53682;
+export const CLAUDECODE_REDIRECT_URIS = [
+  `http://localhost:${CLAUDECODE_CALLBACK_PORT}/callback`,
+  `http://127.0.0.1:${CLAUDECODE_CALLBACK_PORT}/callback`,
+] as const;
+
+export type ClientProfileName = "chatgpt" | "grokbot" | "claudecode";
 
 export interface ClientProfile {
   name: ClientProfileName;
@@ -53,6 +68,14 @@ export const CLIENT_PROFILES: Readonly<Record<ClientProfileName, ClientProfile>>
     readOnly: false,
     redirectUris: GROKBOT_REDIRECT_URIS,
     grants: "read your tasks, evidence, memory and health, start a morning brief, a repository analysis or a bounded draft-PR code change, and cancel tasks. It cannot approve anything.",
+  },
+  claudecode: {
+    name: "claudecode",
+    label: "Claude Code (loopback callback)",
+    scope: OPERATOR_SCOPE,
+    readOnly: false,
+    redirectUris: CLAUDECODE_REDIRECT_URIS,
+    grants: "read your tasks, evidence, memory and health, start a morning brief, a repository analysis or a bounded draft-PR code change, and cancel only the tasks Claude Code itself started. It cannot approve anything.",
   },
 };
 
