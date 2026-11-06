@@ -9,6 +9,8 @@ export type DoorFailure = "NOT_FOUND" | "REJECTED" | "CONFLICT" | "FORBIDDEN" | 
 export type DoorResult = { ok: true; status: number; body: unknown } | { ok: false; failure: DoorFailure; status: number | null };
 
 export const MCP_CHANNEL = "chatgpt-mcp/v1";
+/** Every channel label the MCP may attribute an admission to. The gateway holds the same list (CHANNEL_SOURCES). */
+export const MCP_CHANNELS: readonly string[] = [MCP_CHANNEL, "grokbot-mcp/v1", "claudecode-mcp/v1"];
 
 const TIMEOUT_MS = 15_000;
 const TASK_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -98,7 +100,7 @@ export class HttpOperatorDoor implements OperatorDoor {
 
   admit(input: { recipe: string; objective: string; idempotencyKey: string; channel?: string }): Promise<DoorResult> {
     const channel = input.channel ?? MCP_CHANNEL;
-    if (channel !== MCP_CHANNEL && channel !== "grokbot-mcp/v1") return Promise.resolve({ ok: false, failure: "REJECTED", status: null });
+    if (!MCP_CHANNELS.includes(channel)) return Promise.resolve({ ok: false, failure: "REJECTED", status: null });
     return this.#call("POST", "/v1/tasks", {
       headers: { "idempotency-key": input.idempotencyKey, "x-kj-channel": channel },
       body: { recipe: input.recipe, objective: input.objective },

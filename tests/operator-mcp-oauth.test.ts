@@ -24,7 +24,8 @@ let clock = Date.UTC(2026, 9, 21, 12, 0, 0);
 const now = () => clock;
 
 // ---- fake door: the real door's idempotency contract, and nothing else -------------------------
-const admissions = new Map<string, { taskId: string; body: string }>();
+const admissions = new Map<string, { taskId: string; body: string; source: string }>();
+const cancelled: string[] = [];
 const doorSeen: Array<{ key: string | undefined; channel: string | undefined }> = [];
 function fakeDoor(req: IncomingMessage, res: ServerResponse): void {
   const reply = (status: number, body: unknown) => {
@@ -44,8 +45,17 @@ function fakeDoor(req: IncomingMessage, res: ServerResponse): void {
       const prior = admissions.get(key);
       if (prior && prior.body !== raw) return reply(409, { error: "IDEMPOTENCY_CONFLICT" });
       const taskId = prior?.taskId ?? randomUUID();
-      admissions.set(key, { taskId, body: raw });
+      // The gateway records the channel's fixed source, or its own default when no channel is named.
+      const channel = req.headers["x-kj-channel"] as string | undefined;
+      admissions.set(key, { taskId, body: raw, source: channel ? `kerneljson:channel/${channel}` : "kerneljson:gateway/v1" });
       return reply(202, { taskId, status: "RECEIVED", dispatch: "ACCEPTED" });
+    }
+    if (req.method === "GET" && url.pathname === "/v1/tasks")
+      return reply(200, [...admissions.values()].map((a) => ({ taskId: a.taskId, source: a.source, recipe: null, status: "RECEIVED", objective: "", createdAt: "", updatedAt: "" })));
+    const cancel = /^\/v1\/tasks\/([0-9a-f-]{36})\/cancel$/.exec(url.pathname);
+    if (req.method === "POST" && cancel) {
+      cancelled.push(cancel[1]!);
+      return reply(200, { taskId: cancel[1], status: "CANCELLED" });
     }
     if (req.method === "GET" && url.pathname === "/v1/health") return reply(200, { release: { doorMatchesActive: true } });
     const task = /^\/v1\/tasks\/([0-9a-f-]{36})$/.exec(url.pathname);
@@ -648,6 +658,167 @@ describe("the Grok Bot operator profile", () => {
     expect(() => loadConfig({ ...oauthEnv, MCP_REGISTRATION: "open", MCP_REGISTRATION_PROFILES: "grokbot,claude" }, clock)).toThrow(/MCP_REGISTRATION_PROFILES/);
     expect(loadConfig({ ...oauthEnv, MCP_REGISTRATION: `open-until=${ahead(23 * 3600_000)}`, MCP_REGISTRATION_PROFILES: "grokbot" }, clock).auth).toMatchObject({
       registration: { open: true }, registrationProfiles: ["grokbot"],
+    });
+  });
+});
+
+// ---- Claude Code: Jonny's third operator client, attributed to its own channel ----------------
+describe("the Claude Code operator profile", () => {
+  const CALLBACK = "http://localhost:53682/callback";
+  const CALLBACK_127 = "http://127.0.0.1:53682/callback";
+  const CLAUDE_ALL = [CALLBACK, CALLBACK_127];
+  const GROKBOT_ALL = ["https://www.cursor.com/bot/mcp/oauth/callback", "https://www.cursor.com/agents/mcp/oauth/callback", "https://grok.com/connectors-oauth-exchange-code/", "http://localhost:8787/callback", "http://127.0.0.1:8787/callback"];
+  const env = () => ({ ...oauthEnv, MCP_ALLOWED_REDIRECT_URIS: [CHATGPT, ...GROKBOT_ALL, ...CLAUDE_ALL].join(",") });
+  const logs: Array<Record<string, unknown>> = [];
+  const withHandler = async (e: Record<string, string | undefined>, body: () => Promise<void>) => {
+    const original = handler;
+    const roomy = { limit: 100_000, windowMs: 60_000 };
+    handler = buildHandler(loadConfig(e, clock), { google, now, rateLimits: { perClient: roomy, registerPerClient: roomy, global: roomy }, log: (l) => logs.push(JSON.parse(l)) });
+    try {
+      await body();
+    } finally {
+      handler = original;
+    }
+  };
+  const register = (redirect_uris: string[], client_name = "Claude Code") =>
+    fetch(`${base}/oauth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris, client_name }) });
+  async function connectClaude(redirectUri = CALLBACK) {
+    const reg = await register(CLAUDE_ALL);
+    expect(reg.status).toBe(201);
+    const { client_id, scope } = (await reg.json()) as { client_id: string; scope: string };
+    expect(scope).toBe("kerneljson.operator");
+    const verifier = randomBytes(48).toString("base64url");
+    const q = new URLSearchParams({
+      response_type: "code", client_id, redirect_uri: redirectUri, code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+      code_challenge_method: "S256", state: "s", scope: "kerneljson.operator", resource: `${base}/mcp`,
+    });
+    const toGoogle = await fetch(`${base}/oauth/authorize?${q}`, { redirect: "manual" });
+    const googleState = new URL(toGoogle.headers.get("location")!).searchParams.get("state")!;
+    const back = await fetch(`${base}/oauth/google/callback?${new URLSearchParams({ state: googleState, code: "jonny" })}`, { redirect: "manual" });
+    const consentPage = await back.clone().text();
+    const redirect = await consentAndCode(back);
+    expect(redirect.origin + redirect.pathname).toBe(redirectUri);
+    const tokens = await exchange({ grant_type: "authorization_code", code: redirect.searchParams.get("code")!, redirect_uri: redirectUri, client_id, code_verifier: verifier });
+    expect(tokens.status).toBe(200);
+    return { client_id, consentPage, ...tokens.body } as { client_id: string; consentPage: string; access_token: string; refresh_token: string; scope: string };
+  }
+  async function call(token: string, method: string, params?: unknown) {
+    const r = await fetch(`${base}/mcp`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json", "mcp-protocol-version": "2025-06-18" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, ...(params ? { params } : {}) }),
+    });
+    return { status: r.status, body: r.status === 200 ? ((await r.json()) as { result: Record<string, unknown> }) : null };
+  }
+  const tool = async (token: string, name: string, args: Record<string, unknown>) =>
+    (await call(token, "tools/call", { name, arguments: args })).body!.result as { isError: boolean; structuredContent: Record<string, unknown> };
+
+  it("is refused by the production default allow-list, which names ChatGPT's callback only", async () => {
+    const r = await register(CLAUDE_ALL);
+    expect(r.status).toBe(400);
+    expect(await r.json()).toMatchObject({ error: "invalid_redirect_uri" });
+  });
+
+  it("connects as itself, reads, and admits a task attributed to its own channel", async () => {
+    await withHandler(env(), async () => {
+      const { access_token, consentPage } = await connectClaude();
+      expect(consentPage).toContain("Claude Code (loopback callback)");
+      expect(consentPage).toContain("only the tasks Claude Code itself started");
+      expect((await call(access_token, "tools/list")).body!.result["tools"]).toHaveLength(TOOLS.length);
+      expect((await tool(access_token, "kj_health", {})).isError).toBe(false);
+      const before = doorSeen.length;
+      expect((await tool(access_token, "kj_run_brief", { request_id: "claudecode-authorised-0001" })).isError).toBe(false);
+      expect(doorSeen.length).toBe(before + 1);
+      expect(doorSeen.at(-1)).toMatchObject({ key: "claudecode-mcp:claudecode-authorised-0001", channel: "claudecode-mcp/v1" });
+      expect(admissions.get("claudecode-mcp:claudecode-authorised-0001")!.source).toBe("kerneljson:channel/claudecode-mcp/v1");
+      const calls = logs.filter((l) => l["tool"] !== undefined && l["profile"] === "claudecode");
+      expect(calls.map((l) => `${l["tool"]}:${l["outcome"]}`)).toEqual(["kj_health:OK", "kj_run_brief:OK"]);
+      expect(calls.every((l) => l["client"] === "Claude Code")).toBe(true);
+      expect(logs.some((l) => l["oauth"] === "client_registered" && l["profile"] === "claudecode")).toBe(true);
+      expect(JSON.stringify(logs)).not.toContain(access_token);
+    });
+  });
+
+  it("accepts the 127.0.0.1 spelling Claude Code v2.1.229 sent", async () => {
+    await withHandler(env(), async () => {
+      const { access_token } = await connectClaude(CALLBACK_127);
+      expect((await call(access_token, "ping")).status).toBe(200);
+    });
+  });
+
+  it("cancels the tasks it started, and refuses ChatGPT's, Grok Bot's, an unattributed one and an unknown id", async () => {
+    await withHandler(env(), async () => {
+      const claude = await connectClaude();
+      const chatgpt = await connect();
+      await tool(chatgpt.access_token, "kj_run_brief", { request_id: "chatgpt-owned-0001" });
+      admissions.set("grokbot-mcp:grok-owned-0001", { taskId: randomUUID(), body: "{}", source: "kerneljson:channel/grokbot-mcp/v1" });
+      admissions.set("direct:no-channel-0001", { taskId: randomUUID(), body: "{}", source: "kerneljson:gateway/v1" });
+      await tool(claude.access_token, "kj_run_brief", { request_id: "claudecode-owned-0001" });
+      const mine = admissions.get("claudecode-mcp:claudecode-owned-0001")!.taskId;
+      cancelled.length = 0;
+      expect((await tool(claude.access_token, "kj_cancel_task", { task_id: mine })).isError).toBe(false);
+      expect(cancelled).toEqual([mine]);
+      cancelled.length = 0;
+      for (const id of [admissions.get("mcp:chatgpt-owned-0001")!.taskId, admissions.get("grokbot-mcp:grok-owned-0001")!.taskId, admissions.get("direct:no-channel-0001")!.taskId, randomUUID()]) {
+        const r = await tool(claude.access_token, "kj_cancel_task", { task_id: id });
+        expect(r.isError).toBe(true);
+        expect(r.structuredContent["error"]).toBe("FORBIDDEN");
+      }
+      expect(cancelled).toEqual([]);
+    });
+  });
+
+  it("leaves ChatGPT able to cancel as before, without any ownership lookup", async () => {
+    await withHandler(env(), async () => {
+      const chatgpt = await connect();
+      await tool(chatgpt.access_token, "kj_run_brief", { request_id: "chatgpt-owned-0002" });
+      const id = admissions.get("mcp:chatgpt-owned-0002")!.taskId;
+      cancelled.length = 0;
+      expect((await tool(chatgpt.access_token, "kj_cancel_task", { task_id: id })).isError).toBe(false);
+      expect(cancelled).toEqual([id]);
+    });
+  });
+
+  it("offers no approve, signal or schedule tool, so human approval stays with Jonny", async () => {
+    await withHandler(env(), async () => {
+      const { access_token } = await connectClaude();
+      const names = ((await call(access_token, "tools/list")).body!.result["tools"] as Array<{ name: string }>).map((t) => t.name);
+      expect(names.filter((n) => /approve|signal|schedule|identity/i.test(n))).toEqual([]);
+      const r = (await call(access_token, "tools/call", { name: "kj_approve_task", arguments: { task_id: randomUUID() } })).body!;
+      expect(JSON.stringify(r)).toMatch(/unknown|not found|isError|error/i);
+    });
+  });
+
+  it("refuses a registration that mixes profiles, names another port, or reuses another client's callback", async () => {
+    await withHandler(env(), async () => {
+      expect((await register([CALLBACK, "http://localhost:8787/callback"])).status).toBe(400);
+      expect((await register([CALLBACK, CHATGPT])).status).toBe(400);
+      expect((await register(["http://localhost:53683/callback"])).status).toBe(400);
+      expect((await register(["http://localhost:53682/callback/extra"])).status).toBe(400);
+    });
+  });
+
+  it("is revoked at once by removing its callbacks from the allow-list, without touching ChatGPT or Grok Bot", async () => {
+    let claude = { access_token: "", refresh_token: "", client_id: "" };
+    let chatgpt = { access_token: "", refresh_token: "", client_id: "" };
+    await withHandler(env(), async () => {
+      claude = await connectClaude();
+      chatgpt = await connect();
+    });
+    expect((await call(claude.access_token, "ping")).status).toBe(401);
+    expect((await exchange({ grant_type: "refresh_token", refresh_token: claude.refresh_token, client_id: claude.client_id })).status).toBe(400);
+    expect((await call(chatgpt.access_token, "ping")).status).toBe(200);
+  });
+
+  it("enrols in a bounded window for the claudecode profile only", async () => {
+    const until = new Date(clock + 30 * 60_000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    await withHandler({ ...env(), MCP_REGISTRATION: `open-until=${until}`, MCP_REGISTRATION_PROFILES: "claudecode" }, async () => {
+      expect((await register([CHATGPT], "ChatGPT")).status).toBe(403);
+      expect((await register(GROKBOT_ALL, "Cursor")).status).toBe(403);
+      const { access_token } = await connectClaude();
+      clock += 31 * 60_000;
+      expect((await register(CLAUDE_ALL)).status).toBe(403);
+      expect((await call(access_token, "ping")).status).toBe(200);
     });
   });
 });

@@ -32,7 +32,7 @@ const Key=z.string().regex(/^[A-Za-z0-9._:-]{8,128}$/);
 // KJ-P4A: a channel adapter may attribute its admissions to itself, but ONLY to a label on this
 // allow-list, so `source` on the IntentEnvelope stays a fixed vocabulary and never caller text.
 // The bearer still decides principal and tenant; the header changes nothing about authority.
-export const CHANNEL_SOURCES:Readonly<Record<string,string>>={'telegram/v1':'kerneljson:channel/telegram/v1','chatgpt-mcp/v1':'kerneljson:channel/chatgpt-mcp/v1','grokbot-mcp/v1':'kerneljson:channel/grokbot-mcp/v1'};
+export const CHANNEL_SOURCES:Readonly<Record<string,string>>={'telegram/v1':'kerneljson:channel/telegram/v1','chatgpt-mcp/v1':'kerneljson:channel/chatgpt-mcp/v1','grokbot-mcp/v1':'kerneljson:channel/grokbot-mcp/v1','claudecode-mcp/v1':'kerneljson:channel/claudecode-mcp/v1'};
 export function sourceFor(header:string|string[]|undefined):string{
  if(header===undefined)return 'kerneljson:gateway/v1';
  const source=typeof header==='string'?CHANNEL_SOURCES[header]:undefined;
