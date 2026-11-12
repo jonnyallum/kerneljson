@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { TenantContext } from "../../contracts/src/index.js";
 import { Id } from "../../contracts/src/common.js";
 import { AckInput, ChannelError, PostInput, ReadQuery, type ChannelMessage } from "./contract.js";
+import type { MessageNotifier } from "./notifier.js";
 import { redactSecrets } from "./redact.js";
 import type { AckRecord, ChannelStore, DeliveryRecord, RoomRecipient, ThreadSummary } from "./store.js";
 
@@ -28,6 +29,7 @@ export class ChannelService {
   constructor(
     private readonly store: ChannelStore,
     private readonly registry: AgentRegistry,
+    private readonly notifier?: MessageNotifier,
   ) {}
 
   private async who(raw: unknown) {
@@ -57,7 +59,7 @@ export class ChannelService {
     const recipients: RoomRecipient[] = members
       .filter((member) => member.principalId !== context.principal.id)
       .map((member) => ({ principalId: member.principalId, handle: member.handle }));
-    return this.store.append(
+    const result = await this.store.append(
       context.tenantId,
       {
         kind: input.kind,
@@ -72,6 +74,9 @@ export class ChannelService {
       },
       recipients,
     );
+    // Best effort and never awaited: a wake failure must not block or fail a post.
+    if (this.notifier && !result.duplicate) void this.notifier.notify(result.message).catch(() => undefined);
+    return result;
   }
 
   async read(raw: unknown, rawQuery: unknown) {

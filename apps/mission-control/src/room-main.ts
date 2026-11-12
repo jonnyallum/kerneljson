@@ -10,6 +10,9 @@ import {
   PostgresChannelStore,
   type AgentRegistry,
   type ChannelStore,
+  type MessageNotifier,
+  type WakeTarget,
+  WebhookWakeNotifier,
 } from "../../../packages/agent-channel/src/index.js";
 import { createChannelHandler } from "../../../packages/agent-channel/src/http.js";
 import { ChannelService } from "../../../packages/agent-channel/src/service.js";
@@ -121,6 +124,42 @@ export function loadRoomConfig(env: Record<string, string | undefined>): RoomCon
   return { databaseUrl, origin, port, releaseId, members };
 }
 
+const WakeSpec = z.strictObject({
+  handle: z.string().regex(/^[a-z0-9][a-z0-9-]{0,40}$/),
+  urlEnv: z.string().regex(/^KJ_ROOM_WAKE_[A-Z0-9_]+_URL$/),
+  keyEnv: z.string().regex(/^KJ_ROOM_WAKE_[A-Z0-9_]+_KEY$/),
+});
+
+/**
+ * Optional wake targets. ROOM_WAKE_TARGETS names env variables, never values. A target whose URL or key
+ * is unset, too short, or not https is skipped: waking is optional and must never stop the room starting.
+ * An unparseable list is an error, so a typo cannot silently disable waking.
+ */
+export function loadWakeTargets(env: Record<string, string | undefined>): { targets: WakeTarget[]; skipped: string[] } {
+  const raw = env["ROOM_WAKE_TARGETS"];
+  if (raw === undefined || raw === "") return { targets: [], skipped: [] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new RoomConfigError("ROOM_WAKE_TARGETS_INVALID");
+  }
+  const specs = z.array(WakeSpec).safeParse(parsed);
+  if (!specs.success) throw new RoomConfigError("ROOM_WAKE_TARGETS_INVALID");
+  const targets: WakeTarget[] = [];
+  const skipped: string[] = [];
+  for (const spec of specs.data) {
+    const url = env[spec.urlEnv];
+    const key = env[spec.keyEnv];
+    if (!url || !key || key.length < MIN_ROOM_BEARER_LENGTH || !url.startsWith("https://")) {
+      skipped.push(spec.handle);
+      continue;
+    }
+    targets.push({ handle: spec.handle, url, key });
+  }
+  return { targets, skipped };
+}
+
 export function createRoomAuthenticator(members: readonly RoomMemberConfig[]) {
   const table = members.map((member) => ({
     digest: createHash("sha256").update(member.bearer, "utf8").digest(),
@@ -161,8 +200,9 @@ export function buildRoomHandler(options: {
   origin: string;
   authenticate: (headers: IncomingHttpHeaders) => Promise<TenantContext>;
   taskStore?: MissionControlStore;
+  notifier?: MessageNotifier;
 }) {
-  const service = new ChannelService(options.store, options.registry);
+  const service = new ChannelService(options.store, options.registry, options.notifier);
   const channel = createChannelHandler({ service, authenticate: options.authenticate });
   const pages = createMissionControl({
     store: options.taskStore ?? new ClosedTaskStore(ledgerDeniedPool()),
@@ -209,12 +249,18 @@ export async function startRoom(config: RoomConfig): Promise<{ server: Server; p
     if (error instanceof RoomConfigError) throw error;
     throw new RoomConfigError("DATABASE_UNREACHABLE");
   }
+  const wake = loadWakeTargets(process.env);
+  const notifier = wake.targets.length
+    ? new WebhookWakeNotifier(wake.targets, fetch, (e) => console.log(`[agent-room] wake ${e.handle} seq=${e.seq} ${e.outcome}`))
+    : undefined;
+  console.log(`[agent-room] wake targets=${wake.targets.length} skipped=${wake.skipped.join(",") || "none"}`);
   const handler = buildRoomHandler({
     store: new PostgresChannelStore(pool),
     registry: new PostgresAgentRegistry(pool),
     origin: config.origin,
     authenticate: createRoomAuthenticator(config.members),
     taskStore: new ClosedTaskStore(ledgerDeniedPool()),
+    ...(notifier ? { notifier } : {}),
   });
   const server = createServer((req, res) => {
     void handler(req, res);
