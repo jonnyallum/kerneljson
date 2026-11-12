@@ -128,6 +128,7 @@ const WakeSpec = z.strictObject({
   handle: z.string().regex(/^[a-z0-9][a-z0-9-]{0,40}$/),
   urlEnv: z.string().regex(/^KJ_ROOM_WAKE_[A-Z0-9_]+_URL$/),
   keyEnv: z.string().regex(/^KJ_ROOM_WAKE_[A-Z0-9_]+_KEY$/),
+  auth: z.enum(["bearer", "x-room-wake-key"]).default("bearer"),
 });
 
 /**
@@ -155,7 +156,7 @@ export function loadWakeTargets(env: Record<string, string | undefined>): { targ
       skipped.push(spec.handle);
       continue;
     }
-    targets.push({ handle: spec.handle, url, key });
+    targets.push({ handle: spec.handle, url, key, auth: spec.auth });
   }
   return { targets, skipped };
 }

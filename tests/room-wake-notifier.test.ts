@@ -50,12 +50,26 @@ describe("webhook wake notifier", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(grok.url);
-    expect((init.headers as Record<string, string>)["x-room-wake-key"]).toBe(KEY);
+    const headers = init.headers as Record<string, string>;
+    expect(headers["authorization"]).toBe(`Bearer ${KEY}`);
+    expect(headers["x-room-wake-key"]).toBeUndefined();
     const sent = JSON.parse(String(init.body));
     expect(Object.keys(sent).sort()).toEqual(["handle", "id", "kind", "seq", "threadId"]);
     expect(String(init.body)).not.toContain("secret-looking");
     expect(init.redirect).toBe("error");
     expect(JSON.stringify(log.mock.calls)).not.toContain(KEY);
+  });
+
+  it("sends only x-room-wake-key when that scheme is chosen", async () => {
+    const fetchImpl = vi.fn(async () => new Response("ok", { status: 200 }));
+    const notifier = new WebhookWakeNotifier([{ ...grok, auth: "x-room-wake-key" }], fetchImpl as never);
+    const service = new ChannelService(new InMemoryChannelStore(), registry, notifier);
+    await service.post(claude, { kind: "NOTE", body: "@grok hi", idempotencyKey: `k-${randomUUID()}` });
+    await flush();
+    const init = (fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["x-room-wake-key"]).toBe(KEY);
+    expect(headers["authorization"]).toBeUndefined();
   });
 
   it("a failing endpoint never blocks or fails the post", async () => {
@@ -90,6 +104,11 @@ describe("wake target config", () => {
   it("is off when unset and loads a complete target", () => {
     expect(loadWakeTargets({}).targets).toEqual([]);
     expect(loadWakeTargets(env).targets).toHaveLength(1);
+    expect(loadWakeTargets(env).targets[0]?.auth).toBe("bearer");
+  });
+  it("rejects an unknown auth scheme", () => {
+    const bad = JSON.stringify([{ handle: "grok", urlEnv: "KJ_ROOM_WAKE_GROK_URL", keyEnv: "KJ_ROOM_WAKE_GROK_KEY", auth: "basic" }]);
+    expect(() => loadWakeTargets({ ...env, ROOM_WAKE_TARGETS: bad })).toThrow(RoomConfigError);
   });
   it("skips an incomplete, short-key or non-https target without failing", () => {
     expect(loadWakeTargets({ ROOM_WAKE_TARGETS: env.ROOM_WAKE_TARGETS }).skipped).toEqual(["grok"]);

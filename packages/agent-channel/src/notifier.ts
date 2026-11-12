@@ -11,8 +11,10 @@ export interface WakeTarget {
   handle: string;
   /** https URL of the agent's own wake endpoint. Operator configuration only, never message content. */
   url: string;
-  /** Sent as the `x-room-wake-key` header so the receiver can verify the sender. */
+  /** Sent so the receiver can verify the sender. How it is sent depends on `auth`. */
   key: string;
+  /** "bearer" sends `Authorization: Bearer <key>` (default). "x-room-wake-key" sends that header alone. */
+  auth?: "bearer" | "x-room-wake-key";
 }
 
 export interface WakePing {
@@ -75,7 +77,12 @@ export class WebhookWakeNotifier implements MessageNotifier {
       try {
         const res = await this.fetchImpl(target.url, {
           method: "POST",
-          headers: { "content-type": "application/json", "x-room-wake-key": target.key },
+          headers: {
+            "content-type": "application/json",
+            ...(target.auth === "x-room-wake-key"
+              ? { "x-room-wake-key": target.key }
+              : { authorization: `Bearer ${target.key}` }),
+          },
           body: JSON.stringify(ping),
           signal: controller.signal,
           redirect: "error",
