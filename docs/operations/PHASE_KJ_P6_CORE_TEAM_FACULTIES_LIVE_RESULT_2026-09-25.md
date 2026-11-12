@@ -20,8 +20,8 @@ code-level release-provenance recovery, and a genuine health-model correction
   merged **`76560548613e368723320fe647d735312af94667`**. Grok hostile review:
   **APPROVE** (final head `6b8e624f5dc7fffe1ac95d1498f87d976a82e2c4`, unchanged
   at merge).
-- Target: `kerneljson-prod-01`, GCP project `project-c407f628-c71c-45fa-994`,
-  zone `europe-west2-b`; database `banqdzddfganzfhckdps`. No access to the old
+- Target: `kerneljson-prod-01`, GCP project `<gcp-project-kj>`,
+  zone `europe-west2-b`; database `<supabase-ref-kernel>`. No access to the old
   estate VM or Shared Brain was used.
 - **Deployed release (worker + door, in lockstep): `76560548613e368723320fe647d735312af94667`.**
 - **Epoch: 9 → 10 → 11.** Epoch 10 activated the KJ-P6 migration/deploy

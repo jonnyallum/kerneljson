@@ -127,12 +127,12 @@ change window. This change does not start it.
 
 Evidence for it:
 
-- OBSERVED 2026-11-04 12:00 UTC: `kj-mcp.jonnyai.co.uk` and `n8n.jonnyai.co.uk` both resolve to 34.105.219.103, so one
+- OBSERVED 2026-11-04 12:00 UTC: `kj-mcp.jonnyai.co.uk` and `n8n.jonnyai.co.uk` both resolve to <kj-host-ip>, so one
   live host carries both. `STATE.yaml` (22/10) names this host `kerneljson-prod-01`, project
-  `project-c407f628-c71c-45fa-994`, europe-west2-b.
+  `<gcp-project-kj>`, europe-west2-b.
 - OBSERVED 4 Nov 2026: there is no explicit DNS record for `kj-room.jonnyai.co.uk`. The name resolves through the
-  `jonnyai.co.uk` wildcard to Vercel (`216.150.1.193` and `216.150.16.1`). `kj-mcp.jonnyai.co.uk` resolves to
-  `34.105.219.103`. The room hostname is proposed and needs an A record to that address before activation.
+  `jonnyai.co.uk` wildcard to Vercel (`<vercel-ip>` and `<vercel-ip>`). `kj-mcp.jonnyai.co.uk` resolves to
+  `<kj-host-ip>`. The room hostname is proposed and needs an A record to that address before activation.
 - The database credential stays inside that host. Hosting on Vercel would put it in a third party's environment.
 
 Vercel alternative, evidence gathered read-only:

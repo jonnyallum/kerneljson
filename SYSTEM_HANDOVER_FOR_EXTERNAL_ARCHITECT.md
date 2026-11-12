@@ -19,7 +19,7 @@
 
 1. **LIVE estate:** AgentHub, OpenClaw, the Conductor, jai-os, Orchestra/persona skills, Mission Control, n8n and the Shared Brain. This is the current operating estate on one GCP VM, with laptop/desktop repositories and DSH as development or interactive surfaces.
 2. **new-system clean room:** the registry-v2/new-system design and skill/MCP foundation intended to replace jai-os and the Orchestra incrementally. Its 224-skill registry is built, but the full Agent Spawner runtime remains described as a critical gap. A `spawner_run` Conductor tool exists and calls port `8766`, but that does not by itself prove the complete runtime is deployed.
-3. **KernelJSON:** a separate project, in Supabase project `banqdzddfganzfhckdps`, using Restate and its own task/evidence model. It is in phase 15 and is **not yet the live estate orchestrator or control plane**.
+3. **KernelJSON:** a separate project, in Supabase project `<supabase-ref-kernel>`, using Restate and its own task/evidence model. It is in phase 15 and is **not yet the live estate orchestrator or control plane**.
 
 **DOCUMENTED:** The intended new-system direction is a thin, ephemeral worker model: skills are the primitive; a dispatcher assembles only the skills and tools needed for a task; execution is sandboxed; evidence is verified; a learning is written back; the worker retires. The supplied evidence does not establish that the complete runtime exists in production.
 
@@ -27,9 +27,9 @@
 
 **DOCUMENTED (NOTES_FROM_INDEX.md, PARTIAL_FROM_EXECUTORS.md):** The live estate is described as one GCP VM:
 
-- Instance: `instance-20260717-082134`
-- Public address: `136.112.138.225`
-- GCP project: `project-d58d4a53-a63b-45a0-818`
+- Instance: `<estate-vm-name>`
+- Public address: `<estate-vm-ip>`
+- GCP project: `<gcp-project-estate>`
 
 **DOCUMENTED service and port inventory:**
 
@@ -65,7 +65,7 @@
                  +--------------+---------------+
                                 |
                        Shared Brain Supabase
-                       ref lkwydqtfbdjhxaarelaz
+                       ref <supabase-ref-brain>
                                 |
                               n8n :5678
 ```
@@ -124,7 +124,7 @@ OpenClaw / Claude Code / local MCP client
 
 ## 4. Shared Brain and Mission Control data boundary
 
-**DOCUMENTED / IMPLEMENTED:** The estate's durable memory source of truth is the Shared Brain Supabase project ref `lkwydqtfbdjhxaarelaz`, also named in `memory-README.md` and `shared-brain-SKILL.md`. The supplied Conductor code explicitly queries or writes these Brain tables:
+**DOCUMENTED / IMPLEMENTED:** The estate's durable memory source of truth is the Shared Brain Supabase project ref `<supabase-ref-brain>`, also named in `memory-README.md` and `shared-brain-SKILL.md`. The supplied Conductor code explicitly queries or writes these Brain tables:
 
 - `projects`
 - `agents`
@@ -153,7 +153,7 @@ OpenClaw / Claude Code / local MCP client
 
 ```text
                          Shared Brain
-              Supabase ref lkwydqtfbdjhxaarelaz
+              Supabase ref <supabase-ref-brain>
                                 |
        +------------------------+------------------------+
        |                        |                        |
@@ -258,7 +258,7 @@ The live mount is described as Windows junctions from `.dsh/skills/` to `registr
 
 ## 8. KernelJSON, deliberately separate
 
-**IMPLEMENTED / DOCUMENTED in `kernel-STATE.yaml`:** KernelJSON is repository `jonnyallum/kerneljson`, branch `codex/phase-15`, version `0.0.1`, state `phase_15_in_progress`, and Supabase ref `banqdzddfganzfhckdps`. Its durable execution provider is Restate. It has a DeepSeek adapter marked live-verified, deterministic capability registry and durable receipts, and a list of implemented phases covering task lifecycle, model receipts, capability invocation, default-deny policy, human approvals, evidence verification, memory provenance, Mission Control controls and bounded scheduling.
+**IMPLEMENTED / DOCUMENTED in `kernel-STATE.yaml`:** KernelJSON is repository `jonnyallum/kerneljson`, branch `codex/phase-15`, version `0.0.1`, state `phase_15_in_progress`, and Supabase ref `<supabase-ref-kernel>`. Its durable execution provider is Restate. It has a DeepSeek adapter marked live-verified, deterministic capability registry and durable receipts, and a list of implemented phases covering task lifecycle, model receipts, capability invocation, default-deny policy, human approvals, evidence verification, memory provenance, Mission Control controls and bounded scheduling.
 
 **IMPLEMENTED in supplied KernelJSON SQL/design:**
 
@@ -276,8 +276,8 @@ The live mount is described as Windows junctions from `.dsh/skills/` to `registr
  LIVE estate                         KernelJSON project
  ----------------                    ------------------
  OpenClaw + Conductor                Restate workflow
- jai-os + Orchestra                  Supabase banqdzddfganzfhckdps
- Brain lkwydqtfbdjhxaarelaz           tasks/events/evidence/approvals
+ jai-os + Orchestra                  Supabase <supabase-ref-kernel>
+ Brain <supabase-ref-brain>           tasks/events/evidence/approvals
  no central durable task API proven   phase 15, incomplete
               X  not the same control plane  X
 ```
@@ -394,7 +394,7 @@ Brief: outcome + acceptance + deadline + constraints
 2. **UNVERIFIED:** Which exact PM2, Docker and systemd processes are running on the GCP VM now?
 3. **UNVERIFIED:** Is `:8790` currently serving the supplied `server_http.py`, another build, or a reverse-proxied variant?
 4. **UNVERIFIED:** Which Caddy routes, hostnames and TLS policies map to `:8790`, `:8765`, `:3200`, `:3100` and `:5678`?
-5. **UNVERIFIED:** Are the `mc_foundation.sql` and `mc_kanban.sql` migrations applied to Brain ref `lkwydqtfbdjhxaarelaz`? The foundation file says intentionally unapplied.
+5. **UNVERIFIED:** Are the `mc_foundation.sql` and `mc_kanban.sql` migrations applied to Brain ref `<supabase-ref-brain>`? The foundation file says intentionally unapplied.
 6. **UNVERIFIED:** Are the Brain tables `projects`, `agents`, `learnings`, `chatroom` and `actions_open` current, views or tables, and what are their exact RLS policies?
 7. **UNVERIFIED:** Is the Brain learning count 169, 181 or another current number? The evidence mixes registry/Brain counts and historical snapshots.
 8. **UNVERIFIED:** What is the exact canonical MCP count? The documents say approximately 42 or 42-51; `newsys-mcp.yaml` separates roughly 28 server rows from 20 candidates, while `mcp.yaml` is runtime wiring.

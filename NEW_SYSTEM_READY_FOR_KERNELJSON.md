@@ -13,7 +13,7 @@ where it rests on the external-architect handover it is DOCUMENTED; open items a
 
 ## 1. Runtime estate — actual services and ports
 
-One GCP VM `instance-20260717-082134` (`136.112.138.225`, project `project-d58d4a53-a63b-45a0-818`), Caddy the TLS boundary.
+One GCP VM `<estate-vm-name>` (`<estate-vm-ip>`, project `<gcp-project-estate>`), Caddy the TLS boundary.
 
 | Service | Port | Surface | Status |
 |---|---:|---|---|
@@ -49,7 +49,7 @@ One GCP VM `instance-20260717-082134` (`136.112.138.225`, project `project-d58d4
 
 ## 5. Shared Brain — current schema and interfaces
 
-**DOCUMENTED:** Supabase ref `lkwydqtfbdjhxaarelaz`. Estate tables the Conductor reads/writes: `projects`, `agents`, `learnings`, `chatroom`, `actions_open` (explicit-only ledger view; `state='done'` requires ≥20 chars evidence). Learnings inserted `verified=false`; promotion is a separate review. Mission Control `mc_*` tables (foundation + kanban) are **UNVERIFIED as applied** (`mc_foundation.sql` says intentionally unapplied). **BOUNDARY (Charter §14):** Shared Brain is durable *cognitive* memory, **not** the task-execution DB — KernelJSON uses its **own** Supabase ref `banqdzddfganzfhckdps`; do not merge them.
+**DOCUMENTED:** Supabase ref `<supabase-ref-brain>`. Estate tables the Conductor reads/writes: `projects`, `agents`, `learnings`, `chatroom`, `actions_open` (explicit-only ledger view; `state='done'` requires ≥20 chars evidence). Learnings inserted `verified=false`; promotion is a separate review. Mission Control `mc_*` tables (foundation + kanban) are **UNVERIFIED as applied** (`mc_foundation.sql` says intentionally unapplied). **BOUNDARY (Charter §14):** Shared Brain is durable *cognitive* memory, **not** the task-execution DB — KernelJSON uses its **own** Supabase ref `<supabase-ref-kernel>`; do not merge them.
 
 ## 6. Agent Hub — verified Conductor interfaces
 

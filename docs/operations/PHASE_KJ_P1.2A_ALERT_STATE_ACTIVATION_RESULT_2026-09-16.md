@@ -15,11 +15,11 @@ the KernelJSON Production Operations Hardening programme.
 - Canonical `main` = `1d44d4486f1b5005f6dd0058ad591c9df16d4fe0` (PR #28, KJ-P1.2B,
   squash-merged) — verified as `origin/main`'s tip before proceeding.
 - Target confirmed as canonical KernelJSON production Supabase project
-  (`banqdzddfganzfhckdps`) — corroborated by this repo's own
+  (`<supabase-ref-kernel>`) — corroborated by this repo's own
   `supabase/.temp/linked-project.json` link and multiple existing production
   runbooks, explicitly distinct from the Shared Brain project
-  (`lkwydqtfbdjhxaarelaz`), a different product. Note: this session's Supabase
-  MCP connector has no scope on `banqdzddfganzfhckdps` (only the Shared Brain
+  (`<supabase-ref-brain>`), a different product. Note: this session's Supabase
+  MCP connector has no scope on `<supabase-ref-kernel>` (only the Shared Brain
   and an inactive project are visible to it) — consistent with the same
   connector-scope limit recorded during the original scheduler-migration
   runbook (`docs/production/phase-s1-canary/GATE2_OPTION_A_EXECUTION_PACKAGE_2026-09-11.md`).

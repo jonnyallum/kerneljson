@@ -34,12 +34,12 @@ construction, not an assumption.
 
 ## Target identity (fixed for this runbook — verify, do not trust)
 
-- Production Supabase project: `banqdzddfganzfhckdps` ("kerneljson", per this
+- Production Supabase project: `<supabase-ref-kernel>` ("kerneljson", per this
   repo's own `supabase/.temp/linked-project.json` link and every prior
-  production runbook in this repo — never `lkwydqtfbdjhxaarelaz`, the Shared
+  production runbook in this repo — never `<supabase-ref-brain>`, the Shared
   Brain, a different product).
 - VM: `kerneljson-prod-01`, zone `europe-west2-b`, project
-  `project-c407f628-c71c-45fa-994`, account `kerneljson@gmail.com`,
+  `<gcp-project-kj>`, account `<kj-operator-email>`,
   `--tunnel-through-iap`.
 - Canonical schedule: `acab9ebc-dc92-5c3a-90d6-4d6f9ddb0a1b` — identity/version
   must not change in this window.
@@ -60,13 +60,13 @@ no value is ever printed.
 
 ```
 gcloud compute ssh kerneljson-prod-01 --zone=europe-west2-b \
-  --project=project-c407f628-c71c-45fa-994 --account=kerneljson@gmail.com \
+  --project=<gcp-project-kj> --account=<kj-operator-email> \
   --tunnel-through-iap --command="cd /opt/kerneljson/app && git remote -v"
 ```
 - CHECK: remote is `https://github.com/jonnyallum/kerneljson.git`.
 - CHECK (read-only, via a script executed inside the worker container using its
   own `DATABASE_URL`): `current_database()`/table ownership matches
-  `banqdzddfganzfhckdps` conventions already established this programme (same
+  `<supabase-ref-kernel>` conventions already established this programme (same
   read used for every prior production check).
 - STOP if the target does not match exactly.
 

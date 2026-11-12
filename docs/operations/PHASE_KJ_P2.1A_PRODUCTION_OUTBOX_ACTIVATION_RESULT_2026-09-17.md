@@ -29,7 +29,7 @@ happened and both fully remediated — see "Deviations" below.
 ## Pre-flight (read-only, before any change)
 
 - Target confirmed: `kerneljson-prod-01`, `europe-west2-b`,
-  `project-c407f628-c71c-45fa-994`, remote `jonnyallum/kerneljson.git`, tree
+  `<gcp-project-kj>`, remote `jonnyallum/kerneljson.git`, tree
   clean.
 - HEAD `49a93bb9a0a3b2c3f77a4ed778229704e3e038e7` — matched the "last known
   deployed release" recorded in the runbook exactly; no drift.

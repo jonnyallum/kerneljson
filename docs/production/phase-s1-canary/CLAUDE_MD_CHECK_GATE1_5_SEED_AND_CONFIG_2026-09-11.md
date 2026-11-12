@@ -13,7 +13,7 @@ policy / lifecycle** only. No `recipe`, `approved_digest`, or `objective` column
 (recipe + approved digest) and the **verifier config** (approved digest), not in the schedule.
 
 ## Read-only production identity finding (Step 1)
-On the authorised KernelJSON DB `banqdzddfganzfhckdps` (`db.banqdzddfganzfhckdps.supabase.co`,
+On the authorised KernelJSON DB `<supabase-ref-kernel>` (`db.<supabase-ref-kernel>.supabase.co`,
 `postgres`), READ-ONLY: exactly **one principal** `72db0114-839e-8ca9-a2fa-462b561a936b` of kind
 **SERVICE** (not HUMAN); one tenant `5f970749-7507-894b-a2e4-872ce20a94b7` ("estate"); one
 membership (that principal, role "operator"); **`human_principal_count = 0`**.

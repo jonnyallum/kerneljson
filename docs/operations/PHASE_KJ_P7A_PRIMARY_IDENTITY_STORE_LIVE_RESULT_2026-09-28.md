@@ -15,7 +15,7 @@ P7B live qualification complete and does not unfreeze C/D (erratum 29/09/2026, A
 | PR #46 (P7A store) | sealed head `e120c711c10b0017b71b06130ac9a1fb6a6d4418` (Grok final hostile seal: APPROVE), squash-merged as `358d04d116501f90b79ef9a39be83f3ccd244ad2` by `jonnyallum` on 28/09/2026 09:10:50 UTC. The squash was accepted on **tree identity**: both `18b714f912d86ed802f23c480860f078a4eb455f`, empty diff. Merge-SHA CI run `36401851769` passed |
 | PR #47 (Supabase ACL remediation) | sealed head `5dd22797d8f8edadd8dd474059ca37308d34471d` (Grok: KJ-P7A SUPABASE ACL DELTA v2 — APPROVE), merge commit `4127361860700085453f86aa09adfa7bf81ef7d3` (parents `358d04d` + `5dd2279`; tree `cbdac5533c569b7386b5c55b08091a4b29d3f1d6` identical to the sealed head). Merge-SHA CI run `36469628895` passed: 57/57 identity mutations KILLED, 1,643 passed / 0 failed / 62 skipped |
 | Production release | **`4127361860700085453f86aa09adfa7bf81ef7d3`**, worker and door in lockstep, **epoch 12** |
-| Target | `kerneljson-prod-01`, project `project-c407f628-c71c-45fa-994`, `europe-west2-b`; database `banqdzddfganzfhckdps`. The old estate VM was not used |
+| Target | `kerneljson-prod-01`, project `<gcp-project-kj>`, `europe-west2-b`; database `<supabase-ref-kernel>`. The old estate VM was not used |
 
 ## First activation window — aborted before COMMIT (and why the rollback worked)
 

@@ -27,8 +27,8 @@ cross-provider proofs, with Class C/D still frozen.
 - Door image: `sha256:7450971fbc1292755701de842bf108613152468e6619af2a2853b001dcd7b553`.
 - Prior release: `4127361860700085453f86aa09adfa7bf81ef7d3`, epoch 12.
 
-Target was only `kerneljson-prod-01`, project `project-c407f628-c71c-45fa-994`,
-zone `europe-west2-b`, Supabase project `banqdzddfganzfhckdps`.
+Target was only `kerneljson-prod-01`, project `<gcp-project-kj>`,
+zone `europe-west2-b`, Supabase project `<supabase-ref-kernel>`.
 
 ## Migration and atomic activation
 

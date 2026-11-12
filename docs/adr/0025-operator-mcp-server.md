@@ -121,7 +121,7 @@ safety boundary: at worst a hijacked chat can start a read-only analysis or canc
 
 1. Hostname: `kj-mcp.jonnyai.co.uk`.
 2. Permitted identity: `jonnyallum@gmail.com`, the human account Jonny signs into ChatGPT with, protected by 2-step
-   verification and matched by its Google subject id. `kerneljson@gmail.com` owns the GCP project and stays a separate,
+   verification and matched by its Google subject id. `<kj-operator-email>` owns the GCP project and stays a separate,
    infrastructure-only identity, so compromising one does not hand over the other.
 3. `kj_cancel_task` is in phase 1.
 4. Phase 2 sizing is decided with Mission #2's own ADR, against a measured build workload.

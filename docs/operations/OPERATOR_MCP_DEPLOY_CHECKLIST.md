@@ -13,7 +13,7 @@ ADR-0025. Background, identity and security review: [OPERATOR_MCP.md](OPERATOR_M
 - Every step names its expected result. Anything else means stop and roll back from that step.
 
 ```
-Z="--zone=europe-west2-b --project=project-c407f628-c71c-45fa-994 --account=kerneljson@gmail.com --tunnel-through-iap"
+Z="--zone=europe-west2-b --project=<gcp-project-kj> --account=<kj-operator-email> --tunnel-through-iap"
 VM=kerneljson-prod-01
 SHA=<PR #60 merge commit, 40 hex>     SHORT=${SHA:0:7}
 TENANT=<KJ_ADMISSION_TENANT_ID in the door env; public>
@@ -28,7 +28,7 @@ SC="python C:\Users\jonny\Desktop\new-system\AgentHub\scripts\secretctl.py"
 | # | Do | Expect |
 |---|---|---|
 | P1 | chatgpt.com/plugins, press **+** | **Add custom MCP server** is offered. If not, stop: this account cannot use the server. On Plus or Pro expect the read tools only (OPERATOR_MCP.md, "Which ChatGPT plans") |
-| P2 | One-time setup in OPERATOR_MCP.md (Google client, DNS, secrets) | `$SC check kerneljson/MCP_GOOGLE_CLIENT_SECRET kerneljson/MCP_TOKEN_SIGNING_KEY kerneljson/KJ_MCP_BEARER` reports all three, the last two at length 64. `nslookup kj-mcp.jonnyai.co.uk` gives `34.105.219.103` |
+| P2 | One-time setup in OPERATOR_MCP.md (Google client, DNS, secrets) | `$SC check kerneljson/MCP_GOOGLE_CLIENT_SECRET kerneljson/MCP_TOKEN_SIGNING_KEY kerneljson/KJ_MCP_BEARER` reports all three, the last two at length 64. `nslookup kj-mcp.jonnyai.co.uk` gives `<kj-host-ip>` |
 | P3 | Merge PR #60 | `gh run list --commit $SHA` shows `validate` and `identity-cognition-mutations` succeeded |
 | P4 | Claude prepares `/tmp/kjwin/mcp-prep.sh`, `mcp-deploy.sh` and `activate60.js` from the 21/10 `07eac9f` scripts, with prior epoch 15 and a new request UUID. Jonny reads them | Scripts on the VM. Diff against the `07eac9f` versions is only the SHA, the epoch, the evidence text and the door env keys below |
 | P5 | Secrets to the VM, laptop side: `$SC get kerneljson/KJ_MCP_BEARER --out kjmcp.bearer --expect-len 64`, then `$SC env kerneljson --out mcp.secrets.env --only MCP_GOOGLE_CLIENT_SECRET,MCP_TOKEN_SIGNING_KEY,KJ_MCP_BEARER`, then `gcloud compute scp kjmcp.bearer mcp.secrets.env ${VM}:/tmp/kjwin/ $Z`, then `$SC shred kjmcp.bearer mcp.secrets.env` | Lengths printed, never values. Both files in `/tmp/kjwin`, none left on the laptop |

@@ -10,7 +10,7 @@ The sections below were written before the room was started and still read as a 
 
 Read-only checks on 4 November 2026. No password, full username, or connection string is recorded here. The room does not connect with the door's URL.
 
-The live admission door's `DATABASE_URL` uses pooler host `aws-0-eu-west-2.pooler.supabase.com`. The pooler username ends with the Supabase project ref `banqdzddfganzfhckdps`. The database name is `postgres`. That is the database behind the identity inventory in ADR-0026 Amendment B: tenant `estate` has three principals, all `ACTIVE` operators, one `HUMAN` and two `SERVICE`, and `principals` has no handle column.
+The live admission door's `DATABASE_URL` uses pooler host `aws-0-eu-west-2.pooler.supabase.com`. The pooler username ends with the Supabase project ref `<supabase-ref-kernel>`. The database name is `postgres`. That is the database behind the identity inventory in ADR-0026 Amendment B: tenant `estate` has three principals, all `ACTIVE` operators, one `HUMAN` and two `SERVICE`, and `principals` has no handle column.
 
 The same project connects as role `postgres`. That role has `rolcreaterole = true` and `rolsuper = false`, on PostgreSQL 17.6. `public.principals`, `public.tenants` and `public.tenant_memberships` are owned by `postgres`. No `agent_channel` role exists yet, no `agent_room_app` role exists yet, and no room schema is live. The owner named below is this `postgres` role. It can create the two room roles because it has `CREATEROLE`. It does not need superuser, and the proposal does not ask for `SUPERUSER`, `BYPASSRLS`, `CREATEDB`, `CREATEROLE` or `REPLICATION` on either new role. The proposal stays in `docs/proposals/agent-channel/` and is not copied into `supabase/migrations/` until the identity design and full qualification are settled.
 
@@ -38,7 +38,7 @@ Prepared artefacts, not applied:
 - `infrastructure/docker/agent-room.compose.yaml`
 - `infrastructure/caddy/kj-room.Caddyfile` (a site block to add to `/opt/n8n/Caddyfile`)
 
-Recommended name: `kj-room.jonnyai.co.uk`. The hostname is proposed. On 4 Nov 2026 there is no explicit `kj-room` DNS record. The name resolves through the `jonnyai.co.uk` wildcard to Vercel (`216.150.1.193` and `216.150.16.1`). `kj-mcp.jonnyai.co.uk` resolves to `34.105.219.103`. Activation needs an A record for `kj-room.jonnyai.co.uk` to `34.105.219.103` before the site is used. The container publishes no host port. Caddy, already on the `kj-mcp-edge` network, proxies to `kerneljson-agent-room:8092`.
+Recommended name: `kj-room.jonnyai.co.uk`. The hostname is proposed. On 4 Nov 2026 there is no explicit `kj-room` DNS record. The name resolves through the `jonnyai.co.uk` wildcard to Vercel (`<vercel-ip>` and `<vercel-ip>`). `kj-mcp.jonnyai.co.uk` resolves to `<kj-host-ip>`. Activation needs an A record for `kj-room.jonnyai.co.uk` to `<kj-host-ip>` before the site is used. The container publishes no host port. Caddy, already on the `kj-mcp-edge` network, proxies to `kerneljson-agent-room:8092`.
 
 ## Files on the VM
 
@@ -147,7 +147,7 @@ docker compose \
   up -d
 ```
 
-Add the site block in `infrastructure/caddy/kj-room.Caddyfile` to `/opt/n8n/Caddyfile`, then reload Caddy the same way the MCP site was reloaded (do not print the file if it has been edited to contain anything secret; this block does not). Before activation, create an explicit A record for `kj-room.jonnyai.co.uk` to `34.105.219.103`, the address `kj-mcp.jonnyai.co.uk` already uses. Until that record exists, the name follows the `jonnyai.co.uk` wildcard to Vercel (`216.150.1.193` and `216.150.16.1`).
+Add the site block in `infrastructure/caddy/kj-room.Caddyfile` to `/opt/n8n/Caddyfile`, then reload Caddy the same way the MCP site was reloaded (do not print the file if it has been edited to contain anything secret; this block does not). Before activation, create an explicit A record for `kj-room.jonnyai.co.uk` to `<kj-host-ip>`, the address `kj-mcp.jonnyai.co.uk` already uses. Until that record exists, the name follows the `jonnyai.co.uk` wildcard to Vercel (`<vercel-ip>` and `<vercel-ip>`).
 
 The container joins `kerneljson-exec` (the network the door already uses to reach Postgres) and `kj-mcp-edge` (so Caddy can reach it). Sharing the edge network is placement. The process is not the MCP server.
 

@@ -72,7 +72,7 @@ These are `status: live` in the catalogue but exposed **only** through jai-os in
 
 | name | transport | capabilities | authentication | consumer | side_effects | status |
 |---|---|---|---|---|---|---|
-| supabase | stdio | Shared Brain read-only (query/list/advisors), pinned to ref lkwydqtfbdjhxaarelaz | Supabase PAT (jvault) | agents | none (read-only) | STAGED |
+| supabase | stdio | Shared Brain read-only (query/list/advisors), pinned to ref <supabase-ref-brain> | Supabase PAT (jvault) | agents | none (read-only) | STAGED |
 | postgres-brain | stdio | direct read-only SQL to the Brain (pgvector) | conn URL, read-only role (jvault) | agents | none (read-only) | STAGED |
 | firecrawl | stdio | crawl/scrape sites to markdown | Firecrawl API key (jvault) | agents | outbound-http | STAGED |
 | notion | stdio | Notion workspace read/write | integration token (jvault) | agents | notion-write (gated) | STAGED |
