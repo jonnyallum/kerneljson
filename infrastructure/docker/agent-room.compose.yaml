@@ -1,4 +1,5 @@
-# Shared room (ADR-0026 Amendment A). PREPARED, NOT STARTED.
+# Shared room (ADR-0026 Amendment A). The room has been live since early November 2026 (the status
+# line in docs/operations/AGENT_ROOM.md says what was and was not verified).
 # Runbook: docs/operations/AGENT_ROOM.md
 # Jonny's sign-off is an ordinary approval (direction of 4 Nov 2026), not a freeze and not a
 # named change window. Do not run this file until he has approved.
@@ -32,6 +33,11 @@ services:
       ROOM_BEARER_DEEPSEEK: ${ROOM_BEARER_DEEPSEEK:?set from jVault; never commit}
       ROOM_BEARER_ANTIGRAVITY: ${ROOM_BEARER_ANTIGRAVITY:?set from jVault; never commit}
       ROOM_BEARER_JONNY: ${ROOM_BEARER_JONNY:?set from jVault; never commit}
+      # Optional wake notifier (docs/operations/AGENT_ROOM.md, "Wake notifier"). Empty means off.
+      # ROOM_WAKE_TARGETS names env variables, never values; the URL and key come from secrets.env.
+      ROOM_WAKE_TARGETS: ${ROOM_WAKE_TARGETS:-}
+      KJ_ROOM_WAKE_GROK_URL: ${KJ_ROOM_WAKE_GROK_URL:-}
+      KJ_ROOM_WAKE_GROK_KEY: ${KJ_ROOM_WAKE_GROK_KEY:-}
       TSX_DISABLE_CACHE: "1"
     user: "node"
     read_only: true
