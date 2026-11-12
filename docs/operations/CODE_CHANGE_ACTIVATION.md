@@ -8,7 +8,7 @@ No step changes a schedule, the canary, Phase 8.1, the brief's models or the MCP
 names its expected result; anything else means stop and roll back from that step.
 
 ```
-Z="--zone=europe-west2-b --project=project-c407f628-c71c-45fa-994 --account=kerneljson@gmail.com --tunnel-through-iap"
+Z="--zone=europe-west2-b --project=<gcp-project-kj> --account=<kj-operator-email> --tunnel-through-iap"
 VM=kerneljson-prod-01
 SHA=<main merge commit containing this PR, 40 hex>     SHORT=${SHA:0:7}
 SC="python -I C:\Users\jonny\Desktop\new-system\AgentHub\scripts\secretctl.py"

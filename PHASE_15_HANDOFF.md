@@ -75,7 +75,7 @@ The saved 2026-09-05 full report contains 224 passed, zero failed and zero skipp
 - `supabase/migrations/20260905173800_world_provenance.sql`
 - `supabase/migrations/20260905174200_evaluation_history.sql`
 
-All seven are exercised locally on PostgreSQL 17.6 with Supabase API roles. Session records show no remote migration push or remote dry run. The actual current hosted migration history has not been queried in this audit, so changes by other operators are unknown. Supabase project ref: banqdzddfganzfhckdps. Do not infer remote application from local linkage. No remote migration is authorized by this preservation request. Full local Supabase Auth/PostgREST/Storage stack was not tested.
+All seven are exercised locally on PostgreSQL 17.6 with Supabase API roles. Session records show no remote migration push or remote dry run. The actual current hosted migration history has not been queried in this audit, so changes by other operators are unknown. Supabase project ref: <supabase-ref-kernel>. Do not infer remote application from local linkage. No remote migration is authorized by this preservation request. Full local Supabase Auth/PostgREST/Storage stack was not tested.
 
 ## Restate runtime
 

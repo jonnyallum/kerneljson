@@ -68,7 +68,7 @@ identical on worker and door via `KERNELJSON_RELEASE_ID`, and matches the
   "previous_release_id": null,
   "created_by": "postgres",
   "evidence": {
-    "operator": "kerneljson@gmail.com (Claude Code session, human-authorised fast-lane KJ-P1.3D)",
+    "operator": "<kj-operator-email> (Claude Code session, human-authorised fast-lane KJ-P1.3D)",
     "changeWindow": "KJ-P1.3D release-provenance production activation, 2026-09-16",
     "verifiedParity": "worker=door=49a93bb9a0a3b2c3f77a4ed778229704e3e038e7",
     "migrationVersion": "20260916205049",

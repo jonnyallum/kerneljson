@@ -13,7 +13,7 @@ Observed on 2026-09-23. This closes activation only. **Canonical memory live pro
 - **Epoch: 8 → 9**, activated at `2026-09-23T10:44:43.787Z`.
 - Activation request: `3ce703dc-520a-433c-9d6c-c77eaf318609`. The existing `kernel_private.activate_release` protocol was used in a dedicated transaction; a fresh connection (backend PID 1949523) independently read epoch 9, the exact release, previous release, and request ID.
 
-Target: `kerneljson-prod-01`, GCP project `project-c407f628-c71c-45fa-994`, zone `europe-west2-b`; database endpoint verified as KernelJSON Supabase project `banqdzddfganzfhckdps`. No access to the old estate VM or Shared Brain was used.
+Target: `kerneljson-prod-01`, GCP project `<gcp-project-kj>`, zone `europe-west2-b`; database endpoint verified as KernelJSON Supabase project `<supabase-ref-kernel>`. No access to the old estate VM or Shared Brain was used.
 
 ## Qualification and review
 

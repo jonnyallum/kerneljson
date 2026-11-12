@@ -61,15 +61,15 @@ activation, at most the two known notifications (`authority.bindingReleaseConsis
 
 ## Target identity (fixed, verify do not trust)
 
-`kerneljson-prod-01`, `europe-west2-b`, project `project-c407f628-c71c-45fa-994`, account
-`kerneljson@gmail.com`, `--tunnel-through-iap`, Supabase project `banqdzddfganzfhckdps`. This is **not**
-the estate VM (`instance-20260717-082134`). Approved release: canonical `main` containing the KJ-P2.2B
+`kerneljson-prod-01`, `europe-west2-b`, project `<gcp-project-kj>`, account
+`<kj-operator-email>`, `--tunnel-through-iap`, Supabase project `<supabase-ref-kernel>`. This is **not**
+the estate VM (`<estate-vm-name>`). Approved release: canonical `main` containing the KJ-P2.2B
 merge commit, verified CI-green. Read the actual SHA at execution time.
 
 Open a shell on the VM and keep it:
 ```
 gcloud compute ssh kerneljson-prod-01 --zone=europe-west2-b \
-  --project=project-c407f628-c71c-45fa-994 --account=kerneljson@gmail.com --tunnel-through-iap
+  --project=<gcp-project-kj> --account=<kj-operator-email> --tunnel-through-iap
 ```
 Variables for the VM shell (`SHA` is the approved full SHA, read at execution time):
 ```
@@ -204,7 +204,7 @@ From the workstation, materialise and copy up, then remove the local copies:
 ```
 python AgentHub\scripts\secretctl.py get kerneljson/TELEGRAM_BOT_TOKEN --out C:\tmp\tg.tok --expect-len <N>
 python AgentHub\scripts\secretctl.py get kerneljson/TELEGRAM_CHAT_ID  --out C:\tmp\tg.chat --expect-len <length>
-gcloud compute scp C:/tmp/tg.tok C:/tmp/tg.chat kerneljson-prod-01:/opt/kerneljson/runtime/stage/ --zone=europe-west2-b --project=project-c407f628-c71c-45fa-994 --account=kerneljson@gmail.com --tunnel-through-iap --quiet
+gcloud compute scp C:/tmp/tg.tok C:/tmp/tg.chat kerneljson-prod-01:/opt/kerneljson/runtime/stage/ --zone=europe-west2-b --project=<gcp-project-kj> --account=<kj-operator-email> --tunnel-through-iap --quiet
 python AgentHub\scripts\secretctl.py shred C:\tmp\tg.tok C:\tmp\tg.chat
 ```
 

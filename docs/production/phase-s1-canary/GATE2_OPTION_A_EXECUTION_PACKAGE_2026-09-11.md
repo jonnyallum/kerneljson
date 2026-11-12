@@ -15,7 +15,7 @@ for the first scheduler canary (`claude_md_check`). The identities and timestamp
 
 | Item | Value | Source of truth |
 |---|---|---|
-| Production KernelJSON project ref | `banqdzddfganzfhckdps` | `supabase/.temp/project-ref`, `kerneljson.config.json`, CLI link |
+| Production KernelJSON project ref | `<supabase-ref-kernel>` | `supabase/.temp/project-ref`, `kerneljson.config.json`, CLI link |
 | Canonical main HEAD | `190bcb19ed70864282e012e39584e248c0c4b55b` (`190bcb1`) | `git rev-parse HEAD` |
 | Reviewed scheduler migration | `supabase/migrations/20260910180000_scheduler.sql` | last of 12 local migrations |
 | Reviewed runner | `services/kernel/src/tools/canary-runner.ts` | merged PR #13 |
@@ -118,7 +118,7 @@ order by check;
 supabase db push --linked --dry-run --skip-vault
 ```
 
-Linked ref is `banqdzddfganzfhckdps`. `--skip-vault` is safe: `[db.vault]` in `config.toml`
+Linked ref is `<supabase-ref-kernel>`. `--skip-vault` is safe: `[db.vault]` in `config.toml`
 is commented out. The DB password is entered at the interactive prompt, never in argv.
 
 ### Checkpoint B — apply the scheduler migration (only after A shows exactly one pending)
@@ -254,10 +254,10 @@ Leave the canary disabled. Do not enable `claude_md_check`; do not create a fire
   `process.env["DATABASE_URL"]` and fails closed if it is absent.
 - The migration's DB password is entered at the Supabase CLI interactive prompt, never in argv
   or shell history.
-- Read-only verification runs in the Supabase SQL editor on `banqdzddfganzfhckdps`, or via
+- Read-only verification runs in the Supabase SQL editor on `<supabase-ref-kernel>`, or via
   Jonny's own jVault-injected `psql`. Claude handles no secret in either path.
 - Note: the Supabase MCP available to Claude in this session is scoped to a different
-  organisation and cannot see `banqdzddfganzfhckdps`; this is a connector-scope limit, not a
+  organisation and cannot see `<supabase-ref-kernel>`; this is a connector-scope limit, not a
   production-state finding. Claude therefore did not run the live prechecks; they are packaged
   above for Jonny to run.
 
@@ -272,7 +272,7 @@ or Phase 8.1; alter WhatsApp / n8n / OpenClaw / JaiOS; touch the SERVICE princip
 Gate 2 was executed by Jonny step-by-step and verified. Recorded result:
 
 - Scheduler migration `20260910180000_scheduler.sql` APPLIED and present in the remote
-  migration history of `banqdzddfganzfhckdps`.
+  migration history of `<supabase-ref-kernel>`.
 - Schema verification PASSED: all six scheduler tables exist; RLS enabled on all six;
   `admitted_child_task_id` FK points to `kernel_private.task_admissions(task_id)`;
   `anon`/`authenticated` grants = 0; permissive policies = 0.

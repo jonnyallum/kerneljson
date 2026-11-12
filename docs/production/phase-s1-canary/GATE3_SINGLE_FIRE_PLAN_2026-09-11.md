@@ -35,7 +35,7 @@ disabled -> explicitly enabled for one controlled run
 
 | Item | Value |
 |---|---|
-| Production project ref | `banqdzddfganzfhckdps` |
+| Production project ref | `<supabase-ref-kernel>` |
 | Schedule | `claude_md_check` |
 | scheduleId | `acab9ebc-dc92-5c3a-90d6-4d6f9ddb0a1b` |
 | Owner (HUMAN) | `da5c6dfc-38c5-4773-bd47-5c80ed908d75` |

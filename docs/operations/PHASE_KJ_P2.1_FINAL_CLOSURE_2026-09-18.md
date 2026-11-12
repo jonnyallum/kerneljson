@@ -70,7 +70,7 @@ deliberately different UNKNOWN-severity policy mappings, not a defect.
 ## Verification method
 
 All checks performed read-only, against the live production database
-(`banqdzddfganzfhckdps`) and the running worker/door/Restate containers on
+(`<supabase-ref-kernel>`) and the running worker/door/Restate containers on
 `kerneljson-prod-01`, using the same disciplined pattern established
 throughout this session (single-purpose Node scripts executed inside the
 worker container via `docker exec`, reading `DATABASE_URL` only from the

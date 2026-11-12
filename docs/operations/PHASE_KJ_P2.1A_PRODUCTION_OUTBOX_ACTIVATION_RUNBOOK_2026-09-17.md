@@ -73,13 +73,13 @@ production runbook in this repo has, rather than trusting this document.
 
 ## Target identity (fixed for this runbook — verify, do not trust)
 
-- Production Supabase project: `banqdzddfganzfhckdps` ("kerneljson") — never
-  `lkwydqtfbdjhxaarelaz` (the Shared Brain, a different product).
+- Production Supabase project: `<supabase-ref-kernel>` ("kerneljson") — never
+  `<supabase-ref-brain>` (the Shared Brain, a different product).
 - VM: `kerneljson-prod-01`, zone `europe-west2-b`, project
-  `project-c407f628-c71c-45fa-994`, account `kerneljson@gmail.com`,
+  `<gcp-project-kj>`, account `<kj-operator-email>`,
   `--tunnel-through-iap`. **This is KernelJSON's own dedicated production VM
   — distinct from, and unrelated to, the separate "estate" VM
-  (`instance-20260717-082134`) referenced in this operator's global tooling
+  (`<estate-vm-name>`) referenced in this operator's global tooling
   notes, which hosts unrelated services (biz-os, mission-control,
   conductor-mcp, jai-os, n8n) and has never run any part of KernelJSON.**
 - Repo checkout on VM: `/opt/kerneljson/app`.
@@ -110,7 +110,7 @@ over hand-rolling any of this.
 
 ```
 gcloud compute ssh kerneljson-prod-01 --zone=europe-west2-b \
-  --project=project-c407f628-c71c-45fa-994 --account=kerneljson@gmail.com \
+  --project=<gcp-project-kj> --account=<kj-operator-email> \
   --tunnel-through-iap --command="cd /opt/kerneljson/app && git remote -v && git rev-parse HEAD && git status --porcelain"
 ```
 - CHECK: remote is `https://github.com/jonnyallum/kerneljson.git`.

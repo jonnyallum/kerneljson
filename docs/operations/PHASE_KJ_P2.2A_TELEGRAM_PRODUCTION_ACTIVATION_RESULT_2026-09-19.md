@@ -20,7 +20,7 @@ during the window (see "The natural notification"). POISON stayed at 0 throughou
 
 | Item | Value |
 |---|---|
-| Host | `kerneljson-prod-01`, `europe-west2-b`, project `project-c407f628-c71c-45fa-994` |
+| Host | `kerneljson-prod-01`, `europe-west2-b`, project `<gcp-project-kj>` |
 | Deployed release (worker and door) | `b3a6cb7101254145e05bc79f2cd601a606d3f97b` |
 | Previous release | `1fbe6b22ed35394fb3a52c3735b6b4430d8ac9fa` (VM checkout, images, epoch 2) |
 | Qualification freeze | `main` at `684e7c1` (docs only after `b3a6cb7`) |

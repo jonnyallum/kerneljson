@@ -26,7 +26,7 @@ read-only preflight do not open that window.
 
 ## 2. Fresh read-only preflight
 
-Target only `kerneljson-prod-01`, project `project-c407f628-c71c-45fa-994`, zone
+Target only `kerneljson-prod-01`, project `<gcp-project-kj>`, zone
 `europe-west2-b`; checkout `/opt/kerneljson/app`. Use the worker's own database
 connection, never print it, and use a read-only transaction for database inspection.
 

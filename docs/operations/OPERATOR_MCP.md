@@ -64,8 +64,8 @@ Fastest first. Each one is independent; none touches the brief, canary or Phase 
 
 ## One-time setup (owner, before the window)
 
-1. **Google OAuth client**, in the `kerneljson` GCP project (`project-c407f628-c71c-45fa-994`), signed in as `kerneljson@gmail.com`.
-   1. Google Auth Platform, Branding: app name `KernelJSON operator`, support email `kerneljson@gmail.com`.
+1. **Google OAuth client**, in the `kerneljson` GCP project (`<gcp-project-kj>`), signed in as `<kj-operator-email>`.
+   1. Google Auth Platform, Branding: app name `KernelJSON operator`, support email `<kj-operator-email>`.
    2. Audience: External, publishing status **Testing**, test user `jonnyallum@gmail.com` only. Testing mode is enough: the server keeps no Google token.
    3. Data access: scope `openid` only.
    4. Clients, Create client: Web application, name `kj-mcp`. Authorised redirect URI: `https://kj-mcp.jonnyai.co.uk/oauth/google/callback`. No JavaScript origins.
@@ -81,7 +81,7 @@ Fastest first. Each one is independent; none touches the brief, canary or Phase 
    ```
 
    Repeat for `kerneljson/KJ_MCP_BEARER`.
-3. **DNS.** `vercel dns add jonnyai.co.uk kj-mcp A 34.105.219.103`, which is the reserved static address `kerneljson-prod-01-ip`. Verify with `nslookup kj-mcp.jonnyai.co.uk`.
+3. **DNS.** `vercel dns add jonnyai.co.uk kj-mcp A <kj-host-ip>`, which is the reserved static address `kerneljson-prod-01-ip`. Verify with `nslookup kj-mcp.jonnyai.co.uk`.
 4. **Your Google subject id.** It is a number, not your email address.
    - Until it is known, deploy with the placeholder `0`.
    - Signing in once with `jonnyallum@gmail.com` then shows the "Not permitted" page, which prints your own id.

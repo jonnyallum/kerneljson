@@ -12,7 +12,7 @@ github:
 
 production:
   observed_at: 2026-10-22T14:26Z
-  host: kerneljson-prod-01 (europe-west2-b, project-c407f628-c71c-45fa-994)
+  host: kerneljson-prod-01 (europe-west2-b, <gcp-project-kj>)
   release: c5de3f50281ce13374d63ec1cc764d0f93b2d7ef
   epoch: 16
   activated_at: 2026-10-22T11:49Z
@@ -37,7 +37,7 @@ production:
     operator_mcp: docs/operations/OPERATOR_MCP.md
 
 supabase:
-  project_ref: banqdzddfganzfhckdps
+  project_ref: <supabase-ref-kernel>
   linked: true
 
 vault:

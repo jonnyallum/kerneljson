@@ -50,12 +50,12 @@ Completion requires every declared criterion to pass against evidence for this t
 
 ## Supabase review and deployment boundary
 
-Project ref: `banqdzddfganzfhckdps`. No remote migration has been applied by this implementation. Runtime credentials, when needed, must be injected from jVault project `kerneljson`; do not place them in source or command arguments. The local test stack needs no jVault secrets.
+Project ref: `<supabase-ref-kernel>`. No remote migration has been applied by this implementation. Runtime credentials, when needed, must be injected from jVault project `kerneljson`; do not place them in source or command arguments. The local test stack needs no jVault secrets.
 
 After reviewing the migration files and local evidence, the exact remote dry-run command for Jonny is:
 
 ```sh
-supabase db push --linked --project-ref banqdzddfganzfhckdps --dry-run --skip-vault
+supabase db push --linked --project-ref <supabase-ref-kernel> --dry-run --skip-vault
 ```
 
 This command has not been executed here. The `--skip-vault` flag avoids the CLI's vault-update pre-step. A real push requires explicit approval after inspecting the dry run; no CI or test command performs it. Do not include `--include-seed` or `--include-roles` for these migrations.
